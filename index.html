@@ -316,11 +316,13 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 // --- SUPABASE BAĞLANTISI ---
 const supabaseUrl = 'https://gxngmqewskhrbxqmnpps.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4bmdtcWV3c2tocmJ4cW1ucHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzI0ODYsImV4cCI6MjA5MzU0ODQ4Nn0.SuFoGMZFzD_Rc-FZkg1OQDZqQE_8v1H51BDYvg4LRW0';
-const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+// HATA ÇÖZÜMÜ: Çakışmayı önlemek için 'supabaseClient' ismini kullanıyoruz.
+const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- OTURUM KONTROLÜ ---
 // Sayfa açıldığında kullanıcı giriş yapmış mı diye bakar
-supabase.auth.getSession().then(({ data: { session } }) => {
+supabaseClient.auth.getSession().then(({ data: { session } }) => {
   if (session) showCRM();
   else showAuth();
 });
@@ -348,7 +350,7 @@ async function handleRegister() {
   const password = document.getElementById('reg-password').value;
   if (!email || !password) return alert("Lütfen e-posta ve şifre girin.");
   
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
   if (error) alert("Kayıt Hatası: " + error.message);
   else {
     alert("Kayıt başarılı! Lütfen giriş yapın.");
@@ -361,13 +363,13 @@ async function handleLogin() {
   const password = document.getElementById('login-password').value;
   if (!email || !password) return alert("Lütfen e-posta ve şifre girin.");
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) alert("Giriş Hatası: " + error.message);
   else showCRM();
 }
 
 async function handleLogout() {
-  await supabase.auth.signOut();
+  await supabaseClient.auth.signOut();
   db = { spaces: {}, columns: {}, leads: {} };
   showAuth();
 }
@@ -395,7 +397,7 @@ async function save(){
   // Hızlı çalışması için anlık olarak localStorage'a da yedekler
   localStorage.setItem('crm_db_v2', JSON.stringify(db));
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
 
   // Space'leri kaydet
@@ -403,7 +405,7 @@ async function save(){
     id: s.id, user_id: user.id, name: s.name, color: s.color, created_at: s.createdAt
   }));
   if(spsToUpsert.length > 0) {
-    const { error } = await supabase.from('spaces').upsert(spsToUpsert);
+    const { error } = await supabaseClient.from('spaces').upsert(spsToUpsert);
     if(error) console.error("Space kaydetme hatası:", error);
   }
 
@@ -413,7 +415,7 @@ async function save(){
     db.columns[sid].forEach(c => clsToUpsert.push({ id: c.id, space_id: sid, title: c.title, dot: c.dot }));
   });
   if(clsToUpsert.length > 0) {
-    const { error } = await supabase.from('columns').upsert(clsToUpsert);
+    const { error } = await supabaseClient.from('columns').upsert(clsToUpsert);
     if(error) console.error("Sütun kaydetme hatası:", error);
   }
 
@@ -427,18 +429,18 @@ async function save(){
     }));
   });
   if(ldsToUpsert.length > 0) {
-    const { error } = await supabase.from('leads').upsert(ldsToUpsert);
+    const { error } = await supabaseClient.from('leads').upsert(ldsToUpsert);
     if(error) console.error("Lead kaydetme hatası:", error);
   }
 }
 
 // --- SUPABASE VERİ ÇEKME ---
 async function load(){
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
 
   // ORTAK ÇALIŞMA ALANI GÜNCELLEMESİ (.eq filtresi kaldırıldı, tüm veriler çekiliyor)
-  const { data: sps, error: fetchError } = await supabase.from('spaces').select('*');
+  const { data: sps, error: fetchError } = await supabaseClient.from('spaces').select('*');
   if (fetchError) {
     console.error("Veri çekme hatası:", fetchError);
     return alert("Veritabanına bağlanılamadı: " + fetchError.message);
@@ -448,8 +450,8 @@ async function load(){
 
   if (sps && sps.length > 0) {
     const spaceIds = sps.map(s => s.id);
-    const { data: cls } = await supabase.from('columns').select('*').in('space_id', spaceIds);
-    const { data: lds } = await supabase.from('leads').select('*').in('space_id', spaceIds);
+    const { data: cls } = await supabaseClient.from('columns').select('*').in('space_id', spaceIds);
+    const { data: lds } = await supabaseClient.from('leads').select('*').in('space_id', spaceIds);
 
     sps.forEach(s => db.spaces[s.id] = {id: s.id, name: s.name, color: s.color, createdAt: s.created_at});
     sps.forEach(s => { db.columns[s.id] = []; db.leads[s.id] = []; });
@@ -805,7 +807,7 @@ function confirmDeleteLead(){
   document.getElementById('confirm-title').textContent='Lead silinsin mi?';
   document.getElementById('confirm-sub').textContent=`"${lead.name} · ${lead.company}" kalıcı olarak silinecek.`;
   document.getElementById('confirm-ok').onclick=async ()=>{
-    await supabase.from('leads').delete().eq('id', openLeadId); // Buluttan sil
+    await supabaseClient.from('leads').delete().eq('id', openLeadId); // Buluttan sil
     db.leads[activeSpaceId]=db.leads[activeSpaceId].filter(l=>l.id!==openLeadId);
     save();closeConfirm();closeModal();renderAll();
   };
@@ -893,7 +895,7 @@ function confirmDeleteCol(colId, colTitle, cnt){
   document.getElementById('confirm-title').textContent='Sütun silinsin mi?';
   document.getElementById('confirm-sub').textContent=msg;
   document.getElementById('confirm-ok').onclick=async ()=>{
-    await supabase.from('columns').delete().eq('id', colId); // Buluttan sil
+    await supabaseClient.from('columns').delete().eq('id', colId); // Buluttan sil
     const cols=getCols();
     const idx=cols.findIndex(c=>c.id===colId);
     if(idx>-1)cols.splice(idx,1);
