@@ -247,7 +247,6 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
         <div class="topbar-actions">
           <button class="btn" onclick="manageColumns()">Sütunları düzenle</button>
           <button class="btn btn-primary" onclick="openAddLead()">+ Lead ekle</button>
-          <!-- YENİ EKLENEN ÇIKIŞ BUTONU -->
           <button class="btn" onclick="handleLogout()" style="color: var(--red); border-color: var(--red);">Çıkış</button>
         </div>
       </div>
@@ -314,21 +313,22 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 </div>
 
 <script>
+// --- SUPABASE BAĞLANTISI ---
 const supabaseUrl = 'https://gxngmqewskhrbxqmnpps.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4bmdtcWV3c2tocmJ4cW1ucHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzI0ODYsImV4cCI6MjA5MzU0ODQ4Nn0.SuFoGMZFzD_Rc-FZkg1OQDZqQE_8v1H51BDYvg4LRW0';
-const supabase = supabase.createClient(supabaseUrl, supabaseKey); // Başındaki // işaretlerini
+const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+// --- OTURUM KONTROLÜ ---
+// Sayfa açıldığında kullanıcı giriş yapmış mı diye bakar
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session) showCRM();
+  else showAuth();
+});
+
 // --- AUTH UI FONKSİYONLARI ---
 function toggleAuth(type) {
   document.getElementById('login-form').style.display = type === 'login' ? 'block' : 'none';
   document.getElementById('register-form').style.display = type === 'register' ? 'block' : 'none';
-}
-
-function showCRM() {
-  document.getElementById('auth-view').style.display = 'none';
-  document.getElementById('crm-view').style.display = 'block';
-  // CRM ekranı açılınca verileri yükle
-  load(); 
-  renderAll();
 }
 
 function showAuth() {
@@ -336,18 +336,39 @@ function showAuth() {
   document.getElementById('crm-view').style.display = 'none';
 }
 
-function handleLogin() {
-  // Şimdilik doğrudan içeri alıyoruz. Supabase bağlandığında buraya signIn kodları gelecek.
-  showCRM();
+async function showCRM() {
+  document.getElementById('auth-view').style.display = 'none';
+  document.getElementById('crm-view').style.display = 'block';
+  await load(); 
 }
 
-function handleRegister() {
-  // Şimdilik alert veriyoruz. Supabase bağlandığında buraya signUp kodları gelecek.
-  alert("Kayıt fonksiyonu eklenecek!");
+// --- SUPABASE GİRİŞ / ÇIKIŞ FONKSİYONLARI ---
+async function handleRegister() {
+  const email = document.getElementById('reg-email').value;
+  const password = document.getElementById('reg-password').value;
+  if (!email || !password) return alert("Lütfen e-posta ve şifre girin.");
+  
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) alert("Kayıt Hatası: " + error.message);
+  else {
+    alert("Kayıt başarılı! Lütfen giriş yapın.");
+    toggleAuth('login');
+  }
 }
 
-function handleLogout() {
-  // Supabase bağlandığında buraya signOut kodları eklenecek.
+async function handleLogin() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return alert("Lütfen e-posta ve şifre girin.");
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) alert("Giriş Hatası: " + error.message);
+  else showCRM();
+}
+
+async function handleLogout() {
+  await supabase.auth.signOut();
+  db = { spaces: {}, columns: {}, leads: {} };
   showAuth();
 }
 
@@ -363,37 +384,84 @@ const TYPE_COLORS = {
 };
 const COL_COLORS = {'Yeni Lead':'#378ADD','İlk Temas':'#639922','Teklif Aşamasında':'#BA7517','Sözleşme Gönderildi':'#D4537E','Kazanıldı':'#1D9E75','Kaybedildi':'#E24B4A'};
 
-let db = {};
+let db = { spaces: {}, columns: {}, leads: {} };
 let activeSpaceId = null;
 let openLeadId = null;
 let dragId = null;
 let confirmCb = null;
 
-function save(){localStorage.setItem('crm_db_v2', JSON.stringify(db));}
-function load(){
-  const raw = localStorage.getItem('crm_db_v2');
-  if(raw){try{db=JSON.parse(raw);}catch{db={};}}
-  if(!db.spaces) db.spaces = {};
-  if(!db.leads) db.leads = {};
-  if(!db.columns) db.columns = {};
-  // seed if empty
-  if(Object.keys(db.spaces).length===0){
+// --- SUPABASE VERİ KAYDETME ---
+async function save(){
+  // Hızlı çalışması için anlık olarak localStorage'a da yedekler
+  localStorage.setItem('crm_db_v2', JSON.stringify(db));
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // Space'leri kaydet
+  const spsToUpsert = Object.values(db.spaces).map(s => ({
+    id: s.id, user_id: user.id, name: s.name, color: s.color, created_at: s.createdAt
+  }));
+  if(spsToUpsert.length > 0) await supabase.from('spaces').upsert(spsToUpsert);
+
+  // Sütunları kaydet
+  let clsToUpsert = [];
+  Object.keys(db.columns).forEach(sid => {
+    db.columns[sid].forEach(c => clsToUpsert.push({ id: c.id, space_id: sid, title: c.title, dot: c.dot }));
+  });
+  if(clsToUpsert.length > 0) await supabase.from('columns').upsert(clsToUpsert);
+
+  // Leadleri kaydet
+  let ldsToUpsert = [];
+  Object.keys(db.leads).forEach(sid => {
+    db.leads[sid].forEach(l => ldsToUpsert.push({
+      id: l.id, space_id: sid, col_id: l.colId, name: l.name, company: l.company,
+      value: l.value, notes: l.notes, doc_url: l.docUrl, last_contact: l.lastContact,
+      contacts: l.contacts, timeline: l.timeline
+    }));
+  });
+  if(ldsToUpsert.length > 0) await supabase.from('leads').upsert(ldsToUpsert);
+}
+
+// --- SUPABASE VERİ ÇEKME ---
+async function load(){
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: sps } = await supabase.from('spaces').select('*').eq('user_id', user.id);
+  db = { spaces: {}, columns: {}, leads: {} };
+
+  if (sps && sps.length > 0) {
+    const spaceIds = sps.map(s => s.id);
+    const { data: cls } = await supabase.from('columns').select('*').in('space_id', spaceIds);
+    const { data: lds } = await supabase.from('leads').select('*').in('space_id', spaceIds);
+
+    sps.forEach(s => db.spaces[s.id] = {id: s.id, name: s.name, color: s.color, createdAt: s.created_at});
+    sps.forEach(s => { db.columns[s.id] = []; db.leads[s.id] = []; });
+    if(cls) cls.forEach(c => db.columns[c.space_id].push({id: c.id, title: c.title, dot: c.dot}));
+    if(lds) lds.forEach(l => db.leads[l.space_id].push({
+      id: l.id, colId: l.col_id, name: l.name, company: l.company, value: l.value,
+      notes: l.notes, docUrl: l.doc_url, lastContact: l.last_contact,
+      contacts: l.contacts || [], timeline: l.timeline || []
+    }));
+    activeSpaceId = Object.keys(db.spaces)[0];
+    renderAll();
+  } else {
+    // İlk kez giren kullanıcı için demo verisi oluşturup buluta gönder
     const sid = uid();
     db.spaces[sid]={id:sid,name:'Genel Marka',color:DOTS[0],createdAt:Date.now()};
     db.columns[sid]=[
-      {id:uid(),title:'Yeni Lead',dot:DOTS[0]},
-      {id:uid(),title:'İlk Temas',dot:DOTS[1]},
-      {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]},
-      {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
+      {id:uid(),title:'Yeni Lead',dot:DOTS[0]}, {id:uid(),title:'İlk Temas',dot:DOTS[1]},
+      {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]}, {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
       {id:uid(),title:'Kazanıldı',dot:DOTS[4]},
     ];
     db.leads[sid]=[];
     activeSpaceId=sid;
-  } else {
-    activeSpaceId=Object.keys(db.spaces)[0];
+    await save();
+    renderAll();
   }
-  save();
 }
+
 function uid(){return 'id_'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
 function initials(n){return (n||'').split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';}
 function formatDate(ts){const d=new Date(ts);return d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'});}
@@ -443,10 +511,8 @@ function submitSpaceForm(){
   const color=DOTS[Object.keys(db.spaces).length%DOTS.length];
   db.spaces[sid]={id:sid,name,color,createdAt:Date.now()};
   db.columns[sid]=[
-    {id:uid(),title:'Yeni Lead',dot:DOTS[0]},
-    {id:uid(),title:'İlk Temas',dot:DOTS[1]},
-    {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]},
-    {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
+    {id:uid(),title:'Yeni Lead',dot:DOTS[0]}, {id:uid(),title:'İlk Temas',dot:DOTS[1]},
+    {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]}, {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
     {id:uid(),title:'Kazanıldı',dot:DOTS[4]},
   ];
   db.leads[sid]=[];
@@ -718,12 +784,13 @@ function submitInteraction(){
   save();renderAll();renderModal();
 }
 
-// delete lead
+// SUPABASE VERİ SİLME (Lead)
 function confirmDeleteLead(){
   const lead=getLeads().find(l=>l.id===openLeadId);
   document.getElementById('confirm-title').textContent='Lead silinsin mi?';
   document.getElementById('confirm-sub').textContent=`"${lead.name} · ${lead.company}" kalıcı olarak silinecek.`;
-  document.getElementById('confirm-ok').onclick=()=>{
+  document.getElementById('confirm-ok').onclick=async ()=>{
+    await supabase.from('leads').delete().eq('id', openLeadId); // Buluttan sil
     db.leads[activeSpaceId]=db.leads[activeSpaceId].filter(l=>l.id!==openLeadId);
     save();closeConfirm();closeModal();renderAll();
   };
@@ -803,13 +870,15 @@ function addColFromManager(){
   save();renderBoard();renderColManager();
 }
 
+// SUPABASE VERİ SİLME (Sütun)
 function confirmDeleteCol(colId, colTitle, cnt){
   const msg=cnt>0
     ? `"${colTitle}" sütununda ${cnt} lead var. Silerseniz bu leadlar da silinir.`
     : `"${colTitle}" sütunu silinecek.`;
   document.getElementById('confirm-title').textContent='Sütun silinsin mi?';
   document.getElementById('confirm-sub').textContent=msg;
-  document.getElementById('confirm-ok').onclick=()=>{
+  document.getElementById('confirm-ok').onclick=async ()=>{
+    await supabase.from('columns').delete().eq('id', colId); // Buluttan sil
     const cols=getCols();
     const idx=cols.findIndex(c=>c.id===colId);
     if(idx>-1)cols.splice(idx,1);
@@ -835,7 +904,6 @@ function initColDrag(){
     row.addEventListener('dragend',()=>{
       row.classList.remove('cm-dragging');
       if(placeholder&&placeholder.parentNode)placeholder.parentNode.removeChild(placeholder);
-      // reorder db.columns based on DOM order
       const newOrder=[];
       list.querySelectorAll('.cm-row').forEach(r=>{
         const id=r.id.replace('cm-','');
