@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Pipeline</title>
+<!-- Supabase JS CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F6F3;--surface:#FFFFFF;--surface2:#F1EFE8;--border:#E2E0D8;--border2:#C8C6BC;
+  --text:#1A1917;--text2:#6B6963;--text3:#9D9B96;
+  --blue:#185FA5;--blue-bg:#E6F1FB;--green:#3B6D11;--green-bg:#EAF3DE;
+  --amber:#854F0B;--amber-bg:#FAEEDA;--pink:#993556;--pink-bg:#FBEAF0;
+  --teal:#0F6E56;--teal-bg:#E1F5EE;--red:#A32D2D;--red-bg:#FCEBEB;
+  --radius:10px;--radius-sm:7px;
+}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+
+/* --- AUTH EKRANI CSS --- */
+#auth-view {
+  position: fixed; inset: 0; background: var(--bg); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.auth-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 32px; width: 100%; max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.auth-logo { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 24px; color: var(--text); display: flex; align-items: center; justify-content: center; gap: 8px;}
+.auth-logo span { background: var(--text); width:26px; height:26px; display:flex; align-items:center; justify-content:center; color: #fff; border-radius: 6px; font-size: 14px;}
+.auth-input {
+  width: 100%; font-size: 13px; padding: 10px 12px; border: 1px solid var(--border2);
+  border-radius: var(--radius-sm); background: var(--bg); margin-bottom: 12px; font-family: inherit;
+}
+.auth-btn {
+  width: 100%; padding: 10px; border-radius: var(--radius-sm); border: none;
+  background: var(--text); color: #fff; font-weight: 600; cursor: pointer; margin-bottom: 12px; font-size: 13px;
+}
+.auth-btn:hover { background: #333; }
+.auth-switch { text-align: center; font-size: 12px; color: var(--text2); cursor: pointer; }
+.auth-switch:hover { color: var(--text); text-decoration: underline; }
+
+/* CRM ANA KAPSAYICI */
+#crm-view { display: none; }
+
+/* SIDEBAR */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0}
+.sidebar-logo{padding:18px 16px 12px;font-size:13px;font-weight:700;letter-spacing:0.04em;color:var(--text);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sidebar-logo span{width:26px;height:26px;background:var(--text);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+.sidebar-section{padding:12px 10px 4px;font-size:10px;font-weight:600;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase}
+.sidebar-space{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;margin:1px 4px;gap:6px}
+.sidebar-space:hover{background:var(--surface2)}
+.sidebar-space.active{background:var(--text);color:#fff}
+.sidebar-space.active .sp-name{color:#fff}
+.sidebar-space.active .sp-count{background:rgba(255,255,255,0.2);color:#fff}
+.sp-left{display:flex;align-items:center;gap:7px;min-width:0}
+.sp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sp-name{font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-count{font-size:10px;color:var(--text3);background:var(--surface2);border-radius:99px;padding:1px 6px;flex-shrink:0}
+.sidebar-space.active .sp-name{color:#fff}
+.add-space-btn{margin:8px 8px 16px;padding:7px 10px;border:1px dashed var(--border2);border-radius:var(--radius-sm);font-size:11px;color:var(--text3);cursor:pointer;background:transparent;text-align:left;width:calc(100% - 16px)}
+.add-space-btn:hover{background:var(--surface2);color:var(--text2)}
+.sidebar-bottom{margin-top:auto;padding:12px 8px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)}
+
+/* MAIN */
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.topbar{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:600;color:var(--text)}
+.topbar-badge{font-size:11px;color:var(--text3);background:var(--surface2);border-radius:99px;padding:2px 8px}
+.topbar-actions{margin-left:auto;display:flex;gap:8px}
+.btn{font-size:12px;padding:6px 13px;border-radius:var(--radius-sm);border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2);font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn-primary{background:var(--text);color:#fff;border-color:var(--text)}
+.btn-primary:hover{background:#333}
+
+/* BOARD */
+.board-scroll{flex:1;overflow-x:auto;overflow-y:hidden;padding:16px 20px}
+.board{display:flex;gap:12px;height:100%;align-items:flex-start}
+.column{min-width:230px;max-width:230px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border);display:flex;flex-direction:column;max-height:calc(100vh - 100px)}
+.col-header{padding:10px 12px 8px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.col-title-row{display:flex;align-items:center;gap:6px}
+.col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.col-title{font-size:11px;font-weight:600;letter-spacing:0.03em;color:var(--text2);text-transform:uppercase}
+.col-count{font-size:10px;color:var(--text3);background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:1px 6px}
+.col-cards{flex:1;overflow-y:auto;padding:0 8px 8px;display:flex;flex-direction:column;gap:7px}
+.col-cards::-webkit-scrollbar{width:3px}
+.col-cards::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px;cursor:pointer;transition:box-shadow 0.15s,transform 0.1s}
+.card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.08);transform:translateY(-1px)}
+.card.dragging{opacity:0.35;transform:rotate(2deg)}
+.card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px}
+.card-avatar{width:26px;height:26px;border-radius:50%;background:var(--blue-bg);color:var(--blue);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-name{font-size:12px;font-weight:600;color:var(--text);line-height:1.3}
+.card-company{font-size:11px;color:var(--text2);margin-bottom:7px}
+.card-footer{display:flex;align-items:center;justify-content:space-between}
+.card-date{font-size:10px;color:var(--text3)}
+.card-value{font-size:11px;font-weight:700;color:var(--teal)}
+.card-doc-indicator{font-size:10px;color:var(--blue);background:var(--blue-bg);border-radius:4px;padding:1px 5px;margin-top:4px;display:inline-block}
+
+.add-card{padding:7px 8px;border:1px dashed var(--border2);border-radius:var(--radius-sm);text-align:center;font-size:11px;color:var(--text3);cursor:pointer;background:transparent;width:100%;flex-shrink:0;margin:0 8px 8px;width:calc(100% - 16px)}
+.add-card:hover{background:var(--surface);color:var(--text2)}
+
+.drop-zone{background:var(--blue-bg);border:2px dashed #94bfe8;border-radius:var(--radius-sm);min-height:40px}
+
+/* MODAL OVERLAY */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);width:100%;max-width:640px;margin:auto;overflow:hidden}
+.modal-head{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.modal-icon{width:42px;height:42px;border-radius:var(--radius-sm);background:var(--surface2);color:var(--text);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border)}
+.modal-name{font-size:15px;font-weight:700;color:var(--text)}
+.modal-company{font-size:12px;color:var(--text2);margin-top:2px}
+.modal-close{margin-left:auto;width:28px;height:28px;border-radius:var(--radius-sm);background:transparent;border:1px solid var(--border);cursor:pointer;font-size:16px;color:var(--text2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.modal-close:hover{background:var(--surface2)}
+.modal-body{display:flex;gap:0}
+.modal-left{flex:1;padding:16px 20px;min-width:0;border-right:1px solid var(--border);max-height:70vh;overflow-y:auto}
+.modal-right{width:190px;flex-shrink:0;padding:16px;max-height:70vh;overflow-y:auto}
+.modal-left::-webkit-scrollbar,.modal-right::-webkit-scrollbar{width:3px}
+.modal-left::-webkit-scrollbar-thumb,.modal-right::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+.sec-label{font-size:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);margin-bottom:9px}
+.contact-row{display:flex;align-items:flex-start;gap:9px;margin-bottom:10px;padding:9px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border)}
+.contact-av{width:32px;height:32px;border-radius:50%;background:var(--blue-bg);color:var(--blue);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.contact-name{font-size:12px;font-weight:600;color:var(--text)}
+.contact-role{font-size:11px;color:var(--text2)}
+.contact-email{font-size:11px;color:var(--blue)}
+.contact-del{margin-left:auto;font-size:14px;color:var(--text3);cursor:pointer;background:none;border:none;padding:0 2px}
+.contact-del:hover{color:var(--red)}
+
+/* TIMELINE */
+.tl-wrap{position:relative;padding-left:20px}
+.tl-axis{position:absolute;left:7px;top:6px;bottom:6px;width:1.5px;background:var(--border)}
+.tl-item{position:relative;margin-bottom:14px}
+.tl-dot-wrap{position:absolute;left:-20px;top:2px}
+.tl-dot{width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;border:2px solid var(--surface)}
+.tl-date{font-size:10px;color:var(--text3);margin-bottom:2px}
+.tl-type{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.tl-note{font-size:11px;color:var(--text2);line-height:1.55}
+.tl-tag{font-size:10px;border-radius:99px;padding:2px 7px;font-weight:600}
+
+/* ADD INTERACTION FORM */
+.add-form{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+.add-form select,.add-form input,.add-form textarea{width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;margin-bottom:7px}
+.add-form textarea{height:60px;resize:vertical}
+.add-form-row{display:flex;gap:7px}
+.add-form .btn-sm{font-size:11px;padding:5px 11px;border-radius:var(--radius-sm);border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2)}
+.add-form .btn-sm:hover{background:var(--surface2)}
+.add-form .btn-primary-sm{background:var(--text);color:#fff;border-color:var(--text)}
+.add-form .btn-primary-sm:hover{background:#333}
+
+/* SIDEBAR RIGHT */
+.sidebar-field{margin-bottom:14px}
+.sidebar-key{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);margin-bottom:4px}
+.sidebar-val{font-size:12px;font-weight:600;color:var(--text)}
+.status-badge{font-size:11px;font-weight:600;border-radius:99px;padding:3px 10px;display:inline-block}
+.sidebar-select{width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit}
+.doc-link{font-size:11px;color:var(--blue);word-break:break-all;display:block;margin-top:3px}
+.doc-link-input{width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;margin-top:4px}
+
+/* MODALS SECONDARY */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;display:none;align-items:center;justify-content:center}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:var(--surface);border-radius:var(--radius);padding:24px;max-width:360px;width:90%;border:1px solid var(--border)}
+.confirm-title{font-size:14px;font-weight:700;margin-bottom:8px}
+.confirm-sub{font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6}
+.confirm-row{display:flex;gap:8px;justify-content:flex-end}
+
+/* EMPTY */
+.empty-state{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text3)}
+.empty-icon{font-size:32px}
+.empty-text{font-size:13px;font-weight:500}
+
+/* SPACE FORM */
+.space-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin:4px 8px 8px}
+.space-form input{width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-family:inherit;margin-bottom:7px}
+.space-form-row{display:flex;gap:6px}
+.sf-btn{flex:1;font-size:11px;padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2)}
+.sf-btn.primary{background:var(--text);color:#fff;border-color:var(--text)}
+
+.modal-footer-bar{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:space-between;align-items:center}
+.del-lead-btn{font-size:11px;color:var(--red);background:none;border:none;cursor:pointer;padding:0}
+.del-lead-btn:hover{text-decoration:underline}
+
+.cm-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);margin-bottom:6px;cursor:default}
+.cm-row.cm-dragging{opacity:0.3}
+.cm-drag{color:var(--text3);font-size:16px;cursor:grab;user-select:none;flex-shrink:0}
+.cm-dot-wrap{flex-shrink:0}
+.cm-dot{width:14px;height:14px;border-radius:50%;cursor:pointer;border:2px solid rgba(0,0,0,0.1);flex-shrink:0}
+.cm-dot:hover{transform:scale(1.25)}
+.cm-input{flex:1;font-size:13px;font-weight:500;padding:4px 8px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text);font-family:inherit;min-width:0}
+.cm-input:hover{border-color:var(--border2);background:var(--surface2)}
+.cm-input:focus{border-color:var(--border2);background:var(--surface);outline:none}
+.cm-count{font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0}
+.cm-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 2px;flex-shrink:0;line-height:1}
+.cm-del:hover{color:var(--red)}
+.cm-placeholder{height:46px;border:2px dashed var(--border2);border-radius:var(--radius-sm);margin-bottom:6px;background:var(--surface2)}
+
+@media(max-width:600px){.sidebar{width:180px}.modal-body{flex-direction:column}.modal-right{width:100%;border-top:1px solid var(--border);border-right:none}}
+</style>
+</head>
+<body>
+
+<!-- 1. AUTH EKRANI -->
+<div id="auth-view">
+  <div class="auth-box">
+    <div class="auth-logo"><span>P</span> Pipeline CRM</div>
+    
+    <div id="login-form">
+      <input type="email" id="login-email" class="auth-input" placeholder="E-posta adresiniz">
+      <input type="password" id="login-password" class="auth-input" placeholder="Şifreniz">
+      <button class="auth-btn" onclick="handleLogin()">Giriş Yap</button>
+      <div class="auth-switch" onclick="toggleAuth('register')">Hesabın yok mu? Kayıt ol.</div>
+    </div>
+
+    <div id="register-form" style="display: none;">
+      <input type="email" id="reg-email" class="auth-input" placeholder="E-posta adresiniz">
+      <input type="password" id="reg-password" class="auth-input" placeholder="Şifreniz">
+      <button class="auth-btn" onclick="handleRegister()">Kayıt Ol</button>
+      <div class="auth-switch" onclick="toggleAuth('login')">Zaten hesabın var mı? Giriş yap.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. CRM ANA EKRANI -->
+<div id="crm-view">
+  <div class="app">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-logo"><span>P</span> Pipeline CRM</div>
+      <div class="sidebar-section">Spaces</div>
+      <div id="space-list"></div>
+      <div id="space-form-wrap"></div>
+      <button class="add-space-btn" onclick="showSpaceForm()">+ Yeni space ekle</button>
+      <div class="sidebar-bottom">Supabase · bulut depolama</div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="topbar">
+        <span class="topbar-title" id="topbar-title">—</span>
+        <span class="topbar-badge" id="topbar-badge"></span>
+        <div class="topbar-actions">
+          <button class="btn" onclick="manageColumns()">Sütunları düzenle</button>
+          <button class="btn btn-primary" onclick="openAddLead()">+ Lead ekle</button>
+          <!-- YENİ EKLENEN ÇIKIŞ BUTONU -->
+          <button class="btn" onclick="handleLogout()" style="color: var(--red); border-color: var(--red);">Çıkış</button>
+        </div>
+      </div>
+      <div class="board-scroll">
+        <div class="board" id="board"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEAD MODAL -->
+  <div class="overlay" id="overlay" onclick="overlayClick(event)">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- ADD LEAD MODAL -->
+  <div class="overlay" id="add-overlay" onclick="addOverlayClick(event)">
+    <div class="modal" id="add-modal" style="max-width:420px">
+      <div class="modal-head">
+        <div class="modal-icon">+</div>
+        <div><div class="modal-name">Yeni Lead</div><div class="modal-company">Bilgileri doldur</div></div>
+        <button class="modal-close" onclick="closeAddLead()">×</button>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div class="sec-label" style="margin-bottom:5px">Ad Soyad</div>
+          <input id="new-name" type="text" placeholder="Ayşe Demir" style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit">
+        </div>
+        <div>
+          <div class="sec-label" style="margin-bottom:5px">Şirket</div>
+          <input id="new-company" type="text" placeholder="Demir Tekstil A.Ş." style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit">
+        </div>
+        <div>
+          <div class="sec-label" style="margin-bottom:5px">Tahmini Değer</div>
+          <input id="new-value" type="text" placeholder="₺50.000" style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit">
+        </div>
+        <div>
+          <div class="sec-label" style="margin-bottom:5px">Sütun</div>
+          <select id="new-col" style="width:100%;font-size:13px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit"></select>
+        </div>
+      </div>
+      <div style="padding:0 20px 16px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="closeAddLead()">İptal</button>
+        <button class="btn btn-primary" onclick="submitAddLead()">Ekle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COL MANAGER -->
+  <div class="overlay" id="col-manager-overlay" onclick="colManagerOverlayClick(event)">
+    <div class="modal" id="col-manager-box" style="max-width:480px"></div>
+  </div>
+
+  <!-- CONFIRM -->
+  <div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+      <div class="confirm-title" id="confirm-title"></div>
+      <div class="confirm-sub" id="confirm-sub"></div>
+      <div class="confirm-row">
+        <button class="btn" onclick="closeConfirm()">İptal</button>
+        <button class="btn" id="confirm-ok" style="color:var(--red);border-color:var(--red)">Sil</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- SUPABASE DEĞİŞKENLERİ (Bir sonraki adımda dolduracağız) ---
+const supabaseUrl = 'BURAYA_URL_GELECEK';
+const supabaseKey = 'BURAYA_KEY_GELECEK';
+// const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+// --- AUTH UI FONKSİYONLARI ---
+function toggleAuth(type) {
+  document.getElementById('login-form').style.display = type === 'login' ? 'block' : 'none';
+  document.getElementById('register-form').style.display = type === 'register' ? 'block' : 'none';
+}
+
+function showCRM() {
+  document.getElementById('auth-view').style.display = 'none';
+  document.getElementById('crm-view').style.display = 'block';
+  // CRM ekranı açılınca verileri yükle
+  load(); 
+  renderAll();
+}
+
+function showAuth() {
+  document.getElementById('auth-view').style.display = 'flex';
+  document.getElementById('crm-view').style.display = 'none';
+}
+
+function handleLogin() {
+  // Şimdilik doğrudan içeri alıyoruz. Supabase bağlandığında buraya signIn kodları gelecek.
+  showCRM();
+}
+
+function handleRegister() {
+  // Şimdilik alert veriyoruz. Supabase bağlandığında buraya signUp kodları gelecek.
+  alert("Kayıt fonksiyonu eklenecek!");
+}
+
+function handleLogout() {
+  // Supabase bağlandığında buraya signOut kodları eklenecek.
+  showAuth();
+}
+
+// --- MEVCUT CRM KODLARI ---
+const DOTS = ['#378ADD','#639922','#BA7517','#D4537E','#1D9E75','#E24B4A','#9F7AEA','#D85A30'];
+const TYPE_COLORS = {
+  'E-posta':{bg:'#E6F1FB',color:'#185FA5',dot:'#378ADD'},
+  'Arama':{bg:'#EAF3DE',color:'#3B6D11',dot:'#639922'},
+  'Toplantı':{bg:'#FAEEDA',color:'#854F0B',dot:'#BA7517'},
+  'Teklif':{bg:'#FBEAF0',color:'#993556',dot:'#D4537E'},
+  'Sözleşme':{bg:'#E1F5EE',color:'#0F6E56',dot:'#1D9E75'},
+  'Takip':{bg:'#F1EFE8',color:'#5F5E5A',dot:'#888780'},
+};
+const COL_COLORS = {'Yeni Lead':'#378ADD','İlk Temas':'#639922','Teklif Aşamasında':'#BA7517','Sözleşme Gönderildi':'#D4537E','Kazanıldı':'#1D9E75','Kaybedildi':'#E24B4A'};
+
+let db = {};
+let activeSpaceId = null;
+let openLeadId = null;
+let dragId = null;
+let confirmCb = null;
+
+function save(){localStorage.setItem('crm_db_v2', JSON.stringify(db));}
+function load(){
+  const raw = localStorage.getItem('crm_db_v2');
+  if(raw){try{db=JSON.parse(raw);}catch{db={};}}
+  if(!db.spaces) db.spaces = {};
+  if(!db.leads) db.leads = {};
+  if(!db.columns) db.columns = {};
+  // seed if empty
+  if(Object.keys(db.spaces).length===0){
+    const sid = uid();
+    db.spaces[sid]={id:sid,name:'Genel Marka',color:DOTS[0],createdAt:Date.now()};
+    db.columns[sid]=[
+      {id:uid(),title:'Yeni Lead',dot:DOTS[0]},
+      {id:uid(),title:'İlk Temas',dot:DOTS[1]},
+      {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]},
+      {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
+      {id:uid(),title:'Kazanıldı',dot:DOTS[4]},
+    ];
+    db.leads[sid]=[];
+    activeSpaceId=sid;
+  } else {
+    activeSpaceId=Object.keys(db.spaces)[0];
+  }
+  save();
+}
+function uid(){return 'id_'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
+function initials(n){return (n||'').split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2)||'?';}
+function formatDate(ts){const d=new Date(ts);return d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'});}
+function timeAgo(ts){
+  const diff=(Date.now()-ts)/1000;
+  if(diff<86400)return 'Bugün';
+  if(diff<172800)return 'Dün';
+  if(diff<604800)return Math.floor(diff/86400)+' gün önce';
+  return formatDate(ts);
+}
+
+function getSpace(){return db.spaces[activeSpaceId];}
+function getCols(){return db.columns[activeSpaceId]||[];}
+function getLeads(){return db.leads[activeSpaceId]||[];}
+
+// ── SIDEBAR ──
+function renderSidebar(){
+  const list=document.getElementById('space-list');
+  list.innerHTML='';
+  Object.values(db.spaces).forEach(sp=>{
+    const cnt=(db.leads[sp.id]||[]).length;
+    const el=document.createElement('div');
+    el.className='sidebar-space'+(sp.id===activeSpaceId?' active':'');
+    el.innerHTML=`<div class="sp-left"><div class="sp-dot" style="background:${sp.color}"></div><span class="sp-name">${sp.name}</span></div><span class="sp-count">${cnt}</span>`;
+    el.onclick=()=>{activeSpaceId=sp.id;renderAll();};
+    list.appendChild(el);
+  });
+}
+
+function showSpaceForm(){
+  const w=document.getElementById('space-form-wrap');
+  if(w.innerHTML){w.innerHTML='';return;}
+  w.innerHTML=`<div class="space-form">
+    <input id="sp-name-in" type="text" placeholder="Space adı (örn: Nike)" style="margin-bottom:7px">
+    <div class="space-form-row">
+      <button class="sf-btn" onclick="cancelSpaceForm()">İptal</button>
+      <button class="sf-btn primary" onclick="submitSpaceForm()">Ekle</button>
+    </div>
+  </div>`;
+  document.getElementById('sp-name-in').focus();
+}
+function cancelSpaceForm(){document.getElementById('space-form-wrap').innerHTML='';}
+function submitSpaceForm(){
+  const name=(document.getElementById('sp-name-in').value||'').trim();
+  if(!name)return;
+  const sid=uid();
+  const color=DOTS[Object.keys(db.spaces).length%DOTS.length];
+  db.spaces[sid]={id:sid,name,color,createdAt:Date.now()};
+  db.columns[sid]=[
+    {id:uid(),title:'Yeni Lead',dot:DOTS[0]},
+    {id:uid(),title:'İlk Temas',dot:DOTS[1]},
+    {id:uid(),title:'Teklif Aşamasında',dot:DOTS[2]},
+    {id:uid(),title:'Sözleşme Gönderildi',dot:DOTS[3]},
+    {id:uid(),title:'Kazanıldı',dot:DOTS[4]},
+  ];
+  db.leads[sid]=[];
+  activeSpaceId=sid;
+  save();
+  cancelSpaceForm();
+  renderAll();
+}
+
+// ── TOPBAR ──
+function renderTopbar(){
+  const sp=getSpace();
+  document.getElementById('topbar-title').textContent=sp?sp.name:'—';
+  document.getElementById('topbar-badge').textContent=getLeads().length+' lead';
+}
+
+// ── BOARD ──
+function renderBoard(){
+  const board=document.getElementById('board');
+  board.innerHTML='';
+  const cols=getCols();
+  const leads=getLeads();
+  cols.forEach(col=>{
+    const colLeads=leads.filter(l=>l.colId===col.id);
+    const el=document.createElement('div');
+    el.className='column';
+    el.dataset.col=col.id;
+    el.innerHTML=`
+      <div class="col-header">
+        <div class="col-title-row"><div class="col-dot" style="background:${col.dot}"></div><span class="col-title">${col.title}</span></div>
+        <span class="col-count">${colLeads.length}</span>
+      </div>
+      <div class="col-cards" id="cards-${col.id}"></div>
+      <button class="add-card" onclick="openAddLead('${col.id}')">+ Lead ekle</button>`;
+    board.appendChild(el);
+
+    const cardsEl=document.getElementById('cards-'+col.id);
+    cardsEl.addEventListener('dragover',e=>{e.preventDefault();cardsEl.classList.add('drop-zone');});
+    cardsEl.addEventListener('dragleave',()=>cardsEl.classList.remove('drop-zone'));
+    cardsEl.addEventListener('drop',e=>{
+      e.preventDefault();cardsEl.classList.remove('drop-zone');
+      if(!dragId)return;
+      const lead=getLeads().find(l=>l.id===dragId);
+      if(lead){lead.colId=col.id;lead.lastContact=Date.now();save();renderAll();}
+      dragId=null;
+    });
+
+    colLeads.forEach(lead=>{
+      const card=document.createElement('div');
+      card.className='card';card.dataset.id=lead.id;card.draggable=true;
+      card.innerHTML=`
+        <div class="card-header">
+          <div>
+            <div class="card-name">${lead.name}</div>
+            <div class="card-company">${lead.company}</div>
+          </div>
+          <div class="card-avatar">${initials(lead.name)}</div>
+        </div>
+        <div class="card-footer">
+          <div class="card-date">${lead.lastContact?timeAgo(lead.lastContact):''}</div>
+          <div class="card-value">${lead.value||''}</div>
+        </div>
+        ${lead.docUrl?'<div class="card-doc-indicator">📎 Belge var</div>':''}`;
+      card.addEventListener('dragstart',()=>{dragId=lead.id;setTimeout(()=>card.classList.add('dragging'),0);});
+      card.addEventListener('dragend',()=>card.classList.remove('dragging'));
+      card.addEventListener('click',()=>openModal(lead.id));
+      cardsEl.appendChild(card);
+    });
+  });
+}
+
+function renderAll(){renderSidebar();renderTopbar();renderBoard();}
+
+// ── ADD LEAD ──
+function openAddLead(colId){
+  const sel=document.getElementById('new-col');
+  sel.innerHTML=getCols().map(c=>`<option value="${c.id}"${c.id===colId?' selected':''}>${c.title}</option>`).join('');
+  ['new-name','new-company','new-value'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('new-name').focus(),100);
+}
+function closeAddLead(){document.getElementById('add-overlay').classList.remove('open');}
+function addOverlayClick(e){if(e.target===document.getElementById('add-overlay'))closeAddLead();}
+function submitAddLead(){
+  const name=document.getElementById('new-name').value.trim();
+  const company=document.getElementById('new-company').value.trim();
+  if(!name||!company)return;
+  const value=document.getElementById('new-value').value.trim();
+  const colId=document.getElementById('new-col').value;
+  const lead={id:uid(),colId,name,company,value,lastContact:Date.now(),contacts:[],timeline:[],docUrl:'',notes:''};
+  db.leads[activeSpaceId].push(lead);
+  save();closeAddLead();renderAll();
+}
+
+// ── LEAD MODAL ──
+function openModal(id){
+  openLeadId=id;
+  renderModal();
+  document.getElementById('overlay').classList.add('open');
+}
+function closeModal(){document.getElementById('overlay').classList.remove('open');openLeadId=null;}
+function overlayClick(e){if(e.target===document.getElementById('overlay'))closeModal();}
+
+function renderModal(){
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  if(!lead)return;
+  const cols=getCols();
+  const col=cols.find(c=>c.id===lead.colId)||{title:'—',dot:'#888'};
+  const statColor=COL_COLORS[col.title]||'#888';
+  const modal=document.getElementById('modal');
+
+  const contactsHtml=(lead.contacts||[]).map((c,i)=>`
+    <div class="contact-row">
+      <div class="contact-av">${c.initials||initials(c.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="contact-name">${c.name}</div>
+        <div class="contact-role">${c.role||''}</div>
+        <div class="contact-email">${c.email||''}</div>
+      </div>
+      <button class="contact-del" onclick="deleteContact(${i})" title="Sil">×</button>
+    </div>`).join('');
+
+  const tlHtml=(lead.timeline||[]).slice().reverse().map((t,i)=>{
+    const c=TYPE_COLORS[t.type]||TYPE_COLORS['Takip'];
+    return `<div class="tl-item">
+      <div class="tl-dot-wrap"><div class="tl-dot" style="background:${c.dot}"></div></div>
+      <div>
+        <div class="tl-date">${t.date}</div>
+        <div class="tl-type"><span class="tl-tag" style="background:${c.bg};color:${c.color}">${t.type}</span></div>
+        <div class="tl-note">${t.note}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const docSection=lead.docUrl
+    ? `<a href="${lead.docUrl}" target="_blank" class="doc-link">🔗 ${lead.docUrl.slice(0,38)}${lead.docUrl.length>38?'…':''}</a>
+       <input class="doc-link-input" type="url" placeholder="URL güncelle" value="${lead.docUrl}" onchange="updateDocUrl(this.value)">`
+    : `<input class="doc-link-input" type="url" placeholder="https://..." onchange="updateDocUrl(this.value)" value="">`;
+
+  modal.innerHTML=`
+    <div class="modal-head">
+      <div class="modal-icon">${initials(lead.company)}</div>
+      <div>
+        <div class="modal-name">${lead.name}</div>
+        <div class="modal-company">${lead.company}</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-left">
+        <div class="sec-label">Contactlar</div>
+        ${contactsHtml||'<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Henüz contact yok</div>'}
+        <button class="btn" style="font-size:11px;margin-bottom:16px" onclick="showAddContact()">+ Contact ekle</button>
+        <div id="contact-form-slot"></div>
+
+        <div class="sec-label" style="margin-top:4px">Görüşme Geçmişi</div>
+        <button class="btn" style="font-size:11px;margin-bottom:12px" onclick="showAddInteraction()">+ Görüşme ekle</button>
+        <div id="interaction-form-slot"></div>
+        <div class="tl-wrap">
+          <div class="tl-axis"></div>
+          ${tlHtml||'<div style="font-size:11px;color:var(--text3)">Henüz görüşme kaydı yok</div>'}
+        </div>
+      </div>
+      <div class="modal-right">
+        <div class="sidebar-field">
+          <div class="sidebar-key">Durum</div>
+          <span class="status-badge" style="background:${statColor}18;color:${statColor}">${col.title}</span>
+        </div>
+        <div class="sidebar-field">
+          <div class="sidebar-key">Değer</div>
+          <input class="sidebar-select" type="text" value="${lead.value||''}" placeholder="₺0" onchange="updateField('value',this.value)">
+        </div>
+        <div class="sidebar-field">
+          <div class="sidebar-key">Son temas</div>
+          <div class="sidebar-val">${lead.lastContact?timeAgo(lead.lastContact):'—'}</div>
+        </div>
+        <div class="sidebar-field">
+          <div class="sidebar-key">Sütunu taşı</div>
+          <select class="sidebar-select" onchange="moveLead(this.value)">
+            ${cols.map(c=>`<option value="${c.id}"${c.id===lead.colId?' selected':''}>${c.title}</option>`).join('')}
+          </select>
+        </div>
+        <div class="sidebar-field">
+          <div class="sidebar-key">Teklif / Belge Linki</div>
+          ${docSection}
+        </div>
+        <div class="sidebar-field" style="margin-top:6px">
+          <div class="sidebar-key">Not</div>
+          <textarea class="sidebar-select" style="height:72px;resize:vertical" placeholder="Genel not..." onchange="updateField('notes',this.value)">${lead.notes||''}</textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer-bar">
+      <button class="del-lead-btn" onclick="confirmDeleteLead()">Leadı sil</button>
+      <div style="font-size:11px;color:var(--text3)">${(lead.timeline||[]).length} görüşme · ${(lead.contacts||[]).length} contact</div>
+    </div>`;
+}
+
+function updateField(key,val){
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  if(!lead)return;
+  lead[key]=val;save();renderBoard();
+}
+function updateDocUrl(val){updateField('docUrl',val);renderModal();}
+function moveLead(colId){
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  if(!lead)return;
+  lead.colId=colId;lead.lastContact=Date.now();save();renderAll();renderModal();
+}
+
+// contacts
+function showAddContact(){
+  const slot=document.getElementById('contact-form-slot');
+  if(slot.innerHTML){slot.innerHTML='';return;}
+  slot.innerHTML=`<div class="add-form" style="margin-bottom:12px">
+    <div class="sec-label" style="margin-bottom:8px">Yeni Contact</div>
+    <input id="cf-name" type="text" placeholder="Ad Soyad">
+    <input id="cf-role" type="text" placeholder="Unvan">
+    <input id="cf-email" type="email" placeholder="E-posta">
+    <div class="add-form-row">
+      <button class="btn-sm" onclick="cancelContactForm()">İptal</button>
+      <button class="btn-sm btn-primary-sm" onclick="submitContact()">Ekle</button>
+    </div>
+  </div>`;
+  document.getElementById('cf-name').focus();
+}
+function cancelContactForm(){document.getElementById('contact-form-slot').innerHTML='';}
+function submitContact(){
+  const name=document.getElementById('cf-name').value.trim();
+  if(!name)return;
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  lead.contacts.push({name,role:document.getElementById('cf-role').value.trim(),email:document.getElementById('cf-email').value.trim(),initials:initials(name)});
+  save();renderModal();
+}
+function deleteContact(idx){
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  lead.contacts.splice(idx,1);save();renderModal();
+}
+
+// interactions
+function showAddInteraction(){
+  const slot=document.getElementById('interaction-form-slot');
+  if(slot.innerHTML){slot.innerHTML='';return;}
+  slot.innerHTML=`<div class="add-form" style="margin-bottom:12px">
+    <div class="sec-label" style="margin-bottom:8px">Yeni Görüşme</div>
+    <select id="if-type">
+      ${Object.keys(TYPE_COLORS).map(t=>`<option>${t}</option>`).join('')}
+    </select>
+    <input id="if-date" type="date" value="${new Date().toISOString().slice(0,10)}">
+    <textarea id="if-note" placeholder="Görüşme notu..."></textarea>
+    <div class="add-form-row">
+      <button class="btn-sm" onclick="cancelInteractionForm()">İptal</button>
+      <button class="btn-sm btn-primary-sm" onclick="submitInteraction()">Kaydet</button>
+    </div>
+  </div>`;
+  document.getElementById('if-note').focus();
+}
+function cancelInteractionForm(){document.getElementById('interaction-form-slot').innerHTML='';}
+function submitInteraction(){
+  const note=document.getElementById('if-note').value.trim();
+  if(!note)return;
+  const type=document.getElementById('if-type').value;
+  const dateVal=document.getElementById('if-date').value;
+  const d=dateVal?new Date(dateVal):new Date();
+  const dateStr=d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'});
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  lead.timeline.push({type,date:dateStr,note,ts:Date.now()});
+  lead.lastContact=Date.now();
+  save();renderAll();renderModal();
+}
+
+// delete lead
+function confirmDeleteLead(){
+  const lead=getLeads().find(l=>l.id===openLeadId);
+  document.getElementById('confirm-title').textContent='Lead silinsin mi?';
+  document.getElementById('confirm-sub').textContent=`"${lead.name} · ${lead.company}" kalıcı olarak silinecek.`;
+  document.getElementById('confirm-ok').onclick=()=>{
+    db.leads[activeSpaceId]=db.leads[activeSpaceId].filter(l=>l.id!==openLeadId);
+    save();closeConfirm();closeModal();renderAll();
+  };
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm(){document.getElementById('confirm-overlay').classList.remove('open');}
+
+// ── COLUMN MANAGER ──
+function manageColumns(){
+  renderColManager();
+  document.getElementById('col-manager-overlay').classList.add('open');
+}
+function closeColManager(){document.getElementById('col-manager-overlay').classList.remove('open');}
+function colManagerOverlayClick(e){if(e.target===document.getElementById('col-manager-overlay'))closeColManager();}
+
+function renderColManager(){
+  const cols=getCols();
+  const leads=getLeads();
+  const box=document.getElementById('col-manager-box');
+  box.innerHTML=`
+    <div class="modal-head">
+      <div class="modal-icon" style="font-size:18px">⚙</div>
+      <div><div class="modal-name">Statusları Düzenle</div><div class="modal-company">Sütun adlarını değiştir, sırala veya sil</div></div>
+      <button class="modal-close" onclick="closeColManager()">×</button>
+    </div>
+    <div style="padding:16px 20px;max-height:55vh;overflow-y:auto">
+      <div id="col-list">
+        ${cols.map((col,i)=>{
+          const cnt=leads.filter(l=>l.colId===col.id).length;
+          return `<div class="cm-row" id="cm-${col.id}">
+            <div class="cm-drag" title="Sürükle">⠿</div>
+            <div class="cm-dot-wrap">
+              <div class="cm-dot" style="background:${col.dot}" onclick="cycleColColor('${col.id}',this)" title="Renk değiştir"></div>
+            </div>
+            <input class="cm-input" value="${col.title}" onchange="renameCol('${col.id}',this.value)" onblur="renameCol('${col.id}',this.value)">
+            <span class="cm-count">${cnt} lead</span>
+            <button class="cm-del" onclick="confirmDeleteCol('${col.id}','${col.title}',${cnt})" title="Sil">×</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <div id="col-add-form" style="margin-top:12px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="new-col-name" type="text" placeholder="Yeni status adı..." style="flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit">
+          <button class="btn btn-primary" onclick="addColFromManager()" style="flex-shrink:0">+ Ekle</button>
+        </div>
+      </div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeColManager()">Tamam</button>
+    </div>`;
+  initColDrag();
+}
+
+function renameCol(colId, newName){
+  const trimmed=(newName||'').trim();
+  if(!trimmed)return;
+  const col=getCols().find(c=>c.id===colId);
+  if(col&&col.title!==trimmed){col.title=trimmed;save();renderBoard();}
+}
+
+function cycleColColor(colId, el){
+  const col=getCols().find(c=>c.id===colId);
+  if(!col)return;
+  const idx=DOTS.indexOf(col.dot);
+  col.dot=DOTS[(idx+1)%DOTS.length];
+  el.style.background=col.dot;
+  save();renderBoard();
+}
+
+function addColFromManager(){
+  const inp=document.getElementById('new-col-name');
+  const name=(inp.value||'').trim();
+  if(!name)return;
+  const cols=getCols();
+  cols.push({id:uid(),title:name,dot:DOTS[cols.length%DOTS.length]});
+  inp.value='';
+  save();renderBoard();renderColManager();
+}
+
+function confirmDeleteCol(colId, colTitle, cnt){
+  const msg=cnt>0
+    ? `"${colTitle}" sütununda ${cnt} lead var. Silerseniz bu leadlar da silinir.`
+    : `"${colTitle}" sütunu silinecek.`;
+  document.getElementById('confirm-title').textContent='Sütun silinsin mi?';
+  document.getElementById('confirm-sub').textContent=msg;
+  document.getElementById('confirm-ok').onclick=()=>{
+    const cols=getCols();
+    const idx=cols.findIndex(c=>c.id===colId);
+    if(idx>-1)cols.splice(idx,1);
+    db.leads[activeSpaceId]=(db.leads[activeSpaceId]||[]).filter(l=>l.colId!==colId);
+    save();closeConfirm();renderAll();renderColManager();
+  };
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+
+// drag-to-reorder inside col manager
+function initColDrag(){
+  const list=document.getElementById('col-list');
+  if(!list)return;
+  let dragEl=null,placeholder=null;
+  list.querySelectorAll('.cm-row').forEach(row=>{
+    row.setAttribute('draggable','true');
+    row.addEventListener('dragstart',e=>{
+      dragEl=row;
+      placeholder=document.createElement('div');
+      placeholder.className='cm-placeholder';
+      setTimeout(()=>row.classList.add('cm-dragging'),0);
+    });
+    row.addEventListener('dragend',()=>{
+      row.classList.remove('cm-dragging');
+      if(placeholder&&placeholder.parentNode)placeholder.parentNode.removeChild(placeholder);
+      // reorder db.columns based on DOM order
+      const newOrder=[];
+      list.querySelectorAll('.cm-row').forEach(r=>{
+        const id=r.id.replace('cm-','');
+        const col=getCols().find(c=>c.id===id);
+        if(col)newOrder.push(col);
+      });
+      db.columns[activeSpaceId]=newOrder;
+      save();renderBoard();
+      dragEl=null;placeholder=null;
+    });
+    row.addEventListener('dragover',e=>{
+      e.preventDefault();
+      if(!dragEl||row===dragEl)return;
+      const rect=row.getBoundingClientRect();
+      const mid=rect.top+rect.height/2;
+      if(e.clientY<mid)list.insertBefore(dragEl,row);
+      else list.insertBefore(dragEl,row.nextSibling);
+    });
+  });
+}
+</script>
+</body>
+</html>
