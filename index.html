@@ -314,11 +314,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 </div>
 
 <script>
-// --- SUPABASE DEĞİŞKENLERİ (Bir sonraki adımda dolduracağız) ---
-const supabaseUrl = 'BURAYA_URL_GELECEK';
-const supabaseKey = 'BURAYA_KEY_GELECEK';
-// const supabase = supabase.createClient(supabaseUrl, supabaseKey);
-
+const supabaseUrl = 'https://gxngmqewskhrbxqmnpps.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4bmdtcWV3c2tocmJ4cW1ucHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzI0ODYsImV4cCI6MjA5MzU0ODQ4Nn0.SuFoGMZFzD_Rc-FZkg1OQDZqQE_8v1H51BDYvg4LRW0';
+const supabase = supabase.createClient(supabaseUrl, supabaseKey); // Başındaki // işaretlerini
 // --- AUTH UI FONKSİYONLARI ---
 function toggleAuth(type) {
   document.getElementById('login-form').style.display = type === 'login' ? 'block' : 'none';
