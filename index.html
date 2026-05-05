@@ -232,7 +232,11 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
     <!-- SIDEBAR -->
     <div class="sidebar">
       <div class="sidebar-logo"><span>P</span> Pipeline CRM</div>
-      <div class="sidebar-section">Spaces</div>
+      <!-- YENİ: SPACE DÜZENLEME İKONU EKLENDİ -->
+      <div class="sidebar-section" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>SPACES</span>
+        <span onclick="manageSpaces()" style="cursor:pointer; font-size:14px; opacity:0.6;" title="Spaceleri Düzenle">⚙️</span>
+      </div>
       <div id="space-list"></div>
       <div id="space-form-wrap"></div>
       <button class="add-space-btn" onclick="showSpaceForm()">+ Yeni space ekle</button>
@@ -298,6 +302,11 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
   <div class="overlay" id="col-manager-overlay" onclick="colManagerOverlayClick(event)">
     <div class="modal" id="col-manager-box" style="max-width:480px"></div>
   </div>
+  
+  <!-- YENİ: SPACE MANAGER OVERLAY -->
+  <div class="overlay" id="space-manager-overlay" onclick="spaceManagerOverlayClick(event)">
+    <div class="modal" id="space-manager-box" style="max-width:480px"></div>
+  </div>
 
   <!-- CONFIRM -->
   <div class="confirm-overlay" id="confirm-overlay">
@@ -317,11 +326,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 const supabaseUrl = 'https://gxngmqewskhrbxqmnpps.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4bmdtcWV3c2tocmJ4cW1ucHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzI0ODYsImV4cCI6MjA5MzU0ODQ4Nn0.SuFoGMZFzD_Rc-FZkg1OQDZqQE_8v1H51BDYvg4LRW0';
 
-// HATA ÇÖZÜMÜ: Çakışmayı önlemek için 'supabaseClient' ismini kullanıyoruz.
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 // --- OTURUM KONTROLÜ ---
-// Sayfa açıldığında kullanıcı giriş yapmış mı diye bakar
 supabaseClient.auth.getSession().then(({ data: { session } }) => {
   if (session) showCRM();
   else showAuth();
@@ -394,13 +401,11 @@ let confirmCb = null;
 
 // --- SUPABASE VERİ KAYDETME ---
 async function save(){
-  // Hızlı çalışması için anlık olarak localStorage'a da yedekler
   localStorage.setItem('crm_db_v2', JSON.stringify(db));
 
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
 
-  // Space'leri kaydet
   const spsToUpsert = Object.values(db.spaces).map(s => ({
     id: s.id, user_id: user.id, name: s.name, color: s.color, created_at: s.createdAt
   }));
@@ -409,7 +414,6 @@ async function save(){
     if(error) console.error("Space kaydetme hatası:", error);
   }
 
-  // Sütunları kaydet
   let clsToUpsert = [];
   Object.keys(db.columns).forEach(sid => {
     db.columns[sid].forEach(c => clsToUpsert.push({ id: c.id, space_id: sid, title: c.title, dot: c.dot }));
@@ -419,7 +423,6 @@ async function save(){
     if(error) console.error("Sütun kaydetme hatası:", error);
   }
 
-  // Leadleri kaydet
   let ldsToUpsert = [];
   Object.keys(db.leads).forEach(sid => {
     db.leads[sid].forEach(l => ldsToUpsert.push({
@@ -439,7 +442,6 @@ async function load(){
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
 
-  // ORTAK ÇALIŞMA ALANI GÜNCELLEMESİ (.eq filtresi kaldırıldı, tüm veriler çekiliyor)
   const { data: sps, error: fetchError } = await supabaseClient.from('spaces').select('*');
   if (fetchError) {
     console.error("Veri çekme hatası:", fetchError);
@@ -464,7 +466,6 @@ async function load(){
     activeSpaceId = Object.keys(db.spaces)[0];
     renderAll();
   } else {
-    // Veritabanı tamamen boşsa demo verisi oluştur
     const sid = uid();
     db.spaces[sid]={id:sid,name:'Genel Marka',color:DOTS[0],createdAt:Date.now()};
     db.columns[sid]=[
@@ -814,6 +815,88 @@ function confirmDeleteLead(){
   document.getElementById('confirm-overlay').classList.add('open');
 }
 function closeConfirm(){document.getElementById('confirm-overlay').classList.remove('open');}
+
+
+// ── YENİ EKLENEN: SPACE MANAGER ──
+function manageSpaces(){
+  renderSpaceManager();
+  document.getElementById('space-manager-overlay').classList.add('open');
+}
+function closeSpaceManager(){document.getElementById('space-manager-overlay').classList.remove('open');}
+function spaceManagerOverlayClick(e){if(e.target===document.getElementById('space-manager-overlay'))closeSpaceManager();}
+
+function renderSpaceManager(){
+  const box=document.getElementById('space-manager-box');
+  box.innerHTML=`
+    <div class="modal-head">
+      <div class="modal-icon" style="font-size:18px">🏢</div>
+      <div><div class="modal-name">Spaceleri Düzenle</div><div class="modal-company">Space adlarını değiştir veya sil</div></div>
+      <button class="modal-close" onclick="closeSpaceManager()">×</button>
+    </div>
+    <div style="padding:16px 20px;max-height:55vh;overflow-y:auto">
+      <div id="sm-list">
+        ${Object.values(db.spaces).map(sp=>{
+          const cnt=(db.leads[sp.id]||[]).length;
+          return `<div class="cm-row">
+            <div class="cm-dot-wrap">
+              <div class="cm-dot" style="background:${sp.color}"></div>
+            </div>
+            <input class="cm-input" value="${sp.name}" onchange="renameSpace('${sp.id}',this.value)" onblur="renameSpace('${sp.id}',this.value)">
+            <span class="cm-count">${cnt} lead</span>
+            <button class="cm-del" onclick="confirmDeleteSpace('${sp.id}','${sp.name}',${cnt})" title="Sil">×</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeSpaceManager()">Tamam</button>
+    </div>`;
+}
+
+async function renameSpace(id, newName){
+  const trimmed=(newName||'').trim();
+  if(!trimmed)return;
+  const sp=db.spaces[id];
+  if(sp && sp.name!==trimmed){
+    sp.name=trimmed;
+    await save();
+    renderAll();
+  }
+}
+
+function confirmDeleteSpace(id, name, cnt){
+  if(Object.keys(db.spaces).length <= 1) {
+    alert("En az 1 tane space bulunmak zorundadır. Son space'i silemezsiniz!");
+    return;
+  }
+  const msg = cnt > 0
+    ? `"${name}" space'inde ${cnt} lead var. Silerseniz BU SPACE'E AİT TÜM SÜTUNLAR VE LEADLER de kalıcı olarak silinir.`
+    : `"${name}" space'i silinecek.`;
+  
+  document.getElementById('confirm-title').textContent='Space silinsin mi?';
+  document.getElementById('confirm-sub').textContent=msg;
+  document.getElementById('confirm-ok').onclick=async ()=>{
+    // Buluttan sil
+    await supabaseClient.from('spaces').delete().eq('id', id);
+    
+    // Lokalden sil
+    delete db.spaces[id];
+    delete db.columns[id];
+    delete db.leads[id];
+    
+    // Eğer silinen space aktif olansa, başka bir space'e geç
+    if(activeSpaceId === id){
+      activeSpaceId = Object.keys(db.spaces)[0];
+    }
+    
+    await save();
+    closeConfirm();
+    renderAll();
+    renderSpaceManager(); // Modalı da güncelle
+  };
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+
 
 // ── COLUMN MANAGER ──
 function manageColumns(){
