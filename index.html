@@ -213,14 +213,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
     <div id="login-form">
       <input type="email" id="login-email" class="auth-input" placeholder="E-posta adresiniz">
       <input type="password" id="login-password" class="auth-input" placeholder="Şifreniz">
-      <button class="auth-btn" onclick="handleLogin()">Giriş Yap</button>
+      <button type="button" class="auth-btn" onclick="handleLogin()">Giriş Yap</button>
       <div class="auth-switch" onclick="toggleAuth('register')">Hesabın yok mu? Kayıt ol.</div>
     </div>
 
     <div id="register-form" style="display: none;">
       <input type="email" id="reg-email" class="auth-input" placeholder="E-posta adresiniz">
       <input type="password" id="reg-password" class="auth-input" placeholder="Şifreniz">
-      <button class="auth-btn" onclick="handleRegister()">Kayıt Ol</button>
+      <button type="button" class="auth-btn" onclick="handleRegister()">Kayıt Ol</button>
       <div class="auth-switch" onclick="toggleAuth('login')">Zaten hesabın var mı? Giriş yap.</div>
     </div>
   </div>
@@ -402,14 +402,20 @@ async function save(){
   const spsToUpsert = Object.values(db.spaces).map(s => ({
     id: s.id, user_id: user.id, name: s.name, color: s.color, created_at: s.createdAt
   }));
-  if(spsToUpsert.length > 0) await supabase.from('spaces').upsert(spsToUpsert);
+  if(spsToUpsert.length > 0) {
+    const { error } = await supabase.from('spaces').upsert(spsToUpsert);
+    if(error) console.error("Space kaydetme hatası:", error);
+  }
 
   // Sütunları kaydet
   let clsToUpsert = [];
   Object.keys(db.columns).forEach(sid => {
     db.columns[sid].forEach(c => clsToUpsert.push({ id: c.id, space_id: sid, title: c.title, dot: c.dot }));
   });
-  if(clsToUpsert.length > 0) await supabase.from('columns').upsert(clsToUpsert);
+  if(clsToUpsert.length > 0) {
+    const { error } = await supabase.from('columns').upsert(clsToUpsert);
+    if(error) console.error("Sütun kaydetme hatası:", error);
+  }
 
   // Leadleri kaydet
   let ldsToUpsert = [];
@@ -420,7 +426,10 @@ async function save(){
       contacts: l.contacts, timeline: l.timeline
     }));
   });
-  if(ldsToUpsert.length > 0) await supabase.from('leads').upsert(ldsToUpsert);
+  if(ldsToUpsert.length > 0) {
+    const { error } = await supabase.from('leads').upsert(ldsToUpsert);
+    if(error) console.error("Lead kaydetme hatası:", error);
+  }
 }
 
 // --- SUPABASE VERİ ÇEKME ---
@@ -428,7 +437,13 @@ async function load(){
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
-  const { data: sps } = await supabase.from('spaces').select('*').eq('user_id', user.id);
+  // ORTAK ÇALIŞMA ALANI GÜNCELLEMESİ (.eq filtresi kaldırıldı, tüm veriler çekiliyor)
+  const { data: sps, error: fetchError } = await supabase.from('spaces').select('*');
+  if (fetchError) {
+    console.error("Veri çekme hatası:", fetchError);
+    return alert("Veritabanına bağlanılamadı: " + fetchError.message);
+  }
+
   db = { spaces: {}, columns: {}, leads: {} };
 
   if (sps && sps.length > 0) {
@@ -447,7 +462,7 @@ async function load(){
     activeSpaceId = Object.keys(db.spaces)[0];
     renderAll();
   } else {
-    // İlk kez giren kullanıcı için demo verisi oluşturup buluta gönder
+    // Veritabanı tamamen boşsa demo verisi oluştur
     const sid = uid();
     db.spaces[sid]={id:sid,name:'Genel Marka',color:DOTS[0],createdAt:Date.now()};
     db.columns[sid]=[
