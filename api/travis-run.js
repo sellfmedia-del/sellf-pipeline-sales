@@ -60,37 +60,53 @@ async function validateEmail(email, usage) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params
   });
   usage.zerobounce_calls = (usage.zerobounce_calls || 0) + 1;
-  if (!res.ok) return false;
-  return (await res.json()).status === 'valid';
+  if (!res.ok) return 'unknown';
+  return String((await res.json()).status || 'unknown').toLowerCase();
 }
 const goodTitle = title => /chief|ceo|cmo|founder|owner|president|general manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
 const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain || '') && !/\.\./.test(domain);
 async function decisionMakers(candidate, usage) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
-  const search = await apollo('mixed_people/api_search', {
+  const filters = {
     q_organization_domains_list: [domain], person_seniorities: ['owner','founder','c_suite','vp','head','director'],
-    person_titles: ['CEO','Founder','General Manager','CMO','Marketing Director','Head of Growth','E-commerce Director','Business Development Director'],
-    per_page: 10, page: 1
-  }, usage);
-  const people = (search.people || []).filter(p => p.id && goodTitle(p.title)).slice(0, 6);
+    contact_email_status: ['verified'], per_page: 25, page: 1
+  };
+  const select = result => (result.people || []).filter(p => (p.person_id || p.id) &&
+    goodTitle(p.title) && p.has_email !== false);
+  let people = select(await apollo('mixed_people/api_search', filters, usage));
+  if (people.length < 2) people = select(await apollo('mixed_people/api_search', {
+    q_organization_domains_list: [domain], contact_email_status: ['verified'], per_page: 50, page: 1
+  }, usage));
+  usage.apollo_search_matches = (usage.apollo_search_matches || 0) + people.length;
+  people = people.slice(0, 6);
   const enriched = await Promise.allSettled(people.map(person =>
-    apollo('people/match', { id: person.id, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
+    apollo('people/match', { id: person.person_id || person.id, domain,
+      reveal_personal_emails: false, reveal_phone_number: false }, usage)));
   const candidates = enriched.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
+  usage.apollo_enriched_people = (usage.apollo_enriched_people || 0) + candidates.length;
   const seen = new Set(), ready = [];
   for (const p of candidates) {
     const name = clean(p.name || `${p.first_name || ''} ${p.last_name || ''}`, 100);
     const role = clean(p.title, 120), email = String(p.email || '').toLowerCase().trim();
     const employerDomain = String(p.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '');
     if (!name.includes(' ') || !goodTitle(role) || employerDomain !== domain ||
-        !email.endsWith(`@${domain}`) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        !email.endsWith(`@${domain}`) || email.startsWith('email_not_unlocked@') ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
         seen.has(email) || p.email_status !== 'verified') continue;
     seen.add(email);
-    ready.push({ name, role, email, verification: 'apollo_verified_zerobounce_valid',
+    ready.push({ name, role, email, verification: 'apollo_verified',
       source_url: safeLink(p.linkedin_url) || null });
   }
-  const checked = await Promise.allSettled(ready.slice(0, 4).map(c => validateEmail(c.email, usage)));
-  const contacts = ready.slice(0, 4).filter((_, i) => checked[i].status === 'fulfilled' && checked[i].value).slice(0, 2);
+  usage.apollo_verified_emails = (usage.apollo_verified_emails || 0) + ready.length;
+  const shortlist = ready.slice(0, 4);
+  const checked = await Promise.allSettled(shortlist.map(c => validateEmail(c.email, usage)));
+  const contacts = shortlist.flatMap((person, i) => {
+    const status = checked[i].status === 'fulfilled' ? checked[i].value : 'unknown';
+    if (['invalid','do_not_mail','spamtrap','abuse'].includes(status)) return [];
+    return [{ ...person, verification: status === 'valid' ?
+      'apollo_verified_zerobounce_valid' : 'apollo_verified' }];
+  }).slice(0, 2);
   return contacts;
 }
 
