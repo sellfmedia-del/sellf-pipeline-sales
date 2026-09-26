@@ -175,7 +175,7 @@ async function claude(system, payload, maxTokens, usage) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', signal: AbortSignal.timeout(90000),
     headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, temperature: 0.2,
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens,
       system, messages: [{ role: 'user', content: JSON.stringify(payload) }] })
   });
   const body = await response.json();
