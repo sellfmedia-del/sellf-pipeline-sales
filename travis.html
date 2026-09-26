@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travis · Intent Motoru</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="/travis.css">
+</head>
+<body>
+  <div id="crm-view" style="display:block">
+    <div class="app">
+      <aside class="sidebar">
+        <div class="sidebar-logo"><span>P</span> Pipeline CRM</div>
+        <a class="travis-switch" href="/">← Manuel Pipeline</a>
+        <a class="travis-switch active" href="/travis.html">✦ Travis · Intent Motoru</a>
+        <div class="sidebar-section">INTENT SPACES</div>
+        <div id="travis-spaces"></div>
+        <div class="travis-hint">Travis kartları manuel Pipeline boardundan ayrı tutulur.</div>
+        <div class="sidebar-bottom">Travis · satış hafızası</div>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <span class="topbar-title" id="travis-title">Travis</span>
+          <span class="topbar-badge" id="travis-count">—</span>
+          <div class="topbar-actions">
+            <span class="travis-state" id="travis-state">Yükleniyor…</span>
+            <button class="btn btn-primary" id="travis-run" type="button">✦ Travis’i Çalıştır</button>
+          </div>
+        </div>
+        <div class="board-scroll"><div class="board" id="travis-board"></div></div>
+      </main>
+    </div>
+    <div class="overlay" id="travis-overlay">
+      <div class="modal travis-modal" role="dialog" aria-modal="true" aria-label="Intent detayı" id="travis-modal"></div>
+    </div>
+  </div>
+  <script src="/travis.js"></script>
+</body>
+</html>
