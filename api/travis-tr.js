@@ -166,8 +166,13 @@ export function createTRResearch(d) {
   }
   async function findContacts(c, usage, record = () => {}, allowAlternate = strongSignal(c)) {
     const name = clean(c.company, 120);
-    const domain = domainOK(c.domain) ? c.domain.toLowerCase().replace(/^www\./, '') :
-      await officialDomain(name, usage).catch(e => { record('Domain ' + name, e); return null; });
+    const resolved = await officialDomain(name, usage).catch(e => { record('Domain ' + name, e); return null; });
+    const supplied = String(c.domain || '').toLowerCase().replace(/^www\./, '');
+    const sourceBacked = domainOK(supplied) && (c.evidence || []).some(e => {
+      try { const host = new URL(e.url).hostname.replace(/^www\./, '');
+        return host === supplied || host.endsWith('.' + supplied); } catch { return false; }
+    });
+    const domain = resolved || (sourceBacked ? supplied : null);
     const profiles = [];
     let contacts = domain ? await decisionMakers({ ...c, domain }, usage, profiles).catch(e => {
       record('Kontak ' + name, e); return [];

@@ -328,22 +328,26 @@ async function tavily(query, usage, index, days = 21) {
   return (body.results || []).map(r => ({ url: r.url, title: clamp(r.title, 160),
     snippet: clamp(r.content, 750), search_date: r.published_date || null }));
 }
-async function officialDomain(company, usage) {
+export async function officialDomain(company, usage) {
   usage.domain_lookups = (usage.domain_lookups || 0) + 1;
   // Apollo's company index resolves brands whose home pages do not repeat their legal name.
   try {
     const result = await apollo('mixed_companies/search', { q_organization_name: company, per_page: 10 }, usage);
     const companyName = normalized(company);
-    const match = [...(result.organizations || []), ...(result.accounts || [])].find(org => {
+    const matches = [...(result.organizations || []), ...(result.accounts || [])].filter(org => {
       const name = normalized(org.name || '');
       return name === companyName || (name.length >= 5 && companyName.length >= 5 &&
         (name.includes(companyName) || companyName.includes(name)));
     });
-    if (match) {
-      const domain = String(match.primary_domain || match.domain || match.organization?.primary_domain || '')
-        .toLowerCase().replace(/^www\./, '');
-      if (domainOK(domain)) return domain;
-    }
+    const domains = matches.map(match => String(match.primary_domain || match.domain || match.organization?.primary_domain || '')
+      .toLowerCase().replace(/^www\./, ''))
+      .filter(domainOK).filter(domain => !/\.(?:com|net|org)\.(?!tr$)[a-z]{2}$/i.test(domain));
+    domains.sort((a, b) => {
+      const score = domain => (domain === `${companyName}.com` ? 20 : 0) +
+        (domain.endsWith('.com') ? 5 : 0) + (domain.split('.').length === 2 ? 3 : 0);
+      return score(b) - score(a) || a.length - b.length;
+    });
+    if (domains[0]) return domains[0];
   } catch { /* Tavily remains available when Apollo organization search fails. */ }
   const response = await fetch('https://api.tavily.com/search', {
     method: 'POST', signal: AbortSignal.timeout(15000),
