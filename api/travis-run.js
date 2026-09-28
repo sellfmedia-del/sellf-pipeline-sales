@@ -97,14 +97,16 @@ const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test
 export async function decisionMakers(candidate, usage, profileCandidates = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
+  const personLocation = candidate.country === 'UK' ? 'United Kingdom' :
+    candidate.country === 'US' ? 'United States' : 'Turkey';
   const filters = { q_organization_domains_list: [domain],
     person_seniorities: ['owner','founder','c_suite','vp','head','director'], per_page: 100 };
   const searches = [
-    { q_organization_domains_list: [domain], person_locations: ['Turkey'],
+    { q_organization_domains_list: [domain], person_locations: [personLocation],
       person_titles: ['General Manager', 'CEO', 'CMO', 'Marketing Director', 'Growth Director', 'Sales Director'],
       per_page: 100, page: 1 },
-    { ...filters, person_locations: ['Turkey'], page: 1 },
-    { ...filters, person_locations: ['Turkey'], page: 2 }
+    { ...filters, person_locations: [personLocation], page: 1 },
+    { ...filters, person_locations: [personLocation], page: 2 }
   ];
   const people = [], seenPeople = new Set();
   for (const query of searches) {
