@@ -41,6 +41,25 @@ test('RSS round keeps dated entries and checkpoints despite failed feeds', async
   } finally { globalThis.fetch = original; }
 });
 
+test('LinkedIn research does not start the paid Google Places actor by default', async () => {
+  const { dependency, patches } = harness();
+  const previous = process.env.TRAVIS_GOOGLE_PLACES_ENABLED;
+  delete process.env.TRAVIS_GOOGLE_PLACES_ENABLED;
+  let actorCalls = 0;
+  dependency.actor = async () => { actorCalls++; return []; };
+  dependency.linkedInSignals = async () => [{ kind: 'linkedin_post', url: 'https://www.linkedin.com/posts/example',
+    title: 'Marka duyurusu', content: 'Yeni markamız için pazarlama partneri arıyoruz.' }];
+  try {
+    const result = await createTRResearch(dependency).step({ id: 'run-posts',
+      strategy: { phase: 2, space_id: 'travis-main' } }, 'jwt', {});
+    assert.equal(actorCalls, 0);
+    assert.equal(result.phase, 3);
+    assert.equal(patches.at(-1).strategy.phase, 3);
+  } finally {
+    if (previous !== undefined) process.env.TRAVIS_GOOGLE_PLACES_ENABLED = previous;
+  }
+});
+
 test('ordinary intent without two verified contacts is not saved', async () => {
   const sourceRows = [{ url: 'https://example.com/lansman', title: 'Lansman',
     content: 'Şirket yeni markasını tanıttı.', published_date: new Date().toISOString().slice(0, 10), source_type: 'rss' }];
