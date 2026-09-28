@@ -64,11 +64,36 @@ test('ordinary intent with two verified decision makers is saved', async () => {
     { name: 'Ayşe Yılmaz', role: 'CMO', email: 'ayse@example.com', verification: 'apollo_verified_zerobounce_valid' },
     { name: 'Ali Kaya', role: 'CEO', email: 'ali@example.com', verification: 'apollo_verified_zerobounce_valid' }
   ];
-  const result = await createTRResearch(dependency).step({ id: 'run4', strategy: { phase: 6, space_id: 'travis-main',
-    candidates: [{ company: 'Örnek Gıda', signal_summary: 'Ürün duyurusu', confidence: 'medium',
-      evidence: [{ url: source.url, fact: 'Yeni ürün duyuruldu' }] }] } }, 'jwt', {});
-  assert.equal(result.added, 1);
-  assert.equal(writes.find(x => x.path === 'travis_leads').body.contact_status, 'complete');
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ results: [] }), { status: 200 });
+  try {
+    const result = await createTRResearch(dependency).step({ id: 'run4', strategy: { phase: 6, space_id: 'travis-main',
+      candidates: [{ company: 'Örnek Gıda', signal_summary: 'Ürün duyurusu', confidence: 'medium',
+        evidence: [{ url: source.url, fact: 'Yeni ürün duyuruldu' }] }] } }, 'jwt', {});
+    assert.equal(result.added, 1);
+    assert.equal(writes.find(x => x.path === 'travis_leads').body.contact_status, 'complete');
+  } finally { globalThis.fetch = original; }
+});
+
+test('official-site names are checked before email enrichment', async () => {
+  const { dependency } = harness();
+  dependency.officialDomain = async () => 'example.com';
+  dependency.pageText = async url => url.endsWith('/yonetim') ?
+    'Örnek Gıda yönetim kadrosu ve güncel görev dağılımı: Ayşe Yılmaz, Pazarlama Direktörü. Cem Kaya, Genel Müdür. Şirketin yönetim kadrosu Türkiye faaliyetlerini ve ticari büyüme programını yürütüyor.' : '';
+  dependency.claude = async () => ({ people: [
+    { name: 'Ayşe Yılmaz', role: 'Pazarlama Direktörü', role_quote: 'Pazarlama Direktörü', url: 'https://example.com/yonetim' },
+    { name: 'Cem Kaya', role: 'Genel Müdür', role_quote: 'Genel Müdür', url: 'https://example.com/yonetim' },
+    { name: 'Uydurma Kişi', role: 'CEO', role_quote: 'CEO', url: 'https://example.com/yonetim' }
+  ] });
+  let received = [];
+  dependency.decisionMakers = async (_candidate, _usage, _profiles, named) => { received = named; return []; };
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ results: [] }), { status: 200 });
+  try {
+    await createTRResearch(dependency).step({ id: 'run6', strategy: { phase: 6, space_id: 'travis-main',
+      candidates: [{ company: 'Örnek Gıda', confidence: 'medium', evidence: [] }] } }, 'jwt', {});
+    assert.deepEqual(received.map(x => x.name), ['Ayşe Yılmaz', 'Cem Kaya']);
+  } finally { globalThis.fetch = original; }
 });
 
 test('very strong dated event accepts validated general contact when named contacts are missing', async () => {

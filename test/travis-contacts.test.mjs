@@ -39,7 +39,7 @@ test('Turkey search enriches masked Apollo people and accepts verified work emai
     }
     if (String(url).includes('people/bulk_match')) {
       const details = JSON.parse(options.body).details;
-      assert.deepEqual(details, [{ id: '66fbbe08e86bf4000138d8ca' }, { id: '66fbbcf0e86bf40001387ef9' }]);
+      assert.deepEqual(details.map(x => x.id), ['66fbbe08e86bf4000138d8ca', '66fbbcf0e86bf40001387ef9']);
       return new Response(JSON.stringify({ matches: [
         { id: details[0].id, name: 'Cenk Erkan', title: 'Sales and Marketing Director', organization: { primary_domain: 'cargill.com' }, linkedin_url: 'http://www.linkedin.com/in/cenk-erkan' },
         { id: details[1].id, name: 'Cem Beysel', title: 'Senior Director, Growth & Strategy', organization: { primary_domain: 'cargill.com' } }
@@ -86,6 +86,39 @@ test('ZeroBounce Finder supplies a missing Apollo email without validating Apoll
     assert.equal(finderCalls, 1);
     assert.equal(contacts[0].email, 'osman.demirel@emerson.com');
     assert.equal(contacts[0].verification, 'zerobounce_finder_high_confidence');
+  } finally {
+    globalThis.fetch = original;
+    if (oldKey === undefined) delete process.env.ZEROBOUNCE_API_KEY;
+    else process.env.ZEROBOUNCE_API_KEY = oldKey;
+  }
+});
+
+test('source-backed name reaches ZeroBounce when Apollo finds no person', async () => {
+  const original = globalThis.fetch;
+  const oldKey = process.env.ZEROBOUNCE_API_KEY;
+  process.env.ZEROBOUNCE_API_KEY = 'test';
+  let finderCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: [] }), { status: 200 });
+    if (String(url).includes('people/bulk_match')) return new Response(JSON.stringify({ matches: [], waterfall: { status: 'failed' } }), { status: 200 });
+    if (String(url).includes('people/match')) return new Response(JSON.stringify({ person: null }), { status: 200 });
+    if (String(url).includes('guessformat')) {
+      finderCalls++;
+      const body = new URLSearchParams(options.body);
+      assert.equal(body.get('first_name'), 'Ayşe');
+      assert.equal(body.get('last_name'), 'Yılmaz');
+      return new Response(JSON.stringify({ email: 'ayse.yilmaz@example.com', email_confidence: 'HIGH' }), { status: 200 });
+    }
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const contacts = await decisionMakers({ company: 'Example', domain: 'example.com' }, {}, [], [
+      { name: 'Ayşe Yılmaz', role: 'Pazarlama Direktörü', source_url: 'https://example.com/yonetim' }
+    ]);
+    assert.equal(finderCalls, 1);
+    assert.deepEqual(contacts, [{ name: 'Ayşe Yılmaz', role: 'Pazarlama Direktörü',
+      email: 'ayse.yilmaz@example.com', verification: 'zerobounce_finder_high_confidence',
+      source_url: 'https://example.com/yonetim' }]);
   } finally {
     globalThis.fetch = original;
     if (oldKey === undefined) delete process.env.ZEROBOUNCE_API_KEY;
@@ -145,5 +178,33 @@ test('partially accepted Apollo waterfall is polled and includes LinkedIn identi
     const contacts = await decisionMakers({ domain: 'example.com' }, {});
     assert.equal(polled, true);
     assert.equal(contacts[0].email, 'person.one@example.com');
+  } finally { globalThis.fetch = original; }
+});
+
+test('source-backed names lead Apollo enrichment even when people search is empty', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: [] }), { status: 200 });
+    if (String(url).includes('people/bulk_match')) {
+      const details = JSON.parse(options.body).details;
+      assert.deepEqual(details.map(x => `${x.first_name} ${x.last_name}`), ['Ayşe Yılmaz', 'Cem Kaya']);
+      assert.equal(details[0].domain, 'example.com');
+      return new Response(JSON.stringify({ matches: details.map((d, i) => ({ id: String(i), name: `${d.first_name} ${d.last_name}`,
+        title: i ? 'General Manager' : 'Marketing Director', organization: { primary_domain: 'example.com' } })),
+        waterfall: { status: 'accepted' }, request_id: '-123' }), { status: 200 });
+    }
+    if (String(url).includes('webhook_result')) return new Response(JSON.stringify({ webhook_result: {
+      status: 'success', people: [
+        { id: '0', emails: [{ email: 'ayse.yilmaz@example.com', email_status_cd: 'Verified' }] },
+        { id: '1', emails: [{ email: 'cem.kaya@example.com', email_status_cd: 'Verified' }] }
+      ] } }), { status: 200 });
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const contacts = await decisionMakers({ company: 'Örnek Gıda', domain: 'example.com' }, {}, [], [
+      { name: 'Ayşe Yılmaz', role: 'Pazarlama Direktörü', source_url: 'https://example.com/yonetim' },
+      { name: 'Cem Kaya', role: 'Genel Müdür', source_url: 'https://example.com/yonetim' }
+    ]);
+    assert.deepEqual(contacts.map(x => x.email), ['ayse.yilmaz@example.com', 'cem.kaya@example.com']);
   } finally { globalThis.fetch = original; }
 });
