@@ -123,6 +123,7 @@ grant select on public.travis_members to authenticated;
 grant select on public.travis_spaces, public.travis_columns to authenticated;
 grant select, insert, update on public.travis_lessons to authenticated;
 grant select, insert, update on public.travis_leads, public.travis_research, public.travis_evidence, public.travis_runs to authenticated;
+grant delete on public.travis_leads to authenticated;
 grant select, insert on public.travis_interactions to authenticated;
 
 create policy "travis own membership" on public.travis_members for select to authenticated
@@ -146,6 +147,8 @@ with check (exists (select 1 from public.travis_members m where m.user_id = (sel
 create policy "travis members update leads" on public.travis_leads for update to authenticated
 using (exists (select 1 from public.travis_members m where m.user_id = (select auth.uid())))
 with check (exists (select 1 from public.travis_members m where m.user_id = (select auth.uid())));
+create policy "travis owner deletes leads" on public.travis_leads for delete to authenticated
+using (exists (select 1 from public.travis_members m where m.user_id = (select auth.uid()) and m.role = 'owner'));
 
 create policy "travis members read research" on public.travis_research for select to authenticated
 using (exists (select 1 from public.travis_members m where m.user_id = (select auth.uid())));

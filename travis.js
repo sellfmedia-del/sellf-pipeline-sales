@@ -116,6 +116,21 @@ function openRejectedArchive() {
 }
 $('travis-rejected').onclick = openRejectedArchive;
 
+async function deleteLeadPermanently(lead, button) {
+  if (view.role !== 'owner') return;
+  if (!window.confirm(`“${lead.company}” intent kartı ve tüm ilişkili araştırma, kaynak ve görüşme kayıtları Supabase’den kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam edilsin mi?`)) return;
+  button.disabled = true;
+  const { data, error } = await client.from('travis_leads').delete()
+    .eq('id', lead.id).eq('space_id', lead.space_id).select('id');
+  if (error || data?.length !== 1) {
+    state(error?.message || 'Kart silinemedi. Yetkinizi veya kayıt durumunu kontrol edin.', true);
+    button.disabled = false;
+    return;
+  }
+  closeLead();
+  await loadTravis();
+  state('Intent kartı ve bağlı kayıtları kalıcı olarak silindi.');
+}
 function openLead(id) {
   view.openLead = id;
   const lead = view.leads.find(l => l.id === id), info = view.research.find(r => r.lead_id === id);
@@ -246,6 +261,12 @@ function openLead(id) {
   });
   right.append(log);
   body.append(left, right); modal.append(head, body);
+  if (view.role === 'owner') {
+    const footer = make('div', 'modal-footer-bar');
+    const remove = make('button', 'del-lead-btn', 'Kalıcı olarak sil'); remove.type = 'button';
+    remove.onclick = () => deleteLeadPermanently(lead, remove);
+    footer.append(remove); modal.append(footer);
+  }
   $('travis-overlay').classList.add('open');
 }
 function closeLead() { $('travis-overlay').classList.remove('open'); view.openLead = null; }
