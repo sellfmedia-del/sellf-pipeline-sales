@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { createTRResearch } from './travis-tr.js';
+import { createUKResearch } from './travis-uk.js';
 
 // Server-only provider adapters. No provider token is returned to the browser or stored in Supabase.
 const recent = (value, days = 21) => {
@@ -14,6 +15,12 @@ const TR_POST_TERMS = [...POST_TERMS.slice(0, 4), 'yeni genel müdür atandı', 
   'yeni CFO atandı', 'yeni pazarlama direktörü', 'yeni CMO', 'yeni markamızı tanıttık',
   'yeni ürünümüzü lanse ettik', 'yeni pazara giriyoruz', 'ihracat distribütör anlaşması',
   'yeni mağazamız açıldı', 'franchise ağımızı büyütüyoruz'];
+const UK_POST_TERMS = [
+  'looking for a marketing agency', 'seeking an ecommerce partner', 'looking for a growth partner',
+  'appointed our new CEO', 'appointed our new CMO', 'new managing director',
+  'launching our new brand', 'expanding our wholesale network', 'entering the UK market',
+  'new retail partnership', 'launching our DTC store'
+].map(term => `${term} UK`);
 const COUNTRIES = {
   TR: { name: 'Türkiye', searchTerm: 'Türkiye', linkedinLocation: 'Turkey',
     aliases: /\b(?:Turkey|Turkish|Türkiye|Türk(?:iye)?)\b/i,
@@ -43,7 +50,7 @@ async function actor(name, input, usage) {
 }
 async function linkedInSignals(usage, countryCode) {
   const country = COUNTRIES[countryCode];
-  const postTerms = countryCode === 'TR' ? TR_POST_TERMS :
+  const postTerms = countryCode === 'TR' ? TR_POST_TERMS : countryCode === 'UK' ? UK_POST_TERMS :
     [...POST_TERMS.slice(4), 'new market entry', 'retail expansion', 'distributor partnership'].map(term => scopedQuery(term, country));
   const postsInput = { maxPosts: 5, postedLimit: 'month', sortBy: 'date',
     scrapeComments: false, scrapeReactions: false, searchQueries: postTerms };
@@ -53,7 +60,7 @@ async function linkedInSignals(usage, countryCode) {
   usage.linkedin_jobs_raw = 0;
   usage.linkedin_posts_raw = posts.length;
   usage.linkedin_errors = result.error ? [clean(result.error.message, 120)] : [];
-  const items = posts.filter(p => recent(p.postedAt?.date, countryCode === 'TR' ? 30 : 21)).map(p => ({ title: clean(`${p.author?.name} - LinkedIn Post`, 160), url: safeLink(p.linkedinUrl),
+  const items = posts.filter(p => recent(p.postedAt?.date, countryCode === 'US' ? 21 : 30)).map(p => ({ title: clean(`${p.author?.name} - LinkedIn Post`, 160), url: safeLink(p.linkedinUrl),
       content: clean(`[${p.author?.info || ''}] ${p.content || ''}`),
       published_date: new Date(p.postedAt.date).toISOString().slice(0, 10), kind: 'linkedin_post' }));
   const usable = [...new Map(items.filter(i => i.url && i.content).map(i => [i.url, i])).values()];
@@ -442,7 +449,7 @@ async function feedback(jwt) {
   const [spaces, columns, leads, own, interactions, lessons] = await Promise.all([
     sb('spaces?select=id,name', jwt), sb('columns?select=id,title,space_id', jwt),
     sb('leads?select=id,company,notes,timeline,col_id,space_id&limit=150', jwt),
-    sb('travis_leads?select=id,company,domain,col_id,review_status,review_reason&limit=200', jwt),
+    sb('travis_leads?select=id,company,domain,country,col_id,review_status,review_reason&limit=200', jwt),
     sb('travis_interactions?select=lead_id,type,note,occurred_at&order=created_at.desc&limit=100', jwt),
     sb('travis_lessons?select=subject,conclusion,sample_size,confidence&limit=30', jwt)
   ]);
@@ -648,36 +655,36 @@ export default async function handler(req, res) {
   if (!member.length) return res.status(403).json({ error: 'Travis erişimi yok' });
   const space = await sb('travis_spaces?select=id&id=eq.' + encodeURIComponent(req.body?.space_id || '') + '&limit=1', jwt);
   if (!space.length) return res.status(400).json({ error: 'Space bulunamadı' });
-  if (countryCode === 'TR' && req.body?.action === 'enrich_lead') {
+  if (['TR', 'UK'].includes(countryCode) && req.body?.action === 'enrich_lead') {
     const id = String(req.body.lead_id || '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'Lead ID geçersiz' });
-    const lead = (await sb(`travis_leads?select=*&id=eq.${id}&space_id=eq.${space[0].id}&country=eq.TR&limit=1`, jwt))[0];
+    const lead = (await sb(`travis_leads?select=*&id=eq.${id}&space_id=eq.${space[0].id}&country=eq.${countryCode}&limit=1`, jwt))[0];
     if (!lead) return res.status(404).json({ error: 'Travis lead bulunamadı' });
     try {
       const [research, evidence] = await Promise.all([
         sb(`travis_research?select=*&lead_id=eq.${id}&limit=1`, jwt),
         sb(`travis_evidence?select=*&lead_id=eq.${id}`, jwt)
       ]);
-      const engine = createTRResearch({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
+      const engine = (countryCode === 'UK' ? createUKResearch : createTRResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
         tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.enrichExisting(lead, research[0], evidence, jwt, {});
       return res.status(200).json(result);
     } catch (error) { return res.status(500).json({ error: clamp(error.message, 300) }); }
   }
-  if (countryCode === 'TR') {
-    const usage = { target_country: 'TR', input_tokens: 0, output_tokens: 0, tavily_credits: 0,
+  if (['TR', 'UK'].includes(countryCode)) {
+    const usage = { target_country: countryCode, input_tokens: 0, output_tokens: 0, tavily_credits: 0,
       apify_actor_runs: 0, apollo_calls: 0, zerobounce_calls: 0, gemini_calls: 0 };
     let run;
     try {
       if (req.body?.action === 'step') {
         const matches = await sb(`travis_runs?select=*&id=eq.${encodeURIComponent(req.body.run_id || '')}&user_id=eq.${user.id}&status=eq.running&limit=1`, jwt);
         run = matches[0];
-        if (!run || run.strategy?.target_country !== 'TR' || run.strategy?.space_id !== space[0].id)
-          return res.status(404).json({ error: 'Çalışan Türkiye araştırması bulunamadı' });
+        if (!run || run.strategy?.target_country !== countryCode || run.strategy?.space_id !== space[0].id)
+          return res.status(404).json({ error: 'Çalışan ülke araştırması bulunamadı' });
       } else {
         const running = await sb(`travis_runs?select=*&user_id=eq.${user.id}&status=eq.running&limit=1`, jwt);
         if (running[0]) {
-          if (running[0].strategy?.target_country !== 'TR') return res.status(409).json({ error: 'Başka ülke araştırması sürüyor' });
+          if (running[0].strategy?.target_country !== countryCode) return res.status(409).json({ error: 'Başka ülke araştırması sürüyor' });
           if (Date.now() - new Date(running[0].started_at).getTime() > 60 * 60 * 1000)
             await sb(`travis_runs?id=eq.${running[0].id}`, jwt, { method: 'PATCH', body: {
               status: 'failed', error_text: 'Araştırma bir saat içinde tamamlanmadı', completed_at: new Date().toISOString()
@@ -686,12 +693,12 @@ export default async function handler(req, res) {
         }
         if (!run) {
           const created = await sb('travis_runs', jwt, { method: 'POST', body: { user_id: user.id,
-            status: 'running', strategy: { target_country: 'TR', space_id: space[0].id, phase: 0 } } });
+            status: 'running', strategy: { target_country: countryCode, space_id: space[0].id, phase: 0 } } });
           run = created[0];
         }
         return res.status(200).json({ run_id: run.id, phase: run.strategy.phase, completed: false });
       }
-      const engine = createTRResearch({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
+      const engine = (countryCode === 'UK' ? createUKResearch : createTRResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
         tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.step(run, jwt, { ...usage, ...(run.usage || {}) });
       return res.status(200).json({ run_id: run.id, ...result });
