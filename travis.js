@@ -4,7 +4,7 @@ const client = window.supabase.createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4bmdtcWV3c2tocmJ4cW1ucHBzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzI0ODYsImV4cCI6MjA5MzU0ODQ4Nn0.SuFoGMZFzD_Rc-FZkg1OQDZqQE_8v1H51BDYvg4LRW0'
 );
 
-const view = { spaces: [], columns: [], leads: [], research: [], evidence: [], interactions: [], activeSpace: null, openLead: null };
+const view = { spaces: [], columns: [], leads: [], research: [], evidence: [], interactions: [], activeSpace: null, openLead: null, role: null };
 const $ = id => document.getElementById(id);
 const state = (message, error = false) => { $('travis-state').textContent = message; $('travis-state').classList.toggle('error', error); };
 const make = (tag, className, content) => {
@@ -29,7 +29,7 @@ async function loadTravis() {
   ]);
   const failed = [spaces, columns, leads, research, evidence, interactions].find(x => x.error);
   if (failed) { state('Veri yüklenemedi: ' + failed.error.message, true); return; }
-  Object.assign(view, { spaces: spaces.data, columns: columns.data, leads: leads.data,
+  Object.assign(view, { spaces: spaces.data, columns: columns.data, leads: leads.data, role: member.data.role,
     research: research.data, evidence: evidence.data, interactions: interactions.data });
   if (!view.spaces.some(s => s.id === view.activeSpace)) view.activeSpace = view.spaces[0]?.id || null;
   render();
@@ -43,12 +43,15 @@ function render() {
     row.type = 'button';
     row.style.width = 'calc(100% - 8px)';
     const dot = make('span', 'sp-dot'); dot.style.background = space.color || '#378ADD';
-    row.append(dot, make('span', 'sp-name', space.name), make('span', 'sp-count', String(view.leads.filter(l => l.space_id === space.id).length)));
+    row.append(dot, make('span', 'sp-name', space.name), make('span', 'sp-count', String(view.leads.filter(l => l.space_id === space.id && l.review_status !== 'rejected').length)));
     row.onclick = () => { view.activeSpace = space.id; render(); };
     sidebar.append(row);
   });
   $('travis-title').textContent = view.spaces.find(s => s.id === view.activeSpace)?.name || 'Intent Motoru';
-  const leads = view.leads.filter(l => l.space_id === view.activeSpace);
+  const leads = view.leads.filter(l => l.space_id === view.activeSpace && l.review_status !== 'rejected');
+  const rejectedCount = view.leads.filter(l => l.space_id === view.activeSpace && l.review_status === 'rejected').length;
+  $('travis-rejected').hidden = rejectedCount === 0;
+  $('travis-rejected').textContent = `Reddedilenler (${rejectedCount})`;
   $('travis-count').textContent = leads.length + ' intent';
   const board = $('travis-board'); board.replaceChildren();
   view.columns.filter(c => c.space_id === view.activeSpace).forEach(column => {
@@ -79,7 +82,6 @@ function render() {
       top.append(names, make('div', 'card-avatar', (lead.company || '?').slice(0, 1).toUpperCase()));
       card.append(top, make('div', 'card-date', lead.country || ''));
       if (lead.review_status === 'pending') card.append(make('div', 'card-value', 'Onay bekliyor' + (lead.contact_status === 'incomplete' ? ' · Kontak eksik' : '')));
-      if (lead.review_status === 'rejected') card.append(make('div', 'card-value', 'Reddedildi · ' + (lead.review_reason || '')));
       const info = view.research.find(r => r.lead_id === lead.id);
       if (info?.timing_reason) card.append(make('div', 'card-value', info.timing_reason.slice(0, 95)));
       card.onclick = () => openLead(lead.id);
@@ -95,6 +97,25 @@ function section(parent, title, value) {
   parent.append(box);
   return box;
 }
+function openRejectedArchive() {
+  const items = view.leads.filter(l => l.space_id === view.activeSpace && l.review_status === 'rejected');
+  const modal = $('travis-modal'); modal.replaceChildren();
+  const head = make('div', 'modal-head');
+  const title = make('div', 'modal-name', 'Reddedilen intentler');
+  const close = make('button', 'modal-close', '×'); close.type = 'button'; close.onclick = closeLead;
+  head.append(title, close);
+  const list = make('div', 'travis-archive');
+  items.forEach(lead => {
+    const row = make('button', 'travis-archive-row'); row.type = 'button';
+    row.append(make('strong', '', lead.company), make('span', '', lead.review_reason || 'Ret nedeni belirtilmemiş'));
+    row.onclick = () => openLead(lead.id);
+    list.append(row);
+  });
+  modal.append(head, list);
+  $('travis-overlay').classList.add('open');
+}
+$('travis-rejected').onclick = openRejectedArchive;
+
 function openLead(id) {
   view.openLead = id;
   const lead = view.leads.find(l => l.id === id), info = view.research.find(r => r.lead_id === id);
@@ -177,7 +198,7 @@ function openLead(id) {
       if (!value) { state('Ret nedenini yazın.', true); reason.focus(); return; }
       const { error } = await client.from('travis_leads').update({ review_status: 'rejected', review_reason: value }).eq('id', id);
       if (error) { state(error.message, true); return; }
-      lead.review_status = 'rejected'; lead.review_reason = value; await loadTravis(); openLead(id);
+      closeLead(); await loadTravis(); state('Intent boarddan kaldırıldı; ret nedeni Supabase’de saklandı.');
     };
     review.append(hint, approve, reason, reject); right.append(review);
   } else if (lead.review_status === 'rejected') {

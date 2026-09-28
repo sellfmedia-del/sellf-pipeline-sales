@@ -209,6 +209,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .travis-section{margin-bottom:20px}
 .travis-section h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:9px}
 .travis-section p{line-height:1.55;font-size:13px;white-space:pre-wrap}
+.travis-archive{padding:16px 20px;max-height:65vh;overflow:auto}
+.travis-archive-row{width:100%;display:flex;flex-direction:column;gap:5px;text-align:left;padding:12px;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);cursor:pointer}
+.travis-archive-row:hover{background:var(--surface2)}
+.travis-archive-row span{font-size:11px;color:var(--text2)}
 .travis-source{display:block;font-size:12px;line-height:1.4;color:var(--blue);margin:5px 0;overflow-wrap:anywhere}
 .travis-field{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:7px;font:inherit;background:white}
 textarea.travis-field{min-height:86px;resize:vertical}
