@@ -25,6 +25,13 @@
           <span class="topbar-badge" id="travis-count">—</span>
           <div class="topbar-actions">
             <span class="travis-state" id="travis-state">Yükleniyor…</span>
+            <label class="travis-country-label" for="travis-country">Arama ülkesi</label>
+            <select class="travis-country" id="travis-country" aria-label="Intent arama ülkesi" required>
+              <option value="" selected disabled>Ülke seçin</option>
+              <option value="TR">Türkiye'deki intentler</option>
+              <option value="UK">UK'deki intentler</option>
+              <option value="US">United States'teki intentler</option>
+            </select>
             <button class="btn btn-primary" id="travis-run" type="button">✦ Travis’i Çalıştır</button>
           </div>
         </div>

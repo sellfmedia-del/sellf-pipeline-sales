@@ -174,18 +174,21 @@ function closeLead() { $('travis-overlay').classList.remove('open'); view.openLe
 $('travis-overlay').onclick = ev => { if (ev.target === $('travis-overlay')) closeLead(); };
 
 $('travis-run').onclick = async () => {
-  const button = $('travis-run'); button.disabled = true; state('Travis LinkedIn ve web sinyallerini araştırıyor…');
+  const country = $('travis-country').value;
+  if (!['TR', 'UK', 'US'].includes(country)) { state('Önce arama ülkesini seçin.', true); $('travis-country').focus(); return; }
+  const button = $('travis-run'); button.disabled = true; $('travis-country').disabled = true;
+  state($('travis-country').selectedOptions[0].textContent + ' için LinkedIn ve web sinyalleri araştırılıyor…');
   try {
     const { data: auth } = await client.auth.getSession();
     const response = await fetch('/api/travis-run', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.session.access_token },
-      body: JSON.stringify({ space_id: view.activeSpace })
+      body: JSON.stringify({ space_id: view.activeSpace, country })
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Araştırma tamamlanamadı');
     await loadTravis();
     state(result.added + ' yeni intent · ' + result.reviewed + ' kaynak incelendi · ' + (result.skipped_contacts || 0) + ' marka iki doğrulanmış kişi bulunamadığı için atlandı');
   } catch (error) { state(error.message, true); }
-  finally { button.disabled = false; }
+  finally { button.disabled = false; $('travis-country').disabled = false; }
 };
 loadTravis();

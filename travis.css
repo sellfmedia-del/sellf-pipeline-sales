@@ -61,7 +61,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .topbar{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0}
 .topbar-title{font-size:15px;font-weight:600;color:var(--text)}
 .topbar-badge{font-size:11px;color:var(--text3);background:var(--surface2);border-radius:99px;padding:2px 8px}
-.topbar-actions{margin-left:auto;display:flex;gap:8px}
+.topbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.travis-country-label{font-size:11px;color:var(--text2);white-space:nowrap}
+.travis-country{font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);max-width:210px}
+.travis-country:disabled{opacity:.65}
+.topbar-actions .travis-state{max-width:330px}
+@media(max-width:850px){.topbar{height:auto;min-height:52px;flex-wrap:wrap;padding:10px 16px}.topbar-actions{width:100%;margin-left:0;flex-wrap:wrap}.topbar-actions .travis-state{width:100%;max-width:none}.travis-country-label{display:none}.travis-country{flex:1;max-width:none}}
 .btn{font-size:12px;padding:6px 13px;border-radius:var(--radius-sm);border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2);font-weight:500;white-space:nowrap}
 .btn:hover{background:var(--surface2)}
 .btn-primary{background:var(--text);color:#fff;border-color:var(--text)}
