@@ -131,23 +131,33 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
   const ids = shortlist.map(p => p.person_id || p.id);
   let candidates = [], waterfallEmails = new Map();
   try {
+    const details = shortlist.map(p => ({
+      id: p.person_id || p.id,
+      ...(safeLink(p.linkedin_url) ? { linkedin_url: safeLink(p.linkedin_url) } : {}),
+      ...(p.first_name && p.last_name && !/\*/.test(p.last_name) ?
+        { first_name: p.first_name, last_name: p.last_name } : {})
+    }));
     const initial = await apollo('people/bulk_match?run_waterfall_email=true&poll_only=true',
-      { details: ids.map(id => ({ id })), reveal_personal_emails: false }, usage);
+      { details, reveal_personal_emails: false }, usage);
     candidates = (initial.matches || []).filter(Boolean);
-    if (initial.waterfall?.status === 'accepted' && initial.request_id) {
+    usage.apollo_waterfall_statuses = [...(usage.apollo_waterfall_statuses || []),
+      String(initial.waterfall?.status || 'missing')].slice(-20);
+    if (['accepted', 'partial_accepted'].includes(initial.waterfall?.status) && initial.request_id) {
       for (let attempt = 0; attempt < 12; attempt++) {
         const response = await fetch(`https://api.apollo.io/api/v1/webhook_result/${encodeURIComponent(initial.request_id)}`, {
           signal: AbortSignal.timeout(10000), headers: { 'x-api-key': process.env.APOLLO_API_KEY }
         });
         usage.apollo_poll_calls = (usage.apollo_poll_calls || 0) + 1;
         const body = await response.json();
+        usage.apollo_poll_results = [...(usage.apollo_poll_results || []),
+          `${response.status}:${String(body.error_code || body.webhook_result?.status || body.status || 'unknown').slice(0, 35)}`].slice(-30);
         if (response.ok) {
           const result = body.webhook_result || body;
           for (const p of result.people || []) waterfallEmails.set(p.id, p.emails || []);
           usage.apollo_credits_consumed = (usage.apollo_credits_consumed || 0) + Number(result.credits_consumed || 0);
-          break;
+          if (result.people || result.status === 'success') break;
         }
-        if (body.error_code !== 'result_pending') break;
+        else if (body.error_code !== 'result_pending') break;
         await new Promise(resolve => setTimeout(resolve, Math.min(5000, Math.max(1000, Number(body.retry_after_seconds || 2) * 1000))));
       }
     }
@@ -189,6 +199,30 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
     }
   }
   usage.apollo_verified_emails = (usage.apollo_verified_emails || 0) + ready.length;
+  if (ready.length < 2) {
+    // Waterfall can be pending, skipped, or inaccessible to a key without webhook read scope.
+    // Try Apollo's synchronous native enrichment before falling back to a different provider.
+    const initialReady = ready.length;
+    const existingEmails = new Set(ready.map(x => x.email));
+    const native = await Promise.allSettled(ids.slice(0, 5).map(id =>
+      apollo('people/match', { id, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
+    usage.apollo_native_fallback_calls = (usage.apollo_native_fallback_calls || 0) + native.length;
+    for (const result of native) {
+      if (result.status !== 'fulfilled') continue;
+      const person = result.value.person;
+      if (!person || String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') !== domain ||
+          !goodTitle(person.title) || String(person.email_status || '').toLowerCase() !== 'verified') continue;
+      const email = String(person.email || '').toLowerCase().trim();
+      const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
+      if (!name.includes(' ') || !email.endsWith('@' + domain) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          existingEmails.has(email)) continue;
+      existingEmails.add(email);
+      ready.push({ name, role: clean(person.title, 120), email, verification: 'apollo_verified',
+        source_url: safeLink(person.linkedin_url) || null });
+      if (ready.length >= 2) break;
+    }
+    usage.apollo_verified_emails += ready.length - initialReady;
+  }
   const contacts = ready.slice(0, 2);
   if (contacts.length < 2 && process.env.ZEROBOUNCE_API_KEY) {
     for (const person of currentPeople) {
