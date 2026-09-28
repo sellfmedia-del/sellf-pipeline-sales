@@ -248,7 +248,7 @@ $('travis-run').onclick = async () => {
     };
     let result = await call(country === 'TR' ? { action: 'start' } : {});
     if (country === 'TR') {
-      const phases = ['Gemini Google Search', 'Tavily', 'LinkedIn ve Google işletmeleri',
+      const phases = ['Gemini Google Search', 'Tavily', 'LinkedIn gönderileri',
         'RSS ve sektör bültenleri', 'KAP ve şirket duyuruları', 'Claude intent değerlendirmesi', 'Kontaklar ve taslak kartlar'];
       while (!result.completed) {
         state('Türkiye araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
