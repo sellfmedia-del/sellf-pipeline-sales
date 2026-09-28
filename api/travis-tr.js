@@ -291,8 +291,8 @@ export function createTRResearch(d) {
     } else if (phase === 2) {
       const linkedin = await linkedInSignals(usage, 'TR').catch(e => { record('LinkedIn', e); return []; });
       const rows = linkedin.map(x => ({ ...x, source_type: x.kind, content: x.content }));
-      // Google Maps is a discovery channel. A missing site does not prove a recent opening.
-      try {
+      // This paid discovery channel stays disabled until explicitly configured.
+      if (process.env.TRAVIS_GOOGLE_PLACES_ENABLED === 'true') try {
         const places = await actor('compass~crawler-google-places', {
           searchStringsArray: ['saç ekim kliniği', 'güzellik merkezi', 'ambalaj üreticisi'],
           locationQuery: 'Türkiye', maxCrawledPlacesPerSearch: 12,
