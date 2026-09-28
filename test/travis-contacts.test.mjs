@@ -74,6 +74,7 @@ test('ZeroBounce Finder supplies a missing Apollo email without validating Apoll
     if (String(url).includes('people/bulk_match')) return new Response(JSON.stringify({ matches: [
       { id: '54a3aebd7468693676044c0a', name: 'Osman Demirel', title: 'Sales Director', organization: { primary_domain: 'emerson.com' } }
     ], waterfall: { status: 'failed' } }), { status: 200 });
+    if (String(url).includes('people/match')) return new Response(JSON.stringify({ person: null }), { status: 200 });
     if (String(url).includes('guessformat')) {
       finderCalls++;
       return new Response(JSON.stringify({ email: 'osman.demirel@emerson.com', email_confidence: 'HIGH' }), { status: 200 });
@@ -90,4 +91,59 @@ test('ZeroBounce Finder supplies a missing Apollo email without validating Apoll
     if (oldKey === undefined) delete process.env.ZEROBOUNCE_API_KEY;
     else process.env.ZEROBOUNCE_API_KEY = oldKey;
   }
+});
+
+test('native Apollo enrichment recovers verified emails when waterfall is unavailable', async () => {
+  const original = globalThis.fetch;
+  const ids = ['one', 'two'];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: ids.map(id =>
+      ({ id, title: 'Marketing Director' })) }), { status: 200 });
+    if (String(url).includes('people/bulk_match')) return new Response(JSON.stringify({ matches: ids.map(id =>
+      ({ id, name: `Director ${id}`, title: 'Marketing Director', organization: { primary_domain: 'example.com' } })) ,
+      waterfall: { status: 'skipped' } }), { status: 200 });
+    if (String(url).includes('people/match')) {
+      const id = JSON.parse(options.body).id;
+      return new Response(JSON.stringify({ person: { id, name: `Director ${id}`,
+        title: 'Marketing Director', email: `${id}@example.com`, email_status: 'verified',
+        organization: { primary_domain: 'example.com' } } }), { status: 200 });
+    }
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const usage = {};
+    const contacts = await decisionMakers({ domain: 'example.com' }, usage);
+    assert.deepEqual(contacts.map(c => c.email), ['one@example.com', 'two@example.com']);
+    assert.equal(usage.apollo_verified_emails, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test('partially accepted Apollo waterfall is polled and includes LinkedIn identity', async () => {
+  const original = globalThis.fetch;
+  let polled = false;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: [
+      { id: 'one', title: 'Marketing Director', linkedin_url: 'https://www.linkedin.com/in/person-one' }
+    ] }), { status: 200 });
+    if (String(url).includes('people/bulk_match')) {
+      const details = JSON.parse(options.body).details;
+      assert.equal(details[0].linkedin_url, 'https://www.linkedin.com/in/person-one');
+      return new Response(JSON.stringify({ matches: [ { id: 'one', name: 'Person One', title: 'Marketing Director',
+        organization: { primary_domain: 'example.com' } } ], waterfall: { status: 'partial_accepted' },
+        request_id: '-123' }), { status: 200 });
+    }
+    if (String(url).includes('webhook_result')) {
+      polled = true;
+      return new Response(JSON.stringify({ webhook_result: { status: 'success', people: [
+        { id: 'one', emails: [{ email: 'person.one@example.com', email_status_cd: 'Verified' }] }
+      ] } }), { status: 200 });
+    }
+    if (String(url).includes('people/match')) return new Response(JSON.stringify({ person: null }), { status: 200 });
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const contacts = await decisionMakers({ domain: 'example.com' }, {});
+    assert.equal(polled, true);
+    assert.equal(contacts[0].email, 'person.one@example.com');
+  } finally { globalThis.fetch = original; }
 });
