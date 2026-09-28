@@ -1,6 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decisionMakers } from '../api/travis-run.js';
+import { decisionMakers, officialDomain } from '../api/travis-run.js';
+
+test('company lookup prefers canonical global domain over same-name foreign subsidiary', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ accounts: [
+    { name: 'Cargill', domain: 'cargill.com.br' }, { name: 'Cargill', domain: 'cargill.com' }
+  ] }), { status: 200 });
+  try { assert.equal(await officialDomain('Cargill', {}), 'cargill.com'); }
+  finally { globalThis.fetch = original; }
+});
+
+test('contact search follows the selected country', async () => {
+  const original = globalThis.fetch;
+  const locations = [];
+  globalThis.fetch = async (_url, options) => {
+    locations.push(JSON.parse(options.body).person_locations);
+    return new Response(JSON.stringify({ people: [] }), { status: 200 });
+  };
+  try {
+    await decisionMakers({ domain: 'example.com', country: 'UK' }, {});
+    assert.deepEqual(locations, [ ['United Kingdom'], ['United Kingdom'], ['United Kingdom'] ]);
+  } finally { globalThis.fetch = original; }
+});
 
 test('Turkey search enriches masked Apollo people and accepts verified work email without a second validator', async () => {
   const original = globalThis.fetch;
