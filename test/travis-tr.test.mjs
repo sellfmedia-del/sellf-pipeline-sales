@@ -41,7 +41,7 @@ test('RSS round keeps dated entries and checkpoints despite failed feeds', async
   } finally { globalThis.fetch = original; }
 });
 
-test('reviewable intent is saved even when no two contacts can be found', async () => {
+test('ordinary intent without two verified contacts is not saved', async () => {
   const sourceRows = [{ url: 'https://example.com/lansman', title: 'Lansman',
     content: 'Şirket yeni markasını tanıttı.', published_date: new Date().toISOString().slice(0, 10), source_type: 'rss' }];
   const { dependency, writes, patches } = harness(sourceRows);
@@ -51,11 +51,43 @@ test('reviewable intent is saved even when no two contacts can be found', async 
       hypothesis: 'Yeni satış kanalı gerekebilir', fit_reason: 'Marka lansmanı', timing_reason: 'Lansman bu ay',
       evidence: [{ url: 'https://example.com/lansman', fact: 'Yeni marka tanıtıldı' }] }] } }, 'jwt', {});
   assert.equal(result.completed, true);
-  const lead = writes.find(x => x.path === 'travis_leads').body;
-  assert.equal(lead.review_status, 'pending');
-  assert.equal(lead.contact_status, 'incomplete');
-  assert.equal(lead.space_id, 'travis-main');
+  assert.equal(writes.some(x => x.path === 'travis_leads'), false);
+  assert.equal(result.skipped_contacts, 1);
   assert.equal(patches.at(-1).status, 'completed');
+});
+
+test('ordinary intent with two verified decision makers is saved', async () => {
+  const source = { url: 'https://example.com/lansman', title: 'Lansman', content: 'Yeni ürün duyuruldu.' };
+  const { dependency, writes } = harness([source]);
+  dependency.officialDomain = async () => 'example.com';
+  dependency.decisionMakers = async () => [
+    { name: 'Ayşe Yılmaz', role: 'CMO', email: 'ayse@example.com', verification: 'apollo_verified_zerobounce_valid' },
+    { name: 'Ali Kaya', role: 'CEO', email: 'ali@example.com', verification: 'apollo_verified_zerobounce_valid' }
+  ];
+  const result = await createTRResearch(dependency).step({ id: 'run4', strategy: { phase: 6, space_id: 'travis-main',
+    candidates: [{ company: 'Örnek Gıda', signal_summary: 'Ürün duyurusu', confidence: 'medium',
+      evidence: [{ url: source.url, fact: 'Yeni ürün duyuruldu' }] }] } }, 'jwt', {});
+  assert.equal(result.added, 1);
+  assert.equal(writes.find(x => x.path === 'travis_leads').body.contact_status, 'complete');
+});
+
+test('very strong dated event accepts validated general contact when named contacts are missing', async () => {
+  const source = { url: 'https://example.com/lansman', title: 'Lansman', content: 'Yeni marka lansmanı.' };
+  const { dependency, writes } = harness([source]);
+  dependency.officialDomain = async () => 'example.com';
+  dependency.pageText = async () => 'Şirket iletişim: info@example.com';
+  dependency.validateEmail = async () => 'valid';
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ results: [] }) });
+  try {
+    const result = await createTRResearch(dependency).step({ id: 'run5', strategy: { phase: 6, space_id: 'travis-main',
+      candidates: [{ company: 'Örnek Gıda', signal_summary: 'Yeni marka', confidence: 'high',
+        observation_type: 'dated_event', evidence: [{ url: source.url, fact: 'Yeni marka lansmanı' }] }] } }, 'jwt', {});
+    assert.equal(result.added, 1);
+    const lead = writes.find(x => x.path === 'travis_leads').body;
+    assert.equal(lead.contact_status, 'incomplete');
+    assert.equal(lead.contacts[0].email, 'info@example.com');
+  } finally { globalThis.fetch = original; }
 });
 
 test('recent executive appointment reaches review without a stated agency brief', async () => {
