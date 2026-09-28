@@ -173,7 +173,7 @@ function openLead(id) {
     contacts.append(row);
   });
   if (!(lead.contacts || []).length) contacts.append(make('p', '', 'Henüz doğrulanmış kişi yok.'));
-  if (lead.country === 'TR' && lead.contact_status !== 'complete') {
+  if (['TR', 'UK'].includes(lead.country) && lead.contact_status !== 'complete') {
     const retry = make('button', 'btn', 'Kontakları otomatik yeniden ara'); retry.type = 'button';
     retry.onclick = async () => {
       retry.disabled = true; state('Apollo ve ZeroBounce ile kontak aranıyor…');
@@ -181,7 +181,7 @@ function openLead(id) {
         const { data } = await client.auth.getSession();
         const response = await fetch('/api/travis-run', { method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token },
-          body: JSON.stringify({ action: 'enrich_lead', country: 'TR', space_id: lead.space_id, lead_id: id }) });
+          body: JSON.stringify({ action: 'enrich_lead', country: lead.country, space_id: lead.space_id, lead_id: id }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Kontak araması başarısız');
         await loadTravis(); openLead(id);
@@ -288,18 +288,20 @@ $('travis-run').onclick = async () => {
       if (!response.ok) throw new Error(result.error || 'Araştırma tamamlanamadı');
       return result;
     };
-    let result = await call(country === 'TR' ? { action: 'start' } : {});
-    if (country === 'TR') {
+    const staged = country === 'TR' || country === 'UK';
+    let result = await call(staged ? { action: 'start' } : {});
+    if (staged) {
       const phases = ['Gemini Google Search', 'Tavily', 'LinkedIn gönderileri',
-        'RSS ve sektör bültenleri', 'KAP ve şirket duyuruları', 'Claude intent değerlendirmesi', 'Kontaklar ve taslak kartlar'];
+        'RSS ve sektör bültenleri', country === 'UK' ? 'UK sektör ve şirket duyuruları' : 'KAP ve şirket duyuruları',
+        'Claude intent değerlendirmesi', 'Kontaklar ve taslak kartlar'];
       while (!result.completed) {
-        state('Türkiye araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
+        state((country === 'UK' ? 'UK' : 'Türkiye') + ' araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
           ' (' + (result.phase + 1) + '/7)' + (result.phase === 6 ? ` · ${result.cursor || 0}/${result.candidate_count || '?'} aday` : '') + '…');
         result = await call({ action: 'step', run_id: result.run_id });
       }
     }
     await loadTravis();
-    state(country === 'TR' ? (result.total_added + ' yeni taslak intent · ' + result.source_count + ' kaynak · ' +
+    state(staged ? (result.total_added + ' yeni taslak intent · ' + result.source_count + ' kaynak · ' +
       (result.errors?.length ? 'Bazı kaynaklar alınamadı: ' + result.errors.join('; ') : 'Araştırma tamamlandı')) :
       (result.added + ' yeni intent · ' + result.reviewed + ' kaynak incelendi · ' + (result.skipped_contacts || 0) + ' marka iki doğrulanmış kişi bulunamadığı için atlandı'));
   } catch (error) { state(error.message, true); }
