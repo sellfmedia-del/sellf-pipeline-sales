@@ -92,9 +92,9 @@ async function validateEmail(email, usage) {
   if (!res.ok) return 'unknown';
   return String((await res.json()).status || 'unknown').toLowerCase();
 }
-const goodTitle = title => /chief|ceo|cmo|founder|owner|president|general manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
+const goodTitle = title => /chief|ceo|cfo|cmo|founder|owner|president|general manager|country manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|finans|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
 const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain || '') && !/\.\./.test(domain);
-export async function decisionMakers(candidate, usage, profileCandidates = []) {
+export async function decisionMakers(candidate, usage, profileCandidates = [], namedTargets = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
   const personLocation = candidate.country === 'UK' ? 'United Kingdom' :
@@ -126,20 +126,34 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
       (p.has_email ? 1 : 0);
     return score(b) - score(a);
   });
-  const shortlist = people.slice(0, 8);
-  if (!shortlist.length) return [];
-  const ids = shortlist.map(p => p.person_id || p.id);
+  const namedDetails = namedTargets.slice(0, 4).flatMap(target => {
+    const name = clean(target.name, 100);
+    const parts = name.split(/\s+/);
+    if (parts.length < 2 || !goodTitle(target.role)) return [];
+    return [{ first_name: parts[0], last_name: parts.slice(1).join(' '),
+      organization_name: candidate.company, domain,
+      ...(safeLink(target.source_url) ? { linkedin_url: safeLink(target.source_url) } : {}),
+      _source_url: target.source_url }];
+  });
+  const knownNames = new Set(namedDetails.map(d => `${d.first_name} ${d.last_name}`.toLocaleLowerCase('tr-TR')));
+  const shortlist = people.filter(p => !knownNames.has(String(p.name || '').toLocaleLowerCase('tr-TR')))
+    .slice(0, Math.max(0, 8 - namedDetails.length));
+  const details = [...namedDetails, ...shortlist.map(p => ({
+    id: p.person_id || p.id, domain,
+    ...(safeLink(p.linkedin_url) ? { linkedin_url: safeLink(p.linkedin_url) } : {}),
+    ...(p.first_name && p.last_name && !/\*/.test(p.last_name) ?
+      { first_name: p.first_name, last_name: p.last_name } : {})
+  }))];
+  if (!details.length) return [];
+  usage.source_named_targets = (usage.source_named_targets || 0) + namedDetails.length;
   let candidates = [], waterfallEmails = new Map();
   try {
-    const details = shortlist.map(p => ({
-      id: p.person_id || p.id,
-      ...(safeLink(p.linkedin_url) ? { linkedin_url: safeLink(p.linkedin_url) } : {}),
-      ...(p.first_name && p.last_name && !/\*/.test(p.last_name) ?
-        { first_name: p.first_name, last_name: p.last_name } : {})
-    }));
     const initial = await apollo('people/bulk_match?run_waterfall_email=true&poll_only=true',
-      { details, reveal_personal_emails: false }, usage);
-    candidates = (initial.matches || []).filter(Boolean);
+      { details: details.map(({ _source_url, ...item }) => item), reveal_personal_emails: false }, usage);
+    candidates = (initial.matches || []).map((p, i) => p ? {
+      ...p, _source_url: details[i]?._source_url,
+      _named_domain: details[i]?._source_url ? domain : null
+    } : null).filter(Boolean);
     usage.apollo_waterfall_statuses = [...(usage.apollo_waterfall_statuses || []),
       String(initial.waterfall?.status || 'missing')].slice(-20);
     if (['accepted', 'partial_accepted'].includes(initial.waterfall?.status) && initial.request_id) {
@@ -165,13 +179,17 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
     usage.apollo_enrichment_error = clean(e.message, 140);
   }
   if (!candidates.length) {
-    const results = await Promise.allSettled(ids.slice(0, 6).map(id =>
-      apollo('people/match', { id, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
-    candidates = results.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
+    const results = await Promise.allSettled(details.slice(0, 6).map(({ _source_url, ...item }) =>
+      apollo('people/match', { ...item, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
+    candidates = results.flatMap((r, i) => r.status === 'fulfilled' && r.value.person ? [{
+      ...r.value.person, _source_url: details[i]?._source_url,
+      _named_domain: details[i]?._source_url ? domain : null
+    }] : []);
   }
   usage.apollo_enriched_people = (usage.apollo_enriched_people || 0) + candidates.length;
-  const currentPeople = candidates.filter(p => String(p.organization?.primary_domain || '')
-    .toLowerCase().replace(/^www\./, '') === domain && goodTitle(p.title));
+  const currentEmployer = p => String(p.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') === domain ||
+    (p._named_domain === domain && ['high', 'medium'].includes(String(p.match_confidence || '').toLowerCase()));
+  const currentPeople = candidates.filter(p => currentEmployer(p) && goodTitle(p.title));
   for (const person of currentPeople) {
     const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
     const url = safeLink(person.linkedin_url);
@@ -184,8 +202,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
   for (const p of candidates) {
     const name = clean(p.name || `${p.first_name || ''} ${p.last_name || ''}`, 100);
     const role = clean(p.title, 120);
-    const employerDomain = String(p.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '');
-    if (!name.includes(' ') || !goodTitle(role) || employerDomain !== domain) continue;
+    if (!name.includes(' ') || !goodTitle(role) || !currentEmployer(p)) continue;
     const emails = waterfallEmails.get(p.id) || [{ email: p.email, email_status_cd: p.email_status }];
     for (const item of emails) {
       const email = String(item.email || '').toLowerCase().trim();
@@ -194,7 +211,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
           String(item.email_status_cd || '').toLowerCase() !== 'verified') continue;
       seen.add(email);
       ready.push({ name, role, email, verification: 'apollo_verified',
-        source_url: safeLink(p.linkedin_url) || null });
+        source_url: safeLink(p.linkedin_url) || p._source_url || null });
       break;
     }
   }
@@ -204,13 +221,16 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
     // Try Apollo's synchronous native enrichment before falling back to a different provider.
     const initialReady = ready.length;
     const existingEmails = new Set(ready.map(x => x.email));
-    const native = await Promise.allSettled(ids.slice(0, 5).map(id =>
-      apollo('people/match', { id, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
+    const native = await Promise.allSettled(details.slice(0, 5).map(({ _source_url, ...item }) =>
+      apollo('people/match', { ...item, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
     usage.apollo_native_fallback_calls = (usage.apollo_native_fallback_calls || 0) + native.length;
     for (const result of native) {
       if (result.status !== 'fulfilled') continue;
       const person = result.value.person;
-      if (!person || String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') !== domain ||
+      const index = native.indexOf(result);
+      const sourceNamed = Boolean(details[index]?._source_url &&
+        ['high', 'medium'].includes(String(person?.match_confidence || result.value.match_confidence || '').toLowerCase()));
+      if (!person || !(String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') === domain || sourceNamed) ||
           !goodTitle(person.title) || String(person.email_status || '').toLowerCase() !== 'verified') continue;
       const email = String(person.email || '').toLowerCase().trim();
       const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
@@ -218,18 +238,24 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
           existingEmails.has(email)) continue;
       existingEmails.add(email);
       ready.push({ name, role: clean(person.title, 120), email, verification: 'apollo_verified',
-        source_url: safeLink(person.linkedin_url) || null });
+        source_url: safeLink(person.linkedin_url) || details[index]?._source_url || null });
       if (ready.length >= 2) break;
     }
     usage.apollo_verified_emails += ready.length - initialReady;
   }
   const contacts = ready.slice(0, 2);
   if (contacts.length < 2 && process.env.ZEROBOUNCE_API_KEY) {
-    for (const person of currentPeople) {
+    const finderPeople = [...namedTargets.slice(0, 4).map(p => ({
+      name: p.name, title: p.role, _source_url: p.source_url
+    })), ...currentPeople];
+    const searchedNames = new Set();
+    for (const person of finderPeople) {
       if (contacts.length >= 2) break;
       const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
       const parts = name.split(/\s+/);
-      if (parts.length < 2) continue;
+      if (parts.length < 2 || searchedNames.has(name.toLocaleLowerCase('tr-TR')) ||
+          !goodTitle(person.title) || contacts.some(x => x.name.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR'))) continue;
+      searchedNames.add(name.toLocaleLowerCase('tr-TR'));
       const params = new URLSearchParams({ api_key: process.env.ZEROBOUNCE_API_KEY, domain,
         first_name: parts[0], last_name: parts.slice(1).join(' ') });
       const response = await fetch('https://api.zerobounce.net/v2/guessformat', { method: 'POST',
@@ -242,7 +268,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = []) {
           String(found.email_confidence || '').toUpperCase() !== 'HIGH' ||
           contacts.some(x => x.email === email)) continue;
       contacts.push({ name, role: clean(person.title, 120), email,
-        verification: 'zerobounce_finder_high_confidence', source_url: safeLink(person.linkedin_url) || null });
+        verification: 'zerobounce_finder_high_confidence', source_url: safeLink(person.linkedin_url) || person._source_url || null });
     }
   }
   return contacts;
