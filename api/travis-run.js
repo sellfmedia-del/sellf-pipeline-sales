@@ -136,6 +136,16 @@ async function decisionMakers(candidate, usage, profileCandidates = []) {
       reveal_personal_emails: false, reveal_phone_number: false }, usage)));
   const candidates = enriched.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
   usage.apollo_enriched_people = (usage.apollo_enriched_people || 0) + candidates.length;
+  const currentPeople = candidates.filter(p => String(p.organization?.primary_domain || '')
+    .toLowerCase().replace(/^www\./, '') === domain && goodTitle(p.title));
+  for (const person of currentPeople) {
+    const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
+    const url = safeLink(person.linkedin_url);
+    if (name.includes(' ') && url && /(^|\.)linkedin\.com$/.test(new URL(url).hostname) &&
+        !profileCandidates.some(x => x.name === name)) profileCandidates.push({
+      name, role: clean(person.title, 120), source_url: url, kind: 'linkedin', verification: 'apollo_profile'
+    });
+  }
   const seen = new Set(), ready = [];
   for (const p of candidates) {
     const name = clean(p.name || `${p.first_name || ''} ${p.last_name || ''}`, 100);
@@ -154,7 +164,7 @@ async function decisionMakers(candidate, usage, profileCandidates = []) {
   const contacts = ready.slice(0, 8).flatMap((person, i) => checked[i].status === 'fulfilled' &&
     checked[i].value === 'valid' ? [{ ...person, verification: 'apollo_verified_zerobounce_valid' }] : []).slice(0, 2);
   if (contacts.length < 2 && process.env.ZEROBOUNCE_API_KEY) {
-    for (const person of shortlist) {
+    for (const person of currentPeople) {
       if (contacts.length >= 2) break;
       const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
       const parts = name.split(/\s+/);
