@@ -65,7 +65,7 @@ function render() {
       event.preventDefault();
       const id = event.dataTransfer.getData('text/plain');
       const lead = leads.find(l => l.id === id);
-      if (!lead || lead.col_id === column.id) return;
+      if (!lead || lead.col_id === column.id || lead.review_status === 'pending' || lead.review_status === 'rejected') return;
       const { error } = await client.from('travis_leads').update({ col_id: column.id, last_contact: Date.now() }).eq('id', id);
       if (error) state(error.message, true); else { lead.col_id = column.id; render(); }
     };
@@ -78,6 +78,8 @@ function render() {
       names.append(make('div', 'card-name', lead.name || lead.company), make('div', 'card-company', lead.company));
       top.append(names, make('div', 'card-avatar', (lead.company || '?').slice(0, 1).toUpperCase()));
       card.append(top, make('div', 'card-date', lead.country || ''));
+      if (lead.review_status === 'pending') card.append(make('div', 'card-value', 'Onay bekliyor' + (lead.contact_status === 'incomplete' ? ' · Kontak eksik' : '')));
+      if (lead.review_status === 'rejected') card.append(make('div', 'card-value', 'Reddedildi · ' + (lead.review_reason || '')));
       const info = view.research.find(r => r.lead_id === lead.id);
       if (info?.timing_reason) card.append(make('div', 'card-value', info.timing_reason.slice(0, 95)));
       card.onclick = () => openLead(lead.id);
@@ -127,9 +129,35 @@ function openLead(id) {
   right.append(contacts);
 
   const columns = view.columns.filter(c => c.space_id === lead.space_id);
+  if (lead.review_status === 'pending') {
+    const review = make('section', 'travis-section');
+    review.append(make('h3', '', 'Intent değerlendirmesi'));
+    const hint = make('p', '', lead.contact_status === 'incomplete' ?
+      'İki uygun ve doğrulanmış karar alıcı henüz tamamlanmadı. Intent kaydı korunuyor.' :
+      'Kaynakları ve gerekçeyi inceleyip karar verin.');
+    const approve = make('button', 'btn btn-primary', 'Onayla'); approve.type = 'button';
+    approve.onclick = async () => {
+      const { error } = await client.from('travis_leads').update({ review_status: 'approved' }).eq('id', id);
+      if (error) { state(error.message, true); return; }
+      lead.review_status = 'approved'; await loadTravis(); openLead(id);
+    };
+    const reason = make('textarea', 'travis-field'); reason.placeholder = 'Ret nedeni (zorunlu)…';
+    const reject = make('button', 'btn', 'Reddet'); reject.type = 'button';
+    reject.onclick = async () => {
+      const value = reason.value.trim();
+      if (!value) { state('Ret nedenini yazın.', true); reason.focus(); return; }
+      const { error } = await client.from('travis_leads').update({ review_status: 'rejected', review_reason: value }).eq('id', id);
+      if (error) { state(error.message, true); return; }
+      lead.review_status = 'rejected'; lead.review_reason = value; await loadTravis(); openLead(id);
+    };
+    review.append(hint, approve, reason, reject); right.append(review);
+  } else if (lead.review_status === 'rejected') {
+    section(right, 'Ret nedeni', lead.review_reason);
+  }
   const statusBox = make('section', 'travis-section'); statusBox.append(make('h3', '', 'Durum'));
   const select = make('select', 'travis-field');
   columns.forEach(c => { const option = make('option', '', c.title); option.value = c.id; option.selected = c.id === lead.col_id; select.append(option); });
+  select.disabled = lead.review_status === 'pending' || lead.review_status === 'rejected';
   select.onchange = async () => {
     const { error } = await client.from('travis_leads').update({ col_id: select.value, last_contact: Date.now() }).eq('id', id);
     if (error) { state(error.message, true); select.value = lead.col_id; return; }
@@ -177,17 +205,32 @@ $('travis-run').onclick = async () => {
   const country = $('travis-country').value;
   if (!['TR', 'UK', 'US'].includes(country)) { state('Önce arama ülkesini seçin.', true); $('travis-country').focus(); return; }
   const button = $('travis-run'); button.disabled = true; $('travis-country').disabled = true;
-  state($('travis-country').selectedOptions[0].textContent + ' için LinkedIn ve web sinyalleri araştırılıyor…');
+  state($('travis-country').selectedOptions[0].textContent + ' için araştırma başlıyor…');
   try {
     const { data: auth } = await client.auth.getSession();
-    const response = await fetch('/api/travis-run', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.session.access_token },
-      body: JSON.stringify({ space_id: view.activeSpace, country })
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Araştırma tamamlanamadı');
+    const call = async body => {
+      const response = await fetch('/api/travis-run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.session.access_token },
+        body: JSON.stringify({ space_id: view.activeSpace, country, ...body })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Araştırma tamamlanamadı');
+      return result;
+    };
+    let result = await call(country === 'TR' ? { action: 'start' } : {});
+    if (country === 'TR') {
+      const phases = ['Gemini Google Search', 'Tavily', 'LinkedIn ve Google işletmeleri',
+        'RSS ve sektör bültenleri', 'KAP ve şirket duyuruları', 'Claude intent değerlendirmesi', 'Kontaklar ve taslak kartlar'];
+      while (!result.completed) {
+        state('Türkiye araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
+          ' (' + (result.phase + 1) + '/7)' + (result.phase === 6 ? ` · ${result.cursor || 0}/${result.candidate_count || '?'} aday` : '') + '…');
+        result = await call({ action: 'step', run_id: result.run_id });
+      }
+    }
     await loadTravis();
-    state(result.added + ' yeni intent · ' + result.reviewed + ' kaynak incelendi · ' + (result.skipped_contacts || 0) + ' marka iki doğrulanmış kişi bulunamadığı için atlandı');
+    state(country === 'TR' ? (result.total_added + ' yeni taslak intent · ' + result.source_count + ' kaynak · ' +
+      (result.errors?.length ? 'Bazı kaynaklar alınamadı: ' + result.errors.join('; ') : 'Araştırma tamamlandı')) :
+      (result.added + ' yeni intent · ' + result.reviewed + ' kaynak incelendi · ' + (result.skipped_contacts || 0) + ' marka iki doğrulanmış kişi bulunamadığı için atlandı'));
   } catch (error) { state(error.message, true); }
   finally { button.disabled = false; $('travis-country').disabled = false; }
 };
