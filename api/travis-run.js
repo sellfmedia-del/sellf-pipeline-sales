@@ -8,7 +8,7 @@ const recent = (value, days = 21) => {
   return Number.isFinite(date) && date <= Date.now() + 86400000 && date >= Date.now() - days * 86400000;
 };
 const clean = (value, limit = 700) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit);
-const safeLink = value => { try { const u = new URL(value); return u.protocol === 'https:' && u.hostname.endsWith('linkedin.com') ? u.href : ''; } catch { return ''; } };
+const safeLink = value => { try { const u = new URL(value); if (!['https:', 'http:'].includes(u.protocol) || !u.hostname.endsWith('linkedin.com')) return ''; u.protocol = 'https:'; return u.href; } catch { return ''; } };
 const JOB_TERMS = ['genel müdür yardımcısı','iş geliştirme direktörü','pazarlama direktörü','e-ticaret direktörü','CMO Turkey brand'];
 const POST_TERMS = ['ajans arıyoruz','ajans önerisi','pazarlama ajansı','performans pazarlama partneri','looking for a marketing agency','marketing agency recommendations','seeking a growth partner','performance marketing partner'];
 const TR_POST_TERMS = [...POST_TERMS.slice(0, 4), 'yeni genel müdür atandı', 'yeni CEO atandı',
@@ -94,19 +94,21 @@ async function validateEmail(email, usage) {
 }
 const goodTitle = title => /chief|ceo|cmo|founder|owner|president|general manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
 const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain || '') && !/\.\./.test(domain);
-async function decisionMakers(candidate, usage, profileCandidates = []) {
+export async function decisionMakers(candidate, usage, profileCandidates = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
   const filters = { q_organization_domains_list: [domain],
-    person_seniorities: ['owner','founder','c_suite','vp','head','director'], per_page: 50 };
+    person_seniorities: ['owner','founder','c_suite','vp','head','director'], per_page: 100 };
   const searches = [
-    { ...filters, contact_email_status: ['verified'], page: 1 },
-    { ...filters, page: 1 },
-    { ...filters, page: 2 }
+    { q_organization_domains_list: [domain], person_locations: ['Turkey'],
+      person_titles: ['General Manager', 'CEO', 'CMO', 'Marketing Director', 'Growth Director', 'Sales Director'],
+      per_page: 100, page: 1 },
+    { ...filters, person_locations: ['Turkey'], page: 1 },
+    { ...filters, person_locations: ['Turkey'], page: 2 }
   ];
   const people = [], seenPeople = new Set();
   for (const query of searches) {
-    if (people.length >= 16) break;
+    if (people.length >= 40) break;
     const result = await apollo('mixed_people/api_search', query, usage);
     for (const person of result.people || []) {
       const key = person.person_id || person.id;
@@ -116,25 +118,45 @@ async function decisionMakers(candidate, usage, profileCandidates = []) {
   }
   usage.apollo_search_matches = (usage.apollo_search_matches || 0) + people.length;
   people.sort((a, b) => {
-    const score = p => (/turkey|türkiye|istanbul|ankara|izmir/i.test(JSON.stringify(p.city || '') + JSON.stringify(p.country || '') + JSON.stringify(p.state || '')) ? 4 : 0) +
-      (/marketing|growth|pazarlama|ticari|commercial|business development/i.test(p.title || '') ? 3 : 0) +
-      (p.has_email ? 2 : 0);
+    const score = p =>
+      (/marketing|growth|strategy|pazarlama|ticari|commercial|business development|general manager/i.test(p.title || '') ? 6 : 0) +
+      (/director|chief|ceo|cmo|general manager/i.test(p.title || '') ? 2 : 0) +
+      (p.has_email ? 1 : 0);
     return score(b) - score(a);
   });
-  const shortlist = people.slice(0, 12);
-  for (const person of shortlist) {
-    const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
-    const url = safeLink(person.linkedin_url);
-    const currentDomain = String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '');
-    if (currentDomain === domain && name.includes(' ') && url && /(^|\.)linkedin\.com$/.test(new URL(url).hostname) &&
-        !profileCandidates.some(x => x.name === name)) profileCandidates.push({
-      name, role: clean(person.title, 120), source_url: url, kind: 'linkedin', verification: 'apollo_profile'
-    });
+  const shortlist = people.slice(0, 8);
+  if (!shortlist.length) return [];
+  const ids = shortlist.map(p => p.person_id || p.id);
+  let candidates = [], waterfallEmails = new Map();
+  try {
+    const initial = await apollo('people/bulk_match?run_waterfall_email=true&poll_only=true',
+      { details: ids.map(id => ({ id })), reveal_personal_emails: false }, usage);
+    candidates = (initial.matches || []).filter(Boolean);
+    if (initial.waterfall?.status === 'accepted' && initial.request_id) {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const response = await fetch(`https://api.apollo.io/api/v1/webhook_result/${encodeURIComponent(initial.request_id)}`, {
+          signal: AbortSignal.timeout(10000), headers: { 'x-api-key': process.env.APOLLO_API_KEY }
+        });
+        usage.apollo_poll_calls = (usage.apollo_poll_calls || 0) + 1;
+        const body = await response.json();
+        if (response.ok) {
+          const result = body.webhook_result || body;
+          for (const p of result.people || []) waterfallEmails.set(p.id, p.emails || []);
+          usage.apollo_credits_consumed = (usage.apollo_credits_consumed || 0) + Number(result.credits_consumed || 0);
+          break;
+        }
+        if (body.error_code !== 'result_pending') break;
+        await new Promise(resolve => setTimeout(resolve, Math.min(5000, Math.max(1000, Number(body.retry_after_seconds || 2) * 1000))));
+      }
+    }
+  } catch (e) {
+    usage.apollo_enrichment_error = clean(e.message, 140);
   }
-  const enriched = await Promise.allSettled(shortlist.map(person =>
-    apollo('people/match', { id: person.person_id || person.id, domain,
-      reveal_personal_emails: false, reveal_phone_number: false }, usage)));
-  const candidates = enriched.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
+  if (!candidates.length) {
+    const results = await Promise.allSettled(ids.slice(0, 6).map(id =>
+      apollo('people/match', { id, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
+    candidates = results.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
+  }
   usage.apollo_enriched_people = (usage.apollo_enriched_people || 0) + candidates.length;
   const currentPeople = candidates.filter(p => String(p.organization?.primary_domain || '')
     .toLowerCase().replace(/^www\./, '') === domain && goodTitle(p.title));
@@ -149,20 +171,23 @@ async function decisionMakers(candidate, usage, profileCandidates = []) {
   const seen = new Set(), ready = [];
   for (const p of candidates) {
     const name = clean(p.name || `${p.first_name || ''} ${p.last_name || ''}`, 100);
-    const role = clean(p.title, 120), email = String(p.email || '').toLowerCase().trim();
+    const role = clean(p.title, 120);
     const employerDomain = String(p.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '');
-    if (!name.includes(' ') || !goodTitle(role) || employerDomain !== domain ||
-        !email.endsWith(`@${domain}`) || email.startsWith('email_not_unlocked@') ||
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        seen.has(email) || p.email_status !== 'verified') continue;
-    seen.add(email);
-    ready.push({ name, role, email, verification: 'apollo_verified',
-      source_url: safeLink(p.linkedin_url) || null });
+    if (!name.includes(' ') || !goodTitle(role) || employerDomain !== domain) continue;
+    const emails = waterfallEmails.get(p.id) || [{ email: p.email, email_status_cd: p.email_status }];
+    for (const item of emails) {
+      const email = String(item.email || '').toLowerCase().trim();
+      if (!email.endsWith(`@${domain}`) || email.startsWith('email_not_unlocked@') ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || seen.has(email) ||
+          String(item.email_status_cd || '').toLowerCase() !== 'verified') continue;
+      seen.add(email);
+      ready.push({ name, role, email, verification: 'apollo_verified',
+        source_url: safeLink(p.linkedin_url) || null });
+      break;
+    }
   }
   usage.apollo_verified_emails = (usage.apollo_verified_emails || 0) + ready.length;
-  const checked = await Promise.allSettled(ready.slice(0, 8).map(c => validateEmail(c.email, usage)));
-  const contacts = ready.slice(0, 8).flatMap((person, i) => checked[i].status === 'fulfilled' &&
-    checked[i].value === 'valid' ? [{ ...person, verification: 'apollo_verified_zerobounce_valid' }] : []).slice(0, 2);
+  const contacts = ready.slice(0, 2);
   if (contacts.length < 2 && process.env.ZEROBOUNCE_API_KEY) {
     for (const person of currentPeople) {
       if (contacts.length >= 2) break;
@@ -178,11 +203,10 @@ async function decisionMakers(candidate, usage, profileCandidates = []) {
       const found = await response.json();
       const email = String(found.email || '').toLowerCase().trim();
       if (!email.endsWith('@' + domain) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-          !['HIGH','MEDIUM'].includes(String(found.email_confidence || '').toUpperCase()) ||
+          String(found.email_confidence || '').toUpperCase() !== 'HIGH' ||
           contacts.some(x => x.email === email)) continue;
-      if (await validateEmail(email, usage) !== 'valid') continue;
       contacts.push({ name, role: clean(person.title, 120), email,
-        verification: 'zerobounce_finder_valid', source_url: safeLink(person.linkedin_url) || null });
+        verification: 'zerobounce_finder_high_confidence', source_url: safeLink(person.linkedin_url) || null });
     }
   }
   return contacts;
@@ -310,13 +334,14 @@ async function officialDomain(company, usage) {
   try {
     const result = await apollo('mixed_companies/search', { q_organization_name: company, per_page: 10 }, usage);
     const companyName = normalized(company);
-    const match = (result.organizations || []).find(org => {
+    const match = [...(result.organizations || []), ...(result.accounts || [])].find(org => {
       const name = normalized(org.name || '');
       return name === companyName || (name.length >= 5 && companyName.length >= 5 &&
         (name.includes(companyName) || companyName.includes(name)));
     });
     if (match) {
-      const domain = String(match.primary_domain || '').toLowerCase().replace(/^www\./, '');
+      const domain = String(match.primary_domain || match.domain || match.organization?.primary_domain || '')
+        .toLowerCase().replace(/^www\./, '');
       if (domainOK(domain)) return domain;
     }
   } catch { /* Tavily remains available when Apollo organization search fails. */ }
