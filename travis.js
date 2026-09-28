@@ -124,8 +124,37 @@ function openLead(id) {
   if (!sources.querySelector('a')) sources.append(make('p', '', 'Kaynak kaydı bulunamadı.'));
   left.append(sources);
   const contacts = make('section', 'travis-section'); contacts.append(make('h3', '', 'Contacts · Karar alıcılar'));
-  (lead.contacts || []).forEach(c => contacts.append(make('p', '', [c.name, c.role, c.email ? c.email + ' (' + (c.verification || 'doğrulanmadı') + ')' : 'E-posta bulunamadı'].filter(Boolean).join(' · '))));
+  (lead.contacts || []).forEach(c => {
+    const row = make('p', '', [c.name, c.role, c.email ? c.email + ' (' + (c.verification || 'doğrulanmadı') + ')' : 'LinkedIn profili'].filter(Boolean).join(' · '));
+    try {
+      const url = new URL(c.source_url);
+      if (['https:', 'http:'].includes(url.protocol)) {
+        const link = make('a', 'travis-source', c.kind === 'linkedin' ? 'Profili aç' : 'Kaynağı aç');
+        link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        row.append(' · ', link);
+      }
+    } catch { /* No source link for this contact. */ }
+    contacts.append(row);
+  });
   if (!(lead.contacts || []).length) contacts.append(make('p', '', 'Henüz doğrulanmış kişi yok.'));
+  if (lead.country === 'TR' && lead.contact_status !== 'complete') {
+    const retry = make('button', 'btn', 'Kontakları otomatik yeniden ara'); retry.type = 'button';
+    retry.onclick = async () => {
+      retry.disabled = true; state('Apollo ve ZeroBounce ile kontak aranıyor…');
+      try {
+        const { data } = await client.auth.getSession();
+        const response = await fetch('/api/travis-run', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token },
+          body: JSON.stringify({ action: 'enrich_lead', country: 'TR', space_id: lead.space_id, lead_id: id }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Kontak araması başarısız');
+        await loadTravis(); openLead(id);
+        state(result.complete ? 'İki karar alıcı doğrulandı.' :
+          result.contacts.length ? 'Bulunan iletişim bilgileri karta eklendi.' : 'Doğrulanmış kontak veya iletişim kanalı bulunamadı.');
+      } catch (error) { state(error.message, true); retry.disabled = false; }
+    };
+    contacts.append(retry);
+  }
   right.append(contacts);
 
   const columns = view.columns.filter(c => c.space_id === lead.space_id);
@@ -133,7 +162,7 @@ function openLead(id) {
     const review = make('section', 'travis-section');
     review.append(make('h3', '', 'Intent değerlendirmesi'));
     const hint = make('p', '', lead.contact_status === 'incomplete' ?
-      'İki uygun ve doğrulanmış karar alıcı henüz tamamlanmadı. Intent kaydı korunuyor.' :
+      'İki uygun ve doğrulanmış karar alıcı henüz tamamlanmadı. Güçlü intent için alternatif iletişim kanalı gösterilir.' :
       'Kaynakları ve gerekçeyi inceleyip karar verin.');
     const approve = make('button', 'btn btn-primary', 'Onayla'); approve.type = 'button';
     approve.onclick = async () => {
