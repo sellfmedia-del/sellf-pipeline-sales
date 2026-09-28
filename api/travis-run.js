@@ -94,22 +94,44 @@ async function validateEmail(email, usage) {
 }
 const goodTitle = title => /chief|ceo|cmo|founder|owner|president|general manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
 const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain || '') && !/\.\./.test(domain);
-async function decisionMakers(candidate, usage) {
+async function decisionMakers(candidate, usage, profileCandidates = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
-  const filters = {
-    q_organization_domains_list: [domain], person_seniorities: ['owner','founder','c_suite','vp','head','director'],
-    contact_email_status: ['verified'], per_page: 25, page: 1
-  };
-  const select = result => (result.people || []).filter(p => (p.person_id || p.id) &&
-    goodTitle(p.title) && p.has_email !== false);
-  let people = select(await apollo('mixed_people/api_search', filters, usage));
-  if (people.length < 2) people = select(await apollo('mixed_people/api_search', {
-    q_organization_domains_list: [domain], contact_email_status: ['verified'], per_page: 50, page: 1
-  }, usage));
+  const filters = { q_organization_domains_list: [domain],
+    person_seniorities: ['owner','founder','c_suite','vp','head','director'], per_page: 50 };
+  const searches = [
+    { ...filters, contact_email_status: ['verified'], page: 1 },
+    { ...filters, page: 1 },
+    { ...filters, page: 2 }
+  ];
+  const people = [], seenPeople = new Set();
+  for (const query of searches) {
+    if (people.length >= 16) break;
+    const result = await apollo('mixed_people/api_search', query, usage);
+    for (const person of result.people || []) {
+      const key = person.person_id || person.id;
+      if (!key || seenPeople.has(key) || !goodTitle(person.title)) continue;
+      seenPeople.add(key); people.push(person);
+    }
+  }
   usage.apollo_search_matches = (usage.apollo_search_matches || 0) + people.length;
-  people = people.slice(0, 6);
-  const enriched = await Promise.allSettled(people.map(person =>
+  people.sort((a, b) => {
+    const score = p => (/turkey|türkiye|istanbul|ankara|izmir/i.test(JSON.stringify(p.city || '') + JSON.stringify(p.country || '') + JSON.stringify(p.state || '')) ? 4 : 0) +
+      (/marketing|growth|pazarlama|ticari|commercial|business development/i.test(p.title || '') ? 3 : 0) +
+      (p.has_email ? 2 : 0);
+    return score(b) - score(a);
+  });
+  const shortlist = people.slice(0, 12);
+  for (const person of shortlist) {
+    const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
+    const url = safeLink(person.linkedin_url);
+    const currentDomain = String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '');
+    if (currentDomain === domain && name.includes(' ') && url && /(^|\.)linkedin\.com$/.test(new URL(url).hostname) &&
+        !profileCandidates.some(x => x.name === name)) profileCandidates.push({
+      name, role: clean(person.title, 120), source_url: url, kind: 'linkedin', verification: 'apollo_profile'
+    });
+  }
+  const enriched = await Promise.allSettled(shortlist.map(person =>
     apollo('people/match', { id: person.person_id || person.id, domain,
       reveal_personal_emails: false, reveal_phone_number: false }, usage)));
   const candidates = enriched.filter(r => r.status === 'fulfilled').map(r => r.value.person).filter(Boolean);
@@ -128,14 +150,31 @@ async function decisionMakers(candidate, usage) {
       source_url: safeLink(p.linkedin_url) || null });
   }
   usage.apollo_verified_emails = (usage.apollo_verified_emails || 0) + ready.length;
-  const shortlist = ready.slice(0, 4);
-  const checked = await Promise.allSettled(shortlist.map(c => validateEmail(c.email, usage)));
-  const contacts = shortlist.flatMap((person, i) => {
-    const status = checked[i].status === 'fulfilled' ? checked[i].value : 'unknown';
-    if (['invalid','do_not_mail','spamtrap','abuse'].includes(status)) return [];
-    return [{ ...person, verification: status === 'valid' ?
-      'apollo_verified_zerobounce_valid' : 'apollo_verified' }];
-  }).slice(0, 2);
+  const checked = await Promise.allSettled(ready.slice(0, 8).map(c => validateEmail(c.email, usage)));
+  const contacts = ready.slice(0, 8).flatMap((person, i) => checked[i].status === 'fulfilled' &&
+    checked[i].value === 'valid' ? [{ ...person, verification: 'apollo_verified_zerobounce_valid' }] : []).slice(0, 2);
+  if (contacts.length < 2 && process.env.ZEROBOUNCE_API_KEY) {
+    for (const person of shortlist) {
+      if (contacts.length >= 2) break;
+      const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
+      const parts = name.split(/\s+/);
+      if (parts.length < 2) continue;
+      const params = new URLSearchParams({ api_key: process.env.ZEROBOUNCE_API_KEY, domain,
+        first_name: parts[0], last_name: parts.slice(1).join(' ') });
+      const response = await fetch('https://api.zerobounce.net/v2/guessformat', { method: 'POST',
+        signal: AbortSignal.timeout(18000), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
+      usage.zerobounce_finder_calls = (usage.zerobounce_finder_calls || 0) + 1;
+      if (!response.ok) continue;
+      const found = await response.json();
+      const email = String(found.email || '').toLowerCase().trim();
+      if (!email.endsWith('@' + domain) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          !['HIGH','MEDIUM'].includes(String(found.email_confidence || '').toUpperCase()) ||
+          contacts.some(x => x.email === email)) continue;
+      if (await validateEmail(email, usage) !== 'valid') continue;
+      contacts.push({ name, role: clean(person.title, 120), email,
+        verification: 'zerobounce_finder_valid', source_url: safeLink(person.linkedin_url) || null });
+    }
+  }
   return contacts;
 }
 
@@ -257,6 +296,20 @@ async function tavily(query, usage, index, days = 21) {
 }
 async function officialDomain(company, usage) {
   usage.domain_lookups = (usage.domain_lookups || 0) + 1;
+  // Apollo's company index resolves brands whose home pages do not repeat their legal name.
+  try {
+    const result = await apollo('mixed_companies/search', { q_organization_name: company, per_page: 10 }, usage);
+    const companyName = normalized(company);
+    const match = (result.organizations || []).find(org => {
+      const name = normalized(org.name || '');
+      return name === companyName || (name.length >= 5 && companyName.length >= 5 &&
+        (name.includes(companyName) || companyName.includes(name)));
+    });
+    if (match) {
+      const domain = String(match.primary_domain || '').toLowerCase().replace(/^www\./, '');
+      if (domainOK(domain)) return domain;
+    }
+  } catch { /* Tavily remains available when Apollo organization search fails. */ }
   const response = await fetch('https://api.tavily.com/search', {
     method: 'POST', signal: AbortSignal.timeout(15000),
     headers: { Authorization: 'Bearer ' + process.env.TAVILY_API_KEY, 'Content-Type': 'application/json' },
@@ -509,6 +562,22 @@ export default async function handler(req, res) {
   if (!member.length) return res.status(403).json({ error: 'Travis erişimi yok' });
   const space = await sb('travis_spaces?select=id&id=eq.' + encodeURIComponent(req.body?.space_id || '') + '&limit=1', jwt);
   if (!space.length) return res.status(400).json({ error: 'Space bulunamadı' });
+  if (countryCode === 'TR' && req.body?.action === 'enrich_lead') {
+    const id = String(req.body.lead_id || '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'Lead ID geçersiz' });
+    const lead = (await sb(`travis_leads?select=*&id=eq.${id}&space_id=eq.${space[0].id}&country=eq.TR&limit=1`, jwt))[0];
+    if (!lead) return res.status(404).json({ error: 'Travis lead bulunamadı' });
+    try {
+      const [research, evidence] = await Promise.all([
+        sb(`travis_research?select=*&lead_id=eq.${id}&limit=1`, jwt),
+        sb(`travis_evidence?select=*&lead_id=eq.${id}`, jwt)
+      ]);
+      const engine = createTRResearch({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
+        tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
+      const result = await engine.enrichExisting(lead, research[0], evidence, jwt, {});
+      return res.status(200).json(result);
+    } catch (error) { return res.status(500).json({ error: clamp(error.message, 300) }); }
+  }
   if (countryCode === 'TR') {
     const usage = { target_country: 'TR', input_tokens: 0, output_tokens: 0, tavily_credits: 0,
       apify_actor_runs: 0, apollo_calls: 0, zerobounce_calls: 0, gemini_calls: 0 };
