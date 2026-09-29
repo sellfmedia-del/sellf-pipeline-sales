@@ -173,7 +173,7 @@ function openLead(id) {
     contacts.append(row);
   });
   if (!(lead.contacts || []).length) contacts.append(make('p', '', 'Henüz doğrulanmış kişi yok.'));
-  if (['TR', 'UK'].includes(lead.country) && lead.contact_status !== 'complete') {
+  if (['TR', 'UK', 'US'].includes(lead.country) && lead.contact_status !== 'complete') {
     const retry = make('button', 'btn', 'Kontakları otomatik yeniden ara'); retry.type = 'button';
     retry.onclick = async () => {
       retry.disabled = true; state('Apollo ve ZeroBounce ile kontak aranıyor…');
@@ -288,14 +288,14 @@ $('travis-run').onclick = async () => {
       if (!response.ok) throw new Error(result.error || 'Araştırma tamamlanamadı');
       return result;
     };
-    const staged = country === 'TR' || country === 'UK';
+    const staged = ['TR', 'UK', 'US'].includes(country);
     let result = await call(staged ? { action: 'start' } : {});
     if (staged) {
       const phases = ['Gemini Google Search', 'Tavily', 'LinkedIn gönderileri',
-        'RSS ve sektör bültenleri', country === 'UK' ? 'UK sektör ve şirket duyuruları' : 'KAP ve şirket duyuruları',
+        'RSS ve sektör bültenleri', country === 'TR' ? 'KAP ve şirket duyuruları' : country + ' sektör ve şirket duyuruları',
         'Claude intent değerlendirmesi', 'Kontaklar ve taslak kartlar'];
       while (!result.completed) {
-        state((country === 'UK' ? 'UK' : 'Türkiye') + ' araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
+        state((country === 'TR' ? 'Türkiye' : country) + ' araştırması · ' + (phases[result.phase] || 'Tamamlanıyor') +
           ' (' + (result.phase + 1) + '/7)' + (result.phase === 6 ? ` · ${result.cursor || 0}/${result.candidate_count || '?'} aday` : '') + '…');
         result = await call({ action: 'step', run_id: result.run_id });
       }
