@@ -120,3 +120,30 @@ test('UK lead enters Travis board only with two named work-email contacts', asyn
     assert.equal(lead.contact_status, 'complete');
   } finally { globalThis.fetch = original; }
 });
+
+test('UK card saves each evidence URL once when an article supports several facts', async () => {
+  const source = { url: 'https://harbour.co.uk/news', title: 'Harbour UK',
+    content: 'Harbour expands UK retail.', published_date: today(), source_type: 'rss' };
+  const { d, run, writes } = harness([source]);
+  d.decisionMakers = async () => [
+    { name: 'Ada Green', role: 'CMO', email: 'ada@harbour.co.uk', verification: 'apollo_verified' },
+    { name: 'Ben Stone', role: 'Managing Director', email: 'ben@harbour.co.uk', verification: 'apollo_verified' }
+  ];
+  const candidate = { company: 'Harbour', country: 'UK', domain: 'harbour.co.uk',
+    confidence: 'medium', observation_type: 'dated_event', signal_summary: 'Expansion',
+    hypothesis: 'Needs a sales system', fit_reason: 'B2B Marketing', timing_reason: 'Launch now',
+    evidence: [
+      { url: source.url, fact: 'Harbour expands UK retail' },
+      { url: source.url, fact: 'Harbour opens a new store' }
+    ] };
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ results: [] }), { status: 200 });
+  try {
+    const result = await createUKResearch(d).step(run(6, { candidates: [candidate] }), 'jwt', {});
+    assert.equal(result.completed, true);
+    assert.equal(result.total_added, 1);
+    const evidence = writes.filter(x => x.path === 'travis_evidence');
+    assert.equal(evidence.length, 1);
+    assert.equal(evidence[0].body.url, source.url);
+  } finally { globalThis.fetch = original; }
+});

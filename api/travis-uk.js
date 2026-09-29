@@ -431,7 +431,10 @@ export function createUKResearch(d) {
           fit_reason: clean(c.fit_reason, 1200), timing_reason: clean(c.timing_reason, 900),
           confidence: c.confidence === 'high' ? 'high' : 'medium'
         } });
-        for (const e of c.evidence.slice(0, 5)) await sb('travis_evidence', jwt, { method: 'POST', body: {
+        // One lead may have several supported facts from the same article, while
+        // travis_evidence has a unique (lead_id, url) constraint.
+        const uniqueEvidence = [...new Map(c.evidence.map(e => [e.url, e])).values()].slice(0, 5);
+        for (const e of uniqueEvidence) await sb('travis_evidence', jwt, { method: 'POST', body: {
           lead_id: id, url: e.url, title: allowed.get(e.url)?.title || '', fact: clean(e.fact, 350)
         } });
         known.add(key); added++;
