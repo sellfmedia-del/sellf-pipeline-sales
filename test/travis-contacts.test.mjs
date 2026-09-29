@@ -21,6 +21,18 @@ test('UK analysis sends Claude a JSON schema and refuses truncated output', asyn
   } finally { globalThis.fetch = original; }
 });
 
+test('TR Claude call keeps its previous request and response behavior', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal('output_config' in body, false);
+    return new Response(JSON.stringify({ stop_reason: 'max_tokens', usage: { input_tokens: 1, output_tokens: 1 },
+      content: [{ type: 'text', text: '{"result":"ok"}' }] }), { status: 200 });
+  };
+  try { assert.deepEqual(await claude('system', {}, 3500, { input_tokens: 0, output_tokens: 0 }), { result: 'ok' }); }
+  finally { globalThis.fetch = original; }
+});
+
 test('company lookup prefers canonical global domain over same-name foreign subsidiary', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ accounts: [
@@ -40,6 +52,20 @@ test('contact search follows the selected country', async () => {
   try {
     await decisionMakers({ domain: 'example.com', country: 'UK' }, {});
     assert.deepEqual(locations, [ ['United Kingdom'], ['United Kingdom'], ['United Kingdom'], undefined ]);
+  } finally { globalThis.fetch = original; }
+});
+
+test('TR contact search does not run the UK employer-domain fallback', async () => {
+  const original = globalThis.fetch;
+  const searches = [];
+  globalThis.fetch = async (_url, options) => {
+    searches.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ people: [] }), { status: 200 });
+  };
+  try {
+    assert.deepEqual(await decisionMakers({ domain: 'example.com', country: 'TR' }, {}), []);
+    assert.equal(searches.length, 3);
+    assert.ok(searches.every(query => query.person_locations?.[0] === 'Turkey'));
   } finally { globalThis.fetch = original; }
 });
 
