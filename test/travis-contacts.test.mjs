@@ -1,6 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decisionMakers, officialDomain } from '../api/travis-run.js';
+import { claude, decisionMakers, officialDomain } from '../api/travis-run.js';
+
+test('UK analysis sends Claude a JSON schema and refuses truncated output', async () => {
+  const original = globalThis.fetch;
+  const schema = { type: 'object', properties: { candidates: { type: 'array', items: { type: 'string' } } },
+    required: ['candidates'], additionalProperties: false };
+  let truncated = false;
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.deepEqual(body.output_config, { format: { type: 'json_schema', schema } });
+    return new Response(JSON.stringify({ stop_reason: truncated ? 'max_tokens' : 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 4 }, content: [{ type: 'text', text: '{"candidates":[]}' }] }), { status: 200 });
+  };
+  try {
+    const usage = { input_tokens: 0, output_tokens: 0 };
+    assert.deepEqual(await claude('system', {}, 5000, usage, schema), { candidates: [] });
+    truncated = true;
+    await assert.rejects(claude('system', {}, 5000, usage, schema), /max_tokens/);
+  } finally { globalThis.fetch = original; }
+});
+
+test('TR Claude call keeps its previous request and response behavior', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal('output_config' in body, false);
+    return new Response(JSON.stringify({ stop_reason: 'max_tokens', usage: { input_tokens: 1, output_tokens: 1 },
+      content: [{ type: 'text', text: '{"result":"ok"}' }] }), { status: 200 });
+  };
+  try { assert.deepEqual(await claude('system', {}, 3500, { input_tokens: 0, output_tokens: 0 }), { result: 'ok' }); }
+  finally { globalThis.fetch = original; }
+});
 
 test('company lookup prefers canonical global domain over same-name foreign subsidiary', async () => {
   const original = globalThis.fetch;
@@ -20,7 +51,57 @@ test('contact search follows the selected country', async () => {
   };
   try {
     await decisionMakers({ domain: 'example.com', country: 'UK' }, {});
-    assert.deepEqual(locations, [ ['United Kingdom'], ['United Kingdom'], ['United Kingdom'] ]);
+    assert.deepEqual(locations, [ ['United Kingdom'], ['United Kingdom'], ['United Kingdom'], undefined ]);
+  } finally { globalThis.fetch = original; }
+});
+
+test('TR contact search does not run the UK employer-domain fallback', async () => {
+  const original = globalThis.fetch;
+  const searches = [];
+  globalThis.fetch = async (_url, options) => {
+    searches.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ people: [] }), { status: 200 });
+  };
+  try {
+    assert.deepEqual(await decisionMakers({ domain: 'example.com', country: 'TR' }, {}), []);
+    assert.equal(searches.length, 3);
+    assert.ok(searches.every(query => query.person_locations?.[0] === 'Turkey'));
+  } finally { globalThis.fetch = original; }
+});
+
+test('UK Apollo search widens by employer domain and polls an exact 64-bit request ID', async () => {
+  const original = globalThis.fetch;
+  const requestId = '1039995589705121975';
+  let searches = 0, polled = false;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) {
+      const query = JSON.parse(options.body);
+      searches++;
+      if (query.person_locations) return new Response(JSON.stringify({ people: [] }), { status: 200 });
+      assert.deepEqual(query.q_organization_domains_list, ['example.co.uk']);
+      return new Response(JSON.stringify({ people: [
+        { id: 'one', title: 'Marketing Director' }, { id: 'two', title: 'Managing Director' }
+      ] }), { status: 200 });
+    }
+    if (String(url).includes('people/bulk_match')) return new Response(`{"matches":[
+      {"id":"one","name":"Ada Green","title":"Marketing Director"},
+      {"id":"two","name":"Ben Stone","title":"Managing Director"}
+    ],"waterfall":{"status":"accepted"},"request_id":${requestId}}`, { status: 200 });
+    if (String(url).includes('webhook_result')) {
+      assert.ok(String(url).endsWith('/' + requestId));
+      polled = true;
+      return new Response(JSON.stringify({ webhook_result: { people: [
+        { id: 'one', emails: [{ email: 'ada@example.co.uk', email_status_cd: 'Verified' }] },
+        { id: 'two', emails: [{ email: 'ben@example.co.uk', email_status_cd: 'Verified' }] }
+      ] } }), { status: 200 });
+    }
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const contacts = await decisionMakers({ company: 'Example', domain: 'example.co.uk', country: 'UK' }, {});
+    assert.equal(searches, 4);
+    assert.equal(polled, true);
+    assert.deepEqual(contacts.map(x => x.email), ['ada@example.co.uk', 'ben@example.co.uk']);
   } finally { globalThis.fetch = original; }
 });
 

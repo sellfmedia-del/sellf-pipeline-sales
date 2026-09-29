@@ -1,8 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createUKResearch } from '../api/travis-uk.js';
+import { createUKResearch, retryGemini } from '../api/travis-uk.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
+test('Gemini overload retries once and retains a successful search result', async () => {
+  let attempts = 0, waits = 0;
+  const result = await retryGemini(async () => {
+    if (++attempts === 1) throw new Error('Gemini Google Search 503: high demand');
+    return { refs: [{ url: 'https://example.co.uk/news' }] };
+  }, async () => { waits++; });
+  assert.equal(attempts, 2);
+  assert.equal(waits, 1);
+  assert.equal(result.refs[0].url, 'https://example.co.uk/news');
+});
+
+test('persistent Gemini overload stops after bounded retry', async () => {
+  let attempts = 0;
+  await assert.rejects(retryGemini(async () => { attempts++; throw new Error('Gemini 503'); }, async () => {}), /503/);
+  assert.equal(attempts, 2);
+});
 function harness(rows = []) {
   const writes = [], patches = [];
   const d = {
@@ -48,10 +64,14 @@ test('UK review requires a source-backed UK activity and a recent commercial eve
     fit_reason: 'B2B Marketing', timing_reason: 'Launch now', counterargument: 'Existing team',
     uk_activity: { url: source.url, fact: 'Harbour expands UK retail' },
     evidence: [{ url: source.url, fact: 'Harbour expands UK retail with a new product range' }] };
-  d.claude = async () => ({ candidates: [candidate, { ...candidate, company: 'American Inc',
+  d.claude = async (_system, _payload, maxTokens, _usage, schema) => {
+    assert.equal(maxTokens, 5000);
+    assert.equal(schema.properties.candidates.items.properties.country.enum[0], 'UK');
+    return { candidates: [candidate, { ...candidate, company: 'American Inc',
     uk_activity: { url: source.url, fact: 'American Inc has a UK office' } },
   { ...candidate, company: 'Old Harbour', uk_activity: { url: source.url, fact: 'Old Harbour expands UK retail' },
-    evidence: [{ url: source.url, fact: 'Old Harbour launched yesterday' }] }] });
+    evidence: [{ url: source.url, fact: 'Old Harbour launched yesterday' }] }] };
+  };
   const result = await createUKResearch(d).step(run(5), 'jwt', {});
   assert.equal(result.candidates, 1);
   assert.equal(patches.at(-1).strategy.candidates[0].company, 'Harbour');

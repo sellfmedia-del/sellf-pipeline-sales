@@ -68,7 +68,7 @@ async function linkedInSignals(usage, countryCode) {
   usage.linkedin_posts_recent = usable.filter(i => i.kind === 'linkedin_post').length;
   return usable.slice(0, 60);
 }
-async function apollo(path, body, usage) {
+async function apollo(path, body, usage, preserveRequestId = false) {
   const response = await fetch(`https://api.apollo.io/api/v1/${path}`, {
     method: 'POST', signal: AbortSignal.timeout(18000),
     headers: { 'x-api-key': process.env.APOLLO_API_KEY, 'Content-Type': 'application/json' },
@@ -76,7 +76,11 @@ async function apollo(path, body, usage) {
   });
   usage.apollo_calls = (usage.apollo_calls || 0) + 1;
   if (!response.ok) throw new Error(`Apollo ${response.status}`);
-  return response.json();
+  if (!preserveRequestId) return response.json();
+  // Apollo request_id is a signed 64-bit integer. JSON.parse rounds values above 2^53,
+  // and polling the rounded ID produces request_id_unknown.
+  const raw = await response.text();
+  return JSON.parse(raw.replace(/("request_id"\s*:\s*)(-?\d+)/g, '$1"$2"'));
 }
 async function validateEmail(email, usage) {
   const params = new URLSearchParams({ api_key: process.env.ZEROBOUNCE_API_KEY, email, ip_address: '' });
@@ -93,6 +97,7 @@ const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test
 export async function decisionMakers(candidate, usage, profileCandidates = [], namedTargets = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
+  const uk = candidate.country === 'UK';
   const personLocation = candidate.country === 'UK' ? 'United Kingdom' :
     candidate.country === 'US' ? 'United States' : 'Turkey';
   const filters = { q_organization_domains_list: [domain],
@@ -108,6 +113,16 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
   for (const query of searches) {
     if (people.length >= 40) break;
     const result = await apollo('mixed_people/api_search', query, usage);
+    for (const person of result.people || []) {
+      const key = person.person_id || person.id;
+      if (!key || seenPeople.has(key) || !goodTitle(person.title)) continue;
+      seenPeople.add(key); people.push(person);
+    }
+  }
+  // Small UK brands and newly entering brands often have no people indexed with
+  // an exact personal-location filter. Keep the employer-domain check below.
+  if (uk && people.length < 2) {
+    const result = await apollo('mixed_people/api_search', { ...filters, page: 1 }, usage);
     for (const person of result.people || []) {
       const key = person.person_id || person.id;
       if (!key || seenPeople.has(key) || !goodTitle(person.title)) continue;
@@ -135,7 +150,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
   const shortlist = people.filter(p => !knownNames.has(String(p.name || '').toLocaleLowerCase('tr-TR')))
     .slice(0, Math.max(0, 8 - namedDetails.length));
   const details = [...namedDetails, ...shortlist.map(p => ({
-    id: p.person_id || p.id, domain,
+    id: p.person_id || p.id, domain, ...(uk ? { _searched_domain: domain } : {}),
     ...(safeLink(p.linkedin_url) ? { linkedin_url: safeLink(p.linkedin_url) } : {}),
     ...(p.first_name && p.last_name && !/\*/.test(p.last_name) ?
       { first_name: p.first_name, last_name: p.last_name } : {})
@@ -145,10 +160,11 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
   let candidates = [], waterfallEmails = new Map();
   try {
     const initial = await apollo('people/bulk_match?run_waterfall_email=true&poll_only=true',
-      { details: details.map(({ _source_url, ...item }) => item), reveal_personal_emails: false }, usage);
+      { details: details.map(({ _source_url, _searched_domain, ...item }) => item), reveal_personal_emails: false }, usage, uk);
     candidates = (initial.matches || []).map((p, i) => p ? {
       ...p, _source_url: details[i]?._source_url,
-      _named_domain: details[i]?._source_url ? domain : null
+      _named_domain: details[i]?._source_url ? domain : null,
+      ...(uk ? { _searched_domain: details[i]?.id === p.id ? details[i]?._searched_domain : null } : {})
     } : null).filter(Boolean);
     usage.apollo_waterfall_statuses = [...(usage.apollo_waterfall_statuses || []),
       String(initial.waterfall?.status || 'missing')].slice(-20);
@@ -175,15 +191,17 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
     usage.apollo_enrichment_error = clean(e.message, 140);
   }
   if (!candidates.length) {
-    const results = await Promise.allSettled(details.slice(0, 6).map(({ _source_url, ...item }) =>
+    const results = await Promise.allSettled(details.slice(0, 6).map(({ _source_url, _searched_domain, ...item }) =>
       apollo('people/match', { ...item, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
     candidates = results.flatMap((r, i) => r.status === 'fulfilled' && r.value.person ? [{
       ...r.value.person, _source_url: details[i]?._source_url,
-      _named_domain: details[i]?._source_url ? domain : null
+      _named_domain: details[i]?._source_url ? domain : null,
+      ...(uk ? { _searched_domain: details[i]?.id === r.value.person.id ? details[i]?._searched_domain : null } : {})
     }] : []);
   }
   usage.apollo_enriched_people = (usage.apollo_enriched_people || 0) + candidates.length;
   const currentEmployer = p => String(p.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') === domain ||
+    (uk && p._searched_domain === domain) ||
     (p._named_domain === domain && ['high', 'medium'].includes(String(p.match_confidence || '').toLowerCase()));
   const currentPeople = candidates.filter(p => currentEmployer(p) && goodTitle(p.title));
   for (const person of currentPeople) {
@@ -217,7 +235,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
     // Try Apollo's synchronous native enrichment before falling back to a different provider.
     const initialReady = ready.length;
     const existingEmails = new Set(ready.map(x => x.email));
-    const native = await Promise.allSettled(details.slice(0, 5).map(({ _source_url, ...item }) =>
+    const native = await Promise.allSettled(details.slice(0, 5).map(({ _source_url, _searched_domain, ...item }) =>
       apollo('people/match', { ...item, reveal_personal_emails: false, reveal_phone_number: false }, usage)));
     usage.apollo_native_fallback_calls = (usage.apollo_native_fallback_calls || 0) + native.length;
     for (const result of native) {
@@ -226,7 +244,8 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
       const index = native.indexOf(result);
       const sourceNamed = Boolean(details[index]?._source_url &&
         ['high', 'medium'].includes(String(person?.match_confidence || result.value.match_confidence || '').toLowerCase()));
-      if (!person || !(String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') === domain || sourceNamed) ||
+      const sourceSearched = uk && details[index]?.id && details[index].id === person?.id && details[index]._searched_domain === domain;
+      if (!person || !(String(person.organization?.primary_domain || '').toLowerCase().replace(/^www\./, '') === domain || sourceNamed || sourceSearched) ||
           !goodTitle(person.title) || String(person.email_status || '').toLowerCase() !== 'verified') continue;
       const email = String(person.email || '').toLowerCase().trim();
       const name = clean(person.name || `${person.first_name || ''} ${person.last_name || ''}`, 100);
@@ -357,17 +376,20 @@ async function sb(path, jwt, options = {}) {
   if (!response.ok) throw new Error('Supabase ' + response.status + ': ' + clamp(text, 250));
   return text ? JSON.parse(text) : [];
 }
-async function claude(system, payload, maxTokens, usage) {
+export async function claude(system, payload, maxTokens, usage, schema) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', signal: AbortSignal.timeout(90000),
     headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, thinking: { type: 'disabled' },
-      system, messages: [{ role: 'user', content: JSON.stringify(payload) }] })
+      system, messages: [{ role: 'user', content: JSON.stringify(payload) }],
+      ...(schema ? { output_config: { format: { type: 'json_schema', schema } } } : {}) })
   });
   const body = await response.json();
   if (!response.ok) throw new Error('Claude ' + response.status + ': ' + clamp(body.error?.message, 250));
   usage.input_tokens += body.usage?.input_tokens || 0;
   usage.output_tokens += body.usage?.output_tokens || 0;
+  if (schema && (body.stop_reason === 'max_tokens' || body.stop_reason === 'refusal'))
+    throw new Error('Claude yanıtı tamamlanmadı: ' + body.stop_reason);
   return parseJson(body.content.filter(x => x.type === 'text').map(x => x.text).join(''));
 }
 async function tavily(query, usage, index, days = 21) {
