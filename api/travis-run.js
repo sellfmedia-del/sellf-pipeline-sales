@@ -2,6 +2,7 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { createTRResearch } from './travis-tr.js';
 import { createUKResearch } from './travis-uk.js';
+import { createUSResearch } from './travis-us.js';
 
 // Server-only provider adapters. No provider token is returned to the browser or stored in Supabase.
 const recent = (value, days = 21) => {
@@ -21,6 +22,12 @@ const UK_POST_TERMS = [
   'launching our new brand', 'expanding our wholesale network', 'entering the UK market',
   'new retail partnership', 'launching our DTC store'
 ].map(term => `${term} UK`);
+const US_POST_TERMS = [
+  'US brand seeking marketing agency', 'American brand seeking ecommerce partner',
+  'US-founded company appointed new CEO', 'American brand appointed new CMO',
+  'US manufacturer expanding distributor network', 'US brand launching new product line',
+  'American DTC brand opening retail stores', 'US company launching new wholesale channel'
+];
 const COUNTRIES = {
   TR: { name: 'Türkiye', searchTerm: 'Türkiye', linkedinLocation: 'Turkey',
     aliases: /\b(?:Turkey|Turkish|Türkiye|Türk(?:iye)?)\b/i,
@@ -32,7 +39,7 @@ const COUNTRIES = {
     classes: '1 agency/partner request; 2 growth partner request; 3 ecommerce platform migration; 4 new retail channel; 5 substantial product launch; 6 new investment; 7 new CEO/CMO; 8 B2B sales expansion; 9 rebrand; 10 international brand entering the market; 11 clinic expansion; 12 food retail expansion; 13 fashion market launch; 14 cosmetics expansion; 15 B2B software growth; 16 new store/showroom; 17 export expansion; 18 distributor agreement; 19 overseas brand market entry; 20 commercial executive appointment; 21 business development director appointment; 22 post-investment scale-up; 23 fair plus concrete expansion announcement; 24 retail expansion; 25 funding plus commercial expansion' },
   US: { name: 'United States', searchTerm: 'United States', linkedinLocation: 'United States',
     aliases: /\b(?:US|USA|United States|America|American)\b/i,
-    strategy: 'Use English queries. Cover US companies, companies operating in the US, and brands entering the US market. Do not seek unrelated UK or Turkish news.',
+    strategy: 'Use English queries for US-origin brands only; exclude foreign brands entering the US.',
     classes: '1 agency/partner request; 2 growth partner request; 3 ecommerce platform migration; 4 new retail channel; 5 substantial product launch; 6 new investment; 7 new CEO/CMO; 8 B2B sales expansion; 9 rebrand; 10 international brand entering the market; 11 clinic expansion; 12 food retail expansion; 13 fashion market launch; 14 cosmetics expansion; 15 B2B software growth; 16 new store/showroom; 17 export expansion; 18 distributor agreement; 19 overseas brand market entry; 20 commercial executive appointment; 21 business development director appointment; 22 post-investment scale-up; 23 fair plus concrete expansion announcement; 24 retail expansion; 25 funding plus commercial expansion' }
 };
 const scopedQuery = (query, country) => country.aliases.test(query) ? query : `${query} ${country.searchTerm}`;
@@ -50,8 +57,7 @@ async function actor(name, input, usage) {
 }
 async function linkedInSignals(usage, countryCode) {
   const country = COUNTRIES[countryCode];
-  const postTerms = countryCode === 'TR' ? TR_POST_TERMS : countryCode === 'UK' ? UK_POST_TERMS :
-    [...POST_TERMS.slice(4), 'new market entry', 'retail expansion', 'distributor partnership'].map(term => scopedQuery(term, country));
+  const postTerms = countryCode === 'TR' ? TR_POST_TERMS : countryCode === 'UK' ? UK_POST_TERMS : US_POST_TERMS;
   const postsInput = { maxPosts: 5, postedLimit: 'month', sortBy: 'date',
     scrapeComments: false, scrapeReactions: false, searchQueries: postTerms };
   const result = await actor('harvestapi~linkedin-post-search', postsInput, usage)
@@ -60,7 +66,7 @@ async function linkedInSignals(usage, countryCode) {
   usage.linkedin_jobs_raw = 0;
   usage.linkedin_posts_raw = posts.length;
   usage.linkedin_errors = result.error ? [clean(result.error.message, 120)] : [];
-  const items = posts.filter(p => recent(p.postedAt?.date, countryCode === 'US' ? 21 : 30)).map(p => ({ title: clean(`${p.author?.name} - LinkedIn Post`, 160), url: safeLink(p.linkedinUrl),
+  const items = posts.filter(p => recent(p.postedAt?.date, 30)).map(p => ({ title: clean(`${p.author?.name} - LinkedIn Post`, 160), url: safeLink(p.linkedinUrl),
       content: clean(`[${p.author?.info || ''}] ${p.content || ''}`),
       published_date: new Date(p.postedAt.date).toISOString().slice(0, 10), kind: 'linkedin_post' }));
   const usable = [...new Map(items.filter(i => i.url && i.content).map(i => [i.url, i])).values()];
@@ -696,7 +702,7 @@ export default async function handler(req, res) {
   if (!member.length) return res.status(403).json({ error: 'Travis erişimi yok' });
   const space = await sb('travis_spaces?select=id&id=eq.' + encodeURIComponent(req.body?.space_id || '') + '&limit=1', jwt);
   if (!space.length) return res.status(400).json({ error: 'Space bulunamadı' });
-  if (['TR', 'UK'].includes(countryCode) && req.body?.action === 'enrich_lead') {
+  if (['TR', 'UK', 'US'].includes(countryCode) && req.body?.action === 'enrich_lead') {
     const id = String(req.body.lead_id || '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'Lead ID geçersiz' });
     const lead = (await sb(`travis_leads?select=*&id=eq.${id}&space_id=eq.${space[0].id}&country=eq.${countryCode}&limit=1`, jwt))[0];
@@ -706,13 +712,13 @@ export default async function handler(req, res) {
         sb(`travis_research?select=*&lead_id=eq.${id}&limit=1`, jwt),
         sb(`travis_evidence?select=*&lead_id=eq.${id}`, jwt)
       ]);
-      const engine = (countryCode === 'UK' ? createUKResearch : createTRResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
+      const engine = (countryCode === 'TR' ? createTRResearch : countryCode === 'UK' ? createUKResearch : createUSResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
         tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.enrichExisting(lead, research[0], evidence, jwt, {});
       return res.status(200).json(result);
     } catch (error) { return res.status(500).json({ error: clamp(error.message, 300) }); }
   }
-  if (['TR', 'UK'].includes(countryCode)) {
+  if (['TR', 'UK', 'US'].includes(countryCode)) {
     const usage = { target_country: countryCode, input_tokens: 0, output_tokens: 0, tavily_credits: 0,
       apify_actor_runs: 0, apollo_calls: 0, zerobounce_calls: 0, gemini_calls: 0 };
     let run;
@@ -728,7 +734,7 @@ export default async function handler(req, res) {
         run = started.run;
         return res.status(200).json({ run_id: run.id, phase: run.strategy.phase, completed: false });
       }
-      const engine = (countryCode === 'UK' ? createUKResearch : createTRResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
+      const engine = (countryCode === 'TR' ? createTRResearch : countryCode === 'UK' ? createUKResearch : createUSResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
         tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.step(run, jwt, { ...usage, ...(run.usage || {}) });
       return res.status(200).json({ run_id: run.id, ...result });
