@@ -640,6 +640,25 @@ Return JSON {"candidates":[{"company":"buyer brand","domain":"verified company d
   return { added, reviewed: opened.length, skipped_contacts: skippedContacts };
 }
 
+export async function startStagedRun(query, jwt, userId, spaceId, countryCode, now = Date.now()) {
+  const running = await query(`travis_runs?select=*&user_id=eq.${userId}&status=eq.running&limit=1`, jwt);
+  let run = running[0];
+  if (run && now - new Date(run.started_at).getTime() > 60 * 60 * 1000) {
+    await query(`travis_runs?id=eq.${run.id}`, jwt, { method: 'PATCH', body: {
+      status: 'failed', error_text: 'Araştırma bir saat içinde tamamlanmadı', completed_at: new Date(now).toISOString()
+    } });
+    run = null;
+  }
+  if (run && (run.strategy?.target_country !== countryCode || run.strategy?.space_id !== spaceId))
+    return { conflict: true };
+  if (!run) {
+    const created = await query('travis_runs', jwt, { method: 'POST', body: { user_id: userId,
+      status: 'running', strategy: { target_country: countryCode, space_id: spaceId, phase: 0 } } });
+    run = created[0];
+  }
+  return { run };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST gerekli' });
   const countryCode = req.body?.country;
@@ -682,20 +701,9 @@ export default async function handler(req, res) {
         if (!run || run.strategy?.target_country !== countryCode || run.strategy?.space_id !== space[0].id)
           return res.status(404).json({ error: 'Çalışan ülke araştırması bulunamadı' });
       } else {
-        const running = await sb(`travis_runs?select=*&user_id=eq.${user.id}&status=eq.running&limit=1`, jwt);
-        if (running[0]) {
-          if (running[0].strategy?.target_country !== countryCode) return res.status(409).json({ error: 'Başka ülke araştırması sürüyor' });
-          if (Date.now() - new Date(running[0].started_at).getTime() > 60 * 60 * 1000)
-            await sb(`travis_runs?id=eq.${running[0].id}`, jwt, { method: 'PATCH', body: {
-              status: 'failed', error_text: 'Araştırma bir saat içinde tamamlanmadı', completed_at: new Date().toISOString()
-            } });
-          else run = running[0];
-        }
-        if (!run) {
-          const created = await sb('travis_runs', jwt, { method: 'POST', body: { user_id: user.id,
-            status: 'running', strategy: { target_country: countryCode, space_id: space[0].id, phase: 0 } } });
-          run = created[0];
-        }
+        const started = await startStagedRun(sb, jwt, user.id, space[0].id, countryCode);
+        if (started.conflict) return res.status(409).json({ error: 'Başka ülke veya board araştırması sürüyor' });
+        run = started.run;
         return res.status(200).json({ run_id: run.id, phase: run.strategy.phase, completed: false });
       }
       const engine = (countryCode === 'UK' ? createUKResearch : createTRResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
