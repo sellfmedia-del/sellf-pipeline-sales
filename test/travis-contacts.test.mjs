@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claude, decisionMakers, officialDomain } from '../api/travis-run.js';
+import { claude, decisionMakers, officialDomain, tavilyFailure } from '../api/travis-run.js';
 
 test('UK analysis sends Claude a JSON schema and refuses truncated output', async () => {
   const original = globalThis.fetch;
@@ -21,7 +21,7 @@ test('UK analysis sends Claude a JSON schema and refuses truncated output', asyn
   } finally { globalThis.fetch = original; }
 });
 
-test('TR Claude call keeps its previous request and response behavior', async () => {
+test('Claude calls without a schema keep their ordinary request and response behavior', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -288,4 +288,68 @@ test('source-backed names lead Apollo enrichment even when people search is empt
     ]);
     assert.deepEqual(contacts.map(x => x.email), ['ayse.yilmaz@example.com', 'cem.kaya@example.com']);
   } finally { globalThis.fetch = original; }
+});
+
+test('TR uses synchronous Apollo enrichment and never sends an article as a LinkedIn profile', async () => {
+  const original = globalThis.fetch;
+  let bulkCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: [] }), { status: 200 });
+    if (String(url).includes('people/bulk_match')) {
+      assert.equal(String(url).includes('run_waterfall_email'), false);
+      const details = JSON.parse(options.body).details;
+      assert.equal(details[0].linkedin_url, undefined);
+      assert.equal(details[0].first_name, 'Ayşe');
+      bulkCalls++;
+      return new Response(JSON.stringify({ matches: [
+        { id: 'one', name: 'Ayşe Yılmaz', title: 'CMO', email: 'ayse@example.com', email_status: 'verified',
+          organization: { primary_domain: 'example.com' }, match_confidence: 'high' },
+        { id: 'two', name: 'Cem Kaya', title: 'General Manager', email: 'cem@example.com', email_status: 'verified',
+          organization: { primary_domain: 'example.com' }, match_confidence: 'high' }
+      ] }), { status: 200 });
+    }
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const usage = {};
+    const contacts = await decisionMakers({ company: 'Example', domain: 'example.com', country: 'TR' }, usage, [], [
+      { name: 'Ayşe Yılmaz', role: 'CMO', appointment_target: true,
+        source_url: 'https://www.linkedin.com/posts/company-announcement' },
+      { name: 'Cem Kaya', role: 'General Manager', source_url: 'https://example.com/news' }
+    ]);
+    assert.deepEqual(contacts.map(x => x.email), ['ayse@example.com', 'cem@example.com']);
+    assert.equal(usage.apollo_enrichment_mode, 'native_bulk');
+    assert.equal(bulkCalls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test('ZeroBounce finder accepts documented confidence spelling and sends company context', async () => {
+  const original = globalThis.fetch;
+  const oldKey = process.env.ZEROBOUNCE_API_KEY;
+  process.env.ZEROBOUNCE_API_KEY = 'test';
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('mixed_people/api_search')) return new Response(JSON.stringify({ people: [] }));
+    if (String(url).includes('people/bulk_match')) return new Response(JSON.stringify({ matches: [] }));
+    if (String(url).includes('people/match')) return new Response(JSON.stringify({ person: null }));
+    if (String(url).includes('guessformat')) {
+      assert.equal(new URLSearchParams(options.body).get('company_name'), 'Example');
+      return new Response(JSON.stringify({ email: 'ayse@example.com', email_conficence: 'high' }));
+    }
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    const contacts = await decisionMakers({ company: 'Example', domain: 'example.com', country: 'TR' }, {}, [], [
+      { name: 'Ayşe Yılmaz', role: 'CMO', source_url: 'https://example.com/news' }
+    ]);
+    assert.equal(contacts[0].email, 'ayse@example.com');
+  } finally {
+    globalThis.fetch = original;
+    if (oldKey === undefined) delete process.env.ZEROBOUNCE_API_KEY;
+    else process.env.ZEROBOUNCE_API_KEY = oldKey;
+  }
+});
+
+test('Tavily failure preserves the provider reason without leaking a key', async () => {
+  const response = new Response(JSON.stringify({ detail: 'Credits exhausted for tvly-dev-SECRET' }), { status: 433 });
+  assert.equal(await tavilyFailure(response), '433: Credits exhausted for [redacted]');
 });
