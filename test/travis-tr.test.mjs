@@ -115,6 +115,34 @@ test('official-site names are checked before email enrichment', async () => {
   } finally { globalThis.fetch = original; }
 });
 
+test('TR researches named people with Gemini when Tavily is blocked by its spend cap', async () => {
+  const { dependency } = harness();
+  dependency.officialDomain = async () => 'example.com';
+  dependency.pageText = async url => url.includes('/announcement') ?
+    'Örnek Gıda yönetiminde Ayşe Yılmaz, Pazarlama Direktörü olarak atandı. Ayşe Yılmaz yeni pazarlama çalışmalarını yönetecek.' : '';
+  dependency.claude = async () => ({ people: [{ name: 'Ayşe Yılmaz', role: 'Pazarlama Direktörü',
+    role_quote: 'Pazarlama Direktörü', url: 'https://example.com/announcement' }] });
+  let named = [];
+  dependency.decisionMakers = async (_candidate, _usage, _profiles, targets) => { named = targets; return []; };
+  dependency.tavilyFailure = async () => '433: Pay-as-you-go limit exceeded';
+  const original = globalThis.fetch;
+  globalThis.fetch = async url => {
+    if (String(url).includes('api.tavily.com')) return new Response(JSON.stringify({ detail: 'limit' }), { status: 433 });
+    if (String(url).includes('generativelanguage.googleapis.com')) return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: 'Ayşe Yılmaz yeni Pazarlama Direktörü.' }] },
+        groundingMetadata: { groundingChunks: [{ web: {
+          uri: 'https://example.com/announcement', title: 'Örnek Gıda atama' } }] } }]
+    }), { status: 200 });
+    throw new Error('Unexpected provider call: ' + url);
+  };
+  try {
+    await createTRResearch(dependency).step({ id: 'run-cap', strategy: { phase: 6, space_id: 'travis-main',
+      candidates: [{ company: 'Örnek Gıda', signal_summary: 'Ayşe Yılmaz yeni Pazarlama Direktörü oldu',
+        confidence: 'medium', evidence: [] }] } }, 'jwt', { gemini_calls: 0 });
+    assert.equal(named[0].name, 'Ayşe Yılmaz');
+  } finally { globalThis.fetch = original; }
+});
+
 test('very strong dated event accepts validated general contact when named contacts are missing', async () => {
   const source = { url: 'https://example.com/lansman', title: 'Lansman', content: 'Yeni marka lansmanı.' };
   const { dependency, writes } = harness([source]);
@@ -139,10 +167,14 @@ test('recent executive appointment reaches review without a stated agency brief'
     content: 'Örnek Gıda yeni genel müdür atadı, şirket büyümeye odaklanacak.',
     published_date: new Date().toISOString().slice(0, 10), source_type: 'rss' };
   const { dependency, patches } = harness([source]);
-  dependency.claude = async () => ({ candidates: [{ company: 'Örnek Gıda', country: 'TR',
+  dependency.claude = async (_prompt, _payload, maxTokens, _usage, schema) => {
+    assert.equal(maxTokens, 5000);
+    assert.equal(schema.properties.candidates.items.properties.country.enum[0], 'TR');
+    return { candidates: [{ company: 'Örnek Gıda', country: 'TR',
     observation_type: 'dated_event', signal_summary: 'Yeni genel müdür atandı',
     hypothesis: 'Yeni yöneticinin büyüme programı olabilir', fit_reason: 'Büyüme danışmanlığı',
-    timing_reason: 'Atama bu ay', evidence: [{ url: source.url, fact: 'Yeni genel müdür atadı' }] }] });
+    timing_reason: 'Atama bu ay', evidence: [{ url: source.url, fact: 'Yeni genel müdür atadı' }] }] };
+  };
   const engine = createTRResearch(dependency);
   const result = await engine.step({ id: 'run3', strategy: { phase: 5, space_id: 'travis-main' } }, 'jwt', {});
   assert.equal(result.candidates, 1);
