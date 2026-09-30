@@ -30,10 +30,20 @@ const normalize = s => clean(s, 150).toLocaleLowerCase('tr-TR').replace(/[^\p{L}
 const strongSignal = c => c.confidence === 'high' && c.observation_type === 'dated_event' &&
   /(?:ceo|cfo|cmo|genel müdür|pazarlama direktör|yeni marka|ürün lansman|ürün grubu|pazara giriş|pazarına gir|ajans arayış)/i
     .test((c.evidence || []).map(e => e.fact).join(' '));
+const jsonObject = properties => ({ type: 'object', properties,
+  required: Object.keys(properties), additionalProperties: false });
+const string = { type: 'string' };
+const TR_JUDGEMENT_SCHEMA = jsonObject({ candidates: { type: 'array', items: jsonObject({
+  company: string, domain: { type: ['string', 'null'] }, country: { type: 'string', enum: ['TR'] },
+  observation_type: { type: 'string', enum: ['dated_event', 'current_technical_need', 'current_local_need'] },
+  signal_summary: string, hypothesis: string, fit_reason: string, timing_reason: string,
+  confidence: { type: 'string', enum: ['medium', 'high'] }, counterargument: string,
+  evidence: { type: 'array', items: jsonObject({ url: string, fact: string }) }
+}) } });
 
 export function createTRResearch(d) {
   const { sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals, tavily,
-    officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle } = d;
+    tavilyFailure, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle } = d;
   const supports = (fact, source) => {
     if (sourceSupports(fact, source)) return true;
     const words = [...new Set(clean(fact).toLocaleLowerCase('tr-TR').match(/[\p{L}\p{N}]{5,}/gu) || [])];
@@ -128,11 +138,17 @@ export function createTRResearch(d) {
         body: JSON.stringify({ query, search_depth: 'advanced', topic: 'general', max_results: 6,
           include_answer: false, include_raw_content: false })
       });
-      if (!response.ok) throw new Error('Kişi araması ' + response.status);
+      if (!response.ok) throw new Error('Kişi araması ' + await tavilyFailure(response));
       usage.tavily_credits = (usage.tavily_credits || 0) + 1;
       return (await response.json()).results || [];
     }));
     const hits = searched.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+    if (!hits.length && searched.some(r => r.status === 'rejected')) {
+      const google = await grounded(
+        `Find the current named CEO, CFO, general manager, CMO, marketing or commercial director of ${company} (${domain}) in Türkiye. Prioritize a person appointed in this event: ${clean(candidate.signal_summary || '', 180)}. Return source citations; do not invent names or emails.`, usage
+      ).catch(() => null);
+      if (google) hits.push(...google.refs.slice(0, 8).map(ref => ({ ...ref, content: clean(google.text, 1000) })));
+    }
     const pages = await openBatch([...new Map([
       ...official, ...(evidence || []).slice(0, 2).map(e => ({ url: e.url, title: company, content: e.fact })),
       ...hits.slice(0, 8).map(h => ({ url: h.url, title: h.title, content: h.content }))
@@ -171,7 +187,7 @@ export function createTRResearch(d) {
       body: JSON.stringify({ query: `${company} ${domain} CEO CMO pazarlama direktörü e-posta iletişim`,
         search_depth: 'advanced', topic: 'general', max_results: 8, include_answer: false })
     });
-    if (!response.ok) throw new Error('Kontak web araması ' + response.status);
+    if (!response.ok) throw new Error('Kontak web araması ' + await tavilyFailure(response));
     usage.tavily_credits = (usage.tavily_credits || 0) + 1;
     const hits = (await response.json()).results || [];
     const pages = await openBatch(hits.slice(0, 8).map(x => ({ url: x.url, title: x.title, content: x.content })));
@@ -362,7 +378,7 @@ export function createTRResearch(d) {
         recent_reviews: history.own.filter(x => x.review_reason).slice(-30).map(x => ({
           company: x.company, reason: x.review_reason, status: x.review_status
         }))
-      }, 3500, usage)));
+      }, 5000, usage, TR_JUDGEMENT_SCHEMA)));
       const allowed = new Map(all.map(x => [x.url, x]));
       const candidates = [];
       judged.forEach((r, i) => {

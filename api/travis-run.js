@@ -100,6 +100,12 @@ async function validateEmail(email, usage) {
 }
 const goodTitle = title => /chief|ceo|cfo|cmo|founder|owner|president|general manager|country manager|managing director|vice president|\bvp\b|director|head of|pazarlama|ticaret|finans|müdür|kurucu|başkan|growth|marketing|ecommerce|e-commerce|business development|iş geliştirme/i.test(title || '');
 const domainOK = domain => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain || '') && !/\.\./.test(domain);
+const personLinkedIn = url => {
+  const safe = safeLink(url);
+  if (!safe) return null;
+  const parsed = new URL(safe);
+  return /(^|\.)linkedin\.com$/.test(parsed.hostname) && /^\/in\/[^/]+/i.test(parsed.pathname) ? safe : null;
+};
 export async function decisionMakers(candidate, usage, profileCandidates = [], namedTargets = []) {
   const domain = String(candidate.domain || '').toLowerCase().replace(/^www\./, '');
   if (!domainOK(domain)) return [];
@@ -153,7 +159,7 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
     if (parts.length < 2 || !goodTitle(target.role)) return [];
     return [{ first_name: parts[0], last_name: parts.slice(1).join(' '),
       organization_name: candidate.company, domain,
-      ...(safeLink(target.source_url) ? { linkedin_url: safeLink(target.source_url) } : {}),
+      ...(personLinkedIn(target.source_url) ? { linkedin_url: personLinkedIn(target.source_url) } : {}),
       _source_url: target.source_url, _appointment_target: Boolean(target.appointment_target), _target_name: name }];
   });
   const knownNames = new Set(namedDetails.map(d => `${d.first_name} ${d.last_name}`.toLocaleLowerCase('tr-TR')));
@@ -169,16 +175,23 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
   usage.source_named_targets = (usage.source_named_targets || 0) + namedDetails.length;
   let candidates = [], waterfallEmails = new Map();
   try {
-    const initial = await apollo('people/bulk_match?run_waterfall_email=true&poll_only=true',
-      { details: details.map(({ _source_url, _searched_domain, _appointment_target, _target_name, ...item }) => item), reveal_personal_emails: false }, usage, uk);
+    const submitted = details.map(({ _source_url, _searched_domain, _appointment_target, _target_name, ...item }) => item);
+    // The TR account's accepted waterfall requests currently return request_id_unknown on polling.
+    // Native bulk enrichment returns available verified work emails synchronously. Keep the
+    // individual Apollo match and ZeroBounce finder fallbacks below for missing emails.
+    const nativeTR = candidate.country === 'TR';
+    const initial = await apollo(nativeTR ? 'people/bulk_match' :
+      'people/bulk_match?run_waterfall_email=true&poll_only=true',
+      { details: submitted, reveal_personal_emails: false }, usage, !nativeTR && uk);
     candidates = (initial.matches || []).map((p, i) => p ? {
       ...p, _source_url: details[i]?._source_url,
       _named_domain: details[i]?._source_url ? domain : null,
       ...(uk ? { _searched_domain: details[i]?.id === p.id ? details[i]?._searched_domain : null } : {})
     } : null).filter(Boolean);
-    usage.apollo_waterfall_statuses = [...(usage.apollo_waterfall_statuses || []),
+    usage.apollo_enrichment_mode = nativeTR ? 'native_bulk' : 'waterfall_poll';
+    if (!nativeTR) usage.apollo_waterfall_statuses = [...(usage.apollo_waterfall_statuses || []),
       String(initial.waterfall?.status || 'missing')].slice(-20);
-    if (['accepted', 'partial_accepted'].includes(initial.waterfall?.status) && initial.request_id) {
+    if (!nativeTR && ['accepted', 'partial_accepted'].includes(initial.waterfall?.status) && initial.request_id) {
       for (let attempt = 0; attempt < 12; attempt++) {
         const response = await fetch(`https://api.apollo.io/api/v1/webhook_result/${encodeURIComponent(initial.request_id)}`, {
           signal: AbortSignal.timeout(10000), headers: { 'x-api-key': process.env.APOLLO_API_KEY }
@@ -283,15 +296,24 @@ export async function decisionMakers(candidate, usage, profileCandidates = [], n
           !goodTitle(person.title) || contacts.some(x => x.name.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR'))) continue;
       searchedNames.add(name.toLocaleLowerCase('tr-TR'));
       const params = new URLSearchParams({ api_key: process.env.ZEROBOUNCE_API_KEY, domain,
+        company_name: clean(candidate.company, 120),
         first_name: parts[0], last_name: parts.slice(1).join(' ') });
       const response = await fetch('https://api.zerobounce.net/v2/guessformat', { method: 'POST',
         signal: AbortSignal.timeout(18000), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
       usage.zerobounce_finder_calls = (usage.zerobounce_finder_calls || 0) + 1;
-      if (!response.ok) continue;
+      if (!response.ok) {
+        usage.zerobounce_finder_errors = [...(usage.zerobounce_finder_errors || []), `HTTP ${response.status}`].slice(-12);
+        continue;
+      }
       const found = await response.json();
       const email = String(found.email || '').toLowerCase().trim();
+      const confidence = String(found.email_confidence || found.email_conficence || '').toUpperCase();
+      if (!email || confidence !== 'HIGH') usage.zerobounce_finder_outcomes = [
+        ...(usage.zerobounce_finder_outcomes || []), clean(found.failure_reason || found.Message ||
+          (email ? `confidence:${confidence || 'missing'}` : 'no_email'), 100)
+      ].slice(-12);
       if (!email.endsWith('@' + domain) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-          String(found.email_confidence || '').toUpperCase() !== 'HIGH' ||
+          confidence !== 'HIGH' ||
           contacts.some(x => x.email === email)) continue;
       if (contacts.length >= 2 && sameAppointee({ name })) contacts.pop();
       if (contacts.length >= 2) continue;
@@ -416,11 +438,23 @@ async function tavily(query, usage, index, days = 21) {
       filter_by_published_date: true, include_published_date: true,
       include_answer: false, include_raw_content: false })
   });
-  if (!response.ok) throw new Error('Tavily araması başarısız: ' + response.status);
+  if (!response.ok) throw new Error('Tavily araması başarısız: ' + await tavilyFailure(response));
   usage.tavily_credits++;
   const body = await response.json();
   return (body.results || []).map(r => ({ url: r.url, title: clamp(r.title, 160),
     snippet: clamp(r.content, 750), search_date: r.published_date || null }));
+}
+export async function tavilyFailure(response) {
+  const raw = await response.text().catch(() => '');
+  let detail = raw;
+  try {
+    const body = JSON.parse(raw);
+    detail = body.detail || body.message || body.error?.message || body.error || '';
+  } catch { /* Some provider failures return plain text. */ }
+  const safe = clamp(typeof detail === 'string' ? detail : JSON.stringify(detail), 160)
+    .replace(/tvly-[\w-]+/gi, '[redacted]')
+    .replace(/(?:api[_ -]?key|authorization)\s*[:=]\s*\S+/gi, '[redacted]');
+  return `${response.status}${safe ? ': ' + safe : ''}`;
 }
 export async function officialDomain(company, usage) {
   usage.domain_lookups = (usage.domain_lookups || 0) + 1;
@@ -721,7 +755,7 @@ export default async function handler(req, res) {
         sb(`travis_evidence?select=*&lead_id=eq.${id}`, jwt)
       ]);
       const engine = (countryCode === 'TR' ? createTRResearch : countryCode === 'UK' ? createUKResearch : createUSResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
-        tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
+        tavily, tavilyFailure, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.enrichExisting(lead, research[0], evidence, jwt, {});
       return res.status(200).json(result);
     } catch (error) { return res.status(500).json({ error: clamp(error.message, 300) }); }
@@ -743,7 +777,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ run_id: run.id, phase: run.strategy.phase, completed: false });
       }
       const engine = (countryCode === 'TR' ? createTRResearch : countryCode === 'UK' ? createUKResearch : createUSResearch)({ sb, claude, pageText, feedback, learnFromOutcomes, actor, linkedInSignals,
-        tavily, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
+        tavily, tavilyFailure, officialDomain, decisionMakers, validateEmail, sourceSupports, domainOK, goodTitle });
       const result = await engine.step(run, jwt, { ...usage, ...(run.usage || {}) });
       return res.status(200).json({ run_id: run.id, ...result });
     } catch (error) {
