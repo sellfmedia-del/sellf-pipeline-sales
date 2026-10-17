@@ -1,0 +1,32 @@
+#pipeline-offer-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+#pipeline-offer-section .sidebar-key { font-size: 10px; }
+#pipeline-offer-section .offer-empty {
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.55;
+  margin: 7px 0 10px;
+}
+#pipeline-offer-section .offer-details { margin-bottom: 12px; }
+#pipeline-offer-section .offer-details > div {
+  margin-bottom: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+#pipeline-offer-section dt { color: var(--text3); }
+#pipeline-offer-section dd { color: var(--text2); overflow-wrap: anywhere; }
+#pipeline-offer-section .offer-create { width: 100%; }
+#pipeline-offer-section .offer-create:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  background: var(--text);
+}
+#pipeline-offer-section .offer-help {
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text3);
+}

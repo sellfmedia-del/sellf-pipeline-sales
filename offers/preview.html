@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pipeline · Teklif bölümü önizlemesi</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
+    header { padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
+    header p { margin: 2px 0 0; color: #6b6963; }
+    iframe { display: block; border: 0; width: 100%; height: calc(100dvh - 76px); min-height: 450px; }
+    #preview-error { padding: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Teklif bölümü · Tasarım önizlemesi</strong>
+    <p>Örnek marka verileri kullanılır. Bu ekran salt okunurdur. Kartın sağ bölümünü aşağı kaydırarak Teklif alanını inceleyebilirsin.</p>
+  </header>
+  <div id="preview-error" role="status">Önizleme yükleniyor…</div>
+  <iframe id="preview-frame" title="Örnek Pipeline kartı" sandbox="allow-scripts" hidden></iframe>
+  <script src="/offers/preview.js"></script>
+</body>
+</html>
