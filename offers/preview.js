@@ -2,6 +2,15 @@
 (async function () {
   'use strict';
 
+  document.querySelectorAll('[data-preview-width]').forEach(button => {
+    button.addEventListener('click', () => {
+      document.getElementById('preview-frame').style.width = button.dataset.previewWidth === 'mobile' ? 'min(390px, 100%)' : '100%';
+      document.querySelectorAll('[data-preview-width]').forEach(item => {
+        item.setAttribute('aria-pressed', String(item === button));
+      });
+    });
+  });
+
   function installFixture() {
     const rows = {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],

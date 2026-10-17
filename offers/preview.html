@@ -9,7 +9,11 @@
     body { margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
     header { padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
     header p { margin: 2px 0 0; color: #6b6963; }
-    iframe { display: block; border: 0; width: 100%; height: calc(100dvh - 76px); min-height: 450px; }
+    nav { display: flex; gap: 6px; margin-top: 8px; }
+    nav button { padding: 4px 10px; border: 1px solid #c8c6bc; border-radius: 7px; background: white; font: inherit; cursor: pointer; }
+    nav button[aria-pressed="true"] { background: #1a1917; color: white; }
+    iframe { display: block; border: 0; width: 100%; height: calc(100dvh - 104px); min-height: 450px; margin: 0 auto; }
+    iframe[hidden] { display: none; }
     #preview-error { padding: 16px; }
   </style>
 </head>
@@ -17,6 +21,10 @@
   <header>
     <strong>Teklif bölümü · Tasarım önizlemesi</strong>
     <p>Örnek marka verileri kullanılır. Bu ekran salt okunurdur. Kartın sağ bölümünü aşağı kaydırarak Teklif alanını inceleyebilirsin.</p>
+    <nav aria-label="Önizleme boyutu">
+      <button type="button" data-preview-width="desktop" aria-pressed="true">Masaüstü</button>
+      <button type="button" data-preview-width="mobile" aria-pressed="false">Mobil</button>
+    </nav>
   </header>
   <div id="preview-error" role="status">Önizleme yükleniyor…</div>
   <iframe id="preview-frame" title="Örnek Pipeline kartı" sandbox="allow-scripts" hidden></iframe>
