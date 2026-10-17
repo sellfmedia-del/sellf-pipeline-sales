@@ -47,6 +47,21 @@ export function candidatesInDocument() {
 
 function dataUrl(bytes) { return 'data:image/png;base64,'+bytes.toString('base64'); }
 
+export async function enterCountrySite(page, deadline) {
+  // Public country selectors can be the entire entry page. Select a visible,
+  // ordinary navigation button; no guessed URLs or form submissions.
+  const selector=await page.evaluate(()=>/select your country|choose your country/i.test(document.body.innerText)&&document.querySelectorAll('button').length>1);
+  if(!selector)return;
+  for(const name of [/Türkiye|Turkey/i,/Global/i,/United Kingdom/i]) {
+    const button=page.getByRole('button',{name}).first();
+    if(!await button.count()||!await button.isVisible())continue;
+    const before=page.url();
+    await Promise.all([page.waitForURL(url=>url.href!==before,{timeout:Math.min(8000,Math.max(1000,deadline-Date.now()-18000))}).catch(()=>{}),button.click({timeout:3000}).catch(()=>{})]);
+    if(page.url()!==before){await page.goto(page.url(),{waitUntil:'load',timeout:Math.max(1000,deadline-Date.now()-15000)});}
+    break;
+  }
+}
+
 // Use the actual site's raster asset at native resolution. Screenshot padding
 // must not hide an opaque image's white backdrop from the matte remover.
 async function rasterSource(candidate, read) {
@@ -94,6 +109,7 @@ export async function captureWebsiteLogo(input, { browser:providedBrowser, testR
     if(!response||response.status()>=400)throw new Error('Site açılamadı. Site erişim kısıtı veya bağlantı hatası olabilir.');
     const pageTitle=await page.title();
     if(/just a moment|access denied|verify you are human|checking your browser/i.test(pageTitle))throw new Error('Site otomatik erişim için insan doğrulaması istiyor.');
+    await enterCountrySite(page,deadline);
     await page.evaluate(async()=>{
       await Promise.race([document.fonts.ready,new Promise(resolve=>setTimeout(resolve,3500))]);
       await Promise.all([...document.images].filter(img=>img.getBoundingClientRect().top<400).map(img=>Promise.race([img.decode().catch(()=>{}),new Promise(resolve=>setTimeout(resolve,3000))])));

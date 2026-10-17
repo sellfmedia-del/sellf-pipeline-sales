@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import chromium from '@sparticuz/chromium';
 import {chromium as playwright} from 'playwright-core';
-import {captureWebsiteLogo} from '../src/capture.mjs';
+import {captureWebsiteLogo,enterCountrySite} from '../src/capture.mjs';
 import sharp from 'sharp';
 
 test('rendered header logo is cropped and its white details survive background removal',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
@@ -19,6 +19,18 @@ test('rendered header logo is cropped and its white details survive background r
     assert.ok(result.candidates[0].quality.width>500);
     if(process.env.LOGO_TEST_OUTPUT){await writeFile(process.env.LOGO_TEST_OUTPUT,Buffer.from(result.candidates[0].image.split(',')[1],'base64'));await writeFile(process.env.LOGO_TEST_OUTPUT.replace('.png','-source.png'),Buffer.from(result.candidates[0].source.split(',')[1],'base64'));}
   } finally {await browser.close();}
+});
+
+test('public country selector follows its visible country button without guessing a route',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+  const browser=await playwright.launch({args:chromium.args,executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
+  try{
+    const page=await browser.newPage();
+    await page.route('https://brand.example/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:route.request().url().endsWith('/tr-TR')?'<header>Brand homepage</header>':'<p>Please select your country</p><button onclick="location.href=\'/tr-TR\'">Türkiye</button><button>Global</button>'}));
+    await page.goto('https://brand.example/');
+    await enterCountrySite(page,Date.now()+30000);
+    assert.equal(page.url(),'https://brand.example/tr-TR');
+    assert.match(await page.textContent('body'),/Brand homepage/);
+  }finally{await browser.close();}
 });
 
 test('opaque raster uses native pixels and removes its backdrop despite transparent screenshot margins',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
