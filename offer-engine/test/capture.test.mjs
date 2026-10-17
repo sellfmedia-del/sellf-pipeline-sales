@@ -4,6 +4,7 @@ import {writeFile} from 'node:fs/promises';
 import chromium from '@sparticuz/chromium';
 import {chromium as playwright} from 'playwright-core';
 import {captureWebsiteLogo} from '../src/capture.mjs';
+import sharp from 'sharp';
 
 test('rendered header logo is cropped and its white details survive background removal',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
   const browser=await playwright.launch({args:chromium.args,executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
@@ -18,4 +19,23 @@ test('rendered header logo is cropped and its white details survive background r
     assert.ok(result.candidates[0].quality.width>500);
     if(process.env.LOGO_TEST_OUTPUT){await writeFile(process.env.LOGO_TEST_OUTPUT,Buffer.from(result.candidates[0].image.split(',')[1],'base64'));await writeFile(process.env.LOGO_TEST_OUTPUT.replace('.png','-source.png'),Buffer.from(result.candidates[0].source.split(',')[1],'base64'));}
   } finally {await browser.close();}
+});
+
+test('opaque raster uses native pixels and removes its backdrop despite transparent screenshot margins',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+  const browser=await playwright.launch({args:chromium.args,executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
+  try {
+    const png=await sharp(Buffer.from('<svg width="900" height="240"><rect width="900" height="240" fill="white"/><rect x="30" y="30" width="840" height="180" fill="#164b8c"/><circle cx="140" cy="120" r="40" fill="white"/></svg>')).png().toBuffer();
+    const html='<html><body><header><a href="/" aria-label="Brand logo"><img alt="Brand logo" src="/logo.png" style="width:225px;height:60px"></a></header></body></html>';
+    const result=await captureWebsiteLogo('https://brand.example/',{browser,testRoute:async url=>({status:200,headers:{'content-type':url.endsWith('.png')?'image/png':'text/html'},body:url.endsWith('.png')?png:html})});
+    const item=result.candidates[0];
+    assert.equal(item.quality.sourceKind,'native-raster');
+    assert.equal(item.quality.nativeWidth,900);
+    assert.equal(item.quality.method,'edge-matte');
+    assert.equal(item.quality.status,'ready');
+    assert.ok(item.quality.width>800);
+    const pixels=await sharp(Buffer.from(item.image.split(',')[1],'base64')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    assert.equal(pixels.data[3],0);
+    const p=((12+90)*pixels.info.width+12+110)*4;
+    assert.deepEqual([...pixels.data.subarray(p,p+4)],[255,255,255,255]);
+  }finally{await browser.close();}
 });

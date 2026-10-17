@@ -8,6 +8,8 @@ The build copies the feature branch's current card/brief UI into a synthetic pre
 
 The worker renders the public website in a new credential-free Chromium context. Header/home-link/logo elements are ranked and cropped at 3x device scale. It captures both the original site region and a transparent render of the actual logo element; artwork fills and colors are retained. Opaque, uniform image backdrops use edge-connected removal, with conservative antialias correction. Complex backgrounds, clipping, low native resolution, changed solid pixels, and mismatches with the source are flagged for review. This is deterministic capture and pixel processing, not generative logo reconstruction or a newly enabled paid AI service. It does not claim semantic visual approval for every possible website.
 
+Raster images without CSS filters or clipping use the actual site's image bytes at native resolution; a Wix original is preferred only when the image identity and aspect ratio match the displayed asset. This also prevents transparent screenshot margins from masking an opaque bitmap backdrop. SVGs and styled artwork retain the rendered-page path. Pixel dimensions are checked after trimming, so whitespace does not count as useful resolution.
+
 Preview responses include originals, transparent PNGs, quality measurements and source-site identity. The brief rejects stale results when its website changes. No website is automatically published, no files or cards are persisted, and estimated value remains unchanged until the future pricing engine produces an actual offer.
 
 ## Access

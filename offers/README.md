@@ -1,11 +1,12 @@
 # Offer preparation boundary
 
-This directory contains the isolated Pipeline card extension and the brief UI prototype. The eventual audit engine, offer engine, APIs and customer portal remain separate responsibilities. This stage has no persistence, audit/model calls or customer publishing.
+This directory contains the isolated Pipeline card extension and the brief UI prototype. The eventual audit engine, pricing/offer engine and customer portal remain separate responsibilities. This stage has no persistence, audit/model calls or customer publishing. Automatic logo capture is provided only in the separate protected `offer-engine` preview.
 
 - `card-section.*`: card summary and entry button. All styles are scoped to the new section.
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
 - `brief-form.*`: isolated dialog, editable brief, source context and review state. Form input never mutates the CRM lead or calls the bulk `save()` function.
-- `preview.*`: synthetic read-only CRM fixture; only the brief form is interactive. Its sandbox blocks network access and storage. Logo files remain local blob previews. No production Supabase client is initialized.
+- `logo-control.*`: automatic website capture, original/transparent comparison, quality review and placement sample. Website changes invalidate the previous logo. No manual PNG upload is required.
+- `preview.*`: synthetic read-only CRM fixture; only the brief form is interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the website URL to the same-origin logo API; PNGs remain in memory. No production Supabase client is initialized.
 
 ## Accepted pricing and value rules for the later engine
 

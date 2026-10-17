@@ -2,6 +2,7 @@ import chromium from '@sparticuz/chromium';
 import { chromium as playwright } from 'playwright-core';
 import { createPublicFetcher, resolveTarget } from './network.mjs';
 import { finishLogo } from './pixels.mjs';
+import sharp from 'sharp';
 
 export function candidatesInDocument() {
   const all=[...document.querySelectorAll('header img, header svg, header a, nav img, nav svg, [class*="logo" i], [id*="logo" i], [class*="brand" i], a[href="/"], img[alt*="logo" i]')];
@@ -28,7 +29,11 @@ export function candidatesInDocument() {
     const vector=!img||/\.svg(?:[?#]|$)|^data:image\/svg/i.test(img.currentSrc||img.src);
     const nativeWidth=img?.naturalWidth||0;
     const imageDisplayWidth=img?.getBoundingClientRect().width||box.width;
-    result.push({element,score,box:{x:box.left,y:box.top,width:box.width,height:box.height},kind:element.tagName.toLowerCase(),hint:hint.slice(0,140),vector,nativeWidth,imageDisplayWidth});
+    const imgStyle=img&&getComputedStyle(img);
+    let plainAncestors=true;
+    for(let parent=img;parent;parent=parent.parentElement){const css=getComputedStyle(parent);if(css.filter!=='none'||css.mixBlendMode!=='normal'||Number(css.opacity)!==1||css.clipPath!=='none')plainAncestors=false;}
+    const directImage=img&&children.length<=1&&!element.querySelector('svg')&&!element.textContent.trim()&&plainAncestors&&['fill','contain'].includes(imgStyle.objectFit);
+    result.push({element,score,box:{x:box.left,y:box.top,width:box.width,height:box.height},kind:element.tagName.toLowerCase(),hint:hint.slice(0,140),vector,nativeWidth,imageDisplayWidth,nativeHeight:img?.naturalHeight||0,imageSource:directImage?(img.currentSrc||img.src):null});
   }
   result.sort((a,b)=>b.score-a.score);
   const selected=[];
@@ -41,6 +46,29 @@ export function candidatesInDocument() {
 }
 
 function dataUrl(bytes) { return 'data:image/png;base64,'+bytes.toString('base64'); }
+
+// Use the actual site's raster asset at native resolution. Screenshot padding
+// must not hide an opaque image's white backdrop from the matte remover.
+async function rasterSource(candidate, read) {
+  if(!candidate.imageSource||candidate.vector)return null;
+  const current=new URL(candidate.imageSource);
+  const urls=[current.href];
+  if(current.hostname==='static.wixstatic.com'&&current.pathname.includes('/media/')&&current.pathname.includes('/v1/')) {
+    const original=new URL(current);original.pathname=original.pathname.split('/v1/')[0];original.search='';urls.unshift(original.href);
+  }
+  for(const url of urls) {
+    try {
+      const response=await read(url);
+      if(response.status!==200)continue;
+      const meta=await sharp(response.body,{limitInputPixels:16000000}).metadata();
+      if(!['png','jpeg','webp','avif','gif'].includes(meta.format)||!meta.width||!meta.height||meta.pages>1)continue;
+      if(meta.width*meta.height>4000000||Math.abs((meta.width/meta.height)/(candidate.nativeWidth/candidate.nativeHeight)-1)>.03)continue;
+      const processed=await finishLogo(response.body);
+      return {...processed,quality:{...processed.quality,sourceKind:'native-raster',nativeWidth:meta.width,nativeHeight:meta.height}};
+    }catch{/* Keep the rendered-page fallback when an asset cannot be used. */}
+  }
+  return null;
+}
 
 export async function captureWebsiteLogo(input, { browser:providedBrowser, testRoute, timeout=55000 }={}) {
   if(!testRoute) await resolveTarget(input);
@@ -95,8 +123,11 @@ export async function captureWebsiteLogo(input, { browser:providedBrowser, testR
       let transparent;
       try { transparent=await page.screenshot({type:'png',clip,omitBackground:true,animations:'disabled',timeout:5000}); }
       finally { await page.evaluate(()=>window.__offerLogoRestore?.()); }
-      const processed=await finishLogo(transparent,original);
-      const highEnough=processed.quality.width>=Math.min(360,box.width*2)&&processed.quality.height>=40&&(candidate.vector||candidate.nativeWidth>=Math.min(360,candidate.imageDisplayWidth*2));
+      const raster=await rasterSource(candidate,testRoute||read);
+      const processed=raster||await finishLogo(transparent,original);
+      const highEnough=raster
+        ? Math.max(processed.quality.width-24,processed.quality.height-24)>=360&&Math.min(processed.quality.width-24,processed.quality.height-24)>=40
+        : processed.quality.width>=Math.min(360,box.width*2)&&processed.quality.height>=40&&(candidate.vector||candidate.nativeWidth>=Math.min(360,candidate.imageDisplayWidth*2));
       if(!highEnough)processed.quality.status='review';
       results.push({id:candidate.id,score:candidate.score,source: dataUrl(original),image:dataUrl(processed.png),quality:{...processed.quality,highEnough},box,kind:candidate.kind});
     }
