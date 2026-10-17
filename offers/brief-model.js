@@ -25,7 +25,7 @@
     };
     return {
       source,
-      brandName: source.company, segment: '', website: '', logoUrl: '', logoFile: null,
+      brandName: source.company, segment: '', website: '', logoUrl: '', logoFile: null, logo: null,
       goals: '', needs: '', services: '', budget: '',
       meetingNotes: [source.notes, ...timeline.map(t => [t.date, t.type, t.note].filter(Boolean).join(' · '))].filter(Boolean).join('\n\n')
     };
@@ -36,7 +36,8 @@
     if (!text(draft.brandName).trim()) errors.brandName = 'Marka adını gir.';
     if (!segments.includes(draft.segment)) errors.segment = 'Bir müşteri segmenti seç.';
     if (!webUrl(draft.website)) errors.website = 'Geçerli bir web sitesi adresi gir.';
-    if (!draft.logoFile && !text(draft.logoUrl).trim()) errors.logoUrl = 'Logo bağlantısı ekle veya logo yükle.';
+    const automatic=draft.logo?.status==='ready'&&draft.logo?.sourceWebsite===webUrl(draft.website)&&draft.logo?.generated===false&&draft.logo?.image?.startsWith('data:image/png;base64,');
+    if (!automatic && !draft.logoFile && !text(draft.logoUrl).trim()) errors.logoUrl = draft.logo?.status==='loading'?'Logo hazırlanıyor. Tamamlanmasını bekle.':draft.logo?.status==='review'?'Logo kesitini orijinal ile karşılaştırıp kontrolü tamamla.':'Web sitesinden logoyu hazırla.';
     if (text(draft.logoUrl).trim() && !webUrl(draft.logoUrl)) errors.logoUrl = 'Geçerli bir logo bağlantısı gir.';
     if (draft.logoFile && validateLogo(draft.logoFile)) errors.logoFile = validateLogo(draft.logoFile);
     if (!text(draft.goals).trim()) errors.goals = 'Markanın hedeflerini belirt.';

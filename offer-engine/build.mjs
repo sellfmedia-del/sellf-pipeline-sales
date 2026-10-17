@@ -1,0 +1,13 @@
+import { mkdir,copyFile,cp,readFile,writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+const here=path.dirname(fileURLToPath(import.meta.url));
+const root=path.resolve(here,'..');
+await mkdir(path.join(here,'public'),{recursive:true});
+await copyFile(path.join(root,'index.html'),path.join(here,'public/crm-source.html'));
+await cp(path.join(root,'offers'),path.join(here,'public/offers'),{recursive:true});
+const html=await readFile(path.join(here,'public/offers/preview.html'),'utf8');
+await writeFile(path.join(here,'public/offers/preview.html'),html.replace('<html lang="tr">','<html lang="tr" data-logo-service="ready">'));
+const js=await readFile(path.join(here,'public/offers/preview.js'),'utf8');
+await writeFile(path.join(here,'public/offers/preview.js'),js.replace("fetch('/index.html'","fetch('/crm-source.html'"));
+await writeFile(path.join(here,'public/index.html'),'<!doctype html><html lang="tr"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/offers/preview.html"><title>Teklif hazırlığı önizlemesi</title><a href="/offers/preview.html">Önizlemeyi aç</a></html>');

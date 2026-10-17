@@ -1,0 +1,17 @@
+{
+  "name": "sellf-offer-logo-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "153.0.0",
+    "playwright-core": "1.64.1",
+    "sharp": "0.35.5",
+    "ipaddr.js": "2.5.0"
+  }
+}

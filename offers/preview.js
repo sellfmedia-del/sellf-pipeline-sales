@@ -11,7 +11,20 @@
     });
   });
 
-  function installFixture() {
+  function installFixture(logoServiceAvailable) {
+    if(logoServiceAvailable) {
+      window.PipelineLogoRequest=payload=>new Promise((resolve,reject)=>{
+        const requestId=crypto.randomUUID();
+        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('Logo hazırlama süresi aşıldı.'));},80000);
+        function receive(event) {
+          if(event.source!==parent||event.data?.type!=='offer-logo-result'||event.data?.requestId!==requestId)return;
+          clearTimeout(timer);window.removeEventListener('message',receive);
+          if(event.data.error)reject(new Error(event.data.error));else resolve(event.data.result);
+        }
+        window.addEventListener('message',receive);
+        parent.postMessage({type:'offer-logo-request',requestId,website:payload.website},'*');
+      });
+    }
     const rows = {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],
       columns: [{ id: 'demo-column', space_id: 'demo-space', title: 'Teklif Aşamasında', dot: '#BA7517' }],
@@ -76,14 +89,14 @@
     let source = await response.text();
     const sdk = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>';
     if (!source.includes(sdk)) throw new Error('Önizleme kaynağı değişti.');
-    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; connect-src 'none'; form-action 'none'\">";
-    const assets = ['card-section.css', 'brief-form.css', 'brief-model.js', 'brief-form.js', 'card-section.js'];
+    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'none'; form-action 'none'\">";
+    const assets = ['card-section.css', 'brief-form.css', 'logo-control.css', 'brief-model.js', 'logo-control.js', 'brief-form.js', 'card-section.js'];
     const contents = await Promise.all(assets.map(path => fetch('/offers/' + path).then(r => {
       if (!r.ok) throw new Error('Önizleme dosyası yüklenemedi.');
       return r.text();
     })));
     source = source.replace('<head>', '<head>' + policy)
-      .replace(sdk, '<script>(' + installFixture.toString() + ')();</script>');
+      .replace(sdk, '<script>(' + installFixture.toString() + ')(' + String(document.documentElement.dataset.logoService==='ready') + ');</script>');
     assets.forEach((path, index) => {
       source = path.endsWith('.css')
         ? source.replace('<link rel="stylesheet" href="/offers/' + path + '">', '<style>' + contents[index] + '</style>')
@@ -91,6 +104,16 @@
     });
     const frame = document.getElementById('preview-frame');
     frame.srcdoc = source;
+    window.addEventListener('message',async event=>{
+      if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-logo-request')return;
+      const {requestId,website}=event.data;
+      if(typeof requestId!=='string'||requestId.length>80||typeof website!=='string'||website.length>2048)return;
+      try {
+        const response=await fetch('/api/logo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({website})});
+        const result=await response.json();
+        frame.contentWindow.postMessage({type:'offer-logo-result',requestId,...(response.ok?{result}:{error:result.error||'Logo alınamadı.'})},'*');
+      }catch(error){frame.contentWindow.postMessage({type:'offer-logo-result',requestId,error:'Logo servisine bağlanılamadı.'},'*');}
+    });
     frame.hidden = false;
     message.hidden = true;
   } catch (error) {

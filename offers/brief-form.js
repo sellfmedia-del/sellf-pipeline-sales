@@ -3,7 +3,7 @@
   'use strict';
   let active = null;
   const labels = { kobi: 'KOBİ', corporate: 'Kurumsal', key_account: 'Key Account' };
-  const fields = ['brandName', 'segment', 'website', 'logoUrl', 'goals', 'needs', 'services', 'budget', 'meetingNotes'];
+  const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'meetingNotes'];
 
   function open(context, returnFocus) {
     const model = window.PipelineOfferBriefModel;
@@ -27,10 +27,7 @@
             <div class="ob-field"><label for="ob-brandName">Marka adı <span>*</span></label><input id="ob-brandName" name="brandName" required maxlength="200" autocomplete="organization"><p class="ob-error" id="error-brandName"></p></div>
             <div class="ob-field"><label for="ob-segment">Müşteri segmenti <span>*</span></label><select id="ob-segment" name="segment" required><option value="">Segment seç</option><option value="kobi">KOBİ</option><option value="corporate">Kurumsal</option><option value="key_account">Key Account</option></select><p class="ob-hint">Hesaplamada yalnızca bu segmentin maliyetleri kullanılır.</p><p class="ob-error" id="error-segment"></p></div>
             <div class="ob-field ob-wide"><label for="ob-website">Web sitesi <span>*</span></label><input id="ob-website" name="website" type="text" inputmode="url" placeholder="marka.com" maxlength="2048" required><p class="ob-error" id="error-website"></p></div>
-            <div class="ob-field ob-wide"><label for="ob-logoUrl">Marka logosu <span>*</span></label><input id="ob-logoUrl" name="logoUrl" type="text" inputmode="url" placeholder="https://marka.com/logo.png" maxlength="2048"><p class="ob-hint">Logo bağlantısı ekle veya bilgisayarından yükle. Logonun özgün renkleri ve oranı korunacak.</p>
-              <div class="ob-upload"><label class="ob-file-label" for="ob-logoFile">Logo yükle</label><input id="ob-logoFile" name="logoFile" type="file" accept="image/png,image/jpeg,image/webp"><span class="ob-file-name">PNG, JPG veya WebP · en fazla 2 MB</span><button type="button" class="ob-file-clear" hidden>Dosyayı kaldır</button></div>
-              <img class="ob-logo-preview" alt="Seçilen marka logosu" hidden><p class="ob-error" id="error-logoUrl"></p><p class="ob-error" id="error-logoFile"></p>
-            </div>
+            <div class="ob-field ob-wide"><div class="ob-auto-logo"></div><p class="ob-error" id="error-logoUrl"></p></div>
           </div></fieldset>
           <fieldset><legend>Hedefler ve kapsam</legend><div class="ob-grid">
             <div class="ob-field ob-wide"><label for="ob-goals">Hedefler <span>*</span></label><textarea id="ob-goals" name="goals" placeholder="Marka hangi iş sonucuna ulaşmak istiyor?" maxlength="10000" required></textarea><p class="ob-error" id="error-goals"></p></div>
@@ -49,9 +46,6 @@
       <footer class="ob-footer"><p>Önizleme: Düzenlemeler kaydedilmez.</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector('form');
-    let logoObjectUrl = '';
-    let logoError = '';
-    let logoPending = false;
     let reviewing = false;
     const source = draft.source;
     dialog.querySelector('.ob-subtitle').textContent = source.company + ' · ' + source.contact;
@@ -70,7 +64,7 @@
 
     function sync() { fields.forEach(name => { draft[name] = form.elements[name].value; }); }
     function close() {
-      if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
+      logoControl?.destroy();
       dialog.close();
       dialog.remove();
       active = null;
@@ -81,39 +75,12 @@
     dialog.querySelector('.ob-back').addEventListener('click', close);
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
 
-    function clearLogo() {
-      if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
-      logoObjectUrl = '';
-      draft.logoFile = null;
-      form.elements.logoFile.value = '';
-      const preview = dialog.querySelector('.ob-logo-preview');
-      preview.hidden = true;
-      preview.removeAttribute('src');
-      dialog.querySelector('.ob-file-name').textContent = 'PNG, JPG veya WebP · en fazla 2 MB';
-      dialog.querySelector('.ob-file-clear').hidden = true;
-      logoError = '';
-      logoPending = false;
-      dialog.querySelector('#error-logoFile').textContent = '';
-    }
-    form.elements.logoFile.addEventListener('change', () => {
-      const file = form.elements.logoFile.files[0];
-      clearLogo();
-      if (!file) return;
-      logoError = model.validateLogo(file);
-      if (logoError) { dialog.querySelector('#error-logoFile').textContent = logoError; return; }
-      draft.logoFile = { name: file.name, type: file.type, size: file.size };
-      form.elements.logoUrl.value = '';
-      logoObjectUrl = URL.createObjectURL(file);
-      logoPending = true;
-      const preview = dialog.querySelector('.ob-logo-preview');
-      preview.src = logoObjectUrl;
-      preview.hidden = false;
-      preview.onload = () => { logoPending = false; };
-      preview.onerror = () => { clearLogo(); logoError = 'Logo dosyası açılamadı. Geçerli bir görsel seç.'; dialog.querySelector('#error-logoFile').textContent = logoError; };
-      dialog.querySelector('.ob-file-name').textContent = file.name;
-      dialog.querySelector('.ob-file-clear').hidden = false;
+    const logoControl = window.PipelineLogoControl?.mount(dialog.querySelector('.ob-auto-logo'), {
+      getWebsite: () => form.elements.website.value,
+      onChange: value => { draft.logo = value; dialog.querySelector('#error-logoUrl').textContent = ''; }
     });
-    dialog.querySelector('.ob-file-clear').addEventListener('click', clearLogo);
+    form.elements.website.addEventListener('input', () => logoControl?.invalidate());
+    form.elements.website.addEventListener('blur', () => logoControl?.prepare());
     fields.forEach(name => {
       const input = form.elements[name];
       input.addEventListener('input', () => {
@@ -137,8 +104,7 @@
       if (reviewing) return;
       sync();
       const errors = model.validate(draft);
-      if (logoError) errors.logoFile = logoError;
-      if (logoPending) errors.logoFile = 'Logo kontrolü tamamlanınca tekrar dene.';
+
       const summary = dialog.querySelector('#ob-errors');
       fields.forEach(name => {
         const error = dialog.querySelector('#error-' + name);
@@ -146,9 +112,8 @@
         form.elements[name].setAttribute('aria-invalid', String(Boolean(errors[name])));
         if (error) form.elements[name].setAttribute('aria-describedby', error.id);
       });
-      dialog.querySelector('#error-logoFile').textContent = errors.logoFile || '';
-      form.elements.logoFile.setAttribute('aria-invalid', String(Boolean(errors.logoFile)));
-      form.elements.logoFile.setAttribute('aria-describedby', 'error-logoFile');
+      dialog.querySelector('#error-logoUrl').textContent = errors.logoUrl || '';
+      if (errors.logoUrl && Object.keys(errors)[0] === 'logoUrl') dialog.querySelector('.ol-fetch')?.focus();
       if (Object.keys(errors).length) {
         summary.hidden = false;
         summary.textContent = 'Devam etmek için işaretli alanları tamamla.';
@@ -160,7 +125,7 @@
       details.replaceChildren();
       const values = [
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
-        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logoFile?.name || model.webUrl(draft.logoUrl)],
+        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Markanın sitesinden alındı · Şeffaf PNG' : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
         ['Aylık bütçe', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
         ['Toplantı notları', draft.meetingNotes || 'Belirtilmedi']
