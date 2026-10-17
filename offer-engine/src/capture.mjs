@@ -118,7 +118,11 @@ export async function captureWebsiteLogo(input, { browser:providedBrowser, testR
       document.getAnimations().forEach(animation=>{try{animation.finish();}catch{animation.cancel();}});
     });
     const candidates=await page.evaluate(candidatesInDocument);
-    if(!candidates.length)throw new Error('Sayfanın üst bölümündeki logo alanı güvenle ayrıştırılamadı.');
+    if(!candidates.length){
+      const diagnostic=await page.evaluate(()=>({title:document.title,ready:document.readyState,images:[...document.images].slice(0,5).map(img=>({alt:img.alt,nativeWidth:img.naturalWidth,box:{width:img.getBoundingClientRect().width,height:img.getBoundingClientRect().height,top:img.getBoundingClientRect().top}}))}));
+      console.warn('Public logo page diagnostic',JSON.stringify({url:page.url(),...diagnostic,blocked:blocked.slice(-5)}));
+      throw new Error('Sayfanın üst bölümündeki logo alanı güvenle ayrıştırılamadı.');
+    }
     const results=[];
     for(const candidate of candidates) {
       if(Date.now()>deadline-5000)break;
