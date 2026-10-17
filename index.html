@@ -7,6 +7,9 @@
 <!-- Supabase JS CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="/offers/card-section.css">
+<link rel="stylesheet" href="/offers/brief-form.css">
+<script src="/offers/brief-model.js"></script>
+<script src="/offers/brief-form.js"></script>
 <script src="/offers/card-section.js"></script>
 
 <style>
@@ -731,7 +734,7 @@ function renderModal(){
       <button class="del-lead-btn" onclick="confirmDeleteLead()">Leadı sil</button>
       <div style="font-size:11px;color:var(--text3)">${(lead.timeline||[]).length} görüşme · ${(lead.contacts||[]).length} contact</div>
     </div>`;
-  window.PipelineOffers?.mount(document.getElementById('pipeline-offer-section'));
+  window.PipelineOffers?.mount(document.getElementById('pipeline-offer-section'), { lead, spaceId: activeSpaceId });
 }
 
 function updateField(key,val){

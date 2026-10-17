@@ -53,8 +53,8 @@
       setTimeout(() => {
         openModal('demo-lead');
         const makeReadOnly = () => {
-          document.querySelectorAll('input, textarea').forEach(el => { el.readOnly = true; });
-          document.querySelectorAll('select, button:not(.modal-close)').forEach(el => { el.disabled = true; });
+          document.querySelectorAll('#crm-view input, #crm-view textarea').forEach(el => { el.readOnly = true; });
+          document.querySelectorAll('#crm-view select, #crm-view button:not(.modal-close):not(.offer-create)').forEach(el => { el.disabled = true; });
         };
         makeReadOnly();
         new MutationObserver(makeReadOnly).observe(document.getElementById('modal'), { childList: true, subtree: true });
@@ -62,7 +62,7 @@
     });
     document.addEventListener('click', event => {
       const target = event.target.closest('a, button, [onclick], .card');
-      if (target && !target.matches('.modal-close, .card, #overlay')) {
+      if (target && !target.closest('#offer-brief-dialog') && !target.matches('.modal-close, .card, #overlay, .offer-create')) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -76,15 +76,19 @@
     let source = await response.text();
     const sdk = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>';
     if (!source.includes(sdk)) throw new Error('Önizleme kaynağı değişti.');
-    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'\">";
-    const [css, js] = await Promise.all([
-      fetch('/offers/card-section.css').then(r => { if (!r.ok) throw new Error('Stil yüklenemedi.'); return r.text(); }),
-      fetch('/offers/card-section.js').then(r => { if (!r.ok) throw new Error('Bölüm yüklenemedi.'); return r.text(); })
-    ]);
+    const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; connect-src 'none'; form-action 'none'\">";
+    const assets = ['card-section.css', 'brief-form.css', 'brief-model.js', 'brief-form.js', 'card-section.js'];
+    const contents = await Promise.all(assets.map(path => fetch('/offers/' + path).then(r => {
+      if (!r.ok) throw new Error('Önizleme dosyası yüklenemedi.');
+      return r.text();
+    })));
     source = source.replace('<head>', '<head>' + policy)
-      .replace(sdk, '<script>(' + installFixture.toString() + ')();</script>')
-      .replace('<link rel="stylesheet" href="/offers/card-section.css">', '<style>' + css + '</style>')
-      .replace('<script src="/offers/card-section.js"></script>', '<script>' + js + '</script>');
+      .replace(sdk, '<script>(' + installFixture.toString() + ')();</script>');
+    assets.forEach((path, index) => {
+      source = path.endsWith('.css')
+        ? source.replace('<link rel="stylesheet" href="/offers/' + path + '">', '<style>' + contents[index] + '</style>')
+        : source.replace('<script src="/offers/' + path + '"></script>', '<script>' + contents[index] + '</script>');
+    });
     const frame = document.getElementById('preview-frame');
     frame.srcdoc = source;
     frame.hidden = false;
