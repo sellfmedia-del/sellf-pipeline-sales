@@ -9,7 +9,9 @@ export function candidatesInDocument() {
   const seen=new Set(),result=[];
   for(const element of all) {
     if(seen.has(element)||element.closest('footer'))continue;seen.add(element);
-    const box=element.getBoundingClientRect(),style=getComputedStyle(element);
+    const visuals=[...element.querySelectorAll('img,svg')];
+    const bounds=visuals.length===1&&!element.textContent.trim()?visuals[0]:element;
+    const box=bounds.getBoundingClientRect(),style=getComputedStyle(element);
     if(box.width<30||box.height<12||box.width>620||box.height>200||box.top<0||box.top>340||style.display==='none'||style.visibility==='hidden'||Number(style.opacity)===0)continue;
     const hint=[element.id,element.className?.baseVal??element.className,element.getAttribute('alt'),element.getAttribute('aria-label'),element.getAttribute('title')].filter(Boolean).join(' ').toLowerCase();
     const children=[...element.querySelectorAll('img,svg')];
@@ -100,7 +102,7 @@ export async function captureWebsiteLogo(input, { browser:providedBrowser, testR
       const request=route.request();
       if(!['GET','HEAD'].includes(request.method())||['media','websocket'].includes(request.resourceType()))return route.abort();
       try {
-        const result=testRoute?await testRoute(request.url()):await read(request.url());
+        const result=await (testRoute||read)(request.url(),{headers:request.headers()});
         if(!result) return route.abort();
         await route.fulfill({status:result.status,headers:result.headers,body:result.body});
       } catch(error) { blocked.push(error.message); await route.abort().catch(()=>{}); }

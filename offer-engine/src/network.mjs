@@ -21,14 +21,19 @@ export async function resolveTarget(input, resolver = lookup) {
 export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, deadline=Date.now()+45000 }={}) {
   let count=0, total=0;
   const cache=new Map();
-  return async function read(input, redirects=0) {
-    if (++count > maxRequests || Date.now()>deadline || redirects>5) throw new Error('Site yükleme sınırına ulaşıldı.');
+  return async function read(input, {headers:browserHeaders={}}={}) {
+    if (++count > maxRequests || Date.now()>deadline) throw new Error('Site yükleme sınırına ulaşıldı.');
     const target=await resolveTarget(input);
-    if (cache.has(target.url.href)) return cache.get(target.url.href);
+    // Only state created inside this fresh, credential-free browser context is
+    // forwarded. Country selection and Next router requests need these headers.
+    const headers={};
+    for(const name of ['accept','accept-language','cookie','rsc','next-router-state-tree','next-router-prefetch','next-url','referer'])if(browserHeaders[name])headers[name]=browserHeaders[name];
+    const cacheKey=target.url.href+JSON.stringify(headers);
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
     const result=await new Promise((resolve,reject)=>{
       const transport=target.url.protocol==='https:'?https:http;
       const request=transport.get(target.url, {
-        headers:{'user-agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36','accept':'*/*','accept-encoding':'identity'},
+        headers:{'user-agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36','accept':'*/*',...headers,'accept-encoding':'identity'},
         lookup:(_hostname, options, callback)=>options.all ? callback(null,[target.address]) : callback(null,target.address.address,target.address.family),
         timeout:Math.max(1000,Math.min(12000,deadline-Date.now())),
         agent:false
@@ -50,7 +55,7 @@ export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, de
             if (encoding==='deflate') body=inflateSync(body,{maxOutputLength:10*1024*1024});
             const headers={};
             for(const [key,value] of Object.entries(response.headers)) {
-              if(value && !['content-encoding','content-length','transfer-encoding','connection','set-cookie'].includes(key)) headers[key]=Array.isArray(value)?value.join(', '):String(value);
+              if(value && !['content-encoding','content-length','transfer-encoding','connection'].includes(key)) headers[key]=Array.isArray(value)?value.join(key==='set-cookie'?'\n':', '):String(value);
             }
             resolve({status:response.statusCode,headers,body,url:target.url.href});
           } catch(error) { reject(error); }
@@ -61,7 +66,7 @@ export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, de
     });
     // Chromium follows redirects; each new request passes this resolver again.
     // Returning the actual redirect preserves final URL and relative asset paths.
-    cache.set(target.url.href,result);
+    cache.set(cacheKey,result);
     return result;
   };
 }

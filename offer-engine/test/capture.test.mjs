@@ -51,3 +51,20 @@ test('opaque raster uses native pixels and removes its backdrop despite transpar
     assert.deepEqual([...pixels.data.subarray(p,p+4)],[255,255,255,255]);
   }finally{await browser.close();}
 });
+
+test('country cookies created by the fresh public site reach its own navigation request',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+  const browser=await playwright.launch({args:chromium.args,executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
+  let cookieSeen=false;
+  try{
+    const result=await captureWebsiteLogo('https://brand.example/',{browser,testRoute:async(url,{headers={}}={})=>{
+      if(url.endsWith('/tr-TR')){
+        cookieSeen=headers.cookie?.includes('country=tr')&&headers.cookie?.includes('language=tr');
+        return {status:200,headers:{'content-type':'text/html; charset=utf-8'},body:'<header><a href="/" aria-label="Brand logo"><svg width="240" height="80"><rect x="10" y="10" width="220" height="60" fill="#124589"/></svg></a></header>'};
+      }
+      return {status:200,headers:{'content-type':'text/html; charset=utf-8','set-cookie':'country=tr; Path=/\nlanguage=tr; Path=/'},body:'<p>Please select your country</p><button onclick="location.href=\'/tr-TR\'">Türkiye</button><button>Global</button>'};
+    }});
+    assert.equal(cookieSeen,true);
+    assert.equal(result.finalUrl,'https://brand.example/tr-TR');
+    assert.equal(result.candidates[0].quality.status,'ready');
+  }finally{await browser.close();}
+});
