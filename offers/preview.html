@@ -9,7 +9,7 @@
     body { margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
     header { padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
     header p { margin: 2px 0 0; color: #6b6963; }
-    nav { display: flex; gap: 6px; margin-top: 8px; }
+    nav { display: flex; flex-wrap:wrap; gap: 6px; margin-top: 8px; }
     nav button { padding: 4px 10px; border: 1px solid #c8c6bc; border-radius: 7px; background: white; font: inherit; cursor: pointer; }
     nav button[aria-pressed="true"] { background: #1a1917; color: white; }
     iframe { display: block; border: 0; width: 100%; height: calc(100dvh - 104px); min-height: 450px; margin: 0 auto; }
@@ -24,6 +24,8 @@
     <nav aria-label="Önizleme boyutu">
       <button type="button" data-preview-width="desktop" aria-pressed="true">Masaüstü</button>
       <button type="button" data-preview-width="mobile" aria-pressed="false">Mobil</button>
+      <button type="button" data-logo-example="white" hidden>Beyaz logo örneği</button>
+      <button type="button" data-logo-example="color" hidden>Renkli logo örneği</button>
     </nav>
   </header>
   <div id="preview-error" role="status">Önizleme yükleniyor…</div>

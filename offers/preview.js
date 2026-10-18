@@ -13,6 +13,18 @@
 
   function installFixture(logoServiceAvailable) {
     if(logoServiceAvailable) {
+      // Preview-only example files enter the same FileReader/upload path as a
+      // selected screenshot. The processor's response is never mocked.
+      window.addEventListener('message',event=>{
+        if(event.source!==parent||event.data?.type!=='offer-logo-example'||typeof event.data.image!=='string'||event.data.image.length>2800000||!event.data.image.startsWith('data:image/png;base64,'))return;
+        if(!document.querySelector('#offer-brief-dialog'))document.querySelector('.offer-create')?.click();
+        const input=document.querySelector('#ob-logo-screenshot');
+        if(!input)return;
+        const bytes=Uint8Array.from(atob(event.data.image.split(',')[1]),char=>char.charCodeAt(0));
+        const transfer=new DataTransfer();
+        transfer.items.add(new File([bytes],'ornek-logo.png',{type:'image/png'}));
+        input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+      });
       window.PipelineLogoRequest=payload=>new Promise((resolve,reject)=>{
         const requestId=crypto.randomUUID();
         const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('Logo hazırlama süresi aşıldı.'));},80000);
@@ -118,6 +130,20 @@
     });
     frame.hidden = false;
     message.hidden = true;
+    document.querySelectorAll('[data-logo-example]').forEach(button=>{
+      button.hidden=document.documentElement.dataset.logoService!=='ready';
+      button.addEventListener('click',async()=>{
+        button.disabled=true;
+        try{
+          const response=await fetch('/examples/logo-'+button.dataset.logoExample+'.png');
+          if(!response.ok)throw new Error('Örnek görsel yüklenemedi.');
+          const blob=await response.blob();
+          const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+          frame.contentWindow.postMessage({type:'offer-logo-example',image},'*');
+        }catch{message.hidden=false;message.textContent='Örnek görsel açılamadı. Kendi ekran görüntünü yükleyebilirsin.';}
+        finally{button.disabled=false;}
+      });
+    });
   } catch (error) {
     message.textContent = 'Önizleme açılamadı. Sayfayı yenileyerek tekrar deneyebilirsin.';
   }
