@@ -29,6 +29,14 @@ test('JPEG and WebP screenshots are processed; white logos on a dark backdrop re
     assert.notEqual(result.candidates[0].placement.background,'#ffffff');
   }
 });
+test('white-only wordmark has transparent letter counters as well as a transparent outer backdrop',async()=>{
+  const result=await prepareUploadedLogo(await screenshot({background:'#111',fill:'white'}));
+  const logo=result.candidates[0];
+  const {data,info}=await sharp(Buffer.from(logo.image.split(',')[1],'base64')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  const center=(Math.floor(info.height/2)*info.width+Math.floor(info.width/2))*4;
+  assert.equal(data[center+3],0);
+  assert.equal(logo.placement.background,'#171717');
+});
 test('complex backgrounds, clipped artwork and tiny logos cannot return an accepted fallback',async()=>{
   await assert.rejects(()=>prepareUploadedLogo(screenshot()),/Görsel/);
   await assert.rejects(()=>screenshot({gradient:true}).then(prepareUploadedLogo),/güvenle ayrılamadı/);
