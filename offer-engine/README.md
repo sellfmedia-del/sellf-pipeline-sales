@@ -1,10 +1,24 @@
-# Isolated offer logo worker
+# Isolated offer service
 
 This package deploys independently with Vercel root directory `offer-engine`. It has its own pinned lockfile and dependencies. It does not modify the Pipeline installation, Travis functions, existing environment variables or database.
 
 The build copies the feature branch's current card/brief UI into a synthetic preview. Build with `sourceFilesOutsideRootDirectory: true`; only this package's `api` directory is deployed as backend functions in the worker project. No live card records are included in the preview.
 
-## Capture
+## Current primary flow: screenshot upload
+
+The brief now accepts a cropped PNG/JPEG/WebP screenshot (up to 2 MB and 4 megapixels). `/api/logo-upload` calls the separate `logo-engine` through the workflow. It removes a uniform edge-connected backdrop, retains solid colors and enclosed artwork, trims empty space and returns a transparent PNG. Original and processed images appear side by side. The user must review the result before proceeding. A raw file or URL alone cannot pass brief validation.
+
+Background removal is mandatory: complex backgrounds, changed solid pixels, clipping, unreadably small artwork and invalid images return an error with no opaque fallback. This version uses deterministic pixel processing; complex photos/textures are rejected rather than passed to an unconfigured AI service. It does not promise correct semantic separation of every possible brand mark. White and light artwork uses a dark background only behind the logo in the placement sample; mixed light/dark artwork can use neutral gray. Original pixels remain unchanged, and the PNG stays transparent. The user may change the placement background, which resets visual approval.
+
+Uploads and results are processed in memory only. No image is sent to a model, written to storage or attached to a live customer record in this preview. Full brief notes are not sent for logo processing.
+
+## Four engine boundaries
+
+`src/engines/logo-engine.mjs`, `audit-engine.mjs`, `pricing-engine.mjs` and `proposal-engine.mjs` are separate modules. `contracts.mjs` validates stage outputs; `contracts.d.ts` describes the versioned data structures for future TypeScript consumers. `offer-workflow.mjs` holds immutable per-draft results and reuses an unchanged stage after another stage fails. A review state cannot satisfy a downstream dependency. Proposal assembly requires approved logo, audit and pricing outputs. Pricing output must contain three monthly totals and a cost-table version.
+
+Only logo processing is implemented at this stage. Audit, pricing and proposal adapters explicitly fail as unconfigured; no mock analysis, invented prices or customer document is generated. The preview has no persistence, pricing/value writes or public customer publishing. Review of database integration and production authentication remains necessary before release.
+
+## Earlier website capture (not used by the current brief)
 
 The worker renders the public website in a new credential-free Chromium context. Header/home-link/logo elements are ranked and cropped at 3x device scale. It captures both the original site region and a transparent render of the actual logo element; artwork fills and colors are retained. Opaque, uniform image backdrops use edge-connected removal, with conservative antialias correction. Complex backgrounds, clipping, low native resolution, changed solid pixels, and mismatches with the source are flagged for review. This is deterministic capture and pixel processing, not generative logo reconstruction or a newly enabled paid AI service. It does not claim semantic visual approval for every possible website.
 
@@ -14,7 +28,7 @@ Preview responses include originals, transparent PNGs, quality measurements and 
 
 ## Access
 
-The endpoint is enabled only when `VERCEL_ENV=preview`. This project must retain Vercel Authentication for every deployment. Production is closed by default; authenticated Pipeline integration must be implemented before production release. The preview frame sends only the website URL to its own parent, which calls the same-origin worker endpoint. Full brief notes are never sent for logo capture.
+Endpoints are enabled only when `VERCEL_ENV=preview`. This project must retain Vercel Authentication for every deployment. Production is closed by default; authenticated Pipeline integration must be implemented before production release. The sandboxed preview frame sends an uploaded image through a checked parent-message bridge to the same-origin upload endpoint. It has no direct network access or production database client.
 
 Every browser HTTP request goes through a bounded server fetcher. Public IPs are checked and DNS results pinned to the request socket. Redirect destinations are checked independently. Private/metadata addresses, credentials, non-HTTP protocols, service workers, WebSockets, POSTs and oversized responses are blocked. No browser bypass of site anti-bot challenges is attempted.
 

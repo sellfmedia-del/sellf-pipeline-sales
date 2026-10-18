@@ -80,7 +80,6 @@
       onChange: value => { draft.logo = value; dialog.querySelector('#error-logoUrl').textContent = ''; }
     });
     form.elements.website.addEventListener('input', () => logoControl?.invalidate());
-    form.elements.website.addEventListener('blur', () => logoControl?.prepare());
     fields.forEach(name => {
       const input = form.elements[name];
       input.addEventListener('input', () => {
@@ -113,7 +112,7 @@
         if (error) form.elements[name].setAttribute('aria-describedby', error.id);
       });
       dialog.querySelector('#error-logoUrl').textContent = errors.logoUrl || '';
-      if (errors.logoUrl && Object.keys(errors)[0] === 'logoUrl') dialog.querySelector('.ol-fetch')?.focus();
+      if (errors.logoUrl && Object.keys(errors)[0] === 'logoUrl') dialog.querySelector('.ol-file')?.focus();
       if (Object.keys(errors).length) {
         summary.hidden = false;
         summary.textContent = 'Devam etmek için işaretli alanları tamamla.';
@@ -125,7 +124,7 @@
       details.replaceChildren();
       const values = [
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
-        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Markanın sitesinden alındı · Şeffaf PNG' : 'Hazırlanmadı'],
+        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Ekran görüntüsünden hazırlandı · Şeffaf PNG · Görsel kontrol tamamlandı' : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
         ['Aylık bütçe', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
         ['Toplantı notları', draft.meetingNotes || 'Belirtilmedi']

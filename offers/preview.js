@@ -22,7 +22,7 @@
           if(event.data.error)reject(new Error(event.data.error));else resolve(event.data.result);
         }
         window.addEventListener('message',receive);
-        parent.postMessage({type:'offer-logo-request',requestId,website:payload.website},'*');
+        parent.postMessage({type:'offer-logo-request',requestId,mode:payload.mode,website:payload.website,image:payload.image},'*');
       });
     }
     const rows = {
@@ -106,10 +106,12 @@
     frame.srcdoc = source;
     window.addEventListener('message',async event=>{
       if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-logo-request')return;
-      const {requestId,website}=event.data;
-      if(typeof requestId!=='string'||requestId.length>80||typeof website!=='string'||website.length>2048)return;
+      const {requestId,website,image,mode}=event.data;
+      if(typeof requestId!=='string'||requestId.length>80)return;
+      const upload=mode==='upload';
+      if(upload?(typeof image!=='string'||image.length>2800000):typeof website!=='string'||website.length>2048)return;
       try {
-        const response=await fetch('/api/logo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({website})});
+        const response=await fetch(upload?'/api/logo-upload':'/api/logo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(upload?{image}:{website})});
         const result=await response.json();
         frame.contentWindow.postMessage({type:'offer-logo-result',requestId,...(response.ok?{result}:{error:result.error||'Logo alınamadı.'})},'*');
       }catch(error){frame.contentWindow.postMessage({type:'offer-logo-result',requestId,error:'Logo servisine bağlanılamadı.'},'*');}

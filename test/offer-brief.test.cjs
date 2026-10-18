@@ -9,7 +9,7 @@ const context = {
 };
 function valid() {
   return { ...model.createDraft(context), segment:'corporate', website:'brand.example',
-    logoUrl:'https://brand.example/logo.png', goals:'Profitable growth', needs:'Improve retention', services:'Growth and operations' };
+    logo:{status:'ready',sourceType:'upload',sourceWebsite:'https://brand.example/',generated:false,image:'data:image/png;base64,AAA',reviewed:true,quality:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}, goals:'Profitable growth', needs:'Improve retention', services:'Growth and operations' };
 }
 
 test('draft captures card and meeting context without sharing mutable CRM objects', () => {
@@ -51,8 +51,8 @@ test('logos require an image of a supported type within the file size limit',()=
   assert.equal(model.validateLogo({type:'image/png',size:100}), '');
   assert.ok(model.validateLogo({type:'image/svg+xml',size:100}));
   assert.ok(model.validateLogo({type:'image/png',size:2*1024*1024+1}));
-  assert.deepEqual(model.validate({...valid(),logoUrl:'',logoFile:{name:'logo.png',type:'image/png',size:100}}),{});
-  assert.ok(model.validate({...valid(),logoUrl:'',logoFile:{name:'logo.svg',type:'image/svg+xml',size:100}}).logoFile);
+  assert.ok(model.validate({...valid(),logo:null,logoFile:{name:'logo.png',type:'image/png',size:100}}).logoUrl);
+  assert.ok(model.validate({...valid(),logo:null,logoUrl:'https://brand.example/logo.png'}).logoUrl);
 });
 test('different cards and empty notes produce independent snapshots',()=>{
   const one=model.createDraft(context);
@@ -62,10 +62,16 @@ test('different cards and empty notes produce independent snapshots',()=>{
   assert.equal(one.source.company,'Example Brand');
 });
 test('automatically captured logos must be complete, original and tied to the current website',()=>{
-  const draft={...valid(),logoUrl:'',logo:{status:'ready',sourceWebsite:'https://brand.example/',generated:false,image:'data:image/png;base64,AAA'}};
+  const draft=valid();
   assert.deepEqual(model.validate(draft),{});
   assert.ok(model.validate({...draft,website:'other.example'}).logoUrl);
   assert.ok(model.validate({...draft,logo:{...draft.logo,status:'loading'}}).logoUrl);
   assert.ok(model.validate({...draft,logo:{...draft.logo,status:'review'}}).logoUrl);
   assert.ok(model.validate({...draft,logo:{...draft.logo,generated:true}}).logoUrl);
+});
+test('uploaded screenshots cannot pass without background removal and explicit visual review',()=>{
+  const draft=valid();
+  assert.deepEqual(model.validate(draft),{});
+  assert.ok(model.validate({...draft,logo:{...draft.logo,reviewed:false}}).logoUrl);
+  for(const quality of [{transparency:false,matteStable:true,touchesEdge:false},{transparency:true,matteStable:false,touchesEdge:false},{transparency:true,matteStable:true,touchesEdge:true}])assert.ok(model.validate({...draft,logo:{...draft.logo,quality}}).logoUrl);
 });

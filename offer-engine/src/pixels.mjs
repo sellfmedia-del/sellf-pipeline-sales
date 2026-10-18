@@ -51,16 +51,18 @@ export async function finishLogo(buffer, reference) {
         let numer=0,denom=0;
         for(let c=0;c<3;c++) { const fg=original[best*4+c]-background[c]; numer+=(original[p*4+c]-background[c])*fg;denom+=fg*fg; }
         const alpha=Math.max(0,Math.min(1,numer/denom));
-        if(alpha<.05||alpha>.98)continue;
+        if(alpha<.05||alpha>.96)continue;
         data[p*4+3]=Math.round(alpha*255);
         for(let c=0;c<3;c++)data[p*4+c]=Math.max(0,Math.min(255,Math.round((original[p*4+c]-(1-alpha)*background[c])/alpha)));
       }
     }
   }
-  let left=width,top=height,right=-1,bottom=-1,foreground=0,error=0,changedSolid=0,luminance=0,alphaWeight=0,sourceMismatch=0;
+  let left=width,top=height,right=-1,bottom=-1,foreground=0,error=0,changedSolid=0,luminance=0,alphaWeight=0,sourceMismatch=0,lightWeight=0,darkWeight=0;
   for(let p=0;p<n;p++) {
     if(data[p*4+3]>12) { const x=p%width,y=Math.floor(p/width);left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);foreground++; }
     const a=data[p*4+3]/255;alphaWeight+=a;luminance+=a*(.2126*data[p*4]+.7152*data[p*4+1]+.0722*data[p*4+2]);
+    const pixelLuminance=.2126*data[p*4]+.7152*data[p*4+1]+.0722*data[p*4+2];
+    if(pixelLuminance>210)lightWeight+=a;if(pixelLuminance<55)darkWeight+=a;
     if(original[p*4+3]>245 && data[p*4+3]>245 && [0,1,2].some(c=>original[p*4+c]!==data[p*4+c]))changedSolid++;
     if(referencePixels && data[p*4+3]>245 && [0,1,2].some(c=>Math.abs(data[p*4+c]-referencePixels[p*4+c])>5))sourceMismatch++;
     if(method==='edge-matte')for(let c=0;c<3;c++)error+=Math.abs(data[p*4+c]*(data[p*4+3]/255)+background[c]*(1-data[p*4+3]/255)-original[p*4+c]);
@@ -73,5 +75,6 @@ export async function finishLogo(buffer, reference) {
   const sourceMismatchRatio=sourceMismatch/Math.max(1,foreground);
   const approved=matteStable&&transparency&&changedSolid===0&&compositingError<1.5&&!touchesEdge&&sourceMismatchRatio<.005;
   const png=await sharp(data,{raw:{width,height,channels:4}}).extract(trim).extend({top:12,bottom:12,left:12,right:12,background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
-  return {png,quality:{method,width:trim.width+24,height:trim.height+24,transparency,matteStable,compositingError:Number(compositingError.toFixed(3)),changedSolid,touchesEdge,sourceMismatchRatio:Number(sourceMismatchRatio.toFixed(4)),foregroundLuminance:Math.round(luminance/Math.max(1,alphaWeight)),status:approved?'ready':'review'}};
+  const lightFraction=lightWeight/Math.max(1,alphaWeight),darkFraction=darkWeight/Math.max(1,alphaWeight);
+  return {png,quality:{method,width:trim.width+24,height:trim.height+24,transparency,matteStable,compositingError:Number(compositingError.toFixed(3)),changedSolid,touchesEdge,sourceMismatchRatio:Number(sourceMismatchRatio.toFixed(4)),foregroundLuminance:Math.round(luminance/Math.max(1,alphaWeight)),lightFraction:Number(lightFraction.toFixed(3)),darkFraction:Number(darkFraction.toFixed(3)),status:approved?'ready':'review'}};
 }

@@ -1,12 +1,12 @@
 # Offer preparation boundary
 
-This directory contains the isolated Pipeline card extension and the brief UI prototype. The eventual audit engine, pricing/offer engine and customer portal remain separate responsibilities. This stage has no persistence, audit/model calls or customer publishing. Automatic logo capture is provided only in the separate protected `offer-engine` preview.
+This directory contains the isolated Pipeline card extension and the brief UI prototype. The eventual audit engine, pricing/offer engine and customer portal remain separate responsibilities. This stage has no persistence, audit/model calls or customer publishing. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
 
 - `card-section.*`: card summary and entry button. All styles are scoped to the new section.
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
 - `brief-form.*`: isolated dialog, editable brief, source context and review state. Form input never mutates the CRM lead or calls the bulk `save()` function.
-- `logo-control.*`: automatic website capture, original/transparent comparison, quality review and placement sample. Website changes invalidate the previous logo. No manual PNG upload is required.
-- `preview.*`: synthetic read-only CRM fixture; only the brief form is interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the website URL to the same-origin logo API; PNGs remain in memory. No production Supabase client is initialized.
+- `logo-control.*`: screenshot upload, mandatory background removal, original/transparent comparison, required visual review and logo-only placement background. Website or placement changes reset approval. Users can upload ordinary PNG/JPEG/WebP screenshots without preparing a transparent PNG first. Website blur no longer triggers automatic site capture.
+- `preview.*`: synthetic read-only CRM fixture; only the brief form is interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the uploaded image to the same-origin logo API; PNGs remain in memory. No production Supabase client is initialized.
 
 ## Accepted pricing and value rules for the later engine
 
