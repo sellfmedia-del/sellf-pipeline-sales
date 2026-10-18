@@ -37,6 +37,13 @@ test('white-only wordmark has transparent letter counters as well as a transpare
   assert.equal(data[center+3],0);
   assert.equal(logo.placement.background,'#171717');
 });
+test('antialiased thin white lettering does not retain its dark enclosed background',async()=>{
+  const svg='<svg width="500" height="180"><rect width="500" height="180" fill="#191919"/><rect x="50.4" y="35.4" width="399.2" height="109.2" rx="30.4" fill="#999"/><rect x="52.4" y="37.4" width="395.2" height="105.2" rx="28.4" fill="white"/><rect x="59" y="44" width="382" height="92" rx="22" fill="#191919"/></svg>';
+  const png=await sharp(Buffer.from(svg)).png().toBuffer();
+  const output=await prepareUploadedLogo('data:image/png;base64,'+png.toString('base64'));
+  const {data,info}=await sharp(Buffer.from(output.candidates[0].image.split(',')[1],'base64')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  assert.equal(data[(Math.floor(info.height/2)*info.width+Math.floor(info.width/2))*4+3],0);
+});
 test('complex backgrounds, clipped artwork and tiny logos cannot return an accepted fallback',async()=>{
   await assert.rejects(()=>prepareUploadedLogo(screenshot()),/Görsel/);
   await assert.rejects(()=>screenshot({gradient:true}).then(prepareUploadedLogo),/güvenle ayrılamadı/);

@@ -34,9 +34,16 @@ export async function finishLogo(buffer, reference) {
       // A white-only mark on a dark uniform backdrop has background inside
       // letter counters as well. Clear those enclosed dark pixels too; colored
       // marks keep the conservative edge-only path and their white artwork.
-      let strong=0,white=0;
-      if(background.every(c=>c<80))for(let p=0;p<n;p++)if(distance(p)>60){strong++;if([0,1,2].every(c=>data[p*4+c]>220))white++;}
-      const whiteOnly=strong>n*.01&&white/strong>.97;
+      let strong=0,white=0,chromatic=0;
+      if(background.every(c=>c<80))for(let p=0;p<n;p++)if(distance(p)>60){
+        strong++;
+        const rgb=[data[p*4],data[p*4+1],data[p*4+2]];
+        if(rgb.every(c=>c>210))white++;
+        if(Math.max(...rgb)-Math.min(...rgb)>18)chromatic++;
+      }
+      // Thin glyphs can contain many neutral gray antialias pixels. They must
+      // not prevent white-only counter removal; any colored artwork still does.
+      const whiteOnly=strong>n*.001&&white/strong>.5&&chromatic/strong<.005;
       if(whiteOnly){for(let p=0;p<n;p++)add(p);}else edge.forEach(add);
       while(head<tail) {
         const p=queue[head++],x=p%width,y=Math.floor(p/width);
