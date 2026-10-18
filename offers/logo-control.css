@@ -1,7 +1,7 @@
 #offer-brief-dialog .ol-header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 #offer-brief-dialog .ol-header span{font-size:10px;background:var(--teal-bg);color:var(--teal);padding:3px 7px;border-radius:20px}
 #offer-brief-dialog .ol-upload-label{font-size:12px;margin-top:12px}
-#offer-brief-dialog .ol-file{max-width:100%;padding:10px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;font-size:12px}
+#offer-brief-dialog input.ol-file[type=file]{position:static;width:100%;height:auto;opacity:1;max-width:100%;padding:10px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;font-size:12px}
 #offer-brief-dialog .ol-status,#offer-brief-dialog .ol-quality{font-size:12px;color:var(--text2);margin:8px 0;line-height:1.6}
 #offer-brief-dialog .ol-fetch{padding:7px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;font-size:12px}
 #offer-brief-dialog .ol-fetch:disabled{opacity:.55;cursor:progress}
