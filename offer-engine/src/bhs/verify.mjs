@@ -1,6 +1,7 @@
 import {createPublicFetcher} from '../network.mjs';
 import {dimensions} from './brief.mjs';
 import {assertSchema} from './schema.mjs';
+import {extractPdfText} from './pdf.mjs';
 
 export const normalized=value=>String(value).normalize('NFKC').replace(/\s+/g,' ').trim();
 export function publicUrl(value){
@@ -17,6 +18,12 @@ export function createSourceVerifier({read=createPublicFetcher({maxRequests:80,m
       if([301,302,303,307,308].includes(response.status)&&response.headers.location){url=new URL(response.headers.location,url).href;continue;}
       if(response.status!==200)return {status:'unavailable',finalUrl:url};
       const contentType=response.headers['content-type']||'';
+      if(/application\/pdf/i.test(contentType)){
+        try{
+          const {text,pages}=await extractPdfText(response.body);
+          return {status:normalized(text).includes(normalized(source.quote))?'quote_matched':'quote_not_found',finalUrl:url,format:'pdf',pages};
+        }catch{return {status:'pdf_unreadable',finalUrl:url};}
+      }
       if(!/text\/(html|plain)|application\/xhtml\+xml/i.test(contentType))return {status:'unsupported_format',finalUrl:url};
       const text=normalized(/html/.test(contentType)?plainHtml(response.body):response.body.toString('utf8'));
       return {status:text.includes(normalized(source.quote))?'quote_matched':'quote_not_found',finalUrl:url};
