@@ -31,3 +31,15 @@ test('gateway rejects missing/wrong keys, unknown actions and real-user JWTs bef
  assert.equal((await handler(request(gatewayKey,{action:'save',jwt:'real-user-jwt',args:{}}))).status,422);
  assert.ok(calls.every(c=>!c.init.method||c.init.method==='GET'));assert.ok(calls.every(c=>!c.url.includes('/rest/v1/leads')));
 });
+test('direct preview card writes force the synthetic owner, use RLS, and restrict delete to the same owner/test table',async()=>{
+ const gatewayKey='k'.repeat(43),hash=createHash('sha256').update(gatewayKey).digest('hex'),owner=randomUUID(),calls=[];
+ const env=n=>({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'service-key',SUPABASE_ANON_KEY:'public-key'})[n];
+ const handler=createPreviewGateway({env,fetchImpl:async(url,init)=>{calls.push({url,init});let value=null;if(url.includes('gateway_config'))value=[{key_hash:hash}];else if(url.endsWith('/auth/v1/user'))value={id:owner,app_metadata:{pipeline_offer_preview:true}};else if(init.method==='POST')value=JSON.parse(init.body);return {ok:true,status:200,text:async()=>value?JSON.stringify(value):''};}});
+ const request=body=>new Request('https://edge.example',{method:'POST',headers:{'Content-Type':'application/json','x-offer-store-key':gatewayKey},body:JSON.stringify(body)});
+ const row={id:'new-test-card',space_id:'test-space',col_id:'test-column',name:'Yetkili',company:'Test Marka',value:'0',notes:'Not',doc_url:'',last_contact:Date.now(),contacts:[],timeline:[],owner_id:'attacker'};
+ const synced=await handler(request({action:'sync_cards',jwt:'synthetic-user-jwt',leads:[row]}));assert.equal(synced.status,200);const saved=(await synced.json()).leads[0];assert.equal(saved.owner_id,owner);
+ const write=calls.find(c=>c.init.method==='POST');assert.equal(write.init.headers.Authorization,'Bearer synthetic-user-jwt');assert.equal(write.init.headers.apikey,'public-key');assert.ok(write.url.includes('/pipeline_offer_preview_leads?on_conflict=id'));
+ const count=calls.filter(c=>c.init.method==='POST').length;assert.equal((await handler(request({action:'sync_cards',jwt:'synthetic-user-jwt',leads:[{...row,id:'injected&owner_id=eq.other'}]}))).status,422);assert.equal(calls.filter(c=>c.init.method==='POST').length,count);
+ assert.equal((await handler(request({action:'delete_cards',jwt:'synthetic-user-jwt',field:'owner_id',value:'other'}))).status,422);
+ assert.equal((await handler(request({action:'delete_cards',jwt:'synthetic-user-jwt',field:'id',value:row.id,owner_id:'other'}))).status,200);const deletion=calls.find(c=>c.init.method==='DELETE');assert.equal(deletion.url,'https://example.supabase.co/rest/v1/pipeline_offer_preview_leads?owner_id=eq.'+owner+'&id=eq.'+row.id);
+});

@@ -18,10 +18,10 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
   return value;
  }
  async function fixture(jwt){
-  const who=await user(jwt),rows=await db('/rest/v1/'+tables.leads+'?owner_id=eq.'+who.id+'&select=*&order=created_at.asc&limit=1',{admin:false,jwt});
-  const lead=rows?.[0];if(!lead)throw Error('Test kartı bulunamadı.');
+  const who=await user(jwt),rows=await db('/rest/v1/'+tables.leads+'?owner_id=eq.'+who.id+'&select=*&order=created_at.asc&limit=100',{admin:false,jwt});
+  const lead=rows?.[0];if(!lead)return {user:{id:who.id},rows:{spaces:[{id:'preview-space-'+who.id,name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()}],columns:[{id:'offer-preview-column',space_id:'preview-space-'+who.id,title:'Teklif Aşamasında',dot:'#BA7517'}],leads:[]},latest:null};
   const latest=await db('/rest/v1/'+tables.versions+'?lead_id=eq.'+encodeURIComponent(lead.id)+'&select=id,version,state,monthly_amount&order=version.desc&limit=1',{admin:false,jwt});
-  return {user:{id:who.id},rows:{spaces:[{id:lead.space_id,name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()}],columns:[{id:lead.col_id,space_id:lead.space_id,title:'Teklif Aşamasında',dot:'#BA7517'}],leads:[lead]},latest:latest?.[0]||null};
+  return {user:{id:who.id},rows:{spaces:[...new Set(rows.map(row=>row.space_id))].map(id=>({id,name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()})),columns:[...new Map(rows.map(row=>[row.col_id,{id:row.col_id,space_id:row.space_id,title:'Teklif Aşamasında',dot:'#BA7517'}])).values()],leads:rows},latest:latest?.[0]||null};
  }
  return async req=>{
   const headers={'Content-Type':'application/json','Cache-Control':'private, no-store','X-Robots-Tag':'noindex, nofollow'};
@@ -53,6 +53,26 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
     return reply({accessToken:session.access_token,refreshToken:session.refresh_token,expiresAt:Date.now()+session.expires_in*1000});
    }
    if(action==='fixture')return reply(await fixture(body.jwt));
+   if(action==='sync_cards'){
+    const who=await user(body.jwt),jwt=body.jwt;
+    if(!Array.isArray(body.leads)||body.leads.length>100)throw Error('En fazla 100 test kartı kullanılabilir.');
+    const validId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value);
+    const values=body.leads.map(row=>{
+     if(!row||!validId(row.id)||!validId(row.space_id)||!validId(row.col_id)||typeof row.name!=='string'||row.name.length>200||typeof row.company!=='string'||row.company.length>200||typeof row.notes!=='string'||row.notes.length>30000||typeof row.value!=='string'||row.value.length>100||typeof row.doc_url!=='string'||row.doc_url.length>2048||!Number.isSafeInteger(row.last_contact)||!Array.isArray(row.contacts)||row.contacts.length>100||!Array.isArray(row.timeline)||row.timeline.length>200)throw Error('Test kartı bilgileri geçersiz.');
+     return {id:row.id,space_id:row.space_id,col_id:row.col_id,name:row.name,company:row.company,notes:row.notes,value:row.value,doc_url:row.doc_url,last_contact:row.last_contact,contacts:row.contacts,timeline:row.timeline,owner_id:who.id};
+    });
+    if(!values.length)return reply({leads:[]});
+    const saved=await db('/rest/v1/'+tables.leads+'?on_conflict=id',{method:'POST',admin:false,jwt,prefer:'resolution=merge-duplicates,return=representation',body:values});
+    return reply({leads:saved});
+   }
+   if(action==='delete_cards'){
+    const who=await user(body.jwt);
+    if(!['id','space_id','col_id'].includes(body.field)||typeof body.value!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(body.value))throw Error('Test kartı filtresi geçersiz.');
+    // Privileged deletion is pinned to this synthetic owner and this test table.
+    // Offer history is kept; no production lead, space, column or Travis access.
+    await db('/rest/v1/'+tables.leads+'?owner_id=eq.'+who.id+'&'+body.field+'=eq.'+encodeURIComponent(body.value),{method:'DELETE'});
+    return reply({deleted:true});
+   }
    if(['save','list','publish','outbox'].includes(action)){
     const who=await user(body.jwt),jwt=body.jwt;
     if(action==='save'){

@@ -2,7 +2,7 @@
 
 This package deploys independently with Vercel root directory `offer-engine`. It has its own pinned lockfile and dependencies. It does not modify the Pipeline installation, Travis functions, existing environment variables or database.
 
-The build copies the feature branch's current card/brief UI into a synthetic preview. Build with `sourceFilesOutsideRootDirectory: true`; only this package's `api` directory is deployed as backend functions in the worker project. No live card records are included in the preview.
+The build renders a direct copy of the existing Pipeline app at `/`, with an isolated session/data adapter and the approved offer section. There is no iframe or demo toolbar in this primary entry. Build with `sourceFilesOutsideRootDirectory: true`; only this package's `api` directory is deployed as backend functions in the worker project. No live card records are included in the preview.
 
 ## Current primary flow: screenshot upload
 
@@ -39,3 +39,7 @@ Every browser HTTP request goes through a bounded server fetcher. Public IPs are
 ## Contract request
 
 Native mailto opens a draft to `yigit@sellfmedia.com` and `businessdevelopment@sellfmedia.com`, including the selected monthly amount, offer version and link. Sending is completed by the user in their email application. No Resend account, mail API key or automatic backend delivery is required. Publishing has no mail-provider dependency.
+
+## Direct app preview
+
+Start at `/` and select “Test alanını aç” once. Create or open a test card, save its meeting context, then use “Teklif Oluştur” through logo, BHS, price, composition, review/save, customer link/password and mailto. Test cards persist only in the separate preview table; no production data is read or written. Space/column layout uses owner-scoped local metadata. The original Pipeline source and Travis remain unchanged. No provider mocks are enabled at runtime.

@@ -1,8 +1,9 @@
-import { mkdir,copyFile,cp,readFile,writeFile } from 'node:fs/promises';
+import { mkdir,cp,readFile,writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import sharp from 'sharp';
 import {writeTemplateExample} from './scripts/template-example.mjs';
+import {buildPipelinePreview} from './src/preview/build-pipeline.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,'..');
 await mkdir(path.join(here,'public'),{recursive:true});
@@ -12,13 +13,15 @@ const examples={
   color:'<rect width="760" height="210" fill="white"/><rect x="35" y="35" width="125" height="140" rx="15" fill="#245bad"/><path d="M60 105 L90 135 L135 70" fill="none" stroke="white" stroke-width="15"/><text x="190" y="132" fill="#172236" font-family="Arial,sans-serif" font-size="62" font-weight="bold">ORNEK MARKA</text>'
 };
 for(const [name,content]of Object.entries(examples))await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="210">'+content+'</svg>')).png().toFile(path.join(here,'public/examples/logo-'+name+'.png'));
-await copyFile(path.join(root,'index.html'),path.join(here,'public/crm-source.html'));
+const pipelineSource=await readFile(path.join(root,'index.html'),'utf8');
+// Diagnostic source is inert if opened directly; it cannot initialize production.
+await writeFile(path.join(here,'public/crm-source.html'),pipelineSource.replace('<head>',`<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'">`));
 await cp(path.join(root,'offers'),path.join(here,'public/offers'),{recursive:true});
 const html=await readFile(path.join(here,'public/offers/preview.html'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.html'),html.replace('<html lang="tr">','<html lang="tr" data-logo-service="ready">'));
 const js=await readFile(path.join(here,'public/offers/preview.js'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.js'),js.replace("fetch('/index.html'","fetch('/crm-source.html'"));
-await writeFile(path.join(here,'public/index.html'),'<!doctype html><html lang="tr"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/offers/preview.html?storage=1"><title>Teklif hazırlığı önizlemesi</title><a href="/offers/preview.html?storage=1">Önizlemeyi aç</a></html>');
+await writeFile(path.join(here,'public/index.html'),buildPipelinePreview(pipelineSource));
 
 // Deterministic synthetic example: no paid model, customer data or persistence.
 process.chdir(here);

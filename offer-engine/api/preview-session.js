@@ -11,6 +11,13 @@ export function createPreviewSessionHandler({getStore=()=>createPreviewStore(),g
    let session=await sessionFor(req,res,store,getSecret());
    if(req.method==='POST'){
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+    if(!body||JSON.stringify(body).length>1000000)throw Error('Test verisi boyut sınırı aşıldı.');
+    if(body?.action==='logout'){res.setHeader('Set-Cookie','__Host-offer-preview-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0');return res.status(200).json({ready:false});}
+    if(['sync-cards','delete-cards'].includes(body?.action)){
+     if(!session)throw Error('Test oturumu gerekli.');
+     if(body.action==='sync-cards')return res.status(200).json(await store.syncCards(session.accessToken,body.leads));
+     return res.status(200).json(await store.deleteCards(session.accessToken,body.field,body.value));
+    }
     if(body?.action!=='start')throw Error('Test işlemi geçersiz.');
     if(!session){const created=await store.bootstrap();session={accessToken:created.accessToken,refreshToken:created.refreshToken,expiresAt:created.expiresAt,createdAt:Date.now()};setSession(res,req,session,getSecret());return res.status(200).json({ready:true,mode:'isolated-preview',fixture:created.fixture});}
    }
