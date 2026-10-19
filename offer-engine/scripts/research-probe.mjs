@@ -5,7 +5,8 @@ import {createResearchProvider,modelText,citationUrls} from '../src/bhs/provider
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 
-if(process.env.VERCEL_ENV!=='preview'||process.argv[2]!=='--start')throw Error('Explicit preview-only probe required.');
+const mode=process.argv[2];
+if(process.env.VERCEL_ENV!=='preview'||!['--start','--resume'].includes(mode))throw Error('Explicit preview-only probe required.');
 const provider=createResearchProvider();
 const brief=snapshotBrief({brandName:'Silverline TR',segment:'corporate',website:'https://www.silverline.com/tr-TR',goals:'Türkiye pazarında bayi ağını ve kârlı büyümeyi değerlendirmek.',needs:'B2B bayi büyümesi ile tüketici talebi, satış sonrası servis ve dijital varlıklar arasındaki ilişkiyi araştırmak.',services:'Büyüme danışmanlığı, pazarlama ve operasyon seçeneklerinin araştırmaya dayalı değerlendirilmesi.',meetingNotes:'Kalite karşılaştırması için hazırlanmış test briefidir. Hedefler test senaryosudur; yeni müşteri beyanı veya doğrulanmış ticari sonuç değildir. Marka ankastre ve mutfak ürünleri alanında Türkiye pazarında incelenecek. Rakipler ölçek, hedef kitle ve coğrafya ile gerekçelendirilerek seçilmeli. Eski örnek rapordaki sayısal sonuçları veya iddiaları doğru kabul etme; güncel kaynaklardan bağımsız araştır.',budget:''});
 const proof={test:'public-synthetic-silverline',startedAt:new Date().toISOString(),agent:provider.agent,model:provider.model,status:'starting'};
@@ -24,12 +25,12 @@ async function waitFor(initial){
 }
 try{
   log('starting');
-  const start=await provider.start(brief,new Date().toISOString().slice(0,10));
+  const start=mode==='--resume'?await provider.poll(process.argv[3]):await provider.start(brief,new Date().toISOString().slice(0,10));
   proof.researchId=start.id;log('research_started',{id:start.id});
   const research=await waitFor(start);
   log('research_completed',{characters:modelText(research).length,citations:citationUrls(research).length});
   proof.research=research;
-  const structured=await provider.structure(brief,research.id);
+  const structured=process.argv[4]?await provider.poll(process.argv[4]):await provider.structure(brief,research.id);
   proof.structureId=structured.id;log('structure_started',{id:structured.id});
   const structure=await waitFor(structured);
   proof.result=await createAuditEngine().run({brief,research,structure});

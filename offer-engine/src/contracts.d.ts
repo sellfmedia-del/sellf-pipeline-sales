@@ -7,7 +7,7 @@ export type BhsDimension='financial'|'operations'|'funnel'|'digital'|'perception
 export interface AuditData {
   schemaVersion:'bhs-v1';methodologyVersion:string;briefHash:string;rawReport:string;summary:string;researchId:string;structureId:string;
   findings:Array<{id:string;dimension:BhsDimension;kind:'observation'|'inference'|'brief';statement:string;reportExcerpt:string;sourceIds:string[];impact:string;goalConnection:string;priority:'high'|'medium'|'low'}>;
-  sources:Array<{id:string;url:string;title:string;quote:string;publishedAt:string|null;period:string|null;scope:string;sourceType:'primary'|'secondary'|'review';verification:{status:string;finalUrl?:string;checkedAt:string}}>;
+  sources:Array<{id:string;url:string;title:string;quote:string;publishedAt:string|null;period:string|null;scope:string;sourceType:'primary'|'secondary'|'review';verification:{status:string;finalUrl?:string;checkedAt:string;format?:'pdf';pages?:number}}>;
   dimensions:Array<{id:BhsDimension;score:number|null;rationale:string;dataStatus:'full'|'partial'|'insufficient';findingIds:string[];comparisonCompetitorIds:string[];strengths:string[];gaps:string[];onboardingQuestions:string[]}>;
   competitors:Array<{id:string;name:string;website:string;scaleReason:string;audienceReason:string;geographyReason:string;sourceIds:string[]}>;
   benchmarks:Array<{metric:string;entries:Array<{entityId:string;value:string|null;unit:string|null;period:string|null;sourceIds:string[]}>}>;

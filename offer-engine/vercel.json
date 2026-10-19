@@ -4,7 +4,7 @@
   "functions": {
     "api/audit.js": {
       "maxDuration": 90,
-      "includeFiles": "src/bhs/methodology.txt"
+      "includeFiles": "{src/bhs/**,node_modules/unpdf/**}"
     },
     "api/logo.js": {
       "maxDuration": 90,

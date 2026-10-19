@@ -125,7 +125,7 @@ test('API gates production, origin and missing credentials without starting paid
   const missing=response();await handler(request({action:'start',brief}),missing);assert.equal(missing.code,503);assert.equal(missing.body.code,'not_configured');
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
-test('source verifier checks visible HTML quotes, strips scripts, follows bounded redirects and flags PDFs',async()=>{
+test('source verifier checks visible HTML quotes, strips scripts, follows bounded redirects and rejects invalid PDFs',async()=>{
  const make=body=>({status:200,headers:{'content-type':'text/html'},body:Buffer.from(body)});
  let verifier=createSourceVerifier({read:async()=>make('<html><p>The company provides kitchen appliances through an authorized dealer network.</p></html>')});
  assert.equal((await verifier({url:'https://brand.example/',quote})).status,'quote_matched');
@@ -135,5 +135,20 @@ test('source verifier checks visible HTML quotes, strips scripts, follows bounde
  verifier=createSourceVerifier({read:async()=>{calls++;return {status:302,headers:{location:'/again'},body:Buffer.from('')};}});
  assert.equal((await verifier({url:'https://brand.example/',quote})).status,'redirect_limit');assert.equal(calls,4);
  verifier=createSourceVerifier({read:async()=>({status:200,headers:{'content-type':'application/pdf'},body:Buffer.from('PDF')})});
- assert.equal((await verifier({url:'https://brand.example/',quote})).status,'unsupported_format');
+ assert.equal((await verifier({url:'https://brand.example/',quote})).status,'pdf_unreadable');
+});
+
+test('provider diagnostics classify configuration errors without returning upstream text',async()=>{
+ const provider=createResearchProvider({apiKey:'never-log-me',fetchImpl:async()=>new Response(JSON.stringify({error:{message:'API key not valid: never-log-me'}}),{status:400})});
+ await assert.rejects(()=>provider.start(brief,'2026-10-19'),e=>e.providerStatus===400&&e.providerReason==='invalid_key'&&!e.message.includes('never-log-me'));
+});
+test('financial PDF evidence is extracted in a bounded worker and checked against the source quote',async()=>{
+ const stream='BT /F1 12 Tf 30 700 Td ('+quote+') Tj ET';
+ const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+Buffer.byteLength(stream)+' >>\nstream\n'+stream+'\nendstream'];
+ let pdf='%PDF-1.4\n',offsets=[0];
+ objects.forEach((obj,i)=>{offsets.push(Buffer.byteLength(pdf));pdf+=(i+1)+' 0 obj\n'+obj+'\nendobj\n';});
+ const xref=Buffer.byteLength(pdf);pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(x=>String(x).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ const verifier=createSourceVerifier({read:async()=>({status:200,headers:{'content-type':'application/pdf'},body:Buffer.from(pdf)})});
+ const result=await verifier({url:'https://brand.example/report.pdf',quote});assert.equal(result.status,'quote_matched');assert.equal(result.pages,1);
+ const unmatched=await verifier({url:'https://brand.example/report.pdf',quote:'This sentence is not present in the financial report.'});assert.equal(unmatched.status,'quote_not_found');
 });
