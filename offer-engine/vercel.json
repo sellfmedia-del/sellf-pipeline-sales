@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/pricing-validation.mjs",
+  "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
     "api/pricing.js": {

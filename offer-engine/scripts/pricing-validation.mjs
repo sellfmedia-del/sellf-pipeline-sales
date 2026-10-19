@@ -7,7 +7,7 @@ import {pricingEngine} from '../src/engines/pricing-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
 if(process.env.VERCEL_ENV!=='preview')throw Error('Protected preview required.');
 const provider=createResearchProvider();
-const reuse=["v1_ChdubjdXYXItSEFzdUF5dE1QN19hZXNRNBIXbm43V2FyLUhBc3VBeXRNUDdfYWVzUTQ","v1_ChdubjdXYXBqbEF0RGV5dE1QdEkzU29BdxIXbm43V2FwamxBdERleXRNUHRJM1NvQXc","v1_ChRubjdXYWh5YzRNclRENkNlOEpFTRIUbm43V2FoeWM0TXJURDZDZThKRU0"];
+const reuse=process.argv.find(arg=>arg.startsWith('--reuse='))?.slice(8).split(',');
 if(reuse&&reuse.length!==3)throw Error('Exactly three completed scope IDs required.');
 const cases=[['unknown','Bütçe konuşulmadı.'],['limited','Çok bütçemiz yok, önce küçük başlayalım. Önce Meta reklam yönetimi; tasarımları kendi ekibimiz hazırlayacak. Google ve sosyal medya daha sonra olabilir.'],['range','Aylık Sellf teklifini 30–40 bin TL aralığında verelim.']];
 const results=await Promise.all(cases.map(async([id,meetingNotes],i)=>{
