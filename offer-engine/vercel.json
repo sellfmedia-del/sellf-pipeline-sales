@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/evidence-probe.mjs --synthesize v1_ChdWU3ZXYW92c0RmRGF5dE1QODlTZm1RdxIXVlN2V2FvdnNEZkRheXRNUDg5U2ZtUXc",
+  "buildCommand": "npm run build && node scripts/evidence-probe.mjs --collect v1_ChdWU3ZXYW92c0RmRGF5dE1QODlTZm1RdxIXVlN2V2FvdnNEZkRheXRNUDg5U2ZtUXc",
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {

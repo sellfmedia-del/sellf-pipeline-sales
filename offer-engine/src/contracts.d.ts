@@ -5,9 +5,9 @@ export interface EngineResult<T=unknown> {stage:Stage;engineVersion:string;input
 export interface LogoData {generated:false;sourceType:'upload';reviewed?:boolean;candidates:Array<{id:string;image:string;source:string;placement:{background:string;area:'logo-only'};quality:{transparency:true;matteStable:true;touchesEdge:false;changedSolid:0;[key:string]:unknown;}}>;}
 export type BhsDimension='financial'|'operations'|'funnel'|'digital'|'perception'|'competition';
 export interface AuditData {
-  schemaVersion:'bhs-v1';methodologyVersion:string;briefHash:string;rawReport:string;summary:string;researchId:string;structureId:string;
+  schemaVersion:'bhs-v1';methodologyVersion:string;briefHash:string;rawReport:string;summary:string;researchId:string;structureId:string;semanticId?:string;packetHash?:string;semanticReview?:unknown;evidenceSources?:Array<{id:string;url:string;finalUrl:string;title:string;method:string;contentHash:string;retrievedAt:string}>;
   findings:Array<{id:string;dimension:BhsDimension;kind:'observation'|'inference'|'brief';statement:string;reportExcerpt:string;sourceIds:string[];impact:string;goalConnection:string;priority:'high'|'medium'|'low'}>;
-  sources:Array<{id:string;url:string;title:string;quote:string;publishedAt:string|null;period:string|null;scope:string;sourceType:'primary'|'secondary'|'review';verification:{status:string;finalUrl?:string;checkedAt:string;format?:'pdf';pages?:number}}>;
+  sources:Array<{id:string;url:string;title:string;quote:string;publishedAt:string|null;period:string|null;scope:string;sourceType:'primary'|'secondary'|'review';verification:{status:string;finalUrl?:string;checkedAt:string;format?:'pdf'|'html'|'rendered';pages?:number}}>;
   dimensions:Array<{id:BhsDimension;score:number|null;rationale:string;dataStatus:'full'|'partial'|'insufficient';findingIds:string[];comparisonCompetitorIds:string[];strengths:string[];gaps:string[];onboardingQuestions:string[]}>;
   competitors:Array<{id:string;name:string;website:string;scaleReason:string;audienceReason:string;geographyReason:string;sourceIds:string[]}>;
   benchmarks:Array<{metric:string;entries:Array<{entityId:string;value:string|null;unit:string|null;period:string|null;sourceIds:string[]}>}>;
@@ -16,7 +16,7 @@ export interface AuditData {
   criticalOpportunityFindingId:string|null;criticalRiskFindingId:string|null;services:string[];
   scoring:{total:number|null;weights:Array<{id:BhsDimension;weight:number}>;note:string};
   quality:{checksPassed:boolean;citationChecksPassed?:boolean;issues:string[];scope:'citation-and-quote-checks'|'citation-quote-and-semantic-checks';semanticBenchmark:'pending'|'passed'|'failed';customerApproval:'pending'};
-  usage:{research:unknown;structure:unknown};
+  usage:Record<string,unknown>|null;
 }
 export interface PricingData {currency:'TRY';costVersion:string;alternatives:Array<{id:string;billingPeriod:'monthly';monthlyAmount:number}>;}
 export interface ProposalData {sections:Array<{title:string;body:string}>;}

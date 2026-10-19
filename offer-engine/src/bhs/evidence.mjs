@@ -10,6 +10,14 @@ export const evidenceHash=packet=>digest(packet);
 const host=url=>new URL(url).hostname.replace(/^www\./,'');
 const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment/i.test(text.slice(0,1500));
 const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial/i;
+export function publicMetadata(html){
+ const values=[];
+ for(const m of html.matchAll(/<meta\b([^>]+)>/gi)){
+  const attrs=Object.fromEntries([...m[1].matchAll(/([a-z:-]+)\s*=\s*["']([^"']*)["']/gi)].map(a=>[a[1].toLowerCase(),a[2]]));
+  if(['description','og:title','og:description'].includes((attrs.name||attrs.property||'').toLowerCase())&&attrs.content)values.push(normalized(plainHtml(Buffer.from(attrs.content))));
+ }
+ return [...new Set(values)].join(' ');
+}
 export function sourceLinks(html,url){
  const links=[];
  for(const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)){
@@ -21,7 +29,7 @@ export function sourceLinks(html,url){
 }
 export function evidenceExcerpts(text,{maxChunks=7,size=1800}={}){
  const value=normalized(text),chunks=[];
- for(let offset=0;offset<value.length;offset+=size){chunks.push({id:'p'+chunks.length,text:value.slice(offset,offset+size),offset});if(chunks.length>=1200)break;}
+ for(let offset=0;offset<value.length;offset+=Math.max(1,size-240)){chunks.push({id:'p'+chunks.length,text:value.slice(offset,offset+size),offset});if(chunks.length>=1200)break;}
  const financial=/finansal|bilanço|hasılat|gelir tablosu|brüt kâr|net dönem|nakit akış|revenue|gross profit|net income|cash flow|202[56]/gi;
  const scored=chunks.map((chunk,i)=>({chunk,i,score:(chunk.text.match(financial)||[]).length+(i<2?8:0)})).sort((a,b)=>b.score-a.score||a.i-b.i).slice(0,maxChunks).sort((a,b)=>a.i-b.i);
  return scored.map(x=>x.chunk).filter(chunk=>chunk.text.length>=24);
@@ -36,13 +44,13 @@ export function assertEvidencePacket(packet,brief){
  return packet;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24}={}){
- return async function collect(brief,sourcePlan){
+ return async function collect(brief,sourcePlan,{extraSources=[]}={}){
   const plan=parseSourcePlan(sourcePlan),deadline=clock()+timeout;
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
   const queue=[],seen=new Set(),expandedHosts=new Set(),sources=[],unavailable=[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>{try{return host(e.website);}catch{return '';}}));entityHosts.add(brandHost);
   function enqueue(url,front=false){const value=publicUrl(url);if(value&&!seen.has(value)&&seen.size<80){seen.add(value);front?queue.unshift(value):queue.push(value);}}
-  enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));[...plan.sources].sort((a,b)=>Number(/\.pdf|finans|financial|faaliyet|annual|kap\.org/i.test(b.url))-Number(/\.pdf|finans|financial|faaliyet|annual|kap\.org/i.test(a.url))).forEach(s=>enqueue(s.url));
+  enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));extraSources.slice(0,12).forEach(url=>enqueue(url));[...plan.sources].sort((a,b)=>Number(/\.pdf|finans|financial|faaliyet|annual|kap\.org/i.test(b.url))-Number(/\.pdf|finans|financial|faaliyet|annual|kap\.org/i.test(a.url))).forEach(s=>enqueue(s.url));
   async function readSource(input){
    let url=input;
    for(let i=0;i<=3;i++){
@@ -55,14 +63,14 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
     const html=response.body.toString('utf8'),text=normalized(/html/.test(contentType)?plainHtml(response.body):html);
     const title=normalized(plainHtml(Buffer.from(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||new URL(url).hostname))).slice(0,300);
     if(blockedText(title+' '+text))throw Error('access_wall');
-    return {url:input,finalUrl:url,title,text,method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
+    return {url:input,finalUrl:url,title,text,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
    }
    throw Error('redirect_limit');
   }
   function keep(page){
    const excerpts=evidenceExcerpts(page.text);if(!excerpts.length||excerpts[0].text.length<24)return false;
    const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered')return false;
-   const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.pages?{pages:page.pages}:{})};
+   const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.metadataOnly?{metadataOnly:true}:{}),...(page.pages?{pages:page.pages}:{})};
    if(JSON.stringify(sources).length+JSON.stringify(record).length>180000)return false;
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
@@ -83,7 +91,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
    pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<maxSources)keep({...page,method:'rendered'});});
   }
-  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&sources.length<maxSources)keep(page);else unavailable.push({url:page.url,reason:'render_unavailable'});}
+  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&sources.length<maxSources)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<maxSources)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
   return assertEvidencePacket(packet,brief);
  };
@@ -92,7 +100,13 @@ export function evidenceSourceVerifier(packet){
  return async source=>{
   const record=packet.sources.find(s=>s.id===source.id&&s.finalUrl===source.url);
   if(!record)return {status:'not_in_evidence_packet'};
-  const matched=record.excerpts.some(e=>normalized(e.text).includes(normalized(source.quote)));
+  const segments=[];
+  for(const excerpt of [...record.excerpts].sort((a,b)=>(a.offset??Infinity)-(b.offset??Infinity))){
+   const previous=segments.at(-1);
+   if(previous&&Number.isInteger(excerpt.offset)&&Number.isInteger(previous.offset)&&previous.offset+previous.text.length===excerpt.offset)previous.text+=excerpt.text;
+   else segments.push({...excerpt});
+  }
+  const matched=segments.some(e=>normalized(e.text).includes(normalized(source.quote)));
   return {status:matched?'quote_matched':'quote_not_found',finalUrl:record.finalUrl,format:record.method,pages:record.pages,contentHash:record.contentHash};
  };
 }

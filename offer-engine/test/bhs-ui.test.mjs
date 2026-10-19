@@ -57,3 +57,34 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
   }
  }finally{await browser.close();if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
+
+test('desktop and mobile finish the evidence workflow without changing CRM',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await playwright.launch({args:chromium.args.filter(arg=>!['--disable-web-security','--single-process'].includes(arg)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
+ try{for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
+  const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[];
+  const {context:fixture}=await import('./fixtures/evidence.mjs');
+  const {renderGroundedReport}=await import('../src/bhs/grounded-report.mjs');
+  page.setDefaultTimeout(10000);
+  const data=fixture().report;data.sources.forEach(s=>s.verification={status:'quote_matched'});data.rawReport=renderGroundedReport(data);data.scoring={total:null};data.quality={checksPassed:true,issues:[],semanticBenchmark:'passed'};
+  await context.addInitScript(()=>{const original=setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,ms===10000?0:ms,...args);});
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',async route=>{
+   const req=route.request(),url=new URL(req.url());assert.equal(url.origin,'https://preview.vercel.app');
+   if(url.pathname==='/api/audit'){
+    const body=req.postDataJSON();actions.push(body.action);
+    const phases=['research','source_plan','synthesis','semantic'];let response;
+    if(body.action==='start')response={phase:'research',ticket:'0'};
+    else if(body.action==='advance')response={phase:phases[Number(body.ticket)+1],ticket:String(Number(body.ticket)+1)};
+    else response=body.ticket==='3'?{phase:'complete',result:{status:'ready',data}}:{phase:phases[Number(body.ticket)]+'_complete',ticket:body.ticket,nextAction:'advance'};
+    return route.fulfill({contentType:'application/json',body:JSON.stringify(response)});
+   }
+   if(url.pathname==='/api/logo-upload')return route.fulfill({contentType:'application/json',body:JSON.stringify(await prepareUploadedLogo(req.postDataJSON().image))});
+   try{const file=path.join(process.cwd(),'public',url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
+  });
+  await page.goto('https://preview.vercel.app/offers/preview.html');const frame=page.frameLocator('#preview-frame');await frame.locator('.offer-create').click();const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
+  await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
+  await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
+  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,3);assert.deepEqual(errors,[]);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  await context.close();
+ }}finally{await browser.close();}
+});

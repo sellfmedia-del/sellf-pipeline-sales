@@ -2,6 +2,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from '../src/bhs/brief.mjs';
 import {createResearchProvider,ResearchError,interactionFailure} from '../src/bhs/provider.mjs';
 import {createTicketCodec} from '../src/bhs/ticket.mjs';
+import {discoverySourceHints} from '../src/bhs/discovery-hints.mjs';
 import {createEvidenceCollector} from '../src/bhs/evidence.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {readStoredEnvelope,parseGroundedReport} from '../src/bhs/grounded-report.mjs';
@@ -70,7 +71,8 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
           }
           if(job.phase==='source_plan'){
             const plan=parseSourcePlan(JSON.parse(modelText(interaction)));
-            const packet=await collect(brief,plan);
+            const research=await provider.poll(job.researchId);
+            const packet=await collect(brief,plan,{extraSources:discoverySourceHints(research,brief)});
             const value=await provider.synthesize(brief,packet);
             return {...job,phase:'synthesis',synthesisId:value.id};
           }

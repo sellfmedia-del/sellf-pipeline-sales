@@ -142,7 +142,7 @@
     window.addEventListener('message',async event=>{
       if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-audit-request')return;
       const {requestId,payload}=event.data;
-      if(typeof requestId!=='string'||requestId.length>80||!['start','status','structure','cancel'].includes(payload?.action))return;
+      if(typeof requestId!=='string'||requestId.length>80||!['start','status','structure','advance','cancel'].includes(payload?.action))return;
       const body=JSON.stringify(payload);if(body.length>90000)return;
       try{
         const response=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body});
