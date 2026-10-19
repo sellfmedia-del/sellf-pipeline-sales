@@ -1,6 +1,6 @@
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from '../src/bhs/brief.mjs';
-import {createResearchProvider,ResearchError} from '../src/bhs/provider.mjs';
+import {createResearchProvider,ResearchError,interactionFailure} from '../src/bhs/provider.mjs';
 import {createTicketCodec} from '../src/bhs/ticket.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 
@@ -55,11 +55,11 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
       if(!['status','structure'].includes(body.action))throw new ResearchError('invalid_job','Araştırma işlemi geçersiz.');
       const interaction=await provider.poll(id);
       if(['queued','in_progress'].includes(interaction.status))return res.status(200).json({phase:job.phase,status:'in_progress',ticket:body.ticket});
-      if(interaction.status!=='completed')throw new ResearchError('research_failed','Araştırma tamamlanamadı veya eksik kaldı. Sonuç teklif için kullanılmadı.');
+      if(interaction.status!=='completed')throw interactionFailure(interaction);
       if(job.phase==='research'){
         if(body.action==='status')return res.status(200).json({phase:'research_complete',status:'in_progress',ticket:body.ticket});
         const next=await once(session+':structure:'+job.researchId,async()=>{
-          const value=await provider.structure(brief,job.researchId);
+          const value=await provider.structure(brief,interaction);
           return {...job,phase:'structure',structureId:value.id};
         });
         return res.status(202).json({phase:'structure',status:'in_progress',ticket:ticket(next)});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {snapshotBrief,briefHash,dimensions} from '../src/bhs/brief.mjs';
 import {researchPrompt} from '../src/bhs/prompts.mjs';
-import {createResearchProvider,citationUrls,modelText} from '../src/bhs/provider.mjs';
+import {createResearchProvider,citationUrls,modelText,interactionFailure} from '../src/bhs/provider.mjs';
 import {verifyReport,createSourceVerifier} from '../src/bhs/verify.mjs';
 import {createTicketCodec} from '../src/bhs/ticket.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
@@ -80,11 +80,13 @@ test('provider uses actual background Interactions API; no fake JSON mode on Dee
  const provider=createResearchProvider({apiKey:'test-provider-key',fetchImpl:async(url,options)=>{
   calls.push({url,options});return new Response(JSON.stringify({id:'interaction_12345678',status:'in_progress'}));
  }});
- await provider.start(snapshotBrief(brief),'2026-10-19');await provider.structure(snapshotBrief(brief),'research_12345678');await provider.poll('research_12345678');
+ await provider.start(snapshotBrief(brief),'2026-10-19');await provider.structure(snapshotBrief(brief),research());await provider.poll('research_12345678');
  const start=JSON.parse(calls[0].options.body),structure=JSON.parse(calls[1].options.body);
  assert.equal(start.agent,'deep-research-max-preview-04-2026');assert.equal(start.background,true);assert.equal(start.store,true);assert.equal(start.response_format,undefined);
  assert.deepEqual(start.tools.map(t=>t.type),['google_search','url_context']);
- assert.equal(structure.response_format.mime_type,'application/json');assert.equal(structure.tools,undefined);assert.equal(structure.previous_interaction_id,'research_12345678');
+ assert.equal(structure.response_format.mime_type,'application/json');assert.equal(structure.tools,undefined);assert.equal(structure.previous_interaction_id,undefined);
+ assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);
+ assert.throws(()=>provider.structure(brief,{...research(),status:'in_progress'}),/Tamamlanmış/);
  assert.ok(calls[2].url.endsWith('?include_input=false'));
  assert.throws(()=>provider.poll('../other'),/kimliği/);
 });
@@ -141,6 +143,10 @@ test('source verifier checks visible HTML quotes, strips scripts, follows bounde
 test('provider diagnostics classify configuration errors without returning upstream text',async()=>{
  const provider=createResearchProvider({apiKey:'never-log-me',fetchImpl:async()=>new Response(JSON.stringify({error:{message:'API key not valid: never-log-me'}}),{status:400})});
  await assert.rejects(()=>provider.start(brief,'2026-10-19'),e=>e.providerStatus===400&&e.providerReason==='invalid_key'&&!e.message.includes('never-log-me'));
+});
+test('background execution faults expose only a safe category and never provider text',()=>{
+ const error=interactionFailure({status:'failed',errors:[{code:'invalid_argument',message:'Input token count exceeds the context window: PRIVATE KEY'}]});
+ assert.equal(error.interactionStatus,'failed');assert.equal(error.providerReason,'context_limit');assert.ok(!JSON.stringify(error).includes('PRIVATE KEY'));assert.ok(!error.message.includes('PRIVATE KEY'));
 });
 test('financial PDF evidence is extracted in a bounded worker and checked against the source quote',async()=>{
  const stream='BT /F1 12 Tf 30 700 Td ('+quote+') Tj ET';
