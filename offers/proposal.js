@@ -6,7 +6,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
  function mount(container,data,{onRequest}={}){
   container.innerHTML='<div id="sellf-two-option-offer">'+template+'</div>';
   const root=container.firstElementChild,$=s=>root.querySelector(s),add=(tag,text,parent,cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;parent.append(n);return n;};
-  $('.so-date').textContent=new Date(data.createdAt).toLocaleDateString('tr-TR');
+  $('.so-date').textContent=new Date(data.createdAt).toLocaleDateString('tr-TR')+(data.version?' · v'+data.version:'');
   const own=$('.so-own img');own.alt='Sellf logosu';
   const client=$('.so-client');client.replaceChildren();client.style.background=data.logo.background;const img=document.createElement('img');img.alt=data.brand.name+' logosu';img.src=data.logo.image;client.append(img);
   const h=$('h1');h.replaceChildren();h.append(document.createTextNode(data.copy.headline),document.createElement('br'));add('span',data.copy.accent,h);

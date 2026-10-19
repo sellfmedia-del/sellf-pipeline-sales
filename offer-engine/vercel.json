@@ -18,6 +18,9 @@
     },
     "api/offer.js": {
       "maxDuration": 60
+    },
+    "api/preview-session.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

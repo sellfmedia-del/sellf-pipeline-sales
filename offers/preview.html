@@ -6,13 +6,13 @@
   <title>Pipeline · Teklif bölümü önizlemesi</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
-    header { padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
+    body { height:100dvh;display:flex;flex-direction:column;overflow:hidden;margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
+    header { flex-shrink:0;padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
     header p { margin: 2px 0 0; color: #6b6963; }
     nav { display: flex; flex-wrap:wrap; gap: 6px; margin-top: 8px; }
     nav button { padding: 4px 10px; border: 1px solid #c8c6bc; border-radius: 7px; background: white; font: inherit; cursor: pointer; }
     nav button[aria-pressed="true"] { background: #1a1917; color: white; }
-    iframe { display: block; border: 0; width: 100%; height: calc(100dvh - 104px); min-height: 450px; margin: 0 auto; }
+    iframe { display: block; border: 0; width: 100%; flex:1 1 auto;height:0;min-height:0; margin: 0 auto; }
     iframe[hidden] { display: none; }
     #preview-error { padding: 16px; }
   </style>
@@ -22,6 +22,7 @@
     <strong>Teklif hazırlığı · Akış önizlemesi</strong>
     <p>Örnek veriler kullanılır; değişiklikler kaydedilmez. Kartın Teklif alanından brief ekranını açıp deneyebilirsin.</p>
     <nav aria-label="Önizleme boyutu">
+      <a href="/offers/preview.html?storage=1">Kalıcı kayıtla test et ↗</a>
       <a href="/offers/template-preview.html">Örnek teklifi doğrudan aç ↗</a>
       <button type="button" data-preview-width="desktop" aria-pressed="true">Masaüstü</button>
       <button type="button" data-preview-width="mobile" aria-pressed="false">Mobil</button>

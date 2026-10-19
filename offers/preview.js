@@ -11,7 +11,8 @@
     });
   });
 
-  function installFixture(logoServiceAvailable) {
+  function installFixture(logoServiceAvailable, persistedFixture) {
+    window.PipelineOfferPersistence=Boolean(persistedFixture);
     if(logoServiceAvailable) {
       // Preview-only example files enter the same FileReader/upload path as a
       // selected screenshot. The processor's response is never mocked.
@@ -67,9 +68,13 @@
         }
         window.addEventListener('message',receive);parent.postMessage({type:'offer-proposal-request',requestId,payload},'*');
       });
-      window.PipelineOfferRequest=async()=>{throw Error('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.');};
+      window.PipelineOfferRequest=persistedFixture?payload=>new Promise((resolve,reject)=>{
+        const requestId=crypto.randomUUID(),timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(Error('Test kayıt bağlantısı zaman aşımına uğradı.'));},65000);
+        function receive(event){if(event.source!==parent||event.data?.type!=='offer-store-result'||event.data.requestId!==requestId)return;clearTimeout(timer);window.removeEventListener('message',receive);if(event.data.error)reject(Error(event.data.error));else resolve(event.data.result);}
+        window.addEventListener('message',receive);parent.postMessage({type:'offer-store-request',requestId,payload},'*');
+      }):async()=>{throw Error('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.');};
     }
-    const rows = {
+    const rows = persistedFixture?.rows || {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],
       columns: [{ id: 'demo-column', space_id: 'demo-space', title: 'Teklif Aşamasında', dot: '#BA7517' }],
       leads: [{
@@ -82,7 +87,7 @@
       }]
     };
     const blocked = () => { throw new Error('Bu önizleme salt okunurdur.'); };
-    const user = { id: 'demo-user' };
+    const user = persistedFixture?.user || { id: 'demo-user' };
     window.fetch = blocked;
     window.XMLHttpRequest = blocked;
     window.WebSocket = blocked;
@@ -108,10 +113,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       // Fixture queries finish before this scheduled callback; no production reads.
       setTimeout(() => {
-        openModal('demo-lead');
+        openModal(rows.leads[0].id);
         const makeReadOnly = () => {
           document.querySelectorAll('#crm-view input, #crm-view textarea').forEach(el => { el.readOnly = true; });
-          document.querySelectorAll('#crm-view select, #crm-view button:not(.modal-close):not(.offer-create)').forEach(el => { el.disabled = true; });
+          document.querySelectorAll('#crm-view select, #crm-view button:not(.modal-close):not(.offer-create):not(.offer-view)').forEach(el => { el.disabled = true; });
         };
         makeReadOnly();
         new MutationObserver(makeReadOnly).observe(document.getElementById('modal'), { childList: true, subtree: true });
@@ -119,7 +124,7 @@
     });
     document.addEventListener('click', event => {
       const target = event.target.closest('a, button, [onclick], .card');
-      if (target && !target.closest('#offer-brief-dialog') && !target.matches('.modal-close, .card, #overlay, .offer-create')) {
+      if (target && !target.closest('#offer-brief-dialog, #offer-saved-dialog') && !target.matches('.modal-close, .card, #overlay, .offer-create, .offer-view')) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -128,6 +133,18 @@
 
   const message = document.getElementById('preview-error');
   try {
+    let persistentFixture=null;
+    if(new URLSearchParams(location.search).get('storage')==='1'){
+      let state=await fetch('/api/preview-session',{cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Test alanı açılamadı.');return d;});
+      if(!state.ready){
+        message.textContent='Ayrı test kartı ve teklif sürümleriyle uçtan uca deneyebilirsin. Mevcut Pipeline kayıtları kullanılmaz. ';
+        const button=document.createElement('button');button.type='button';button.textContent='Test alanını aç';message.appendChild(button);
+        state=await new Promise(resolve=>button.addEventListener('click',async()=>{button.disabled=true;try{const r=await fetch('/api/preview-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})});const d=await r.json();if(!r.ok)throw Error(d.error||'Test oturumu açılamadı.');resolve(d);}catch(error){button.disabled=false;message.firstChild.textContent=error.message+' ';}}));
+      }
+      persistentFixture=state.fixture;
+      document.querySelector('header p').textContent='Kalıcı test alanı: Teklifler ve test kartı değeri kaydedilir. Gerçek Pipeline/Travis verileri kullanılmaz.';
+      document.querySelector('#preview-frame').title='Ayrı test kartıyla teklif akışı';
+    }
     const response = await fetch('/index.html', { cache: 'no-store' });
     if (!response.ok) throw new Error('Kaynak yüklenemedi.');
     let source = await response.text();
@@ -140,7 +157,7 @@
       return r.text();
     })));
     source = source.replace('<head>', '<head>' + policy)
-      .replace(sdk, '<script>(' + installFixture.toString() + ')(' + String(document.documentElement.dataset.logoService==='ready') + ');</script>');
+      .replace(sdk, '<script>(' + installFixture.toString() + ')(' + String(document.documentElement.dataset.logoService==='ready') + ',' + JSON.stringify(persistentFixture).replace(/</g,'\\u003c') + ');</script>');
     assets.forEach((path, index) => {
       source = path.endsWith('.css')
         ? source.replace('<link rel="stylesheet" href="/offers/' + path + '">', '<style>' + contents[index] + '</style>')
@@ -192,6 +209,13 @@
         frame.contentWindow.postMessage({type:'offer-proposal-result',requestId,...(response.ok?{result}:{error:result.error||'Teklif oluşturma tamamlanamadı.'})},'*');
       }catch{frame.contentWindow.postMessage({type:'offer-proposal-result',requestId,error:'Teklif servisine bağlanılamadı. Yeni model çağrısı otomatik başlatılmadı.'},'*');}
     });
+    window.addEventListener('message',async event=>{
+      if(!persistentFixture||event.source!==frame.contentWindow||event.data?.type!=='offer-store-request')return;
+      const {requestId,payload}=event.data;if(typeof requestId!=='string'||requestId.length>80||!['save','list','publish','outbox'].includes(payload?.action))return;
+      const body=JSON.stringify(payload);if(body.length>4200000)return;
+      try{const r=await fetch('/api/offer',{method:'POST',headers:{'Content-Type':'application/json'},body});const result=await r.json();frame.contentWindow.postMessage({type:'offer-store-result',requestId,...(r.ok?{result}:{error:result.error||'Test kaydı tamamlanamadı.'})},'*');}
+      catch{frame.contentWindow.postMessage({type:'offer-store-result',requestId,error:'Test kayıt servisine bağlanılamadı.'},'*');}
+    });
     message.hidden = true;
     document.querySelectorAll('[data-logo-example]').forEach(button=>{
       button.hidden=document.documentElement.dataset.logoService!=='ready';
@@ -208,6 +232,6 @@
       });
     });
   } catch (error) {
-    message.textContent = 'Önizleme açılamadı. Sayfayı yenileyerek tekrar deneyebilirsin.';
+    message.textContent = error.message||'Önizleme açılamadı. Sayfayı yenileyerek tekrar deneyebilirsin.';
   }
 })();
