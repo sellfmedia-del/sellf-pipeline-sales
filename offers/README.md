@@ -10,7 +10,7 @@ This directory contains the isolated Pipeline card extension, preparation flow a
 
 ## Accepted pricing and value rules
 
-The isolated worker now calculates the two alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. The customer template, Gemini composition and isolated persistent test setup are implemented; remaining notification/release prerequisites are listed in `../offer-engine/PROPOSAL.md`.
+The isolated worker now calculates the two alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. The customer template, Gemini composition and isolated persistent test setup are implemented; current preview deployment status and release prerequisites are listed in `../offer-engine/PROPOSAL.md`.
 
 The two customer alternatives each show the total monthly invoice amount. The first-two-month Growth staffing distinction is internal costing context, not a separate customer invoice period.
 
@@ -21,3 +21,7 @@ Use only the chosen KOBİ, Kurumsal or Key Account pricing columns. Growth + ope
 ## Release boundary
 
 All changes stay on a feature branch and Vercel Preview until user approval. Do not change existing Travis files/migrations, production CRM/auth code, production environment variables or customer data. The authorized test setup uses only new isolated tables, synthetic accounts and Preview-scoped variables. The user authorized isolated test setup; its migrations affect only new preview tables. The production migration and live deployment still need explicit release approval.
+
+## Contract request
+
+The customer form opens a native mailto draft to the two approved Sellf addresses with the selected persisted alternative/total, version and customer link, without its password. The user sends it from their email application. No email provider setup or automatic delivery is required.

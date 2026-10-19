@@ -8,7 +8,8 @@ import {createOfferHandler} from '../api/offer.js';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {compositionEnvelope} from '../src/proposal/composition.mjs';
-import {createContractMailer,contractMessage,contractRecipients} from '../src/proposal/mail.mjs';
+import {readFile} from 'node:fs/promises';
+import vm from 'node:vm';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {context} from './fixtures/evidence.mjs';
 import {brief as base} from './fixtures/bhs.mjs';
@@ -60,24 +61,33 @@ test('save requires both reviews, actual Pipeline auth, signed exact result and 
  try{
  const f=await fixture(),result=await proposalEngine.run({brief:f.brief,copy},f),proposal={...result,runId:randomUUID()};let saved;
  const store={configured:()=>true,portalConfigured:()=>false,async save(token,body){saved={token,body};return {id:'test',version:1,monthlyAmount:proposal.data.valueSync.amount};}};
- const h=createOfferHandler({getSecret:()=>secret,getStore:()=>store,getMailer:()=>({configured:()=>false})});
+ const h=createOfferHandler({getSecret:()=>secret,getStore:()=>store});
  const saveProof=createPricingProof(secret).encode({kind:'proposal_ready',createdAt:Date.now(),briefHash:briefHash(f.brief),auditHash:digest(f.audit),pricingHash:digest(f.pricing),proposalHash:digest(proposal),leadId:'lead1',spaceId:'space1'},session,host);
  const b={action:'save',leadId:'lead1',spaceId:'space1',proposal,pricing:f.pricing,saveProof,logoApproved:true,scopeApproved:true};
  for(const[body,auth]of [[b,false],[{...b,scopeApproved:false},true],[{...b,leadId:'another'},true],[{...b,proposal:{...proposal,status:'ready'}},true]]){const r=response();await h(request(body,auth),r);assert.equal(r.statusCode,422);assert.equal(saved,undefined);}
  const r=response();await h(request(b,true),r);assert.equal(r.statusCode,200);assert.equal(saved.body.p_lead_id,'lead1');assert.equal(saved.body.p_document.logo.reviewed,true);assert.equal(proposal.data.logo.reviewed,false);assert.equal(saved.body.p_pricing.costVersion,f.pricing.data.costVersion);
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
-test('contract mails use both fixed recipients and persisted exact amounts; repeated request is claimed once, accepted only after provider success',async()=>{
+test('publication needs no mail provider; legacy automatic sending is disabled',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
- const f=await fixture(),r=await proposalEngine.run({brief:f.brief,copy},f),offer={id:randomUUID(),version:2,customer_document:r.data};let row,sends=0,recipient;
- const store={configured:()=>true,portalConfigured:()=>true,async access(){return offer;},async queue(o,input,payload){row||={id:input.requestId,delivery_state:'pending',mail_payload:payload};return row;},async claim(){if(row.delivery_state!=='pending')return false;row.delivery_state='sending';return true;},async mark(id,state){row.delivery_state=state;}};
- const mailer=createContractMailer({key:'fake',from:'Sellf <offers@sellfmedia.com>',fetchImpl:async(url,init)=>{sends++;recipient=JSON.parse(init.body);assert.equal(url,'https://api.resend.com/emails');assert.match(init.headers['Idempotency-Key'],/^sellf-contract\//);return {ok:true,json:async()=>({id:'provider-test-id'})};}});
- const handler=createOfferHandler({getStore:()=>store,getMailer:()=>mailer,getSecret:()=>secret});
- const body={action:'request',token:'test',password:'test',requestId:randomUUID(),alternativeId:'operations_bundle',monthlyAmount:1,to:['attacker@example.com'],name:'Yetkili',email:'person@example.com'};
- for(let i=0;i<2;i++){const res=response();await handler(request(body),res);assert.equal(res.statusCode,200);assert.equal(res.data.delivered,true);}
- assert.equal(sends,1);assert.deepEqual(recipient.to,contractRecipients);assert.ok(recipient.text.includes(String(r.data.alternatives[1].monthlyAmount)+' TRY'));assert.ok(!recipient.text.includes('1 TRY\n'));
- assert.equal(contractMessage(offer,body,mailer.from).subject,'Sözleşme talebi · Test Brand');
- row=null;const failure=createOfferHandler({getStore:()=>store,getMailer:()=>({...mailer,send:async()=>{throw Error('unknown network result');}})});const failed=response();await failure(request({...body,requestId:randomUUID()}),failed);assert.equal(failed.statusCode,202);assert.equal(failed.data.delivered,false);assert.equal(row.delivery_state,'uncertain');
+ let publications=0;
+ const store={configured:()=>true,portalConfigured:()=>true,async publish(){publications++;return {token:'t'.repeat(43),password:'private'};},async queue(){assert.fail('No server email queue');}};
+ const handler=createOfferHandler({getStore:()=>store,getPortalSecret:()=>secret});
+ const health=response();await handler({method:'GET'},health);assert.equal(health.data.mailTransport,'mailto');
+ const published=response();await handler(request({action:'publish',offerId:randomUUID()},true),published);assert.equal(published.statusCode,200);assert.equal(publications,1);assert.match(published.data.url,/customer.html#/);
+ const legacy=response();await handler(request({action:'request',token:'test',password:'test'}),legacy);assert.equal(legacy.statusCode,422);assert.match(legacy.data.error,/e-posta uygulamanızdan/);
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});
+test('mailto encodes Turkish text, fixes both recipients, uses selected saved total and link without password or injected headers',async()=>{
+ const sandbox={window:{},URL,Intl};vm.runInNewContext(await readFile('../offers/proposal.js','utf8'),sandbox);
+ const f=await fixture(),r=await proposalEngine.run({brief:f.brief,copy},f),data={...r.data,version:2},token='t'.repeat(43);
+ data.brand.name='Türkçe & Marka?\r\nBcc: attacker@example.com';
+ const input={offerUrl:'https://preview.vercel.app/offers/customer.html#'+token,offerId:'saved-version',alternativeId:'operations_bundle',name:'Yetkili & İsim',email:'person@example.com',monthlyAmount:1,to:['attacker@example.com']};
+ const mail=new URL(sandbox.window.PipelineProposal.buildMailto(data,input));
+ assert.equal(mail.pathname,'yigit@sellfmedia.com,businessdevelopment@sellfmedia.com');assert.deepEqual([...mail.searchParams.keys()],['subject','body']);assert.ok(!/[\r\n]/.test(mail.searchParams.get('subject')));
+ const body=mail.searchParams.get('body');assert.ok(body.includes('v2'));assert.ok(body.includes('Aylık hizmet bedeli: '+new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(data.alternatives[1].monthlyAmount)+' TL / ay'));assert.ok(body.includes(input.offerUrl));assert.ok(body.includes('Yetkili & İsim'));assert.ok(!body.includes('password'));
+ assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:input.offerUrl.replace('#','?password=private#')}));
+ assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,name:'Name\r\nBcc: attacker@example.com'}));
+ assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:'javascript:alert(1)'}));
 });

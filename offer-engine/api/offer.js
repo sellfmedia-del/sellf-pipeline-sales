@@ -1,14 +1,13 @@
 import {createPreviewStore} from '../src/proposal/preview-store.mjs';
 import {sessionFor} from '../src/proposal/preview-session.mjs';
 import {createOfferStore} from '../src/proposal/storage.mjs';
-import {createContractMailer,contractMessage} from '../src/proposal/mail.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
-export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE==='true'?createPreviewStore():createOfferStore(),getMailer=()=>createContractMailer(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
+export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE==='true'?createPreviewStore():createOfferStore(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Teklif kaydı yalnızca korumalı önizlemede açık.'});
-  const store=getStore(),mailer=getMailer();
-  if(req.method==='GET')return res.status(200).json({persistence:store.configured(),customerPortal:store.portalConfigured()&&Boolean(getPortalSecret()),contractMail:mailer.configured()});
+  const store=getStore();
+  if(req.method==='GET')return res.status(200).json({persistence:store.configured(),customerPortal:store.portalConfigured()&&Boolean(getPortalSecret()),contractMail:true,mailTransport:'mailto'});
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   try{
@@ -30,25 +29,15 @@ export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE=
    if(b.action==='outbox'){if(store.mode!=='isolated-preview')throw Error('Test bildirimleri bu ortamda kapalı.');return res.status(200).json({requests:await store.outbox(token)});}
    if(b.action==='list'){const rows=await store.list(token,String(b.leadId||''));return res.status(200).json({offers:rows.map(row=>{const {ownerLink,...offer}=row;return {...offer,...(ownerLink?{publicUrl:'https://'+host+'/offers/customer.html#'+ownerLink.token,password:ownerLink.password}:{})};})});}
    if(b.action==='publish'){
-    if(!store.portalConfigured()||!mailer.configured()||!getPortalSecret())throw Error('Müşteri bağlantısı için teklif kayıt ve e-posta bağlantıları tamamlanmalı.');
+    if(!store.portalConfigured()||!getPortalSecret())throw Error('Müşteri bağlantısı için teklif kaydı ve bağlantı güvenliği tamamlanmalı.');
     if(!/^[a-f0-9-]{36}$/.test(b.offerId))throw Error('Teklif kaydı geçersiz.');
     const published=await store.publish(token,b.offerId,getPortalSecret());
     return res.status(200).json({...published,url:'https://'+host+'/offers/customer.html#'+published.token});
    }
-   if(!['access','request'].includes(b.action))throw Error('Teklif işlemi geçersiz.');
+   if(b.action==='request')throw Error('Sözleşme talebi, teklifteki e-posta düğmesiyle e-posta uygulamanızdan gönderilir.');
+   if(b.action!=='access')throw Error('Teklif işlemi geçersiz.');
    const offer=await store.access(b.token,b.password,getPortalSecret());
-   if(b.action==='access')return res.status(200).json({id:offer.id,version:offer.version,document:{...offer.customer_document,version:offer.version}});
-   if(!mailer.configured())throw Error('Sözleşme bildirimi için e-posta bağlantısı henüz tanımlı değil.');
-   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(b.requestId)||typeof b.name!=='string'||!b.name.trim()||b.name.length>160||/[\r\n]/.test(b.name)||typeof b.email!=='string'||b.email.length>254||! /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(b.email))throw Error('Yetkili adı ve geçerli iş e-postası gerekli.');
-   const alternative=offer.customer_document.alternatives.find(a=>a.id===b.alternativeId);if(!alternative)throw Error('Geçerli işbirliği alternatifini seç.');
-   const input={requestId:b.requestId,alternativeId:b.alternativeId,name:b.name.trim(),email:b.email.trim().toLowerCase(),monthlyAmount:alternative.monthlyAmount};
-   const queued=await store.queue(offer,input,contractMessage(offer,input,mailer.from));
-   if(queued.delivery_state==='accepted')return res.status(200).json({delivered:true});
-   if(!await store.claim(queued.id))return res.status(202).json({delivered:false,message:'Talep kaydedildi; e-posta gönderimi kontrol ediliyor. Yeni bir talep göndermeniz gerekmiyor.'});
-   let providerId;
-   try{providerId=await mailer.send(queued.id,queued.mail_payload);}catch{await store.mark(queued.id,'uncertain');return res.status(202).json({delivered:false,message:'Talep kaydedildi; e-posta gönderimi doğrulanamadı. Sellf ekibi gönderim kaydını kontrol etmeli.'});}
-   await store.mark(queued.id,'accepted',providerId);
-   return res.status(200).json({delivered:true});
+   return res.status(200).json({id:offer.id,version:offer.version,document:{...offer.customer_document,version:offer.version}});
   }catch(error){return res.status(422).json({error:error.message||'Teklif işlemi tamamlanamadı.'});}
  };
 }

@@ -14,9 +14,9 @@ Uploads and results are processed in memory only. No image is sent to a model, w
 
 ## Four engine boundaries
 
-`src/engines/logo-engine.mjs`, `audit-engine.mjs`, `pricing-engine.mjs` and `proposal-engine.mjs` are separate modules. `contracts.mjs` validates stage outputs; `contracts.d.ts` describes the versioned data structures for future TypeScript consumers. `offer-workflow.mjs` holds immutable per-draft results and reuses an unchanged stage after another stage fails. Audit and pricing must pass their upstream gates. A technically valid transparent logo in review may enter a proposal draft; the coordinator forces that proposal to remain in review until final visual approval. Pricing output must contain three monthly totals and a cost-table version.
+`src/engines/logo-engine.mjs`, `audit-engine.mjs`, `pricing-engine.mjs` and `proposal-engine.mjs` are separate modules. `contracts.mjs` validates stage outputs; `contracts.d.ts` describes the versioned data structures for future TypeScript consumers. `offer-workflow.mjs` holds immutable per-draft results and reuses an unchanged stage after another stage fails. Audit and pricing must pass their upstream gates. A technically valid transparent logo in review may enter a proposal draft; the coordinator forces that proposal to remain in review until final visual approval. Pricing output must contain two monthly totals and a cost-table version.
 
-Logo processing is implemented. The BHS adapter supports real Gemini Deep Research through background Interactions API jobs, primary-page/PDF collection, grounded structured synthesis, separate semantic review and signed job tickets. See `BHS.md`. The pricing engine now selects scope from brief/BHS context and calculates three monthly alternatives from the versioned original workbook costs; budget is optional and BHS investment estimates cannot set prices. See `PRICING.md`. Customer proposal generation remains unconfigured. Unavailable BHS evidence and failed checks stop downstream use. The preview has no persistence, card-value writes or public customer publishing. Review of database integration and production authentication remains necessary before release.
+Logo processing is implemented. The BHS adapter supports real Gemini Deep Research through background Interactions API jobs, primary-page/PDF collection, grounded structured synthesis, separate semantic review and signed job tickets. See `BHS.md`. The pricing engine now selects scope from brief/BHS context and calculates two monthly alternatives from the versioned original workbook costs; budget is optional and BHS investment estimates cannot set prices. See `PRICING.md`. Gemini customer proposal composition is implemented with bounded copy and deterministic logo, scope and price projection. Unavailable BHS evidence and failed checks stop downstream use. The optional persistent preview uses only synthetic accounts and separate test cards. Version saving and estimated-value updates are atomic within those test tables. Customer links remain Vercel-protected. Production storage and release remain disabled. See `PROPOSAL.md` for the current setup and deployment status.
 
 ## Earlier website capture (not used by the current brief)
 
@@ -24,7 +24,7 @@ The worker renders the public website in a new credential-free Chromium context.
 
 Raster images without CSS filters or clipping use the actual site's image bytes at native resolution; a Wix original is preferred only when the image identity and aspect ratio match the displayed asset. This also prevents transparent screenshot margins from masking an opaque bitmap backdrop. SVGs and styled artwork retain the rendered-page path. Pixel dimensions are checked after trimming, so whitespace does not count as useful resolution.
 
-Preview responses include originals, transparent PNGs, quality measurements and source-site identity. The brief rejects stale results when its website changes. No website is automatically published, no files or cards are persisted, and estimated value remains unchanged until the future pricing engine produces an actual offer.
+Preview responses include originals, transparent PNGs, quality measurements and source-site identity. The brief rejects stale results when its website changes. No website is automatically published, no files or cards are persisted, and a brief alone never changes estimated value. A verified saved offer updates only its associated synthetic test card.
 
 ## Access
 
@@ -35,3 +35,7 @@ Every browser HTTP request goes through a bounded server fetcher. Public IPs are
 ## Validation
 
 `npm test` covers transparency, preservation of enclosed white artwork, clipping/complex-background review gates and SSRF. Set `LOGO_TEST_CHROMIUM` to a local Chromium path to enable the rendered-page integration test. The production package uses the pinned serverless Chromium binary. Do not use fixtures as evidence of real-site success: validate real domains separately before claiming end-to-end readiness.
+
+## Contract request
+
+Native mailto opens a draft to `yigit@sellfmedia.com` and `businessdevelopment@sellfmedia.com`, including the selected monthly amount, offer version and link. Sending is completed by the user in their email application. No Resend account, mail API key or automatic backend delivery is required. Publishing has no mail-provider dependency.
