@@ -96,7 +96,7 @@ test('provider uses actual background Interactions API; no fake JSON mode on Dee
  assert.equal(start.agent,'deep-research-max-preview-04-2026');assert.equal(start.background,true);assert.equal(start.store,true);assert.equal(start.response_format,undefined);
  assert.deepEqual(start.tools.map(t=>t.type),['google_search','url_context']);
  assert.equal(structure.response_format.mime_type,'application/json');assert.equal(structure.tools,undefined);assert.equal(structure.previous_interaction_id,undefined);
- assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);assert.equal(structure.background,false);
+ assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);assert.equal(structure.background,true);
  assert.ok(!/"(?:minLength|maxLength|minItems|maxItems|anyOf)"/.test(JSON.stringify(structure.response_format.schema)));
  assert.deepEqual(structure.response_format.schema.properties.dimensions.items.properties.score.type,['number','null']);
  assert.throws(()=>provider.structure(brief,{...research(),status:'in_progress'}),/Tamamlanmış/);
