@@ -65,6 +65,11 @@ test('a verified Google grounding redirect proves brand identity only at its res
  assert.equal((await verify(report,options)).status,'ready');
  assert.equal((await verify(report,{...options,verifySource:async s=>({status:'quote_matched',finalUrl:s.id==='s0'?'https://unrelated.example/':s.url})})).status,'review');
 });
+test('an absent report quote is distinguished from an uncited URL without weakening either gate',async()=>{
+ const missingQuote=fixture();missingQuote.sources[0].quote='A source quote absent from the actual research report.';
+ const first=await verify(missingQuote);assert.equal(first.data.sources[0].verification.status,'quote_not_in_report');assert.equal(first.status,'review');
+ const uncited=fixture();uncited.sources[0].url='https://uncited.example/';const second=await verify(uncited);assert.equal(second.data.sources[0].verification.status,'not_in_provider_citations');
+});
 test('peers need sources and comparable identities; benchmark values need evidence',async()=>{
  for(const change of [r=>r.competitors.pop(),r=>r.competitors[0].sourceIds=[],r=>r.competitors[0].website=brief.website,r=>r.benchmarks[0].entries[0].value='100000',r=>r.benchmarks[1].metric='webTraffic']){
   const r=fixture();change(r);assert.equal((await verify(r)).status,'review');
