@@ -28,6 +28,10 @@ const briefParts=brief=>['goals','needs','services','meetingNotes'].map(k=>brief
 const inBrief=(quote,brief)=>typeof quote==='string'&&quote.trim().length>2&&briefParts(brief).some(text=>text.includes(quote));
 const normalize=text=>text.toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i');
 const limitedWords=/butce.{0,45}(az|kisit|dusuk|yok|dar)|(?:az|kisitli|dusuk|dar).{0,25}butce|kucuk basla|once kucuk|minimum.{0,20}(kapsam|butce)/;
+const concern=text=>{
+ const value=normalize(text).replace(/butce[^.!?;\n]{0,30}(?:kisit|sorun|problem)[^.!?;\n]{0,12}(?:yok|degil)/g,'').replace(/butce[^.!?;\n]{0,20}(?:az|dusuk|dar)[^.!?;\n]{0,8}degil/g,'');
+ return limitedWords.test(value);
+};
 
 // Only clearly labelled monthly TRY amounts in brief quotes can become targets.
 // A bare number in the old budget field has unknown scope and remains guidance.
@@ -60,11 +64,11 @@ export function validateScope(value,brief,audit){
  }
  const web=plan.services.filter(s=>s.phase==='start'&&['webmaster','ecommerce_webmaster','custom_webmaster'].includes(s.serviceId));
  if(web.length>1)throw Error('Aynı kapsamda birden fazla webmaster kategorisi seçilemez.');
- if(plan.budget.posture==='limited'&&(!inBrief(plan.budget.quote,brief)||!limitedWords.test(normalize(plan.budget.quote)))){
-  plan.budget.posture='unspecified';warnings.push('Bütçe kısıtı alıntıyla doğrulanamadı; sayısal sınır uygulanmadı.');
+ if(plan.budget.posture==='limited'&&!inBrief(plan.budget.quote,brief)){
+  plan.budget.posture='unspecified';warnings.push('Bütçe kısıtı alıntıyla doğrulanamadı; bu çıkarım uygulanmadı.');
  }
  // A missed plain-language budget concern must not silently expand the package.
- if(plan.budget.posture!=='limited')for(const part of briefParts(brief))if(limitedWords.test(normalize(part))){plan.budget.posture='limited';plan.budget.quote=part.slice(0,1200);break;}
+ if(plan.budget.posture!=='limited')for(const part of briefParts(brief))if(concern(part)){plan.budget.posture='limited';plan.budget.quote=part.slice(0,1200);break;}
  const target=parseTarget(plan.budget.targetQuote,plan.budget.targetScope,brief);
  if(plan.budget.targetQuote&&!target)warnings.push('Sayısal yönlendirme aylık TL ve bütçe kapsamı bakımından doğrulanamadı; teklif engellenmedi.');
  return {...plan,target,warnings,fallback:false};
@@ -76,6 +80,6 @@ export function fallbackScope(brief){
  const aliases={meta:/\bmeta\b|facebook|instagram reklam/,google_ads:/google ads|google reklam/,b2b:/\bb2b\b/,onsite_seo:/on.?site seo/,offsite_seo:/off.?site seo/,technical_seo:/teknik seo/,social:/sosyal medya yonet/,design:/tasarim/,moderation:/moderasyon/,tiktok:/tiktok/,amazon_ppc:/amazon ppc/,ugc:/\bugc\b|barter/};
  const text=normalize(brief.services),services=Object.entries(aliases).filter(([,re])=>re.test(text)).slice(0,3).map(([serviceId])=>({serviceId,phase:'start',priority:1,reason:'Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.',briefQuote:brief.services,findingIds:[]}));
  if(!services.length)services.push({serviceId:'media_planning',phase:'start',priority:1,reason:'Geçici başlangıç alternatifi: hedefler, medya ve bütçenin planlanması. Tam operasyon kapsamı ayrıca gözden geçirilmeli.',briefQuote:null,findingIds:[]});
- const part=briefParts(brief).find(p=>limitedWords.test(normalize(p)));
+ const part=briefParts(brief).find(concern);
  return {summary:'Kapsam değerlendirmesi tamamlanamadı; fiyatlı başlangıç alternatifleri kontrol için hazırlandı.',services,budget:{posture:part?'limited':'unspecified',quote:part||null,targetQuote:null,targetScope:'unspecified'},target:null,exclusions:['Doğrulanmamış özel işler ve reklam harcaması bu fiyatlara dahil değildir.'],warnings:['Başlangıç kapsamı kontrol edilmeli; yeni model çağrısı otomatik başlatılmadı.'],fallback:true};
 }
