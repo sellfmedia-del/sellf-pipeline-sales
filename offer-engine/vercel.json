@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/evidence-probe.mjs --resume-editor v1_ChdqalRXYXJYeUctcXR5dE1Qd0pUa3lBdxIXampUV2FyWHlHLXF0eXRNUHdKVGt5QXc v1_ChdXVExXYXVPLUtvS3N1TVlQa0tIcDhRSRIXV1RMV2F1Ty1Lb0tzdU1ZUGtLSHA4UUk",
+  "buildCommand": "npm run build && node scripts/evidence-probe.mjs --refine-editor v1_ChdqalRXYXJYeUctcXR5dE1Qd0pUa3lBdxIXampUV2FyWHlHLXF0eXRNUHdKVGt5QXc v1_ChdXVExXYXVPLUtvS3N1TVlQa0tIcDhRSRIXV1RMV2F1Ty1Lb0tzdU1ZUGtLSHA4UUk",
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {

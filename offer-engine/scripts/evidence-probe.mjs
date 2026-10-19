@@ -8,7 +8,7 @@ import {parseGroundedReport,readStoredEnvelope} from '../src/bhs/grounded-report
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {discoverySourceHints} from '../src/bhs/discovery-hints.mjs';
 import {createEvidenceCollector,assertCoreEvidence} from '../src/bhs/evidence.mjs';
-if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan','--collect','--synthesize','--resume-synthesis','--resume-review','--resume-editor'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
+if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan','--collect','--synthesize','--resume-synthesis','--resume-review','--resume-editor','--refine-editor'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
 const provider=createResearchProvider();
 const brief=snapshotBrief({brandName:'Silverline TR',segment:'corporate',website:'https://www.silverline.com/tr-TR',goals:'Türkiye pazarında bayi ağını ve kârlı büyümeyi değerlendirmek.',needs:'B2B bayi büyümesi ile tüketici talebi, satış sonrası servis ve dijital varlıklar arasındaki ilişkiyi araştırmak.',services:'Büyüme danışmanlığı, pazarlama ve operasyon seçeneklerinin araştırmaya dayalı değerlendirilmesi.',meetingNotes:'Kamuya açık kaynaklarla kalite karşılaştırması için hazırlanmış test briefidir. Hedefler test senaryosudur; müşteri beyanı değildir. Eski örnek rapordaki sayıları doğru kabul etme.',budget:''});
 const proof={test:'public-synthetic-silverline-evidence',brief,status:'starting'};
@@ -42,12 +42,15 @@ try{
   proof.result=await createAuditEngine().run({brief,packet:context.packet,report:context.report,assessment:JSON.parse(modelText(review)),synthesisId:proof.synthesisId,semanticId:review.id});
   proof.status='complete';log('result',{status:proof.result.status,issues:proof.result.data.quality.issues});
  }
- if(process.argv[2]==='--resume-editor'){
+ if(['--resume-editor','--refine-editor'].includes(process.argv[2])){
   let revision=await completed(await provider.poll(process.argv[3],{includeInput:true}));revision=await provider.poll(revision.id,{includeInput:true});
   proof.revisionId=revision.id;proof.synthesisId=process.argv[4];
   const envelope=readStoredEnvelope(revision,'sellf-bhs-editor-v1',brief);
   proof.editorPatch=JSON.parse(modelText(revision));
-  const report=applyEdits(envelope.report,proof.editorPatch);
+  let report=applyEdits(envelope.report,proof.editorPatch);
+  if(process.argv[2]==='--refine-editor'){
+   let next=await provider.revise(brief,envelope.packet,report);proof.revisionId=next.id;log('revision_started',{id:next.id});next=await completed(next);proof.editorPatch=JSON.parse(modelText(next));report=applyEdits(report,proof.editorPatch);
+  }
   const review=await provider.assess(brief,envelope.packet,report);proof.semanticId=review.id;log('semantic_started',{id:review.id});
   await finish(null,review);
  }
