@@ -1,8 +1,8 @@
 # Offer preparation boundary
 
-This directory contains the isolated Pipeline card extension and the brief UI prototype. Audit, pricing, logo and proposal remain separate engines. The protected preview composes customer offers. Storage/publication code is present but disabled pending the additive SQL review and dedicated server/mail configuration. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
+This directory contains the isolated Pipeline card extension, preparation flow and approved customer template. Audit, pricing, logo and proposal remain separate engines. The protected preview composes customer offers. Storage/publication code is present but disabled pending the additive SQL review and dedicated server/mail configuration. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
 
-- `card-section.*`: card summary and entry button. All styles are scoped to the new section.
+- `card-section.*`: card summary, entry button and authorized latest-version read. All styles are scoped to the new section.
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
 - `brief-form.*`: isolated dialog, editable brief, source context and review state. Form input never mutates the CRM lead or calls the bulk `save()` function.
 - `logo-control.*`: screenshot upload, mandatory background removal, original/transparent comparison, deferred final visual review and logo-only placement background. Visual approval is reserved for the eventual proposal draft. Users can upload ordinary PNG/JPEG/WebP screenshots without preparing a transparent PNG first. Website blur no longer triggers automatic site capture.
