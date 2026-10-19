@@ -11,6 +11,9 @@ export function createAuditEngine({verifySource}={}){
     if(!rawReport||rawReport.length>500000||!json||json.length>250000)throw new ResearchError('invalid_report','BHS raporu eksik veya boyut sınırını aşıyor.');
     let report;try{report=JSON.parse(json);}catch{throw new ResearchError('invalid_report','BHS raporu beklenen biçimde değil.');}
     const result=await verifyReport(report,{brief,rawReport,citations:citationUrls(research),...(verifySource?{verifySource}:{})});
+    // Source/quote matches alone cannot approve entity, period or causal claims.
+    // A trusted semantic assessment is still required before downstream use.
+    if(result.data.quality.semanticBenchmark!=='passed')result.status='review';
     Object.assign(result.data,{schemaVersion:'bhs-v1',methodologyVersion,briefHash:briefHash(brief),rawReport,researchId:research.id,structureId:structure.id,usage:{research:research.usage||null,structure:structure.usage||null}});
     return result;
   }});

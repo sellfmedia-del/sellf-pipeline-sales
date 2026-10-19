@@ -7,7 +7,7 @@ export function assertResult(stage,result){
     if(result.status==='ready'&&result.data.reviewed!==true)throw new Error('Logo görsel kontrolü tamamlanmadı.');
   }
   if(stage==='audit'&&(!Array.isArray(result.data.findings)||!Array.isArray(result.data.services)))throw new Error('Audit bulguları ve hizmet kapsamı eksik.');
-  if(stage==='audit'&&result.data.schemaVersion==='bhs-v1'&&result.status==='ready'&&result.data.quality?.checksPassed!==true)throw new Error('BHS kaynak ve kapsam kontrolleri tamamlanmadı.');
+  if(stage==='audit'&&result.data.schemaVersion==='bhs-v1'&&result.status==='ready'&&(result.data.quality?.checksPassed!==true||result.data.quality?.semanticBenchmark!=='passed'))throw new Error('BHS kaynak ve içerik kontrolleri tamamlanmadı.');
   if(stage==='pricing'){
     const p=result.data;
     if(p.currency!=='TRY'||!p.costVersion||!Array.isArray(p.alternatives)||p.alternatives.length!==3||p.alternatives.some(a=>a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0))throw new Error('Üç toplam aylık fiyat ve maliyet sürümü gerekli.');

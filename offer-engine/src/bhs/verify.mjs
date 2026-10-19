@@ -49,8 +49,8 @@ export async function verifyReport(report,{brief,rawReport,citations,verifySourc
     while(next<data.sources.length){
       const s=data.sources[next++];
       const url=publicUrl(s.url);
-      let check={status:'not_in_provider_citations'};
-      if(url&&providerUrls.has(url)&&normalized(s.quote).length>=24&&reportText.includes(normalized(s.quote))){
+      let check={status:!url?'invalid_url':!providerUrls.has(url)?'not_in_provider_citations':normalized(s.quote).length<24?'quote_too_short':!reportText.includes(normalized(s.quote))?'quote_not_in_report':'pending'};
+      if(check.status==='pending'){
         try{check=await verifySource(s);}catch{check={status:'unavailable'};}
       }
       if(s.publishedAt!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(s.publishedAt)||Number.isNaN(Date.parse(s.publishedAt))||new Date(s.publishedAt).toISOString().slice(0,10)!==s.publishedAt||s.publishedAt>asOf))check={status:'invalid_date'};

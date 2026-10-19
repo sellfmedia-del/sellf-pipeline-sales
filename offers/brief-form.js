@@ -114,6 +114,7 @@
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
       paragraph(data.summary);
+      if(data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
       heading('Ön BHS boyutları');
       const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
       data.dimensions.forEach(d=>{
@@ -133,7 +134,7 @@
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
-      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve kapsam kontrolleri tamamlandı. Fiyat ve teklif aşaması henüz bağlı değil.':'Eksik veya doğrulanamayan kaynaklar nedeniyle bu sonuç henüz teklif aşamasına aktarılamaz.';
+      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve içerik kontrolleri tamamlandı. Fiyat ve teklif aşaması henüz bağlı değil.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
     }
     async function runAudit(){
       const notice=dialog.querySelector('.ob-review-notice');

@@ -31,3 +31,8 @@ test('a technically valid unreviewed logo can enter a proposal draft, which stay
   const result=await workflow.run('proposal',{}, {logo,audit,pricing});
   assert.equal(result.status,'review');assert.equal(logo.status,'review');
 });
+test('mechanical BHS quote checks cannot authorize pricing while semantic assessment is pending',async()=>{
+ const data={schemaVersion:'bhs-v1',findings:[],services:[],quality:{checksPassed:true,semanticBenchmark:'pending'}};
+ assert.throws(()=>assertResult('audit',{status:'ready',data}),/içerik/);
+ const workflow=createOfferWorkflow();await assert.rejects(()=>workflow.run('pricing',{}, {audit:{stage:'audit',status:'review',data}}),/audit/);
+});
