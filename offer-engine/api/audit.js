@@ -9,6 +9,7 @@ import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {readStoredEnvelope,parseGroundedReport} from '../src/bhs/grounded-report.mjs';
 import {modelText} from '../src/bhs/provider.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
+import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 
 export function createAuditHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,validateWebsite=validatePublicBrief,engine=createAuditEngine(),collect=createEvidenceCollector(),now=Date.now}={}){
   // Best-effort per-instance dedupe only; no database or durable store is used.
@@ -100,7 +101,9 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
         const envelope=readStoredEnvelope(interaction,'sellf-bhs-semantic-v1',brief);
         result=await engine.run({brief,packet:envelope.packet,report:envelope.report,assessment:JSON.parse(modelText(interaction)),researchId:job.researchId,synthesisId:job.synthesisId,semanticId:job.semanticId,revisionId:job.revisionId,usage:{semantic:interaction.usage||null}});
       }
-      return res.status(200).json({phase:'complete',result:{...result,stage:'audit',engineVersion:engine.version,inputHash:hash,runId:job.runId}});
+      const auditResult={...result,stage:'audit',engineVersion:engine.version,inputHash:hash,runId:job.runId};
+      const pricingProof=result.status==='ready'?createPricingProof(getSecret()).encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(auditResult)},session,host):null;
+      return res.status(200).json({phase:'complete',result:auditResult,pricingProof});
     }catch(error){
       const code=error instanceof ResearchError?error.code:'invalid_report';
       const message=error instanceof ResearchError?error.message:'BHS bilgileri doğrulanamadı. Sonuç teklif için kullanılmadı.';

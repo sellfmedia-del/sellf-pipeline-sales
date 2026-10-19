@@ -2,6 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
+    "api/pricing.js": {
+      "maxDuration": 60
+    },
     "api/audit.js": {
       "maxDuration": 180,
       "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}"

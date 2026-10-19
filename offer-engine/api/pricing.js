@@ -1,0 +1,69 @@
+import {randomUUID} from 'node:crypto';
+import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
+import {createResearchProvider,interactionId,modelText} from '../src/bhs/provider.mjs';
+import {createPricingProof,digest} from '../src/pricing/proof.mjs';
+import {pricingEngine} from '../src/engines/pricing-engine.mjs';
+import {costVersion} from '../src/pricing/catalog.mjs';
+import {assertResult} from '../src/contracts.mjs';
+
+export function createPricingHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,engine=pricingEngine,now=Date.now}={}){
+ const starts=new Map();
+ return async function handler(req,res){
+  res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
+  if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Fiyat servisi yalnızca korumalı önizlemede açık.'});
+  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()),costVersion,budgetRequired:false,providerDeterminesPrices:false});
+  if(req.method!=='POST'){res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Bu işlem POST isteği gerektirir.'});}
+  const host=req.headers.host;
+  if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
+  try{
+   if((Number(req.headers['content-length'])||0)>600000)throw Error('Fiyat hesaplama girdisi çok büyük.');
+   const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+   if(!body||JSON.stringify(body).length>600000)throw Error('Fiyat hesaplama girdisi çok büyük.');
+   const brief=snapshotBrief(body.brief),hash=briefHash(brief),codec=createPricingProof(getSecret());
+   const session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
+   if(!session)throw Error('Doğrulanmış araştırma oturumu gerekli.');
+   const approval=codec.decode(body.pricingProof,session,host,now());
+   if(approval.kind!=='audit_ready'||approval.briefHash!==hash||approval.auditHash!==digest(body.audit))throw Error('Brief veya BHS değişti; fiyat hesaplaması için doğrulanmış sonuç gerekli.');
+   assertResult('audit',body.audit);
+   if(body.audit.status!=='ready'||body.audit.data.briefHash!==hash)throw Error('Bu brief için doğrulanmış BHS gerekli.');
+   const options={...(body.customCosts!==undefined?{customCosts:body.customCosts}:{}),...(body.influencerListAmount!==undefined?{influencerListAmount:body.influencerListAmount}:{})};
+   const inputHash=digest({brief,auditHash:approval.auditHash,options,version:engine.version});
+   async function finish(scope){
+    const result=await engine.run({brief,...options,...(scope?{scope}:{})},{audit:body.audit});assertResult('pricing',result);
+    return res.status(200).json({phase:'complete',result:{...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()}});
+   }
+   // Validate explicit inputs before any possibly billable model call.
+   await engine.run({brief,...options},{audit:body.audit});
+   const provider=getProvider();
+   if(body.action==='start'){
+    if(typeof body.requestId!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(body.requestId))throw Error('İstek kimliği geçersiz.');
+    for(const [key,value]of starts)if(now()-value.at>7200000)starts.delete(key);
+    const key=session+':'+body.requestId+':'+inputHash;
+    if(!starts.has(key)){
+     if(starts.size>=200)throw Error('Fiyat hesaplama servisi meşgul.');
+     const promise=(async()=>{
+      if(!provider.configured())return null;
+      // An ambiguous failed POST is retained, never automatically retried.
+      try{return await provider.planPricing(brief,body.audit.data);}catch{return null;}
+     })();starts.set(key,{at:now(),promise});
+    }
+    const job=await starts.get(key).promise;
+    if(!job)return finish();
+    const id=interactionId(job.id);
+    return res.status(202).json({phase:'scope',ticket:codec.encode({kind:'scope',createdAt:now(),briefHash:hash,auditHash:approval.auditHash,inputHash,id},session,host)});
+   }
+   if(!['status','cancel'].includes(body.action))throw Error('Fiyat hesaplama işlemi geçersiz.');
+   const job=codec.decode(body.ticket,session,host,now());
+   if(job.kind!=='scope'||job.briefHash!==hash||job.auditHash!==approval.auditHash||job.inputHash!==inputHash)throw Error('Fiyat hesaplama girdileri değişti.');
+   const id=interactionId(job.id);
+   if(body.action==='cancel'){await provider.cancel(id);return res.status(200).json({status:'cancelled'});}
+   if(now()-job.createdAt>120000){try{await provider.cancel(id);}catch{/* Fallback does not restart a paid job. */}return finish();}
+   let interaction;try{interaction=await provider.poll(id);}catch{return finish();}
+   if(['queued','in_progress'].includes(interaction.status))return res.status(200).json({phase:'scope',ticket:body.ticket,status:'in_progress'});
+   if(interaction.status!=='completed')return finish();
+   let scope;try{scope=JSON.parse(modelText(interaction));}catch{return finish();}
+   try{return await finish(scope);}catch{return finish();}
+  }catch{return res.status(422).json({error:'Fiyat hesaplama bilgileri doğrulanamadı. BHS, brief veya hesaplama kaydı değişmiş olabilir.'});}
+ };
+}
+export default createPricingHandler();
