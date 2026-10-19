@@ -10,7 +10,7 @@ export function createAuditEngine({verifySource}={}){
     const brief=snapshotBrief(input?.brief);
     if(input.packet){
       const packet=assertEvidencePacket(input.packet,brief),rawReport=renderGroundedReport(input.report);
-      const result=await verifyReport(input.report,{brief,rawReport,citations:packet.sources.map(s=>s.finalUrl),verifySource:evidenceSourceVerifier(packet)});
+      const result=await verifyReport(input.report,{brief,rawReport,brandEntityId:packet.entities.find(e=>e.role==='brand')?.id,citations:packet.sources.map(s=>s.finalUrl),verifySource:evidenceSourceVerifier(packet)});
       const semantic=assessSemantics(input.assessment,input.report,packet);
       result.data.quality.citationChecksPassed=result.data.quality.checksPassed;
       result.data.quality.semanticBenchmark=semantic.status;

@@ -72,10 +72,10 @@ test('desktop and mobile finish the evidence workflow without changing CRM',{ski
    const req=route.request(),url=new URL(req.url());assert.equal(url.origin,'https://preview.vercel.app');
    if(url.pathname==='/api/audit'){
     const body=req.postDataJSON();actions.push(body.action);
-    const phases=['research','source_plan','synthesis','semantic'];let response;
+    const phases=['research','source_plan','synthesis','revision','semantic'];let response;
     if(body.action==='start')response={phase:'research',ticket:'0'};
     else if(body.action==='advance')response={phase:phases[Number(body.ticket)+1],ticket:String(Number(body.ticket)+1)};
-    else response=body.ticket==='3'?{phase:'complete',result:{status:'ready',data}}:{phase:phases[Number(body.ticket)]+'_complete',ticket:body.ticket,nextAction:'advance'};
+    else response=body.ticket==='4'?{phase:'complete',result:{status:'ready',data}}:{phase:phases[Number(body.ticket)]+'_complete',ticket:body.ticket,nextAction:'advance'};
     return route.fulfill({contentType:'application/json',body:JSON.stringify(response)});
    }
    if(url.pathname==='/api/logo-upload')return route.fulfill({contentType:'application/json',body:JSON.stringify(await prepareUploadedLogo(req.postDataJSON().image))});
@@ -84,7 +84,7 @@ test('desktop and mobile finish the evidence workflow without changing CRM',{ski
   await page.goto('https://preview.vercel.app/offers/preview.html');const frame=page.frameLocator('#preview-frame');await frame.locator('.offer-create').click();const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
   await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
-  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,3);assert.deepEqual(errors,[]);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await context.close();
  }}finally{await browser.close();}
 });

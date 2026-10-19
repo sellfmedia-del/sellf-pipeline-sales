@@ -1,4 +1,5 @@
 // Explicit public-fixture probe; the normal build never invokes this script.
+import {applyEdits} from '../src/bhs/editor.mjs';
 import {writeFile,mkdir} from 'node:fs/promises';
 import {createResearchProvider,modelText,citationUrls,interactionFailure} from '../src/bhs/provider.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
@@ -30,6 +31,9 @@ try{
    synthesis=await provider.poll(synthesis.id,{includeInput:true});
    packet=readStoredEnvelope(synthesis,'sellf-bhs-synthesis-v1',brief).packet;
    report=parseGroundedReport(modelText(synthesis));
+   let revision=await provider.revise(brief,packet,report);proof.revisionId=revision.id;log('revision_started',{id:revision.id});
+   revision=await completed(revision);proof.editorPatch=JSON.parse(modelText(revision));
+   report=applyEdits(report,proof.editorPatch);
    review=await provider.assess(brief,packet,report);proof.semanticId=review.id;log('semantic_started',{id:review.id});
   }
   review=await completed(review);review=await provider.poll(review.id,{includeInput:true});

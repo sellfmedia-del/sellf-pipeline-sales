@@ -86,3 +86,29 @@ test('core source coverage is required before starting the paid report writer',a
  packet.sources.shift();assert.throws(()=>assertCoreEvidence(packet,snapshotBrief(brief)),/kimlik okunamadı/);
  const p=context().packet;p.sources=p.sources.slice(0,3);assert.throws(()=>assertCoreEvidence(p,snapshotBrief(brief)),/üç rakibin/);
 });
+
+test('official registry identity requires the exact declared website, never email, lookalikes or unrelated news',async()=>{
+ const {declaresWebsite,reportBrandIdentity,packetBrandIdentity}=await import('../src/bhs/identity.mjs');
+ const website='https://www.brand.example/';
+ assert.equal(declaresWebsite('İnternet Adresi https://www.brand.example/ Kuruluş',website),true);
+ for(const text of ['info@brand.example','www.brand.example.attacker.com','www.brand.example.tr','www.other.example'])assert.equal(declaresWebsite(text,website),false);
+ const source={url:'https://kap.org.tr/tr/api/file/download/official',sourceType:'primary',quote:'Şirketin İnternet Adresi www.brand.example olarak bildirilmiştir.'};
+ assert.equal(reportBrandIdentity(source,{website}),true);
+ assert.equal(reportBrandIdentity({...source,url:'https://kap.org.tr.attacker.com/'},{website}),false);
+ assert.equal(reportBrandIdentity({...source,sourceType:'secondary'},{website}),false);
+ assert.equal(packetBrandIdentity({sources:[{finalUrl:source.url,excerpts:[{text:source.quote}]}]},{website}),true);
+});
+
+test('bounded editing cannot change sources, scores, numeric facts or nonexistent findings',async()=>{
+ const {applyEdits,interpretationIssues}=await import('../src/bhs/editor.mjs');const {report}=context();
+ const edited=applyEdits(report,{edits:[{target:'finding.impact',id:report.findings[0].id,value:'Bu ilişki saha verileriyle sınanacak bir hipotezdir.'}]});assert.equal(edited.findings[0].statement,report.findings[0].statement);assert.deepEqual(edited.sources,report.sources);
+ for(const edit of [{target:'finding.impact',id:'unknown',value:'Unknown'},{target:'finding.impact',id:report.findings[0].id,value:'Increase 999%'},{target:'dimension.score',id:'financial',value:'90'}])assert.throws(()=>applyEdits(report,{edits:[edit]}));
+ report.dimensions[0].rationale='Rakip finansalları kamuya açık olmadığından puan verilmedi.';assert.ok(interpretationIssues(report).length);report.dimensions[0].rationale='Rakip finansalları bu taramada doğrulanmış kaynak paketinde bulunmadığından puan verilmedi.';assert.deepEqual(interpretationIssues(report),[]);
+});
+test('authenticated source-plan brand IDs and mixed brief/context references do not erase real evidence',async()=>{
+ const {packet,report,assessment}=context();packet.entities[0].id='test-brand';report.benchmarks.forEach(b=>b.entries[0].entityId='test-brand');
+ report.findings[1].kind='brief';report.findings[1].sourceIds=[];report.serviceRecommendations[0].findingIds=['f0','f1'];
+ const {reportHash}=await import('../src/bhs/semantic.mjs');const {evidenceHash}=await import('../src/bhs/evidence.mjs');assessment.reportHash=reportHash(report);assessment.packetHash=evidenceHash(packet);
+ assert.equal((await createAuditEngine().run({brief,packet,report,assessment})).status,'ready');
+ report.serviceRecommendations[0].findingIds=['f1'];assessment.reportHash=reportHash(report);assert.equal((await createAuditEngine().run({brief,packet,report,assessment})).status,'review');
+});

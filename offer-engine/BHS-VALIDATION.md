@@ -41,6 +41,21 @@ Changes made from the real test:
 
 The revised research instructions have not passed a fresh real research benchmark. Fixture tests cannot establish semantic quality. Current automated verification: 54 existing/root tests previously passed; all 46 worker tests pass, including desktop/mobile UI, actual transparent-logo processing, BHS lifecycle, missing evidence, normalized-score rejection, background error redaction and text-PDF extraction. No tests are skipped in that worker run. Explicit minimal-provider diagnostics use only public fixtures. Any returned request-validation message is credential-redacted and kept only in a protected test artifact; it is not written to logs. These diagnostic/extraction requests do not repeat the Deep Research search job.
 
-## Remaining acceptance gate
+## Evidence-first implementation and live retest
 
-The audit engine now keeps even mechanically valid BHS results in review while semantic assessment is pending; the coordinator rejects a ready result without passed semantic assessment. That semantic assessment is not yet implemented. Before pricing/proposal integration, the above source-coverage and semantic defects must be corrected and verified with primary sources. Do not promote this branch or label the BHS engine ready based on authentication, search volume, report length or fixture tests alone. Pricing and final proposal engines remain unconfigured; the user will review one integrated proposal after the engine work is complete.
+The semantic reviewer is now implemented and connected to the preview UI/API. The lifecycle is research → source plan → fetched evidence → grounded synthesis → separate semantic review. Actual provider-stored user input was recovered successfully with `include_input=true`; the evidence packet does not depend on serverless process memory or a CRM write.
+
+The first grounded run reused the original Deep Research job and the completed source-plan job. The source plan made three Google Search calls. Twelve source pages were read, then a 21-finding report and a separate coverage-complete semantic review completed. All six scores correctly remained null. Entity/period separation and the eight-row benchmark were materially better than the original report.
+
+That run still failed acceptance. A quotation crossed the boundary between two genuinely adjacent captured excerpts, and the brand website rendered an empty country-selection page. Mechanical checks kept the result in review. Manual reading also found interpretations that the initial semantic reviewer missed: export share was described as a balanced revenue structure, and this reader's inability to render the brand site became a presumed customer access/digital-conversion problem. A model review pass is therefore not treated as proof of accuracy.
+
+Corrections from that run:
+
+- Excerpts overlap by the maximum permitted quote length. The verifier may also reconstruct a literal quote across captured excerpts only when their source offsets prove exact adjacency; it cannot bridge omitted regions.
+- The collector reuses actual provider-cited primary links from the original discovery report. This resolved the correct KAP company pages and actual financial/activity PDFs; no company ID, financial number or brand-specific source correction was hard-coded.
+- Rendered KAP error/navigation shells are excluded as evidence. Public metadata, when available, is explicitly labelled and limited to publisher identity.
+- The writer and reviewer distinguish access limitations of this automated reader from actual customer, dealer, crawler or SEO problems. Review covers impact, goal connection, dimension rationale, summaries, questions and service hypotheses as well as finding statements.
+- Brand identity can be established by a matched quotation from the brand site or by a primary official registry document explicitly declaring that exact website. Email domains, lookalikes, unrelated news and other country domains do not qualify. The actual KAP activity PDF declares `www.silverline.com`; this is identity evidence, not evidence that the website works.
+- Missing core identity or fewer than three read competitor sites stop the paid report writer before synthesis starts.
+
+A final live retest uses the same original research/source-plan jobs, newly fetched primary evidence and the corrected writer/reviewer. Record its final acceptance result below. Main/production, Travis code/environment and all CRM records remain unchanged. Pricing and final proposal generation are still unconfigured; the user will review one integrated proposal after those stages are complete.

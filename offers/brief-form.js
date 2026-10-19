@@ -155,7 +155,7 @@
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           action='status';
-          const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
+          const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',revision:'Kanıtların kapsamı ve yorumların kesinliği gözden geçiriliyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
           if(stages[response.phase])notice.textContent=stages[response.phase];
           await new Promise(resolve=>setTimeout(resolve,10000));
           if(current.stopped)return;

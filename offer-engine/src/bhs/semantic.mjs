@@ -1,3 +1,4 @@
+import {interpretationIssues} from './editor.mjs';
 import {createHash} from 'node:crypto';
 import {assertSchema} from './schema.mjs';
 import {dimensions} from './brief.mjs';
@@ -25,7 +26,7 @@ Global checks: overviewGrounded özetin tamamını, questionsAndServicesGrounded
 Eksik veri veya ihtiyatlı hipotez kendi başına hata değildir. Kanıttan daha kesin veya daha geniş genelleme hatadır. Belirsiz destek uncertain; yanlış desteksiz bulgu unsupported. Her bulgu ve her altı boyut mutlaka denetlensin. reportHash ve packetHash değerlerini verilen alanlardan aynen kopyala. Her false check veya unsupported/uncertain sonuç için somut kısa gerekçe yaz. issues sadece gerçek tespitleri içersin; boşsa [] yaz.`};}
 export function assessSemantics(assessment,report,packet){
  assertSchema(assessment,semanticSchema,'semanticReview');
- const issues=[...assessment.issues];
+ const issues=[...assessment.issues,...interpretationIssues(report)];
  if(assessment.reportHash!==reportHash(report)||assessment.packetHash!==evidenceHash(packet))issues.push('İçerik kontrolü rapor ve kanıt paketiyle eşleşmiyor.');
  for(const [name,passed]of Object.entries(assessment.checks))if(!passed)issues.push('İçerik kapsam kontrolü geçmedi: '+name);
  const unique=(rows,key)=>new Set(rows.map(key)).size===rows.length;
@@ -38,6 +39,6 @@ export function assessSemantics(assessment,report,packet){
  if(new Set(actual).size!==actual.length||actual.length!==expected.length||actual.some(key=>!expected.includes(key)))issues.push('Benchmark içerik kontrolü kapsamı eksik veya geçersiz.');
  assessment.benchmarks.filter(x=>!x.supported).forEach(x=>issues.push('Benchmark içerik desteği geçmedi: '+x.metric+'/'+x.entityId+' — '+x.reason));
  const finance=report.dimensions.find(d=>d.id==='financial');
- if(finance?.score!==null){const rows=report.benchmarks.find(b=>b.metric==='revenueOrGrowth')?.entries||[];const known=rows.filter(e=>e.value!==null&&e.period&&e.unit);if(!known.some(e=>e.entityId==='brand')||known.filter(e=>e.entityId!=='brand').length<3)issues.push('Finansal puan için marka ve üç rakibin karşılaştırılabilir finansal verisi yok.');}
+ if(finance?.score!==null){const rows=report.benchmarks.find(b=>b.metric==='revenueOrGrowth')?.entries||[];const known=rows.filter(e=>e.value!==null&&e.period&&e.unit);if(!known.some(e=>['brand',packet.entities.find(e=>e.role==='brand')?.id].includes(e.entityId))||known.filter(e=>!['brand',packet.entities.find(e=>e.role==='brand')?.id].includes(e.entityId)).length<3)issues.push('Finansal puan için marka ve üç rakibin karşılaştırılabilir finansal verisi yok.');}
  return {status:issues.length?'failed':'passed',issues:[...new Set(issues)],assessment};
 }

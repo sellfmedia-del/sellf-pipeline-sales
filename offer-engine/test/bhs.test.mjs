@@ -119,24 +119,25 @@ test('API traverses all signed evidence stages, dedupes paid transitions and rej
   const {packet,report}=await import('./fixtures/evidence.mjs').then(m=>m.context());
   const {synthesisEnvelope}=await import('../src/bhs/grounded-report.mjs');
   const {semanticEnvelope}=await import('../src/bhs/semantic.mjs');
+  const {editorialEnvelope}=await import('../src/bhs/editor.mjs');
   const {plan}=await import('./fixtures/evidence.mjs');
   const sb=snapshotBrief(brief),calls={};
   const output=(id,value,input)=>({id,status:'completed',input:input?JSON.stringify(input):undefined,steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify(value)}]}]});
-  const jobs={research_12345678:{id:'research_12345678',status:'completed'},plan_12345678:output('plan_12345678',plan),synthesis_12345678:output('synthesis_12345678',report,synthesisEnvelope(sb,packet)),semantic_12345678:output('semantic_12345678',{},semanticEnvelope(sb,packet,report))};
-  const start=name=>async()=>{calls[name]=(calls[name]||0)+1;return {id:{start:'research_12345678',discoverSources:'plan_12345678',synthesize:'synthesis_12345678',assess:'semantic_12345678'}[name]};};
-  const provider={configured:()=>true,start:start('start'),discoverSources:start('discoverSources'),synthesize:start('synthesize'),assess:start('assess'),async poll(id){return jobs[id];}};
+  const jobs={research_12345678:{id:'research_12345678',status:'completed'},plan_12345678:output('plan_12345678',plan),synthesis_12345678:output('synthesis_12345678',report,synthesisEnvelope(sb,packet)),revision_12345678:output('revision_12345678',{edits:[]},editorialEnvelope(sb,packet,report)),semantic_12345678:output('semantic_12345678',{},semanticEnvelope(sb,packet,report))};
+  const start=name=>async()=>{calls[name]=(calls[name]||0)+1;return {id:{start:'research_12345678',discoverSources:'plan_12345678',synthesize:'synthesis_12345678',revise:'revision_12345678',assess:'semantic_12345678'}[name]};};
+  const provider={configured:()=>true,start:start('start'),discoverSources:start('discoverSources'),synthesize:start('synthesize'),revise:start('revise'),assess:start('assess'),async poll(id){return jobs[id];}};
   let collected=0,engineInput;
   const handler=createAuditHandler({getProvider:()=>provider,getSecret:()=> 'secret',validateWebsite:async()=>{},collect:async()=>{collected++;return packet;},engine:{version:'test',async run(input){engineInput=input;return {status:'review',data:{findings:[],services:[]}};}}});
   const first=response();await handler(request({action:'start',brief,requestId:'request_1234567890'}),first);assert.equal(first.code,202);
   const dup=response();await handler(request({action:'start',brief,requestId:'request_1234567890'}),dup);assert.equal(calls.start,1);assert.equal(first.body.ticket,dup.body.ticket);
   const changed=response();await handler(request({action:'status',brief:{...brief,goals:'Changed'},ticket:first.body.ticket}),changed);assert.equal(changed.body.code,'changed_brief');
   let ticket=first.body.ticket;
-  for(const phase of ['source_plan','synthesis','semantic']){
+  for(const phase of ['source_plan','synthesis','revision','semantic']){
    const status=response();await handler(request({action:'status',brief,ticket}),status);assert.equal(status.body.nextAction,'advance');
    const next=response();await handler(request({action:'advance',brief,ticket}),next);assert.equal(next.body.phase,phase);
    const repeat=response();await handler(request({action:'advance',brief,ticket}),repeat);assert.equal(repeat.body.ticket,next.body.ticket);ticket=next.body.ticket;
   }
-  assert.deepEqual(calls,{start:1,discoverSources:1,synthesize:1,assess:1});assert.equal(collected,1);
+  assert.deepEqual(calls,{start:1,discoverSources:1,synthesize:1,revise:1,assess:1});assert.equal(collected,1);
   const final=response();await handler(request({action:'status',brief,ticket}),final);assert.equal(final.body.phase,'complete');assert.deepEqual(engineInput.packet,packet);assert.deepEqual(engineInput.report,report);
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
@@ -185,4 +186,10 @@ test('financial PDF evidence is extracted in a bounded worker and checked agains
  const verifier=createSourceVerifier({read:async()=>({status:200,headers:{'content-type':'application/pdf'},body:Buffer.from(pdf)})});
  const result=await verifier({url:'https://brand.example/report.pdf',quote});assert.equal(result.status,'quote_matched');assert.equal(result.pages,1);
  const unmatched=await verifier({url:'https://brand.example/report.pdf',quote:'This sentence is not present in the financial report.'});assert.equal(unmatched.status,'quote_not_found');
+});
+
+ test('ordinary financial percentages are not mistaken for a partial total BHS claim',async()=>{
+ const report=fixture();report.dimensions[3].score=null;report.dimensions[3].dataStatus='insufficient';
+ let result=await verify(report,{rawReport:modelText(research())+'\nÖn BHS analizi kapsamında kaynakta ihracat oranı %60 olarak aktarılmıştır.'});assert.equal(result.status,'ready');
+ for(const text of ['Ön BHS toplamı: %64','Ön BHS: 54.5/85','BHS skoru yaklaşık %64']){result=await verify(report,{rawReport:modelText(research())+'\n'+text});assert.equal(result.status,'review');}
 });

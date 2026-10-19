@@ -1,3 +1,4 @@
+import {applyEdits} from '../src/bhs/editor.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from '../src/bhs/brief.mjs';
 import {createResearchProvider,ResearchError,interactionFailure} from '../src/bhs/provider.mjs';
@@ -53,16 +54,16 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
       }
       const job=codec.decode(body.ticket,session,host,now());
       if(job.hash!==hash)throw new ResearchError('changed_brief','Brief değişti. Önceki araştırma bu bilgiler için kullanılamaz.');
-      const field={research:'researchId',source_plan:'sourcePlanId',synthesis:'synthesisId',semantic:'semanticId',structure:'structureId'}[job.phase];
+      const field={research:'researchId',source_plan:'sourcePlanId',synthesis:'synthesisId',semantic:'semanticId',revision:'revisionId',structure:'structureId'}[job.phase];
       const id=job[field];
       if(body.action==='cancel'){
         await provider.cancel(id);return res.status(200).json({status:'cancelled'});
       }
       if(!['status','advance','structure'].includes(body.action))throw new ResearchError('invalid_job','Araştırma işlemi geçersiz.');
-      const interaction=await provider.poll(id,{includeInput:['synthesis','semantic'].includes(job.phase)});
+      const interaction=await provider.poll(id,{includeInput:['synthesis','revision','semantic'].includes(job.phase)});
       if(['queued','in_progress'].includes(interaction.status))return res.status(200).json({phase:job.phase,status:'in_progress',ticket:body.ticket});
       if(interaction.status!=='completed')throw interactionFailure(interaction);
-      if(['research','source_plan','synthesis'].includes(job.phase)){
+      if(['research','source_plan','synthesis','revision'].includes(job.phase)){
         if(body.action==='status')return res.status(200).json({phase:job.phase+'_complete',status:'in_progress',nextAction:'advance',ticket:body.ticket});
         const next=await once(session+':advance:'+job.phase+':'+id,async()=>{
           if(job.phase==='research'){
@@ -77,8 +78,14 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
             const value=await provider.synthesize(brief,packet);
             return {...job,phase:'synthesis',synthesisId:value.id};
           }
-          const envelope=readStoredEnvelope(interaction,'sellf-bhs-synthesis-v1',brief);
-          const report=parseGroundedReport(modelText(interaction));
+          if(job.phase==='synthesis'){
+            const envelope=readStoredEnvelope(interaction,'sellf-bhs-synthesis-v1',brief);
+            const report=parseGroundedReport(modelText(interaction));
+            const value=await provider.revise(brief,envelope.packet,report);
+            return {...job,phase:'revision',revisionId:value.id};
+          }
+          const envelope=readStoredEnvelope(interaction,'sellf-bhs-editor-v1',brief);
+          const report=applyEdits(envelope.report,JSON.parse(modelText(interaction)));
           const value=await provider.assess(brief,envelope.packet,report);
           return {...job,phase:'semantic',semanticId:value.id};
         });
