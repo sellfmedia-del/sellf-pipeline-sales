@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   function mount(container,{getWebsite,onChange}){
-    let selected=null,disposed=false,epoch=0;
+    let selected=null,verifiedData=null,disposed=false,epoch=0;
     container.innerHTML=`<div class="ol-header"><strong>Marka logosu</strong><span>Ekran görüntüsünden hazırlanır</span></div>
       <label class="ol-upload-label" for="ob-logo-screenshot">Logo ekran görüntüsü yükle</label>
       <input id="ob-logo-screenshot" class="ol-file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="ol-upload-hint ol-upload-status">
@@ -19,7 +19,7 @@
       if(!selected)return;
       const color=background.value==='auto'?(selected.placement?.background||'#ffffff'):background.value;
       container.querySelector('.ol-logo-zone').style.background=color;
-      onChange({status:'review',image:selected.image,source:selected.source,sourceType:'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:false,generated:false});
+      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:false,generated:false});
     }
     background.addEventListener('change',apply);
     input.addEventListener('change',async()=>{
@@ -37,7 +37,7 @@
         if(disposed||request!==epoch)return;
         const candidate=data.candidates?.[0];
         if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
-        selected=candidate;
+        selected=candidate;verifiedData=data;
         container.querySelector('.ol-original img').src=candidate.source;
         container.querySelector('.ol-checker img').src=candidate.image;
         container.querySelector('.ol-placement img').src=candidate.image;

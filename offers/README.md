@@ -1,6 +1,6 @@
 # Offer preparation boundary
 
-This directory contains the isolated Pipeline card extension and the brief UI prototype. The eventual audit engine, pricing/offer engine and customer portal remain separate responsibilities. This stage has no persistence or customer publishing. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
+This directory contains the isolated Pipeline card extension and the brief UI prototype. Audit, pricing, logo and proposal remain separate engines. The protected preview composes customer offers. Storage/publication code is present but disabled pending the additive SQL review and dedicated server/mail configuration. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
 
 - `card-section.*`: card summary and entry button. All styles are scoped to the new section.
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
@@ -10,13 +10,13 @@ This directory contains the isolated Pipeline card extension and the brief UI pr
 
 ## Accepted pricing and value rules
 
-The isolated worker now calculates the three alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. A final customer offer and value synchronization remain the next implementation step.
+The isolated worker now calculates the two alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. The customer template and Gemini composition are implemented; storage and notification release prerequisites are listed in `../offer-engine/PROPOSAL.md`.
 
-The three customer alternatives each show the total monthly invoice amount. The first-two-month Growth staffing distinction is internal costing context, not a separate customer invoice period.
+The two customer alternatives each show the total monthly invoice amount. The first-two-month Growth staffing distinction is internal costing context, not a separate customer invoice period.
 
 When an actual offer is created or its price is revised, synchronize the associated lead's estimated value with the recommended main alternative's total monthly amount. The brief alone must never change estimated value. Implement synchronization as a targeted authorized write to that lead, not through the current bulk CRM save function. Persist offer version and value synchronization reliably; do not overwrite unrelated fields or cards.
 
-Use only the chosen KOBİ, Kurumsal or Key Account pricing columns. Growth + operations, operations bundle and individual recommended operations are alternatives for the same segment. Special-project pricing requires scope-specific reasoning. Preserve the original cost-sheet rules and take a pricing snapshot with each offer version.
+Use only the chosen KOBİ, Kurumsal or Key Account pricing columns. Growth + operations and operations bundle are alternatives for the same segment. Special-project pricing requires scope-specific reasoning. Preserve the original cost-sheet rules and take a pricing snapshot with each offer version.
 
 ## Release boundary
 

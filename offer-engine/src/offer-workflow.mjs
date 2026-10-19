@@ -15,7 +15,7 @@ export function createOfferWorkflow(engines=defaults){
     const required=stage==='pricing'?['audit']:stage==='proposal'?['logo','audit','pricing']:[];
     for(const name of required){
       const result=dependencies[name];
-      const draftLogo=stage==='proposal'&&name==='logo'&&result?.status==='review';
+      const draftLogo=stage==='proposal'&&['logo','pricing'].includes(name)&&result?.status==='review';
       if(result?.stage!==name||result.status!=='ready'&&!draftLogo)throw new Error('Önce '+name+' sonucu doğrulanmalı.');
       assertResult(name,result);
     }
@@ -27,7 +27,7 @@ export function createOfferWorkflow(engines=defaults){
     const result={...await engine.run(snapshot.input,snapshot.dependencies)};
     // A transparent, technically valid logo can enter a draft before visual
     // approval; that draft must remain in review and can never become published.
-    if(stage==='proposal'&&snapshot.dependencies.logo.status==='review')result.status='review';
+    if(stage==='proposal'&&['logo','pricing'].some(name=>snapshot.dependencies[name].status==='review'))result.status='review';
     assertResult(stage,result);
     const envelope={...result,stage,engineVersion:engine.version,inputHash,runId:randomUUID()};
     cache.set(key,structuredClone(envelope));

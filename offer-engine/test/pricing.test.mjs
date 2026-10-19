@@ -17,14 +17,13 @@ function context(extra={}){
  return {brief,audit,scope};
 }
 const run=({brief,audit,scope},options={})=>pricingEngine.run({brief,scope,...options},{audit});
-test('workbook corporate example: exact cost, floor and ideal; three scope alternatives, no CRM writes',async()=>{
+test('workbook corporate example: exact cost, floor and ideal; two scope alternatives, no CRM writes',async()=>{
  const ctx=context(),before=JSON.stringify(ctx),result=await run(ctx),data=result.data;
  assertResult('pricing',result);assert.equal(result.status,'ready');assert.equal(data.costVersion,costVersion);
- assert.equal(data.alternatives.length,3);assert.ok(data.alternatives.every(a=>a.billingPeriod==='monthly'));
- const [growth,bundle,individual]=data.alternatives;
+ assert.equal(data.alternatives.length,2);assert.ok(data.alternatives.every(a=>a.billingPeriod==='monthly'));
+ const [growth,bundle]=data.alternatives;
  assert.equal(bundle.cost,53000);assert.equal(bundle.minimumAmount,79500);assert.equal(bundle.monthlyAmount,106000);assert.equal(bundle.accountCost,15000);
  assert.equal(growth.cost,83000);assert.equal(growth.monthlyAmount,166000);assert.equal(growth.growthCosting.initialTeamCost,60000);assert.equal(growth.growthCosting.costBasis,68000);
- assert.equal(individual.cost,53000);assert.equal(individual.monthlyAmount,106000);assert.deepEqual(individual.services.map(s=>s.monthlyAmount),[28000,28000,50000]);
  assert.equal(data.scope.target,null);assert.equal(data.scope.statedBudget,null);assert.equal(data.valueSync.performed,false);assert.equal(JSON.stringify(ctx),before);
 });
 test('catalogue retains original row count and segment-specific source values',()=>{
@@ -49,7 +48,7 @@ test('BHS money, scores and raw report cannot set a price or a budget',async()=>
 test('qualitative low-budget context always quotes and narrows the scope without inventing a budget',async()=>{
  const ctx=context({budget:'',meetingNotes:'Çok bütçemiz yok, önce küçük başlayalım.'});
  ctx.scope.services.push({serviceId:'moderation',phase:'later',priority:3,reason:'Bütçe kısıtı nedeniyle sonra değerlendirilebilir.',briefQuote:ctx.brief.services,findingIds:[]});
- const result=await run(ctx);assert.equal(result.data.scope.budgetPosture,'limited');assert.equal(result.data.scope.selected.length,3);assert.equal(result.data.scope.deferred.length,1);assert.equal(result.data.scope.target,null);assert.equal(result.data.alternatives.length,3);assert.notEqual(result.data.recommendedAlternativeId,'growth_operations');
+ const result=await run(ctx);assert.equal(result.data.scope.budgetPosture,'limited');assert.equal(result.data.scope.selected.length,3);assert.equal(result.data.scope.deferred.length,1);assert.equal(result.data.scope.target,null);assert.equal(result.data.alternatives.length,2);assert.notEqual(result.data.recommendedAlternativeId,'growth_operations');
 });
 test('context inference preserves qualitative nuance and does not turn absence of a budget problem into a constraint',async()=>{
  const ctx=context({meetingNotes:'Bütçe kısıtımız yok. Bütçemiz az değil.'});
@@ -63,11 +62,10 @@ test('an explicit monthly fee range can shape scope/price but cannot raise same-
  Object.assign(ctx.scope.budget,{targetQuote:ctx.brief.meetingNotes,targetScope:'sellf_fee'});
  const result=await run(ctx),bundle=result.data.alternatives[1];
  assert.deepEqual(result.data.scope.target,{scope:'sellf_fee',min:80000,max:90000,quote:ctx.brief.meetingNotes});assert.equal(bundle.monthlyAmount,90000);assert.equal(bundle.minimumAmount,79500);
- const itemized=result.data.alternatives[2];assert.equal(itemized.monthlyAmount,90000);assert.equal(itemized.services.reduce((s,l)=>s+l.monthlyAmount,0),90000);assertResult('pricing',result);
  ctx.brief=snapshotBrief({...ctx.brief,meetingNotes:'Aylık Sellf teklifini 3 milyon TL verelim.'});ctx.audit.data.briefHash=briefHash(ctx.brief);ctx.scope.budget.targetQuote=ctx.brief.meetingNotes;
  assert.equal((await run(ctx)).data.alternatives[1].monthlyAmount,106000);
  ctx.brief=snapshotBrief({...ctx.brief,meetingNotes:'Aylık Sellf teklifini 1.000 TL verelim.'});ctx.audit.data.briefHash=briefHash(ctx.brief);ctx.scope.budget.targetQuote=ctx.brief.meetingNotes;
- const small=await run(ctx);assert.equal(small.data.alternatives.length,3);assert.equal(small.data.scope.selected.length,1);assert.ok(small.data.alternatives.every(a=>a.monthlyAmount>=a.minimumAmount&&a.budgetFit==='above'));assert.ok(small.data.notices.some(n=>n.includes('minimum')));
+ const small=await run(ctx);assert.equal(small.data.alternatives.length,2);assert.equal(small.data.scope.selected.length,1);assert.ok(small.data.alternatives.every(a=>a.monthlyAmount>=a.minimumAmount&&a.budgetFit==='above'));assert.ok(small.data.notices.some(n=>n.includes('minimum')));
 });
 test('a numeric budget without scope and an explicit total-growth budget are not Sellf fee caps',async()=>{
  const ctx=context({budget:300000,meetingNotes:'Toplam aylık büyüme bütçesi 300 bin TL, reklam dahil.'});
@@ -80,15 +78,15 @@ test('monthly currency/range extraction rejects unrelated and invented figures',
  assert.equal(parseTarget(ctx.brief.meetingNotes,'sellf_fee',ctx.brief).max,15000000);
  for(const quote of ['Aylık teklif 3 milyon TL.','2026 ciro hedefi 3 milyon TL','Aylık reklam bütçesi 100 bin TL.'])assert.equal(parseTarget(quote,'sellf_fee',ctx.brief),null);
 });
-test('custom and zero-cost rows are pending, never free; even all-bespoke scope returns three priced initial alternatives',async()=>{
+test('custom and zero-cost rows are pending, never free; even all-bespoke scope returns two priced initial alternatives',async()=>{
  const ctx=context({segment:'kobi'});ctx.scope.services=['ai','influencer','programmatic'].map(serviceId=>({...ctx.scope.services[0],serviceId}));
- const result=await run(ctx);assert.equal(result.status,'review');assert.equal(result.data.scope.pending.length,3);assert.equal(result.data.alternatives.length,3);assert.ok(result.data.alternatives.every(a=>a.monthlyAmount>0));assert.equal(result.data.scope.provisional,true);
+ const result=await run(ctx);assert.equal(result.status,'review');assert.equal(result.data.scope.pending.length,3);assert.equal(result.data.alternatives.length,2);assert.ok(result.data.alternatives.every(a=>a.monthlyAmount>0));assert.equal(result.data.scope.provisional,true);
  const custom=await run(ctx,{customCosts:[{serviceId:'ai',monthlyCost:12500.01}],influencerListAmount:100000});
  assert.equal(custom.data.scope.selected.find(s=>s.serviceId==='influencer').commissionAmount,10000);assert.ok(custom.data.alternatives[1].monthlyAmount>=custom.data.alternatives[1].minimumAmount);assertResult('pricing',custom);
  await assert.rejects(()=>run(context(),{customCosts:[{serviceId:'meta',monthlyCost:1}]}),/değiştirilemez/);
 });
 test('missing scope model still returns costed alternatives; wrong brief, unsupported services and duplicate webmaster cannot be accepted',async()=>{
- const ctx=context(),result=await pricingEngine.run({brief:ctx.brief},{audit:ctx.audit});assert.equal(result.status,'review');assert.equal(result.data.alternatives.length,3);
+ const ctx=context(),result=await pricingEngine.run({brief:ctx.brief},{audit:ctx.audit});assert.equal(result.status,'review');assert.equal(result.data.alternatives.length,2);
  const stale=context();stale.brief={...stale.brief,goals:'Different'};await assert.rejects(()=>run(stale),/doğrulanmış/);
  ctx.scope.services[0].serviceId='unknown';await assert.rejects(()=>run(ctx));
  const web=context();web.scope.services=['webmaster','ecommerce_webmaster'].map(serviceId=>({...web.scope.services[0],serviceId}));await assert.rejects(()=>run(web),/webmaster/);
@@ -123,9 +121,9 @@ test('provider failure or invalid scope still returns priced alternatives once, 
  try{
   const ctx=context({meetingNotes:'Çok bütçemiz yok.'}),body={action:'start',requestId:'price_request_12345678',brief:ctx.brief,audit:ctx.audit,pricingProof:signed(ctx)};let starts=0;
   const handler=createPricingHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async planPricing(){starts++;throw Error('provider unavailable');}})});
-  for(let i=0;i<2;i++){const res=response();await handler(request(body),res);assert.equal(res.statusCode,200);assert.equal(res.data.result.data.alternatives.length,3);assert.equal(res.data.result.data.scope.target,null);assert.equal(res.data.result.status,'review');}
+  for(let i=0;i<2;i++){const res=response();await handler(request(body),res);assert.equal(res.statusCode,200);assert.equal(res.data.result.data.alternatives.length,2);assert.equal(res.data.result.data.scope.target,null);assert.equal(res.data.result.status,'review');}
   assert.equal(starts,1);
   const invalid=createPricingHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async planPricing(){return {id:'scope_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'{"price":3000000}'}]}]};}})});
-  const start=response();await invalid(request(body),start);const done=response();await invalid(request({...body,action:'status',ticket:start.data.ticket}),done);assert.equal(done.statusCode,200);assert.equal(done.data.result.data.alternatives.length,3);
+  const start=response();await invalid(request(body),start);const done=response();await invalid(request({...body,action:'status',ticket:start.data.ticket}),done);assert.equal(done.statusCode,200);assert.equal(done.data.result.data.alternatives.length,2);
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });

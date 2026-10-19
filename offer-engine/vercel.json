@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "node build.mjs && node scripts/proposal-validation.mjs",
   "outputDirectory": "public",
   "functions": {
     "api/pricing.js": {
@@ -12,6 +12,12 @@
     "api/logo.js": {
       "maxDuration": 90,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
+    "api/proposal.js": {
+      "maxDuration": 60
+    },
+    "api/offer.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

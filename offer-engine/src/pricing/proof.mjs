@@ -12,7 +12,7 @@ export function createPricingProof(secret){
    const [text,mac,...rest]=token.split('.'),expected=sign(text,session,host);
    if(rest.length||!mac||mac.length!==expected.length||!timingSafeEqual(Buffer.from(mac),Buffer.from(expected)))throw Error('Fiyat hesaplama kaydı doğrulanamadı.');
    let value;try{value=JSON.parse(Buffer.from(text,'base64url').toString('utf8'));}catch{throw Error('Fiyat hesaplama kaydı okunamadı.');}
-   if(!['audit_ready','scope'].includes(value.kind)||!Number.isFinite(value.createdAt)||value.createdAt>now+5000||now-value.createdAt>7200000||!/^[a-f0-9]{64}$/.test(value.briefHash)||!/^[a-f0-9]{64}$/.test(value.auditHash))throw Error('Fiyat hesaplama kaydı süresi dolmuş veya geçersiz.');
+   if(!['audit_ready','scope','pricing_ready','proposal_job','proposal_ready'].includes(value.kind)||!Number.isFinite(value.createdAt)||value.createdAt>now+5000||now-value.createdAt>7200000||!/^[a-f0-9]{64}$/.test(value.briefHash)||!/^[a-f0-9]{64}$/.test(value.auditHash))throw Error('Fiyat hesaplama kaydı süresi dolmuş veya geçersiz.');
    return value;
   }
  };
