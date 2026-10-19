@@ -22,7 +22,7 @@ async function waitFor(initial){
   }
   if(value.status!=='completed'){
     const error=interactionFailure(value);
-    log('interaction_failed',{id:value.id,status:error.interactionStatus,providerCodes:error.providerCodes,providerReason:error.providerReason});
+    log('interaction_failed',{id:value.id,status:error.interactionStatus,providerCodes:error.providerCodes,providerReason:error.providerReason,parameterHints:error.parameterHints});
     throw error;
   }
   return value;
@@ -47,7 +47,7 @@ try{
   proof.status=proof.result.status;
   log('completed',{status:proof.status,quality:proof.result.data.quality,score:proof.result.data.scoring});
 }catch(error){
-  proof.status='failed';proof.error={code:error.code||'probe_error',interactionStatus:error.interactionStatus||null,providerCodes:error.providerCodes||[],providerStatus:error.providerStatus||null,providerReason:error.providerReason||null};
+  proof.status='failed';proof.error={code:error.code||'probe_error',interactionStatus:error.interactionStatus||null,providerCodes:error.providerCodes||[],providerStatus:error.providerStatus||null,providerReason:error.providerReason||null,parameterHints:error.parameterHints||[]};
   // Error.message from arbitrary upstream code is deliberately not logged.
   log('failed',proof.error);
 }

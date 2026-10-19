@@ -90,7 +90,9 @@ test('provider uses actual background Interactions API; no fake JSON mode on Dee
  assert.equal(start.agent,'deep-research-max-preview-04-2026');assert.equal(start.background,true);assert.equal(start.store,true);assert.equal(start.response_format,undefined);
  assert.deepEqual(start.tools.map(t=>t.type),['google_search','url_context']);
  assert.equal(structure.response_format.mime_type,'application/json');assert.equal(structure.tools,undefined);assert.equal(structure.previous_interaction_id,undefined);
- assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);
+ assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);assert.equal(structure.background,false);
+ assert.ok(!/"(?:minLength|maxLength|anyOf)"/.test(JSON.stringify(structure.response_format.schema)));
+ assert.deepEqual(structure.response_format.schema.properties.dimensions.items.properties.score.type,['number','null']);
  assert.throws(()=>provider.structure(brief,{...research(),status:'in_progress'}),/Tamamlanmış/);
  assert.ok(calls[2].url.endsWith('?include_input=false'));
  assert.throws(()=>provider.poll('../other'),/kimliği/);
@@ -154,6 +156,9 @@ test('background execution faults expose only a safe category and never provider
  assert.equal(error.interactionStatus,'failed');assert.equal(error.providerReason,'context_limit');assert.ok(!JSON.stringify(error).includes('PRIVATE KEY'));assert.ok(!error.message.includes('PRIVATE KEY'));
  const legacy=interactionFailure({status:'failed',errors:[],error:{code:'api_error',message:'PRIVATE KEY'}});
  assert.deepEqual(legacy.providerCodes,['api_error']);assert.ok(!JSON.stringify(legacy).includes('PRIVATE KEY'));
+});
+test('provider-compatible generation never removes strict server-side text bounds',async()=>{
+ const report=fixture();report.summary='x'.repeat(6001);await assert.rejects(()=>verify(report),/metin sınırı/);
 });
 test('financial PDF evidence is extracted in a bounded worker and checked against the source quote',async()=>{
  const stream='BT /F1 12 Tf 30 700 Td ('+quote+') Tj ET';

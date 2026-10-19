@@ -18,6 +18,18 @@ export const reportSchema=object({
   serviceRecommendations:list(object({id:string(80),name:string(200),hypothesis:string(2000),findingIds:ids,measurement:string(2000)}),20)
 });
 
+// Use the provider's documented subset. Keep all length limits in the strict
+// server schema; unsupported string keywords must not break generation.
+function providerSchema(schema){
+  if(schema.anyOf){const base=schema.anyOf.find(s=>s.type!=='null');return {...providerSchema(base),type:[base.type,'null']};}
+  const result={...schema};delete result.minLength;delete result.maxLength;
+  if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,providerSchema(value)]));
+  if(schema.items)result.items=providerSchema(schema.items);
+  if(schema.maxLength)result.description='Keep text within '+schema.maxLength+' characters; server validates this limit.';
+  return result;
+}
+export const providerReportSchema=providerSchema(reportSchema);
+
 // Validate the same small JSON Schema subset used in the provider request;
 // never trust model-side structured-output enforcement alone.
 export function assertSchema(value,schema=reportSchema,path='report'){
