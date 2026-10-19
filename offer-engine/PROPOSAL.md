@@ -31,6 +31,14 @@ Contract requests are priced from the persisted published version, never custome
 
 ## Validation limits
 
-Unit tests cover immutable projection, manual plans, missing data, mismatched brief/logo/price/context/session, exact signed save, required operator reviews, fixed recipients, price tampering and duplicate/failed notification paths. Browser tests run real screenshot processing, signed pricing/proposal handlers, deterministic fees and customer renderer on desktop/mobile with mocked BHS/Gemini output. They check real logo pixels load, two alternatives, no item prices, Operations plan, review gates, no overflow and unchanged synthetic CRM rows.
+Unit tests cover immutable projection, manual plans, missing data, mismatched brief/logo/price/context/session, exact signed save, required operator reviews, fixed recipients, price tampering and duplicate/failed notification paths. Browser tests run real screenshot processing, signed pricing/proposal handlers, deterministic fees and customer renderer on desktop/mobile with mocked BHS/Gemini output. They check real logo pixels load, two alternatives, no item prices, Operations plan, review gates, no overflow and unchanged synthetic CRM rows. A separate desktop/mobile customer-portal test exercises wrong/correct password, selected-option request submission, both fixed recipients, persisted fee selection and no credential storage using a fake mail transport. Across the worker suites, 86 unique tests passed; 54 existing Pipeline/Travis tests also passed. The standalone deterministic example passed at 1024, 390 and 320 pixels.
 
 These tests do not establish that the pending SQL has executed on PostgreSQL, that a real offer was saved/published in Pipeline, or that mail reached the two inboxes. Do not describe the full live process as finished until those release checks pass.
+
+## Immediate design review
+
+`/offers/template-preview.html` opens the customer renderer directly using explicitly labelled synthetic BHS/brand data and the real deterministic workbook calculator. Its example white logo goes through actual screenshot processing during build. It sends no messages, performs no CRM writes and starts no Gemini calls. The full preparation flow remains at `/offers/preview.html`.
+
+## Actual Gemini adapter check
+
+On 2026-10-19 one synthetic composition was generated through the configured Gemini Interactions adapter (`gemini-4-argon`). The completed response was replayed without starting a second generation and passed Growth, Operations and Manual projection checks. Both exact monthly amounts (150,000 and 66,000 TRY), the processed white-logo pixels and unknown BHS scores stayed unchanged. No Deep Research run, CRM write or real email was performed. The initial replay check incorrectly compared manual-step object key order; it was corrected to deep structural equality. Final evidence: https://sellf-offer-engine-clvcis4kk-yigit-konuks-projects.vercel.app/proposal-validation.json (protected validation deployment).
