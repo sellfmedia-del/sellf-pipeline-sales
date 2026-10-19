@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/research-probe.mjs --resume v1_Chc2eGZXYXByLUVlR0Uxc2dQdC1HSGlRdxIXNnhmV2Fwci1FZUdFMXNnUHQtR0hpUXc",
+  "buildCommand": "npm run build && node scripts/provider-smoke.mjs --run",
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {
