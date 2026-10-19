@@ -59,3 +59,30 @@ test('rendered public evidence waits for site scripts, follows visible country n
   assert.equal(results.length,1);assert.equal(results[0].finalUrl,'https://brand.example/tr');assert.ok(results[0].text.includes(quote));assert.ok(requested.includes('https://brand.example/tr'));
  }finally{await browser.close();}
 });
+
+test('only genuinely adjacent captured text can repair a boundary-spanning literal quote',async()=>{
+ const {packet}=context(),source=packet.sources[0];source.excerpts=[{offset:0,text:'The company provides kitchen '},{offset:29,text:'appliances through an authorized dealer network.'}];
+ assert.equal((await evidenceSourceVerifier(packet)({id:source.id,url:source.finalUrl,quote})).status,'quote_matched');
+ source.excerpts[1].offset=5000;
+ assert.equal((await evidenceSourceVerifier(packet)({id:source.id,url:source.finalUrl,quote})).status,'quote_not_found');
+});
+test('a thin public page can supply explicitly labelled publisher metadata without inventing body content',async()=>{
+ const {publicMetadata}=await import('../src/bhs/evidence.mjs');
+ assert.equal(publicMetadata('<meta name="description" content="Brand Turkey kitchen appliances">'),'Brand Turkey kitchen appliances');
+ assert.equal(publicMetadata('<meta name="description" content="Türkiye\'nin Brand mutfak ürünleri">'),"Türkiye'nin Brand mutfak ürünleri");
+ const read=async()=>({status:200,headers:{'content-type':'text/html'},body:Buffer.from('<title>Brand</title><meta name="description" content="Brand Turkey kitchen appliances official site">')});
+ const packet=await createEvidenceCollector({read,render:async()=>[]})(snapshotBrief(brief),plan);
+ assert.ok(packet.sources.every(s=>s.metadataOnly));assert.ok(packet.sources.some(s=>s.finalUrl===snapshotBrief(brief).website));assert.ok(packet.sources.every(s=>s.excerpts[0].text==='Brand Turkey kitchen appliances official site'));
+});
+test('discovery hints accept only provider-cited public primary candidates, not uncited model links',async()=>{
+ const {discoverySourceHints}=await import('../src/bhs/discovery-hints.mjs');
+ const text='[kap.org.tr](https://publisher.example/verified) [brand.example](https://publisher.example/uncited) [news.example](https://publisher.example/news)';
+ const hints=discoverySourceHints({steps:[{type:'model_output',content:[{type:'text',text,annotations:['verified','news'].map(path=>({type:'url_citation',url:'https://publisher.example/'+path}))}]}]},snapshotBrief(brief));
+ assert.deepEqual(hints,['https://publisher.example/verified']);
+});
+
+test('core source coverage is required before starting the paid report writer',async()=>{
+ const {assertCoreEvidence}=await import('../src/bhs/evidence.mjs');const {packet}=context();assert.equal(assertCoreEvidence(packet,snapshotBrief(brief)),packet);
+ packet.sources.shift();assert.throws(()=>assertCoreEvidence(packet,snapshotBrief(brief)),/kimlik okunamadı/);
+ const p=context().packet;p.sources=p.sources.slice(0,3);assert.throws(()=>assertCoreEvidence(p,snapshotBrief(brief)),/üç rakibin/);
+});

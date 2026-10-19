@@ -6,7 +6,7 @@ import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {parseGroundedReport,readStoredEnvelope} from '../src/bhs/grounded-report.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {discoverySourceHints} from '../src/bhs/discovery-hints.mjs';
-import {createEvidenceCollector} from '../src/bhs/evidence.mjs';
+import {createEvidenceCollector,assertCoreEvidence} from '../src/bhs/evidence.mjs';
 if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan','--collect','--synthesize','--resume-synthesis','--resume-review'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
 const provider=createResearchProvider();
 const brief=snapshotBrief({brandName:'Silverline TR',segment:'corporate',website:'https://www.silverline.com/tr-TR',goals:'Türkiye pazarında bayi ağını ve kârlı büyümeyi değerlendirmek.',needs:'B2B bayi büyümesi ile tüketici talebi, satış sonrası servis ve dijital varlıklar arasındaki ilişkiyi araştırmak.',services:'Büyüme danışmanlığı, pazarlama ve operasyon seçeneklerinin araştırmaya dayalı değerlendirilmesi.',meetingNotes:'Kamuya açık kaynaklarla kalite karşılaştırması için hazırlanmış test briefidir. Hedefler test senaryosudur; müşteri beyanı değildir. Eski örnek rapordaki sayıları doğru kabul etme.',budget:''});
@@ -53,13 +53,13 @@ try{
   log('running',{id:plan.id,status:plan.status});await new Promise(r=>setTimeout(r,15000));plan=await provider.poll(plan.id);
  }
  if(plan.status!=='completed')throw interactionFailure(plan);
- proof.sourcePlan=parseSourcePlan(JSON.parse(modelText(plan)));proof.citations=citationUrls(plan);proof.sourcePlanUsage=plan.usage;proof.sourcePlanSearch=(plan.steps||[]).filter(s=>s.type==='google_search_result');proof.stepCounts=(plan.steps||[]).reduce((counts,s)=>(counts[s.type]=(counts[s.type]||0)+1,counts),{});proof.status='source_plan_complete';
+ proof.sourcePlan=parseSourcePlan(JSON.parse(modelText(plan)));proof.citations=citationUrls(plan);proof.sourcePlanUsage=plan.usage;proof.stepCounts=(plan.steps||[]).reduce((counts,s)=>(counts[s.type]=(counts[s.type]||0)+1,counts),{});proof.status='source_plan_complete';
  log('source_plan_completed',{entities:proof.sourcePlan.entities.length,sources:proof.sourcePlan.sources.length});
  if(['--collect','--synthesize'].includes(process.argv[2])){
   const research=await provider.poll('v1_Chc2eGZXYXByLUVlR0Uxc2dQdC1HSGlRdxIXNnhmV2Fwci1FZUdFMXNnUHQtR0hpUXc');
   proof.evidence=await createEvidenceCollector()(brief,proof.sourcePlan,{extraSources:discoverySourceHints(research,brief)});proof.status='evidence_ready';
   log('evidence_ready',{sources:proof.evidence.sources.length,methods:proof.evidence.sources.map(s=>s.method),unavailable:proof.evidence.unavailable.length});
-  if(process.argv[2]==='--synthesize'){const synthesis=await provider.synthesize(brief,proof.evidence);proof.synthesisId=synthesis.id;log('synthesis_started',{id:synthesis.id});await finish(synthesis);}
+  if(process.argv[2]==='--synthesize'){assertCoreEvidence(proof.evidence,brief);const synthesis=await provider.synthesize(brief,proof.evidence);proof.synthesisId=synthesis.id;log('synthesis_started',{id:synthesis.id});await finish(synthesis);}
  }
  }
 }catch(error){proof.status='failed';proof.error={code:error.code||'probe_error',providerReason:error.providerReason||null,providerCodes:error.providerCodes||[],parameterHints:error.parameterHints||[]};log('failed',proof.error);}

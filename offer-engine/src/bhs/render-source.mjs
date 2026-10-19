@@ -29,7 +29,7 @@ export async function renderEvidencePages(candidates,{read,deadline,browser:prov
     await page.waitForTimeout(Math.max(0,Math.min(2500,deadline-Date.now()-1000)));
     const result=await page.evaluate(()=>({title:document.title.slice(0,300),text:document.body.innerText.slice(0,250000)}));
     if(result.text.length<100)onDiagnostic({url:candidate.url,reason:'render_empty',title:result.title,finalUrl:page.url()});
-    if(!/verify you are human|access denied|captcha|just a moment/i.test(result.title+' '+result.text.slice(0,1000)))results.push({...candidate,...result,finalUrl:page.url()});
+    if(!/verify you are human|access denied|captcha|just a moment|bir hata oluştu!|beklenmedik bir hata meydana geldi/i.test(result.title+' '+result.text.slice(0,1000)))results.push({...candidate,...result,finalUrl:page.url()});
    }catch(error){onDiagnostic({url:candidate.url,reason:error.name==='TimeoutError'?'render_timeout':'render_failed'});}
    finally{await context.close();}
   }

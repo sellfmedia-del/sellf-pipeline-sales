@@ -3,17 +3,18 @@ import {createPublicFetcher} from '../network.mjs';
 import {extractPdfText} from './pdf.mjs';
 import {plainHtml,normalized,publicUrl} from './verify.mjs';
 import {briefHash} from './brief.mjs';
+import {packetBrandIdentity} from './identity.mjs';
 import {parseSourcePlan} from './source-plan.mjs';
 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const evidenceHash=packet=>digest(packet);
 const host=url=>new URL(url).hostname.replace(/^www\./,'');
-const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment/i.test(text.slice(0,1500));
+const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment|bir hata oluştu!|beklenmedik bir hata meydana geldi/i.test(text.slice(0,1500));
 const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial/i;
 export function publicMetadata(html){
  const values=[];
  for(const m of html.matchAll(/<meta\b([^>]+)>/gi)){
-  const attrs=Object.fromEntries([...m[1].matchAll(/([a-z:-]+)\s*=\s*["']([^"']*)["']/gi)].map(a=>[a[1].toLowerCase(),a[2]]));
+  const attrs=Object.fromEntries([...m[1].matchAll(/([a-z:-]+)\s*=\s*(["'])([\s\S]*?)\2/gi)].map(a=>[a[1].toLowerCase(),a[3]]));
   if(['description','og:title','og:description'].includes((attrs.name||attrs.property||'').toLowerCase())&&attrs.content)values.push(normalized(plainHtml(Buffer.from(attrs.content))));
  }
  return [...new Set(values)].join(' ');
@@ -41,6 +42,12 @@ export function assertEvidencePacket(packet,brief){
   if(!/^ev\d+$/.test(source.id)||ids.has(source.id)||!publicUrl(source.url)||!publicUrl(source.finalUrl)||!['html','pdf','rendered'].includes(source.method)||!Array.isArray(source.excerpts)||!source.excerpts.length||source.excerpts.length>7)throw Error('Kanıt kaynağı geçersiz.');ids.add(source.id);
   if(source.excerpts.some(e=>typeof e.text!=='string'||e.text.length>1800||e.text.length<24))throw Error('Kanıt metni sınırı geçersiz.');
  }
+ return packet;
+}
+export function assertCoreEvidence(packet,brief){
+ if(!packetBrandIdentity(packet,brief))throw Error('Marka sitesinden veya alan adını bildiren resmî sicil kaynağından kimlik okunamadı.');
+ const peerHosts=new Set(packet.entities.filter(e=>e.role==='competitor').map(e=>host(e.website)).filter(h=>packet.sources.some(s=>host(s.finalUrl)===h&&!s.metadataOnly)));
+ if(peerHosts.size<3)throw Error('En az üç rakibin resmî kaynakları okunamadı.');
  return packet;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24}={}){
@@ -80,7 +87,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:'unavailable'});continue;}
     const page=result.page;
-    if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push(page);}
+    if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push({...page,requiresRender:/kap\.org\.tr$/.test(host(page.finalUrl))});}
     else keep(page);
     const pageHost=host(page.finalUrl);
     if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);for(const link of page.links.slice(0,2))if(entityHosts.has(host(link.url)))enqueue(link.url,pageHost===brandHost);}
@@ -91,7 +98,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
    pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<maxSources)keep({...page,method:'rendered'});});
   }
-  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&sources.length<maxSources)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<maxSources)keep({...page,text:page.metadata,metadataOnly:true});}}
+  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<maxSources)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<maxSources)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
   return assertEvidencePacket(packet,brief);
  };

@@ -3,7 +3,7 @@ import {snapshotBrief,briefHash,validatePublicBrief} from '../src/bhs/brief.mjs'
 import {createResearchProvider,ResearchError,interactionFailure} from '../src/bhs/provider.mjs';
 import {createTicketCodec} from '../src/bhs/ticket.mjs';
 import {discoverySourceHints} from '../src/bhs/discovery-hints.mjs';
-import {createEvidenceCollector} from '../src/bhs/evidence.mjs';
+import {createEvidenceCollector,assertCoreEvidence} from '../src/bhs/evidence.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {readStoredEnvelope,parseGroundedReport} from '../src/bhs/grounded-report.mjs';
 import {modelText} from '../src/bhs/provider.mjs';
@@ -17,7 +17,7 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
     res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
     if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'BHS servisi yalnızca korumalı önizlemede açık.'});
     const provider=getProvider();
-    if(req.method==='GET')return res.status(200).json({configured:provider.configured(),provider:'Gemini Deep Research',benchmark:'evidence-and-semantic-checks'});
+    if(req.method==='GET')return res.status(200).json({configured:provider.configured(),provider:'Gemini Deep Research',verification:'evidence-and-semantic-checks',benchmark:'pending'});
     if(req.method!=='POST'){res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Bu işlem POST isteği gerektirir.'});}
     const host=req.headers.host;
     if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
@@ -73,6 +73,7 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
             const plan=parseSourcePlan(JSON.parse(modelText(interaction)));
             const research=await provider.poll(job.researchId);
             const packet=await collect(brief,plan,{extraSources:discoverySourceHints(research,brief)});
+            try{assertCoreEvidence(packet,brief);}catch(error){throw new ResearchError('insufficient_sources',error.message+' BHS metni üretilmedi.');}
             const value=await provider.synthesize(brief,packet);
             return {...job,phase:'synthesis',synthesisId:value.id};
           }
