@@ -15,14 +15,13 @@ export function editorialEnvelope(brief,packet,report){return {...synthesisEnvel
 4. Tarihsel iddiayı güncel doğrulanmış başarı gibi sunma. Eski grup içi ticaret sözleşmelerinin bugün aynı koşulla sürdüğünü varsayma. Üretici finansalını marka toplamına taşıma. observation türündeki bir finding'e yeni nedensel/stratejik iddia ekleme; impact/goalConnection gerekiyorsa açık hipotez dili kullansın.
 Düzenlemeler tam yeni alan metni olsun. target=summary için id=report. Diğer id'ler mevcut boyut/bulgu/hizmet kimlikleridir. Özetin üslubunu düzeltirken doğrulanmış tutarlar ve dönemler korunmalı. Doğru olguları silme. Yalnızca bu JSON şemasını döndür.`};}
 export function applyEdits(report,patch){
- assertSchema(patch,editSchema,'editor');const result=structuredClone(report),seen=new Set();
+ assertSchema(patch,editSchema,'editor');const result=structuredClone(report),seen=new Set(),allowedNumbers=new Set(JSON.stringify(report).match(/\d+(?:[.,]\d+)*/g)||[]);
  for(const edit of patch.edits){
   const key=edit.target+'/'+edit.id;if(seen.has(key))throw Error('Yinelenen rapor düzenlemesi.');seen.add(key);
   let target,field;
   if(edit.target==='summary'&&edit.id==='report'){target=result;field='summary';}
   else{const [group,name]=edit.target.split('.');target=({dimension:result.dimensions,finding:result.findings,service:result.serviceRecommendations}[group]||[]).find(x=>x.id===edit.id);field=name;}
   if(!target||!Object.hasOwn(target,field))throw Error('Rapor düzenlemesinin hedefi geçersiz.');
-  const allowedNumbers=new Set(String(target[field]).match(/\d+(?:[.,]\d+)*/g)||[]);
   if((edit.value.match(/\d+(?:[.,]\d+)*/g)||[]).some(n=>!allowedNumbers.has(n)))throw Error('Üslup düzenlemesi yeni sayı ekleyemez.');
   target[field]=edit.value;
   if(edit.target==='finding.statement')target.reportExcerpt=edit.value;
