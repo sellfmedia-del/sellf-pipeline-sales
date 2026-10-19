@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build && node scripts/research-probe.mjs --start",
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {
@@ -11,5 +11,15 @@
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   },
-  "headers": [{ "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }] }]
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    }
+  ]
 }
