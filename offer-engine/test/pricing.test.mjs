@@ -27,7 +27,7 @@ test('workbook corporate example: exact cost, floor and ideal; three scope alter
  assert.equal(individual.cost,53000);assert.equal(individual.monthlyAmount,106000);assert.deepEqual(individual.services.map(s=>s.monthlyAmount),[28000,28000,50000]);
  assert.equal(data.scope.target,null);assert.equal(data.scope.statedBudget,null);assert.equal(data.valueSync.performed,false);assert.equal(JSON.stringify(ctx),before);
 });
-test('every workbook service cost is preserved for all three segments',()=>{
+test('catalogue retains original row count and segment-specific source values',()=>{
  assert.equal(catalog.length,27);
  assert.deepEqual(catalog.filter(x=>x.id==='growth_after')[0].costs,{kobi:20000,corporate:45000,key_account:60000});
  assert.deepEqual(catalog.filter(x=>x.id==='ugc')[0].costs,{kobi:10000,corporate:12500,key_account:15000});
@@ -50,6 +50,13 @@ test('qualitative low-budget context always quotes and narrows the scope without
  const ctx=context({budget:'',meetingNotes:'Çok bütçemiz yok, önce küçük başlayalım.'});
  ctx.scope.services.push({serviceId:'moderation',phase:'later',priority:3,reason:'Bütçe kısıtı nedeniyle sonra değerlendirilebilir.',briefQuote:ctx.brief.services,findingIds:[]});
  const result=await run(ctx);assert.equal(result.data.scope.budgetPosture,'limited');assert.equal(result.data.scope.selected.length,3);assert.equal(result.data.scope.deferred.length,1);assert.equal(result.data.scope.target,null);assert.equal(result.data.alternatives.length,3);assert.notEqual(result.data.recommendedAlternativeId,'growth_operations');
+});
+test('context inference preserves qualitative nuance and does not turn absence of a budget problem into a constraint',async()=>{
+ const ctx=context({meetingNotes:'Bütçe kısıtımız yok. Bütçemiz az değil.'});
+ assert.equal((await run(ctx)).data.scope.budgetPosture,'unspecified');
+ ctx.brief=snapshotBrief({...ctx.brief,meetingNotes:'Bu ay yalnız pilotla başlayalım, genişleme sonra.'});ctx.audit.data.briefHash=briefHash(ctx.brief);
+ ctx.scope.budget.posture='limited';ctx.scope.budget.quote=ctx.brief.meetingNotes;
+ assert.equal((await run(ctx)).data.scope.budgetPosture,'limited');
 });
 test('an explicit monthly fee range can shape scope/price but cannot raise same-scope price or breach cost floor',async()=>{
  const ctx=context({meetingNotes:'Aylık Sellf teklifini 80–90 bin TL aralığında verelim.'});

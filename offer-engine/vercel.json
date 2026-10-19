@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/pricing-validation.mjs",
+  "buildCommand": "npm run build && node scripts/pricing-validation.mjs --reuse=v1_ChdubjdXYXItSEFzdUF5dE1QN19hZXNRNBIXbm43V2FyLUhBc3VBeXRNUDdfYWVzUTQ,v1_ChdubjdXYXBqbEF0RGV5dE1QdEkzU29BdxIXbm43V2FwamxBdERleXRNUHRJM1NvQXc,v1_ChRubjdXYWh5YzRNclRENkNlOEpFTRIUbm43V2FoeWM0TXJURDZDZThKRU0",
   "outputDirectory": "public",
   "functions": {
     "api/pricing.js": {
