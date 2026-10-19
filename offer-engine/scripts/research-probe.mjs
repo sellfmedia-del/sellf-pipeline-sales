@@ -1,7 +1,7 @@
 // Explicit one-off CI probe. Never runs as part of the normal build or on a
 // production deployment. Input is a public, synthetic Silverline test scenario.
 import {writeFile,mkdir} from 'node:fs/promises';
-import {createResearchProvider,modelText,citationUrls} from '../src/bhs/provider.mjs';
+import {createResearchProvider,modelText,citationUrls,interactionFailure} from '../src/bhs/provider.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 
@@ -20,7 +20,7 @@ async function waitFor(initial){
     await new Promise(resolve=>setTimeout(resolve,15000));
     value=await provider.poll(value.id);
   }
-  if(value.status!=='completed')throw Error('Research did not complete: '+value.status);
+  if(value.status!=='completed')throw interactionFailure(value);
   return value;
 }
 try{
@@ -31,8 +31,9 @@ try{
   log('research_completed',{characters:modelText(research).length,citations:citationUrls(research).length});
   const finalOutput=(research.steps||[]).filter(step=>step.type==='model_output').at(-1);
   proof.research={id:research.id,status:research.status,usage:research.usage,steps:finalOutput?[{type:'model_output',content:(finalOutput.content||[]).filter(part=>part.type==='text')}]:[]};
-  const structured=process.argv[4]?await provider.poll(process.argv[4]):await provider.structure(brief,research.id);
+  const structured=process.argv[4]?await provider.poll(process.argv[4]):await provider.structure(brief,research);
   proof.structureId=structured.id;log('structure_started',{id:structured.id});
+  proof.structure={id:structured.id,status:structured.status,text:modelText(structured),usage:structured.usage};
   const structure=await waitFor(structured);
   // Keep only the final structured answer so verification can be debugged or
   // replayed without another paid research/extraction request.
@@ -42,7 +43,7 @@ try{
   proof.status=proof.result.status;
   log('completed',{status:proof.status,quality:proof.result.data.quality,score:proof.result.data.scoring});
 }catch(error){
-  proof.status='failed';proof.error={code:error.code||'probe_error',providerStatus:error.providerStatus||null,providerReason:error.providerReason||null};
+  proof.status='failed';proof.error={code:error.code||'probe_error',interactionStatus:error.interactionStatus||null,providerStatus:error.providerStatus||null,providerReason:error.providerReason||null};
   // Error.message from arbitrary upstream code is deliberately not logged.
   log('failed',proof.error);
 }
