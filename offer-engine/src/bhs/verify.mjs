@@ -7,7 +7,7 @@ export const normalized=value=>String(value).normalize('NFKC').replace(/\s+/g,' 
 export function publicUrl(value){
   try{const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.hash||u.href.length>2048)return '';return u.href;}catch{return '';}
 }
-function plainHtml(bytes){
+export function plainHtml(bytes){
   return bytes.toString('utf8').replace(/<!--[\s\S]*?-->/g,' ').replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&#(x[\da-f]+|\d+);/gi,(_,n)=>{const x=n[0].toLowerCase()==='x'?parseInt(n.slice(1),16):Number(n);return x>0&&x<=0x10ffff?String.fromCodePoint(x):' ';}).replace(/&(amp|lt|gt|quot|apos|nbsp);/g,(_,n)=>({amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '}[n]));
 }
 export function createSourceVerifier({read=createPublicFetcher({maxRequests:80,maxBytes:24*1024*1024,deadline:Date.now()+35000})}={}){

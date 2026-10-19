@@ -3,7 +3,8 @@ import {writeFile,mkdir} from 'node:fs/promises';
 import {createResearchProvider,modelText,citationUrls,interactionFailure} from '../src/bhs/provider.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
-if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
+import {createEvidenceCollector} from '../src/bhs/evidence.mjs';
+if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan','--collect'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
 const provider=createResearchProvider();
 const brief=snapshotBrief({brandName:'Silverline TR',segment:'corporate',website:'https://www.silverline.com/tr-TR',goals:'Türkiye pazarında bayi ağını ve kârlı büyümeyi değerlendirmek.',needs:'B2B bayi büyümesi ile tüketici talebi, satış sonrası servis ve dijital varlıklar arasındaki ilişkiyi araştırmak.',services:'Büyüme danışmanlığı, pazarlama ve operasyon seçeneklerinin araştırmaya dayalı değerlendirilmesi.',meetingNotes:'Kamuya açık kaynaklarla kalite karşılaştırması için hazırlanmış test briefidir. Hedefler test senaryosudur; müşteri beyanı değildir. Eski örnek rapordaki sayıları doğru kabul etme.',budget:''});
 const proof={test:'public-synthetic-silverline-evidence',brief,status:'starting'};
@@ -23,5 +24,9 @@ try{
  if(plan.status!=='completed')throw interactionFailure(plan);
  proof.sourcePlan=parseSourcePlan(JSON.parse(modelText(plan)));proof.citations=citationUrls(plan);proof.status='source_plan_complete';
  log('source_plan_completed',{entities:proof.sourcePlan.entities.length,sources:proof.sourcePlan.sources.length});
+ if(process.argv[2]==='--collect'){
+  proof.evidence=await createEvidenceCollector()(brief,proof.sourcePlan);proof.status='evidence_ready';
+  log('evidence_ready',{sources:proof.evidence.sources.length,methods:proof.evidence.sources.map(s=>s.method),unavailable:proof.evidence.unavailable.length});
+ }
 }catch(error){proof.status='failed';proof.error={code:error.code||'probe_error',providerReason:error.providerReason||null,providerCodes:error.providerCodes||[],parameterHints:error.parameterHints||[]};log('failed',proof.error);}
 await mkdir('public',{recursive:true});await writeFile('public/evidence-probe.json',JSON.stringify(proof));
