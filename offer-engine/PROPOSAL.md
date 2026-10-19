@@ -47,3 +47,15 @@ A separate real Gemini composition was verified on 2026-10-19 using one syntheti
 ## Production release remains separate
 
 This work does not merge main, change production environments, enable a public customer deployment, or connect offer writes to real Pipeline cards. Before production release, review/apply the separate production schema, wire the approved same-origin backend, configure production-specific secrets/sender and run authorized real-card/value plus inbox tests. The current user instruction is pre-release testing only.
+
+## Completed pre-release checks, 2026-10-20
+
+The real isolated Auth/database validation passed first save + value sync, duplicate handling, revision + value sync, failed-transaction rollback, password-protected persisted access, durable/idempotent contract requests and cross-owner read/write denial. A second browser integration passed the full preparation UI through real version saving, persisted customer password access, contract queue submission and mobile refresh/reopening with encrypted owner-link recovery. Both runs used synthetic model output and fake mail transport; no real emails or new Gemini research were started. Evidence is under `validation/`.
+
+Before/after fingerprints of the existing Pipeline lead and space rows matched exactly. No production rows or existing policies were changed. Supabase security advisors reported no findings for the new preview tables after explicit service-only configuration policy setup.
+
+The first real insert test exposed successful PostgREST inserts returning an empty HTTP 201 body. Both storage adapters now handle empty successful responses, and a regression test covers this. The deployed preview gateway is version 3.
+
+The working persistent preview is https://sellf-offer-engine-p077tufbt-yigit-konuks-projects.vercel.app/offers/preview.html?storage=1. It uses real isolated test records. At final inspection the worker has no OFFER_RESEND_API_KEY or OFFER_MAIL_FROM. Therefore the actual app still gates customer-link publication and real delivery on mail configuration. Automated portal/queue validation explicitly injects fake mail transport; it must not be presented as verified inbox delivery.
+
+Vercel also rejected further deployments with HTTP 402 `api-deployments-free-per-day` (more than 100), retry after 24 hours. The existing preview remains available; final runtime changes after that deployment are the immediately updated Supabase gateway and the currently unused direct-production storage adapter fix. No billing changes or quota workarounds were attempted. The remaining production release is still outside the current authorization.

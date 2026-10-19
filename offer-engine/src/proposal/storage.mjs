@@ -8,7 +8,7 @@ export function createOfferStore({url=process.env.OFFER_SUPABASE_URL,key=process
   const credential=service?serviceKey:key;
   const response=await fetchImpl(url+path,{method,headers:{apikey:credential,Authorization:'Bearer '+(service?serviceKey:token||key),...(body?{'Content-Type':'application/json'}:{}),...(prefer?{Prefer:prefer}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),redirect:'error'});
   if(!response.ok)throw Error('Teklif kaydı tamamlanamadı. Yetki veya veritabanı bağlantısını kontrol et.');
-  return response.status===204?null:response.json();
+  const raw=await response.text();return raw.trim()?JSON.parse(raw):null;
  }
  return {configured:()=>enabled&&Boolean(url&&key),portalConfigured:()=>enabled&&Boolean(url&&key&&serviceKey),
   async save(token,body){

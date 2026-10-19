@@ -23,7 +23,7 @@ test('preview store sends only high-level operations to its fixed isolated gatew
 test('gateway rejects missing/wrong keys, unknown actions and real-user JWTs before any preview write',async()=>{
  const gatewayKey='k'.repeat(43),hash=createHash('sha256').update(gatewayKey).digest('hex'),calls=[];
  const env=n=>({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'service-key',SUPABASE_ANON_KEY:'public-key'})[n];
- const handler=createPreviewGateway({env,fetchImpl:async(url,init)=>{calls.push({url,init});if(url.includes('gateway_config'))return {ok:true,status:200,json:async()=>[{key_hash:hash}]};if(url.endsWith('/auth/v1/user'))return {ok:true,status:200,json:async()=>({id:randomUUID(),app_metadata:{}})};throw Error('Unexpected write');}});
+ const handler=createPreviewGateway({env,fetchImpl:async(url,init)=>{calls.push({url,init});if(url.includes('gateway_config'))return {ok:true,status:200,text:async()=>JSON.stringify([{key_hash:hash}])};if(url.endsWith('/auth/v1/user'))return {ok:true,status:200,text:async()=>JSON.stringify({id:randomUUID(),app_metadata:{}})};throw Error('Unexpected write');}});
  const request=(key,body)=>new Request('https://edge.example',{method:'POST',headers:{'Content-Type':'application/json',...(key?{'x-offer-store-key':key}:{})},body:JSON.stringify(body)});
  assert.equal((await handler(request('',{action:'bootstrap'}))).status,401);assert.equal(calls.length,0);
  assert.equal((await handler(request('x'.repeat(43),{action:'bootstrap'}))).status,403);assert.equal(calls.length,1);

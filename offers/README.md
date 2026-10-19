@@ -20,4 +20,4 @@ Use only the chosen KOBİ, Kurumsal or Key Account pricing columns. Growth + ope
 
 ## Release boundary
 
-All changes stay on a feature branch and Vercel Preview until user approval. Do not change Travis files, migrations, existing CRM/auth code, environment variables or production data. The user authorized isolated test setup; its migrations affect only new preview tables. The production migration and live deployment still need explicit release approval.
+All changes stay on a feature branch and Vercel Preview until user approval. Do not change existing Travis files/migrations, production CRM/auth code, production environment variables or customer data. The authorized test setup uses only new isolated tables, synthetic accounts and Preview-scoped variables. The user authorized isolated test setup; its migrations affect only new preview tables. The production migration and live deployment still need explicit release approval.

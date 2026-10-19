@@ -20,7 +20,7 @@ async function invoke(handler,body,expected=200){const r=response();await handle
 try{
  let phase='gateway_health';output.phase=phase;
  const store=createPreviewStore();assert.equal((await store.call('health')).productionDataAccess,false);
- const start=response();await createPreviewSessionHandler()(request({action:'start'}),start);assert.equal(start.statusCode,200,start.data?.error);fixture=start.data.fixture;
+ output.phase='bootstrap';const start=response();await createPreviewSessionHandler()(request({action:'start'}),start);assert.equal(start.statusCode,200,start.data?.error);fixture=start.data.fixture;
  cookie+='; '+start.headers['Set-Cookie'].split(';')[0];
  const lead=fixture.rows.leads[0];output.testLeadId=lead.id;output.checks.push('real_auth_session_and_separate_card');
  const {proposal:base,pricing,audit,brief}=await writeTemplateExample(),codec=createPricingProof(process.env.OFFER_GEMINI_API_KEY);
