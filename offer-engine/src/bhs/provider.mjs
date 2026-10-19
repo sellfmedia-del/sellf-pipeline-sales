@@ -1,3 +1,4 @@
+import {compositionEnvelope,copySchema} from '../proposal/composition.mjs';
 import {editorialEnvelope,editSchema} from './editor.mjs';
 import {scopeEnvelope,scopeSchema} from '../pricing/scope.mjs';
 import {providerReportSchema,providerSchema} from './schema.mjs';
@@ -59,6 +60,7 @@ export function createResearchProvider({apiKey=process.env.OFFER_GEMINI_API_KEY,
     interactionId(value.id);return value;
   }
   return Object.freeze({configured,agent,model,
+    composeProposal(brief,audit,pricing){return request('',{model,input:JSON.stringify(compositionEnvelope(brief,audit,pricing)),background:true,store:true,generation_config:{max_output_tokens:2048,thinking_level:'low'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(copySchema)}});},
     planPricing(brief,audit){return request('',{model,input:JSON.stringify(scopeEnvelope(brief,audit)),background:true,store:true,generation_config:{max_output_tokens:8192,thinking_level:'medium'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(scopeSchema)}});},
     start(brief,asOf){return request('',{agent,input:researchPrompt(brief,asOf),background:true,store:true,agent_config:{type:'deep-research',visualization:'off'},tools:[{type:'google_search'},{type:'url_context'}]});},
     poll(id,{includeInput=false}={}){return request('/'+interactionId(id)+'?include_input='+String(includeInput));},

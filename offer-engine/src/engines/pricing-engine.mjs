@@ -10,7 +10,7 @@ function money(value){
 }
 const tl=value=>value/100;
 const markup=(cost,numerator)=>Math.ceil(cost*numerator/2);
-export const pricingEngine=Object.freeze({id:'pricing',version:'0.2.0',async run(input,{audit}={}){
+export const pricingEngine=Object.freeze({id:'pricing',version:'0.3.0',async run(input,{audit}={}){
  const brief=snapshotBrief(input?.brief);
  assertResult('audit',audit);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief))throw Error('Fiyatlama için bu briefe ait doğrulanmış BHS gerekli.');
@@ -64,24 +64,15 @@ export const pricingEngine=Object.freeze({id:'pricing',version:'0.2.0',async run
   return {cost:tl(base),minimumAmount:tl(minimum),idealAmount:tl(ideal),monthlyAmount:tl(amount),budgetFit:!feeTarget?'unknown':amount<=feeTarget.max?'within':'above',belowTargetRange:Boolean(feeTarget&&amount<feeTarget.min)};
  }
  const publicService=s=>({serviceId:s.serviceId,name:s.name,row:s.row,reason:s.reason,briefQuote:s.briefQuote,findingIds:s.findingIds,cost:tl(s.cost),commissionAmount:tl(s.fee),pricingRule:s.pricingRule,...(s.listAmount?{listAmount:tl(s.listAmount)}:{}),...(s.serviceId==='design'?{deliverables:'Aylık 25 statik + 5 motion; tasarım başına 2 revize.'}:{})});
- const standalone=selected.map(s=>({...publicService(s),accountCost:5000,...price(s.cost+500000,s.fee)}));
  const alternatives=[
   {id:'growth_operations',name:'Growth + Operasyon',billingPeriod:'monthly',...price(growthAccount+Math.max(initial,ongoing),commission),services:selected.map(publicService),accountCost:tl(growthAccount),growthCosting:{initialTeamCost:tl(initial),ongoingConsultantCost:tl(cost('growth_consultant',brief.segment)),ongoingOperationsCost:tl(operationCost),costBasis:tl(Math.max(initial,ongoing)),rule:'max_initial_or_consultant_plus_operations',note:'Tek ve sabit aylık ücret. İlk dönem ekibi ve sonraki operasyon ekibi üst üste eklenmez.'}},
-  {id:'operations_bundle',name:'Operasyon Paketi',billingPeriod:'monthly',...price(operationCost+packageAccount,commission),services:selected.map(publicService),accountCost:tl(packageAccount)},
-  {id:'individual_operations',name:'Tekil Operasyonlar',billingPeriod:'monthly',cost:tl(standalone.reduce((s,l)=>s+Math.round(l.cost*100),0)),minimumAmount:tl(standalone.reduce((s,l)=>s+Math.round(l.minimumAmount*100),0)),idealAmount:tl(standalone.reduce((s,l)=>s+Math.round(l.idealAmount*100),0)),monthlyAmount:tl(standalone.reduce((s,l)=>s+Math.round(l.monthlyAmount*100),0)),services:standalone,accountCost:5000*standalone.length,note:'Kalemler birbirinden bağımsız satın alınabilir. Toplam, listelenen kalemlerin tamamının aylık bedelidir.'}
+  {id:'operations_bundle',name:'Operasyon Paketi',billingPeriod:'monthly',...price(operationCost+packageAccount,commission),services:selected.map(publicService),accountCost:tl(packageAccount)}
  ];
- // A range applies to the combined alternative too, not once to each line.
- const individual=alternatives[2];
- if(feeTarget&&feeTarget.max>=Math.round(individual.minimumAmount*100)&&Math.round(individual.monthlyAmount*100)>feeTarget.max){
-  let available=feeTarget.max-Math.round(individual.minimumAmount*100);
-  for(const item of standalone){const addition=Math.min(available,Math.round((item.idealAmount-item.minimumAmount)*100));item.monthlyAmount=tl(Math.round(item.minimumAmount*100)+addition);available-=addition;}
-  individual.monthlyAmount=tl(standalone.reduce((s,item)=>s+Math.round(item.monthlyAmount*100),0));
- }
  for(const alternative of alternatives){alternative.budgetFit=!feeTarget?'unknown':Math.round(alternative.monthlyAmount*100)<=feeTarget.max?'within':'above';alternative.belowTargetRange=Boolean(feeTarget&&Math.round(alternative.monthlyAmount*100)<feeTarget.min);}
  const recommended=scope.budget.posture==='limited'||feeTarget?alternatives.filter(a=>a.budgetFit!=='above').sort((a,b)=>a.monthlyAmount-b.monthlyAmount)[0]||alternatives[1]:alternatives[0];
  const costSnapshot={version:costVersion,segment:brief.segment,rows:catalog.map(({id,row,costs,kind})=>({id,row,kind,monthlyCost:costs[brief.segment]})),customCosts:[...custom].map(([serviceId,value])=>({serviceId,monthlyCost:tl(value)})),rules:{minimumMarkup:1.5,idealMarkup:2,singleServiceAccount:5000,growth:'max(initial,consultant+operations)+account'}};
  return {status:provisional||pending.length||scopeTrimmed?'review':'ready',data:{
-  schemaVersion:'pricing-v1',currency:'TRY',costVersion,briefHash:briefHash(brief),segment:brief.segment,alternatives,recommendedAlternativeId:recommended.id,
+  schemaVersion:'pricing-v2',currency:'TRY',costVersion,briefHash:briefHash(brief),segment:brief.segment,alternatives,recommendedAlternativeId:recommended.id,
   scope:{summary:scope.summary,budgetPosture:scope.budget.posture,budgetQuote:scope.budget.quote,statedBudget:brief.budget,statedBudgetScope:'unspecified',target:scope.target?{...scope.target,min:tl(scope.target.min),max:tl(scope.target.max)}:null,selected:selected.map(publicService),deferred,pending,exclusions:scope.exclusions,provisional},
   costSnapshot,costSnapshotHash:createHash('sha256').update(JSON.stringify(costSnapshot)).digest('hex'),
   notices:[...scope.warnings,...(provisional?['Fiyatlı başlangıç kapsamı kontrol bekliyor. Özel işlerin tamamlandığı anlamına gelmez.']:[]),...(scopeTrimmed?['Teklif aralığına göre daraltılan kapsamın hizmet bağımlılıkları kontrol edilmeli.']:[]),...(pending.length?['Özel fiyat gereken işler aylık toplama dahil değildir; ücretsiz sunulmaz.']:[]),...(feeTarget&&alternatives.every(a=>a.budgetFit==='above')?['Belirtilen aralık başlangıç kapsamının minimum fiyatını karşılamıyor. Fiyat tabanı korunarak alternatifler gösterildi.']:[]),...(scope.target?.scope==='total_growth'?['Belirtilen toplam büyüme bütçesi hizmet ücreti sınırı sayılmadı. Reklam ve dış maliyetler netleşmeden toplam bütçeye uyum doğrulanamaz.']:[]),'Tutarlar aylık Sellf hizmet bedelleridir. Reklam harcaması, üçüncü taraf bedelleri ve KDV bu hesapta ayrıca hesaplanmadı.','BHS yatırım önerileri fiyat veya müşteri bütçesi olarak kullanılmadı.'],

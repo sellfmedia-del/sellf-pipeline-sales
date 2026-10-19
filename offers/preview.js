@@ -57,6 +57,17 @@
         }
         window.addEventListener('message',receive);parent.postMessage({type:'offer-pricing-request',requestId,payload},'*');
       });
+      window.PipelineProposalRequest=payload=>new Promise((resolve,reject)=>{
+        const requestId=crypto.randomUUID();
+        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('Teklif oluşturma bağlantısı zaman aşımına uğradı.'));},60000);
+        function receive(event){
+          if(event.source!==parent||event.data?.type!=='offer-proposal-result'||event.data?.requestId!==requestId)return;
+          clearTimeout(timer);window.removeEventListener('message',receive);
+          if(event.data.error)reject(new Error(event.data.error));else resolve(event.data.result);
+        }
+        window.addEventListener('message',receive);parent.postMessage({type:'offer-proposal-request',requestId,payload},'*');
+      });
+      window.PipelineOfferRequest=async()=>{throw Error('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.');};
     }
     const rows = {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],
@@ -123,7 +134,7 @@
     const sdk = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>';
     if (!source.includes(sdk)) throw new Error('Önizleme kaynağı değişti.');
     const policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'none'; form-action 'none'\">";
-    const assets = ['card-section.css', 'brief-form.css', 'logo-control.css', 'brief-model.js', 'logo-control.js', 'brief-form.js', 'card-section.js'];
+    const assets = ['card-section.css', 'brief-form.css', 'logo-control.css', 'proposal.css', 'brief-model.js', 'logo-control.js', 'proposal.js', 'service-client.js', 'brief-form.js', 'card-section.js'];
     const contents = await Promise.all(assets.map(path => fetch('/offers/' + path).then(r => {
       if (!r.ok) throw new Error('Önizleme dosyası yüklenemedi.');
       return r.text();
@@ -170,6 +181,16 @@
         const response=await fetch('/api/pricing',{method:'POST',headers:{'Content-Type':'application/json'},body});const result=await response.json();
         frame.contentWindow.postMessage({type:'offer-pricing-result',requestId,...(response.ok?{result}:{error:result.error||'Fiyat hesaplaması tamamlanamadı.'})},'*');
       }catch{frame.contentWindow.postMessage({type:'offer-pricing-result',requestId,error:'Fiyat servisine bağlanılamadı. Yeni model çağrısı otomatik başlatılmadı.'},'*');}
+    });
+    window.addEventListener('message',async event=>{
+      if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-proposal-request')return;
+      const {requestId,payload}=event.data;
+      if(typeof requestId!=='string'||requestId.length>80||!['start','status','cancel'].includes(payload?.action))return;
+      const body=JSON.stringify(payload);if(body.length>4200000)return;
+      try{
+        const response=await fetch('/api/proposal',{method:'POST',headers:{'Content-Type':'application/json'},body});const result=await response.json();
+        frame.contentWindow.postMessage({type:'offer-proposal-result',requestId,...(response.ok?{result}:{error:result.error||'Teklif oluşturma tamamlanamadı.'})},'*');
+      }catch{frame.contentWindow.postMessage({type:'offer-proposal-result',requestId,error:'Teklif servisine bağlanılamadı. Yeni model çağrısı otomatik başlatılmadı.'},'*');}
     });
     message.hidden = true;
     document.querySelectorAll('[data-logo-example]').forEach(button=>{

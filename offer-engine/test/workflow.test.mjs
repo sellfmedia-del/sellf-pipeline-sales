@@ -5,7 +5,7 @@ import {assertResult} from '../src/contracts.mjs';
 
 test('failed stages retry independently; completed stages reuse immutable versioned snapshots',async()=>{
   let auditCalls=0,priceCalls=0;
-  const workflow=createOfferWorkflow({audit:{version:'v1',async run(input){auditCalls++;input.services.push('internal');return{status:'ready',data:{findings:[],services:input.services}};}},pricing:{version:'v1',async run(){if(++priceCalls===1)throw Error('temporary');return {status:'ready',data:{currency:'TRY',costVersion:'cost-1',alternatives:[1,2,3].map(id=>({id,billingPeriod:'monthly',monthlyAmount:1000*id}))}};}}});
+  const workflow=createOfferWorkflow({audit:{version:'v1',async run(input){auditCalls++;input.services.push('internal');return{status:'ready',data:{findings:[],services:input.services}};}},pricing:{version:'v1',async run(){if(++priceCalls===1)throw Error('temporary');return {status:'ready',data:{currency:'TRY',costVersion:'cost-1',alternatives:[1,2].map(id=>({id,billingPeriod:'monthly',monthlyAmount:1000*id}))}};}}});
   const input={services:['growth']};
   const audit=await workflow.run('audit',input);assert.deepEqual(input.services,['growth']);
   await assert.rejects(()=>workflow.run('pricing',{}, {audit}),/temporary/);
@@ -27,7 +27,7 @@ test('a technically valid unreviewed logo can enter a proposal draft, which stay
   const workflow=createOfferWorkflow({proposal:{version:'test',async run(){return {status:'ready',data:{sections:[]}};}}});
   const logo={stage:'logo',status:'review',data:{generated:false,candidates:[{image:'data:image/png;base64,AAA',quality:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}]}};
   const audit={stage:'audit',status:'ready',data:{findings:[],services:[]}};
-  const pricing={stage:'pricing',status:'ready',data:{currency:'TRY',costVersion:'test',alternatives:[1,2,3].map(id=>({id,billingPeriod:'monthly',monthlyAmount:100*id}))}};
+  const pricing={stage:'pricing',status:'ready',data:{currency:'TRY',costVersion:'test',alternatives:[1,2].map(id=>({id,billingPeriod:'monthly',monthlyAmount:100*id}))}};
   const result=await workflow.run('proposal',{}, {logo,audit,pricing});
   assert.equal(result.status,'review');assert.equal(logo.status,'review');
 });

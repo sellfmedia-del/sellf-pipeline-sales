@@ -30,7 +30,8 @@ export function createPricingHandler({getProvider=()=>createResearchProvider(),g
    const inputHash=digest({brief,auditHash:approval.auditHash,options,version:engine.version});
    async function finish(scope){
     const result=await engine.run({brief,...options,...(scope?{scope}:{})},{audit:body.audit});assertResult('pricing',result);
-    return res.status(200).json({phase:'complete',result:{...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()}});
+    const envelope={...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()};
+    return res.status(200).json({phase:'complete',result:envelope,proposalProof:codec.encode({kind:'pricing_ready',createdAt:now(),briefHash:hash,auditHash:approval.auditHash,pricingHash:digest(envelope)},session,host)});
    }
    // Validate explicit inputs before any possibly billable model call.
    await engine.run({brief,...options},{audit:body.audit});

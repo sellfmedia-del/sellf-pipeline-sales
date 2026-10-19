@@ -12,6 +12,12 @@
     "api/logo.js": {
       "maxDuration": 90,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
+    "api/proposal.js": {
+      "maxDuration": 60
+    },
+    "api/offer.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

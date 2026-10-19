@@ -82,3 +82,6 @@
   #offer-brief-dialog .ob-footer > div { width: 100%; }
   #offer-brief-dialog .ob-footer button { flex: 1; padding-inline: 10px; }
 }
+
+#offer-brief-dialog:has(.ob-proposal:not([hidden])){width:min(1160px,96vw)}
+#offer-brief-dialog .ob-proposal-controls{padding:20px;border:1px solid #d9e2f0;border-radius:8px;margin:15px 0}#offer-brief-dialog .ob-proposal-controls p{font-size:12px;color:#667487}#offer-brief-dialog .ob-proposal-controls select,#offer-brief-dialog .ob-proposal-controls textarea{display:block;width:100%;padding:10px;margin:8px 0}#offer-brief-dialog .ob-proposal-controls textarea{min-height:110px}#offer-brief-dialog .ob-approval{padding:20px;background:#f5f8fc}#offer-brief-dialog .ob-approval label{display:block;margin:10px 0;font-size:13px}#offer-brief-dialog .ob-approval input{width:auto}#offer-brief-dialog .ob-save-status{overflow-wrap:anywhere}#offer-brief-dialog .ob-footer .ob-compose,#offer-brief-dialog .ob-footer .ob-save,#offer-brief-dialog .ob-footer .ob-publish{background:#145cd6;color:white;border:0;border-radius:6px;padding:10px 16px}#offer-brief-dialog .ob-footer>div{display:flex;flex-wrap:wrap;gap:8px}
