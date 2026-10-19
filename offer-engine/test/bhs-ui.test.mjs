@@ -69,7 +69,8 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  const browser=await playwright.launch({args:chromium.args.filter(arg=>!['--disable-web-security','--single-process'].includes(arg)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
  try{for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
-  const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[],priceActions=[];
+  const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[],priceActions=[];let disconnected=0;
+  const previewFixture={user:{id:'test-user'},rows:{spaces:[{id:'test-space',name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()}],columns:[{id:'test-column',space_id:'test-space',title:'Teklif Aşamasında',dot:'#BA7517'}],leads:[{id:'test-lead',space_id:'test-space',col_id:'test-column',company:'Test Marka',name:'Test Yetkilisi',value:'',notes:'Toplantı bağlamı korunmalı.',contacts:[],timeline:[]}]}};
   const session='c'.repeat(43),secret='test-ui-pricing-secret';let completeAudit;
   const proposalHandler=createProposalHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async composeProposal(){return {id:'ui_proposal_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Bayi ağını ölçüm ve uygulamayla geliştirelim.',findingIds:['f0']})}]}]};}})});
   const handler=createPricingHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async planPricing(){return {id:'ui_scope_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({summary:'Görüşmedeki servis ihtiyacına uygun başlangıç.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:'b2b',phase:'start',priority:1,reason:'Bayi büyümesi hedefi.',briefQuote:'Growth',findingIds:[]}],exclusions:[]})}]}]};}})});
@@ -77,10 +78,12 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   const {renderGroundedReport}=await import('../src/bhs/grounded-report.mjs');
   page.setDefaultTimeout(10000);
   const data=fixture().report;data.sources.forEach(s=>s.verification={status:'quote_matched'});data.rawReport=renderGroundedReport(data);data.scoring={total:null};data.quality={checksPassed:true,issues:[],semanticBenchmark:'passed'};
-  await context.addInitScript(()=>{const original=setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,ms===10000?0:ms,...args);});
+  await context.addInitScript(()=>{const original=setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,[10000,1500,3000].includes(ms)?0:ms,...args);});
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());assert.equal(url.origin,'https://preview.vercel.app');
+   if(url.pathname==='/api/preview-session')return route.fulfill({contentType:'application/json',body:JSON.stringify({ready:true,fixture:previewFixture})});
+   if(url.pathname==='/api/offer')return route.fulfill({status:req.postDataJSON().action==='list'?200:422,contentType:'application/json',body:JSON.stringify(req.postDataJSON().action==='list'?{offers:[]}:{error:'Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.'})});
    if(url.pathname==='/api/proposal'){
     const body=req.postDataJSON(),result={statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v;},status(code){this.statusCode=code;return this;},json(data){this.data=data;return this;}};
     await proposalHandler({method:req.method(),headers:{...await req.allHeaders(),host:url.host},body},result);
@@ -94,6 +97,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
    }
    if(url.pathname==='/api/audit'){
     const body=req.postDataJSON();actions.push(body.action);
+    if(viewport.width===390&&body.action==='status'&&disconnected<3){disconnected++;return route.abort('failed');}
     const phases=['research','source_plan','synthesis','revision','semantic'];let response;
     if(body.action==='start')response={phase:'research',ticket:'0'};
     else if(body.action==='advance')response={phase:phases[Number(body.ticket)+1],ticket:String(Number(body.ticket)+1)};
@@ -105,15 +109,16 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
     return route.fulfill({headers:{'Set-Cookie':'__Host-offer-research='+session+'; Path=/; Secure; HttpOnly; SameSite=Strict'},contentType:'application/json',body:JSON.stringify(response)});
    }
    if(url.pathname==='/api/logo-upload'){const logo=await prepareUploadedLogo(req.postDataJSON().image);return route.fulfill({contentType:'application/json',body:JSON.stringify({...logo,logoProof:logoProof(secret,url.host,logo)})});}
-   try{const file=path.join(process.cwd(),'public',url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
+   try{const file=path.join(process.cwd(),'public',url.pathname==='/'?'index.html':url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
   });
-  await page.goto('https://preview.vercel.app/offers/preview.html?storage=0');const frame=page.frameLocator('#preview-frame');await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
+  await page.goto('https://preview.vercel.app/');const frame=page;await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.evaluate(()=>JSON.stringify(db));
   await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
-  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  if(viewport.width===390){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
+  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.ok(priceActions.includes('status'));
-  assert.match(await frame.locator('.ob-pricing').textContent(),/40.000/);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
+  assert.match(await frame.locator('.ob-pricing').textContent(),/40.000/);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await frame.locator('.ob-compose').click();await frame.getByText('Teklif taslağı hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-proposal .so-option').count(),2);
@@ -127,7 +132,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await frame.locator('[data-dim="digital"]').click();assert.match(await frame.locator('#so-takeaway').textContent(),/Kaynak/);
   await frame.locator('.ob-save').click();assert.match(await frame.locator('.ob-save-status').textContent(),/kontrollerini tamamla/);
   await frame.locator('.ob-logo-approved').check();await frame.locator('.ob-scope-approved').check();await frame.locator('.ob-save').click();await frame.getByText('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.',{exact:true}).waitFor();
-  assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
+  assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await page.screenshot({path:'/workspace/scratch/5e08853fbefb/proposal-qa-'+viewport.width+'.png',fullPage:true});
   await frame.locator('.ob-edit').click();assert.equal(await frame.locator('#ob-budget').inputValue(),'');assert.equal(await frame.locator('.ob-pricing').isVisible(),false);assert.equal(await frame.locator('.ob-price').isVisible(),false);

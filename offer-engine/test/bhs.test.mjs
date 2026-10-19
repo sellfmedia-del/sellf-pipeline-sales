@@ -193,3 +193,17 @@ test('financial PDF evidence is extracted in a bounded worker and checked agains
  let result=await verify(report,{rawReport:modelText(research())+'\nÖn BHS analizi kapsamında kaynakta ihracat oranı %60 olarak aktarılmıştır.'});assert.equal(result.status,'ready');
  for(const text of ['Ön BHS toplamı: %64','Ön BHS: 54.5/85','BHS skoru yaklaşık %64']){result=await verify(report,{rawReport:modelText(research())+'\n'+text});assert.equal(result.status,'review');}
 });
+
+test('audit request logs correlate stages and failures without exposing briefs, tickets or provider errors',async()=>{
+ const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const logs=[],handler=createAuditHandler({logger:{info:line=>logs.push(JSON.parse(line))},getSecret:()=> 'private-server-secret',getProvider:()=>({configured:()=>true,async start(){return {id:'research_12345678'};},async poll(){throw Error('PRIVATE upstream failure');}}),validateWebsite:async()=>{}});
+  const first=response(),req=request({action:'start',brief:{...brief,meetingNotes:'PRIVATE brief notes'},requestId:'request_1234567890'});req.headers['x-offer-request-id']='browser_request_12345678';
+  await handler(req,first);assert.equal(first.code,202);assert.equal(first.headers['X-Offer-Request-Id'],'browser_request_12345678');
+  const next=response();await handler(request({action:'status',brief:{...brief,meetingNotes:'PRIVATE brief notes'},ticket:first.body.ticket}),next);assert.equal(next.code,422);
+  assert.ok(logs.some(l=>l.event==='bhs_response'&&l.phase==='research'&&l.action==='start'));
+  assert.ok(logs.some(l=>l.event==='bhs_phase'&&l.phase==='research'&&l.action==='status'));
+  assert.ok(logs.some(l=>l.event==='bhs_response'&&l.code==='invalid_report'&&typeof l.durationMs==='number'));
+  const json=JSON.stringify(logs);for(const value of ['PRIVATE','private-server-secret',first.body.ticket,brief.website])assert.ok(!json.includes(value));
+ }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});

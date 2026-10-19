@@ -43,11 +43,12 @@
           <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
-      <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
+      <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-resume" hidden>Araştırmaya devam et</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector('form');
     let reviewing = false;
     let task = null;
+    let pausedAudit = null;
     const source = draft.source;
     dialog.querySelector('.ob-subtitle').textContent = source.company + ' · ' + source.contact;
     fields.forEach(name => { form.elements[name].value = draft[name]; });
@@ -105,6 +106,7 @@
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
     }
     function stopTask(){
+      pausedAudit=null;dialog.querySelector('.ob-resume').hidden=true;
       if(!task)return;
       task.stopped=true;
       if(task.ticket){
@@ -246,15 +248,20 @@
     dialog.querySelector('.ob-save').addEventListener('click',()=>saveOrPublish('save'));
     dialog.querySelector('.ob-publish').addEventListener('click',()=>saveOrPublish('publish'));
 
-    async function runAudit(){
+    dialog.querySelector('.ob-resume').addEventListener('click',()=>{
+      if(!pausedAudit||pausedAudit.stopped)return;
+      const current=pausedAudit;pausedAudit=null;runAudit(current);
+    });
+    async function runAudit(resume=null){
       const notice=dialog.querySelector('.ob-review-notice');
       if(typeof window.PipelineAuditRequest!=='function'){
         dialog.querySelector('#ob-review-title').textContent='BHS araştırma bağlantısı gerekli';
         notice.textContent='Bu önizlemede araştırma servisi bağlı değil. Teklif veya araştırma sonucu oluşturulmadı.';return;
       }
-      const current={kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
+      const current=resume||{kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
+      dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('#ob-review-title').textContent='Araştırma hazırlanıyor';
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
-      let action='start';
+      let action=resume?'status':'start';
       try{
         for(;;){
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
@@ -272,8 +279,11 @@
         }
       }catch(error){
         if(current.stopped)return;
-        dialog.querySelector('#ob-review-title').textContent='BHS araştırması tamamlanamadı';
-        notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+' Yeni araştırma otomatik başlatılmadı.';
+        const transport=error.code==='audit_transport',canResume=transport&&error.canResume&&current.ticket;
+        dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';
+        notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
+        if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
+        if(transport&&error.requestId)notice.textContent+=' Kontrol kodu: '+error.requestId;
       }finally{if(dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}
     }
     form.addEventListener('submit', event => {

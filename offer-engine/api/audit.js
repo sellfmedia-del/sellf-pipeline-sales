@@ -11,7 +11,7 @@ import {modelText} from '../src/bhs/provider.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 
-export function createAuditHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,validateWebsite=validatePublicBrief,engine=createAuditEngine(),collect=createEvidenceCollector(),now=Date.now}={}){
+export function createAuditHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,validateWebsite=validatePublicBrief,engine=createAuditEngine(),collect=createEvidenceCollector(),now=Date.now,logger=console}={}){
   // Best-effort per-instance dedupe only; no database or durable store is used.
   // Browsers never auto-retry a paid start after an ambiguous response.
   const starts=new Map();
@@ -24,10 +24,21 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
     const host=req.headers.host;
     if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
     if(!provider.configured())return res.status(503).json({code:'not_configured',error:'BHS araştırma bağlantısı henüz tanımlı değil.'});
+    const trace={event:'bhs_request',requestId:/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID(),action:'unknown',phase:'unknown'},receivedAt=now();
+    const writeLog=(event,extra={})=>{try{logger.info(JSON.stringify({...trace,event,...extra}));}catch{/* Logging must not break research. */}};
+    const sendJson=res.json.bind(res);
+    res.setHeader('X-Offer-Request-Id',trace.requestId);
+    res.json=value=>{
+      writeLog('bhs_response',{durationMs:now()-receivedAt,...(value.code?{code:value.code}:{}),...(value.phase?{phase:value.phase}:{}),...(value.status?{status:value.status}:{}),...(value.result?{resultStatus:value.result.status}:{})});
+      return sendJson(value);
+    };
+    writeLog('bhs_request_received');
     try{
       if((Number(req.headers['content-length'])||0)>90000)throw new ResearchError('invalid_brief','Brief boyut sınırını aşıyor.');
       const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
       if(!body||JSON.stringify(body).length>90000)throw new ResearchError('invalid_brief','Brief boyut sınırını aşıyor.');
+      trace.action=['start','status','advance','structure','cancel'].includes(body.action)?body.action:'invalid';
+      writeLog('bhs_action');
       const brief=snapshotBrief(body.brief),hash=briefHash(brief),codec=createTicketCodec(getSecret());
       let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
       if(!session){
@@ -54,6 +65,8 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
         return res.status(202).json({phase:'research',ticket:ticket(job),status:'in_progress'});
       }
       const job=codec.decode(body.ticket,session,host,now());
+      trace.phase=job.phase;trace.runId=job.runId;
+      writeLog('bhs_phase');
       if(job.hash!==hash)throw new ResearchError('changed_brief','Brief değişti. Önceki araştırma bu bilgiler için kullanılamaz.');
       const field={research:'researchId',source_plan:'sourcePlanId',synthesis:'synthesisId',semantic:'semanticId',revision:'revisionId',structure:'structureId'}[job.phase];
       const id=job[field];
