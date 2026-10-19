@@ -3,13 +3,23 @@
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {
-      "maxDuration": 90,
-      "includeFiles": "{src/bhs/**,node_modules/unpdf/**}"
+      "maxDuration": 180,
+      "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}"
     },
     "api/logo.js": {
       "maxDuration": 90,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   },
-  "headers": [{ "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }] }]
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    }
+  ]
 }

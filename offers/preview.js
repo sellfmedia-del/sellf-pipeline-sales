@@ -38,7 +38,7 @@
       });
       window.PipelineAuditRequest=payload=>new Promise((resolve,reject)=>{
         const requestId=crypto.randomUUID();
-        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('BHS bağlantısı zaman aşımına uğradı.'));},100000);
+        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('BHS bağlantısı zaman aşımına uğradı.'));},200000);
         function receive(event){
           if(event.source!==parent||event.data?.type!=='offer-audit-result'||event.data?.requestId!==requestId)return;
           clearTimeout(timer);window.removeEventListener('message',receive);
@@ -142,7 +142,7 @@
     window.addEventListener('message',async event=>{
       if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-audit-request')return;
       const {requestId,payload}=event.data;
-      if(typeof requestId!=='string'||requestId.length>80||!['start','status','structure','cancel'].includes(payload?.action))return;
+      if(typeof requestId!=='string'||requestId.length>80||!['start','status','structure','advance','cancel'].includes(payload?.action))return;
       const body=JSON.stringify(payload);if(body.length>90000)return;
       try{
         const response=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body});
