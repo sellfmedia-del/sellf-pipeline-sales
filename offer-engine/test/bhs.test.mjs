@@ -81,7 +81,7 @@ test('SSRF is blocked for source verification even when a model calls it a cited
 test('audit engine only accepts completed research plus valid structured JSON, preserving original report',async()=>{
  const engine=createAuditEngine({verifySource:ok}),r=research();
  const structure={id:'structure_12345678',status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify(fixture())}]}]};
- const result=await engine.run({brief,research:r,structure});assert.equal(result.status,'ready');assert.equal(result.data.rawReport,modelText(r));
+ const result=await engine.run({brief,research:r,structure});assert.equal(result.status,'review');assert.equal(result.data.quality.checksPassed,true);assert.equal(result.data.quality.semanticBenchmark,'pending');assert.equal(result.data.rawReport,modelText(r));
  assert.equal(result.data.briefHash,briefHash(snapshotBrief(brief)));
  await assert.rejects(()=>engine.run({brief,research:{...r,status:'incomplete'},structure}),/tamamlanmadı/);
  await assert.rejects(()=>engine.run({brief,research:r,structure:{...structure,steps:[]}}),/eksik/);

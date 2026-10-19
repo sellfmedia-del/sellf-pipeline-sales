@@ -31,8 +31,8 @@ function providerSchema(schema){
 }
 export const providerReportSchema=providerSchema(reportSchema);
 
-// Validate the same small JSON Schema subset used in the provider request;
-// never trust model-side structured-output enforcement alone.
+// Validate the complete bounded contract independently of provider grammar
+// simplifications; never trust model-side enforcement alone.
 export function assertSchema(value,schema=reportSchema,path='report'){
   if(schema.anyOf){if(!schema.anyOf.some(s=>{try{assertSchema(value,s,path);return true;}catch{return false;}}))throw Error('BHS veri biçimi geçersiz: '+path);return;}
   const type=Array.isArray(value)?'array':value===null?'null':typeof value;
