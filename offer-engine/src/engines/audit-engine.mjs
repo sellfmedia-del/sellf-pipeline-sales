@@ -3,7 +3,7 @@ import {modelText,citationUrls,ResearchError} from '../bhs/provider.mjs';
 import {verifyReport} from '../bhs/verify.mjs';
 import {methodologyVersion} from '../bhs/prompts.mjs';
 export function createAuditEngine({verifySource}={}){
-  return Object.freeze({id:'audit',version:'0.2.1',async run(input){
+  return Object.freeze({id:'audit',version:'0.2.2',async run(input){
     const brief=snapshotBrief(input?.brief);
     const {research,structure}=input;
     if(research?.status!=='completed'||structure?.status!=='completed')throw new ResearchError('incomplete','BHS araştırması ve yapılandırması tamamlanmadı.');

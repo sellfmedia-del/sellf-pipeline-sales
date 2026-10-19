@@ -59,6 +59,12 @@ test('fabricated citations, unreachable sources, future dates and changed report
  }
  assert.equal((await verify(fixture(),{verifySource:async()=>({status:'unavailable'})})).status,'review');
 });
+test('a verified Google grounding redirect proves brand identity only at its resolved publisher domain',async()=>{
+ const report=fixture();report.sources[0].url='https://vertexaisearch.cloud.google.com/grounding-api-redirect/test';
+ const options={citations:report.sources.map(s=>s.url),verifySource:async s=>({status:'quote_matched',finalUrl:s.id==='s0'?brief.website:s.url})};
+ assert.equal((await verify(report,options)).status,'ready');
+ assert.equal((await verify(report,{...options,verifySource:async s=>({status:'quote_matched',finalUrl:s.id==='s0'?'https://unrelated.example/':s.url})})).status,'review');
+});
 test('peers need sources and comparable identities; benchmark values need evidence',async()=>{
  for(const change of [r=>r.competitors.pop(),r=>r.competitors[0].sourceIds=[],r=>r.competitors[0].website=brief.website,r=>r.benchmarks[0].entries[0].value='100000',r=>r.benchmarks[1].metric='webTraffic']){
   const r=fixture();change(r);assert.equal((await verify(r)).status,'review');
@@ -91,7 +97,7 @@ test('provider uses actual background Interactions API; no fake JSON mode on Dee
  assert.deepEqual(start.tools.map(t=>t.type),['google_search','url_context']);
  assert.equal(structure.response_format.mime_type,'application/json');assert.equal(structure.tools,undefined);assert.equal(structure.previous_interaction_id,undefined);
  assert.ok(structure.input.includes(quote));assert.ok(!structure.input.includes('PRIVATE INPUT'));assert.equal(structure.generation_config.max_output_tokens,32768);assert.equal(structure.background,false);
- assert.ok(!/"(?:minLength|maxLength|anyOf)"/.test(JSON.stringify(structure.response_format.schema)));
+ assert.ok(!/"(?:minLength|maxLength|minItems|maxItems|anyOf)"/.test(JSON.stringify(structure.response_format.schema)));
  assert.deepEqual(structure.response_format.schema.properties.dimensions.items.properties.score.type,['number','null']);
  assert.throws(()=>provider.structure(brief,{...research(),status:'in_progress'}),/Tamamlanmış/);
  assert.ok(calls[2].url.endsWith('?include_input=false'));
@@ -159,6 +165,7 @@ test('background execution faults expose only a safe category and never provider
 });
 test('provider-compatible generation never removes strict server-side text bounds',async()=>{
  const report=fixture();report.summary='x'.repeat(6001);await assert.rejects(()=>verify(report),/metin sınırı/);
+ const missing=fixture();missing.dimensions.pop();await assert.rejects(()=>verify(missing),/liste sınırı/);
 });
 test('financial PDF evidence is extracted in a bounded worker and checked against the source quote',async()=>{
  const stream='BT /F1 12 Tf 30 700 Td ('+quote+') Tj ET';

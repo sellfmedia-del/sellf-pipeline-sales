@@ -95,7 +95,7 @@ export async function verifyReport(report,{brief,rawReport,citations,verifySourc
   for(const q of data.meetingQuestions)if(!refs(q.findingIds,findings))add('Toplantı sorusunun bulgu bağlantısı geçersiz.');
   for(const s of data.serviceRecommendations)if(!s.findingIds.length||!refs(s.findingIds,findings)||s.findingIds.some(id=>{const f=findings.get(id);return !f||f.kind==='brief'||!supported(f.sourceIds);}))add('Hizmet hipotezinin bulgu kanıtı eksik: '+s.id);
   const brandHost=new URL(brief.website).hostname.replace(/^www\./,'');
-  if(!data.sources.some(s=>validSourceIds.has(s.id)&&new URL(s.url).hostname.replace(/^www\./,'')===brandHost))add('Markanın kendi domaininden kimlik kanıtı doğrulanamadı.');
+  if(!data.sources.some(s=>validSourceIds.has(s.id)&&new URL(s.verification.finalUrl||s.url).hostname.replace(/^www\./,'')===brandHost))add('Markanın kendi domaininden kimlik kanıtı doğrulanamadı.');
   const completeScores=dimMap.size===6&&dimensions.every(d=>dimMap.get(d.id)?.score!==null);
   // A null server total must not coexist with a model-written partial total or
   // percentage in the report/summary. Real provider validation exposed this.

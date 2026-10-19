@@ -22,10 +22,11 @@ export const reportSchema=object({
 // server schema; unsupported string keywords must not break generation.
 function providerSchema(schema){
   if(schema.anyOf){const base=schema.anyOf.find(s=>s.type!=='null');return {...providerSchema(base),type:[base.type,'null']};}
-  const result={...schema};delete result.minLength;delete result.maxLength;
+  const result={...schema};delete result.minLength;delete result.maxLength;delete result.minItems;delete result.maxItems;
   if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,providerSchema(value)]));
   if(schema.items)result.items=providerSchema(schema.items);
   if(schema.maxLength)result.description='Keep text within '+schema.maxLength+' characters; server validates this limit.';
+  if(schema.maxItems!==undefined)result.description='Use '+(schema.minItems||0)+' to '+schema.maxItems+' entries. Server validates the exact bounds.';
   return result;
 }
 export const providerReportSchema=providerSchema(reportSchema);
