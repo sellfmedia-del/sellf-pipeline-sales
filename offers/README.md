@@ -8,7 +8,9 @@ This directory contains the isolated Pipeline card extension and the brief UI pr
 - `logo-control.*`: screenshot upload, mandatory background removal, original/transparent comparison, deferred final visual review and logo-only placement background. Visual approval is reserved for the eventual proposal draft. Users can upload ordinary PNG/JPEG/WebP screenshots without preparing a transparent PNG first. Website blur no longer triggers automatic site capture.
 - `preview.*`: synthetic read-only CRM fixture; the offer brief and research flow are interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the uploaded image to the same-origin logo API; a separate bridge sends the selected brief fields to the BHS API. PNGs remain in memory. No production Supabase client is initialized.
 
-## Accepted pricing and value rules for the later engine
+## Accepted pricing and value rules
+
+The isolated worker now calculates the three alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. A final customer offer and value synchronization remain the next implementation step.
 
 The three customer alternatives each show the total monthly invoice amount. The first-two-month Growth staffing distinction is internal costing context, not a separate customer invoice period.
 

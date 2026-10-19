@@ -47,6 +47,16 @@
         window.addEventListener('message',receive);
         parent.postMessage({type:'offer-audit-request',requestId,payload},'*');
       });
+      window.PipelinePricingRequest=payload=>new Promise((resolve,reject)=>{
+        const requestId=crypto.randomUUID();
+        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('Fiyat hesaplama bağlantısı zaman aşımına uğradı.'));},60000);
+        function receive(event){
+          if(event.source!==parent||event.data?.type!=='offer-pricing-result'||event.data?.requestId!==requestId)return;
+          clearTimeout(timer);window.removeEventListener('message',receive);
+          if(event.data.error)reject(new Error(event.data.error));else resolve(event.data.result);
+        }
+        window.addEventListener('message',receive);parent.postMessage({type:'offer-pricing-request',requestId,payload},'*');
+      });
     }
     const rows = {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],
@@ -151,6 +161,16 @@
       }catch{frame.contentWindow.postMessage({type:'offer-audit-result',requestId,error:'BHS araştırma servisine bağlanılamadı.'},'*');}
     });
     frame.hidden = false;
+    window.addEventListener('message',async event=>{
+      if(document.documentElement.dataset.logoService!=='ready'||event.source!==frame.contentWindow||event.data?.type!=='offer-pricing-request')return;
+      const {requestId,payload}=event.data;
+      if(typeof requestId!=='string'||requestId.length>80||!['start','status','cancel'].includes(payload?.action))return;
+      const body=JSON.stringify(payload);if(body.length>600000)return;
+      try{
+        const response=await fetch('/api/pricing',{method:'POST',headers:{'Content-Type':'application/json'},body});const result=await response.json();
+        frame.contentWindow.postMessage({type:'offer-pricing-result',requestId,...(response.ok?{result}:{error:result.error||'Fiyat hesaplaması tamamlanamadı.'})},'*');
+      }catch{frame.contentWindow.postMessage({type:'offer-pricing-result',requestId,error:'Fiyat servisine bağlanılamadı. Yeni model çağrısı otomatik başlatılmadı.'},'*');}
+    });
     message.hidden = true;
     document.querySelectorAll('[data-logo-example]').forEach(button=>{
       button.hidden=document.documentElement.dataset.logoService!=='ready';

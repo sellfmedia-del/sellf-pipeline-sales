@@ -40,10 +40,10 @@
           </fieldset>
         </form>
         <section class="ob-review" aria-labelledby="ob-review-title" hidden>
-          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><div class="ob-audit-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
+          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
-      <footer class="ob-footer"><p>Önizleme: Düzenlemeler kaydedilmez.</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
+      <footer class="ob-footer"><p>Önizleme: Düzenlemeler kaydedilmez.</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector('form');
     let reviewing = false;
@@ -96,6 +96,8 @@
       dialog.querySelector('.ob-review').hidden = !value;
       dialog.querySelector('.ob-next').hidden = value;
       dialog.querySelector('.ob-edit').hidden = !value;
+      dialog.querySelector('.ob-price').hidden = true;
+      dialog.querySelector('.ob-pricing').hidden = true;
       dialog.querySelectorAll('.ob-steps li').forEach((step,i)=>{if(i===(value?1:0))step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');});
       dialog.querySelector('.ob-body').scrollTop = 0;
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
@@ -103,13 +105,16 @@
     function stopTask(){
       if(!task)return;
       task.stopped=true;
-      if(task.ticket)window.PipelineAuditRequest?.({action:'cancel',brief:task.brief,ticket:task.ticket}).catch(()=>{});
+      if(task.ticket){
+        if(task.kind==='pricing')window.PipelinePricingRequest?.({action:'cancel',brief:task.brief,audit:task.audit,pricingProof:task.pricingProof,ticket:task.ticket}).catch(()=>{});
+        else window.PipelineAuditRequest?.({action:'cancel',brief:task.brief,ticket:task.ticket}).catch(()=>{});
+      }
       task=null;
     }
-    dialog.querySelector('.ob-edit').addEventListener('click', () => {stopTask();draft.audit=null;setReview(false);});
+    dialog.querySelector('.ob-edit').addEventListener('click', () => {stopTask();draft.audit=null;draft.pricing=null;draft.pricingProof=null;setReview(false);});
     function renderAudit(result){
       draft.audit=result;
-      const box=dialog.querySelector('.ob-audit-report'),data=result.data;
+      const box=dialog.querySelector('.ob-research-report'),data=result.data;
       box.replaceChildren();
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
@@ -134,15 +139,64 @@
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
-      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve içerik kontrolleri tamamlandı. Fiyat ve teklif aşaması henüz bağlı değil.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
+      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve içerik kontrolleri tamamlandı. Görüşme bağlamına uygun üç aylık fiyat alternatifini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
+      dialog.querySelector('.ob-price').hidden=result.status!=='ready';
     }
+    const formatMoney=value=>new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY',maximumFractionDigits:2}).format(value);
+    function renderPricing(result){
+      draft.pricing=result;
+      const box=dialog.querySelector('.ob-pricing'),data=result.data;box.replaceChildren();box.hidden=false;
+      const add=(tag,text,parent=box)=>{const node=document.createElement(tag);node.textContent=text;parent.appendChild(node);return node;};
+      add('h3','Aylık fiyat alternatifleri');add('p',data.scope.summary);
+      add('p',data.scope.budgetPosture==='limited'?'Görüşmedeki bütçe kısıtı başlangıç kapsamına yansıtıldı.':'Bütçe belirtilmese de hizmet kapsamı ve maliyetlerden fiyat hesaplandı.');
+      if(data.scope.budgetQuote)add('p','Görüşme dayanağı: '+data.scope.budgetQuote);
+      data.alternatives.forEach(alternative=>{
+        const article=document.createElement('article');box.appendChild(article);
+        add('h4',alternative.name+(alternative.id===data.recommendedAlternativeId?' · Önerilen':''),article);
+        add('p',formatMoney(alternative.monthlyAmount)+' / ay',article);
+        alternative.services.forEach(service=>add('p',service.name+(alternative.id==='individual_operations'?' — '+formatMoney(service.monthlyAmount)+' / ay':'')+' · '+service.reason,article));
+        if(alternative.note)add('p',alternative.note,article);
+        if(alternative.budgetFit==='above')add('p','Belirtilen teklif aralığının üzerinde; maliyet tabanının altına inilmedi.',article);
+        const details=document.createElement('details');article.appendChild(details);add('summary','İç hesaplama ayrıntıları',details);
+        add('p','Maliyet: '+formatMoney(alternative.cost)+' · Asgari: '+formatMoney(alternative.minimumAmount)+' · İdeal: '+formatMoney(alternative.idealAmount),details);
+        add('p','Account koordinasyon maliyeti: '+formatMoney(alternative.accountCost),details);
+        if(alternative.growthCosting)add('p',alternative.growthCosting.note,details);
+      });
+      if(data.scope.deferred.length){add('h4','Sonraki aşamaya ayrılan işler');data.scope.deferred.forEach(item=>add('p',item.name+' · '+item.reason));}
+      if(data.scope.pending.length){add('h4','Ayrıca fiyatlandırılacak işler');data.scope.pending.forEach(item=>add('p',item.name+' · '+item.reason));}
+      data.scope.exclusions.forEach(item=>add('p',item));data.notices.forEach(item=>add('p',item));
+      add('p','Maliyet tablosu: '+data.costVersion+' · Kartın tahmini değeri henüz değiştirilmedi.');
+      dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Fiyat alternatifleri hazır':'Fiyat alternatifleri hazır · Kapsam kontrolü gerekli';
+      dialog.querySelector('.ob-review-notice').textContent='Üç alternatifin toplam aylık hizmet bedelleri hesaplandı. Sıradaki aşama, logo ve BHS ile teklif taslağının oluşturulması.';
+      dialog.querySelector('.ob-price').hidden=true;
+      dialog.querySelector('.ob-steps li[aria-current]')?.removeAttribute('aria-current');dialog.querySelectorAll('.ob-steps li')[2].setAttribute('aria-current','step');
+      dialog.querySelector('.ob-body').scrollTop=0;
+    }
+    dialog.querySelector('.ob-price').addEventListener('click',async()=>{
+      if(task||draft.audit?.status!=='ready')return;
+      const button=dialog.querySelector('.ob-price'),notice=dialog.querySelector('.ob-review-notice');
+      if(typeof window.PipelinePricingRequest!=='function'||!draft.pricingProof){notice.textContent='Fiyat hesaplama bağlantısı için bu önizlemede tamamlanmış ve doğrulanmış BHS gerekli.';return;}
+      const current={kind:'pricing',stopped:false,ticket:null,audit:draft.audit,pricingProof:draft.pricingProof,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;button.disabled=true;
+      try{
+        let action='start';
+        for(;;){
+          notice.textContent='Görüşme bağlamıyla başlangıç kapsamı seçiliyor; segment maliyetlerinden üç alternatif hesaplanıyor…';
+          const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          if(response.ticket)current.ticket=response.ticket;
+          if(current.stopped){if(current.ticket)window.PipelinePricingRequest({action:'cancel',brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,ticket:current.ticket}).catch(()=>{});return;}
+          if(response.phase==='complete'){renderPricing(response.result);task=null;return;}
+          action='status';await new Promise(resolve=>setTimeout(resolve,3000));if(current.stopped)return;
+        }
+      }catch(error){if(!current.stopped)notice.textContent=error.message||'Fiyat alternatifleri hazırlanamadı. Yeni model çağrısı otomatik başlatılmadı.';}
+      finally{if(task===current)task=null;button.disabled=false;}
+    });
     async function runAudit(){
       const notice=dialog.querySelector('.ob-review-notice');
       if(typeof window.PipelineAuditRequest!=='function'){
         dialog.querySelector('#ob-review-title').textContent='BHS araştırma bağlantısı gerekli';
         notice.textContent='Bu önizlemede araştırma servisi bağlı değil. Teklif veya araştırma sonucu oluşturulmadı.';return;
       }
-      const current={stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
+      const current={kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
       let action='start';
       try{
@@ -151,7 +205,7 @@
           const response=await window.PipelineAuditRequest({action,brief:current.brief,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.phase==='complete'){renderAudit(response.result);task=null;return;}
+          if(response.phase==='complete'){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           action='status';
@@ -204,7 +258,7 @@
         row.append(dt, dd); details.appendChild(row);
       });
       const title = dialog.querySelector('#ob-review-title');
-      title.textContent='Araştırma hazırlanıyor';dialog.querySelector('.ob-audit-report').replaceChildren();
+      title.textContent='Araştırma hazırlanıyor';dialog.querySelector('.ob-research-report').replaceChildren();
       title.tabIndex = -1;
       setReview(true);
       runAudit();
