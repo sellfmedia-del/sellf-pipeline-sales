@@ -12,8 +12,13 @@ export function interactionFailure(value){
   const error=new ResearchError('research_failed','Araştırma veya yapılandırma tamamlanamadı. Sonuç teklif için kullanılmadı.');
   error.interactionStatus=['failed','cancelled','incomplete','requires_action'].includes(value.status)?value.status:'unknown';
   const faults=[...(Array.isArray(value.errors)?value.errors:[]),value.error].filter(Boolean);
-  error.providerCodes=[...new Set(faults.map(e=>knownErrorCodes.has(e.code)?e.code:'unknown'))];
-  error.providerReason=failureReason(faults.map(e=>e.message||e.code||'').join(' '));
+  error.providerCodes=[...new Set(faults.map(e=>{
+    const code=String(e.code??'').toLowerCase();
+    if(knownErrorCodes.has(code)||/^[a-z][a-z_]{0,27}$/.test(code))return code;
+    if(/^\d{1,3}$/.test(code))return Number(code);
+    return 'unknown';
+  }))];
+  error.providerReason=failureReason(faults.map(e=>[e.message,e.code].filter(Boolean).join(' ')).join(' '));
   return error;
 }
 export function interactionId(id){if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{8,512}$/.test(id))throw new ResearchError('invalid_job','Araştırma kimliği geçersiz.');return id;}
