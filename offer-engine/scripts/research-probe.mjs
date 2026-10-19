@@ -34,6 +34,10 @@ try{
   const structured=process.argv[4]?await provider.poll(process.argv[4]):await provider.structure(brief,research.id);
   proof.structureId=structured.id;log('structure_started',{id:structured.id});
   const structure=await waitFor(structured);
+  // Keep only the final structured answer so verification can be debugged or
+  // replayed without another paid research/extraction request.
+  proof.structure={id:structure.id,status:structure.status,text:modelText(structure),usage:structure.usage};
+  log('verification_started',{characters:proof.structure.text.length});
   proof.result=await createAuditEngine().run({brief,research,structure});
   proof.status=proof.result.status;
   log('completed',{status:proof.status,quality:proof.result.data.quality,score:proof.result.data.scoring});
