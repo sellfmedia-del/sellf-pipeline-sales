@@ -44,7 +44,12 @@ export function createResearchProvider({apiKey=process.env.OFFER_GEMINI_API_KEY,
   async function request(path,body,timeout=25000){
     if(!configured())throw new ResearchError('not_configured','BHS araştırma bağlantısı henüz tanımlı değil.');
     let response;
-    try{response=await fetchImpl(endpoint+path,{method:body?'POST':'GET',headers:{'x-goog-api-key':apiKey,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeout),redirect:'error'});}catch{throw new ResearchError('provider_unavailable','Araştırma servisine ulaşılamadı. Yeni araştırma otomatik başlatılmadı.');}
+    try{response=await fetchImpl(endpoint+path,{method:body?'POST':'GET',headers:{'x-goog-api-key':apiKey,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeout),redirect:'error'});}catch(cause){
+      const error=new ResearchError('provider_unavailable','Araştırma servisine ulaşılamadı. Yeni araştırma otomatik başlatılmadı.');
+      const code=cause?.cause?.code||cause?.code;
+      error.transportCategory=['TimeoutError','AbortError'].includes(cause?.name)?'timeout':['ENOTFOUND','EAI_AGAIN'].includes(code)?'dns':['ECONNRESET','UND_ERR_SOCKET'].includes(code)?'connection_reset':['CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE','ERR_TLS_CERT_ALTNAME_INVALID'].includes(code)?'tls':'network';
+      throw error;
+    }
     if(!response.ok){
       // Classify errors without exposing provider text, request context or keys.
       let reason='request_rejected',hints=[];

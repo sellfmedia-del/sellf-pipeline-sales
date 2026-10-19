@@ -283,7 +283,8 @@
         dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
         if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
-        if(transport&&error.requestId)notice.textContent+=' Kontrol kodu: '+error.requestId;
+        if(error.code&&!transport)notice.textContent+=' Hata kodu: '+error.code+'.';
+        if(error.requestId)notice.textContent+=' Kontrol kodu: '+error.requestId;
       }finally{if(dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}
     }
     form.addEventListener('submit', event => {

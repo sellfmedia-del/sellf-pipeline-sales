@@ -207,3 +207,19 @@ test('audit request logs correlate stages and failures without exposing briefs, 
   const json=JSON.stringify(logs);for(const value of ['PRIVATE','private-server-secret',first.body.ticket,brief.website])assert.ok(!json.includes(value));
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
+
+test('provider transport diagnostics distinguish timeouts, DNS and reset without leaking raw network errors',async()=>{
+ for(const [cause,expected] of [[{name:'TimeoutError'},'timeout'],[{cause:{code:'ENOTFOUND'}},'dns'],[{cause:{code:'ECONNRESET'}},'connection_reset'],[{},'network']]){
+  const provider=createResearchProvider({apiKey:'private-key',fetchImpl:async()=>{throw Object.assign(Error('PRIVATE network details'),cause);}});
+  await assert.rejects(()=>provider.poll('research_12345678'),e=>{assert.equal(e.transportCategory,expected);assert.ok(!JSON.stringify(e).includes('PRIVATE'));return true;});
+ }
+});
+test('audit logs the safe provider reason and upstream HTTP status on failure',async()=>{
+ const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const logs=[],provider=createResearchProvider({apiKey:'private-key',fetchImpl:async()=>new Response(JSON.stringify({error:{message:'API key not valid PRIVATE details'}}),{status:400})});
+  const handler=createAuditHandler({logger:{info:line=>logs.push(JSON.parse(line))},getSecret:()=> 'secret',getProvider:()=>provider,validateWebsite:async()=>{}}),res=response();
+  await handler(request({action:'start',brief,requestId:'request_1234567890'}),res);
+  const event=logs.find(x=>x.event==='bhs_error');assert.equal(event.providerStatus,400);assert.equal(event.providerReason,'invalid_key');assert.ok(!JSON.stringify(logs).includes('PRIVATE'));
+ }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});

@@ -25,7 +25,7 @@
     const failure=Error('BHS servisiyle bağlantı kesildi; isteğin yanıtı alınamadı.');
     failure.code='audit_transport';failure.canResume=readOnly;failure.requestId=headers['X-Offer-Request-Id'];throw failure;
    }
-   if(!response.ok){const failure=Error(result.error||'Teklif işlemi tamamlanamadı.');failure.code=result.code;throw failure;}
+   if(!response.ok){const failure=Error(result.error||'Teklif işlemi tamamlanamadı.');failure.code=result.code;if(audit)failure.requestId=response.headers.get('X-Offer-Request-Id')||headers['X-Offer-Request-Id'];throw failure;}
    return result;
   }
  }

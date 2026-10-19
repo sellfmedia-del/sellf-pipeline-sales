@@ -25,7 +25,7 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
     if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
     if(!provider.configured())return res.status(503).json({code:'not_configured',error:'BHS araştırma bağlantısı henüz tanımlı değil.'});
     const trace={event:'bhs_request',requestId:/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID(),action:'unknown',phase:'unknown'},receivedAt=now();
-    const writeLog=(event,extra={})=>{try{logger.info(JSON.stringify({...trace,event,...extra}));}catch{/* Logging must not break research. */}};
+    const writeLog=(event,extra={})=>{try{(event==='bhs_error'&&logger.error?logger.error:logger.info).call(logger,JSON.stringify({...trace,event,...extra}));}catch{/* Logging must not break research. */}};
     const sendJson=res.json.bind(res);
     res.setHeader('X-Offer-Request-Id',trace.requestId);
     res.json=value=>{
@@ -119,6 +119,9 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
       return res.status(200).json({phase:'complete',result:auditResult,pricingProof});
     }catch(error){
       const code=error instanceof ResearchError?error.code:'invalid_report';
+      const diagnostic={code};
+      for(const key of ['providerStatus','providerReason','parameterHints','providerCodes','interactionStatus','transportCategory'])if(error instanceof ResearchError&&error[key]!==undefined)diagnostic[key]=error[key];
+      writeLog('bhs_error',diagnostic);
       const message=error instanceof ResearchError?error.message:'BHS bilgileri doğrulanamadı. Sonuç teklif için kullanılmadı.';
       return res.status(code==='not_configured'?503:code==='quota'||code==='busy'?429:422).json({code,error:message});
     }
