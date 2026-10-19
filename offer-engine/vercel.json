@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node build.mjs && node scripts/proposal-validation.mjs",
+  "buildCommand": "node build.mjs && node scripts/proposal-validation.mjs --reuse=v1_ChZOWXJXYXJHeEF0NlJ5dE1QNWRDbldBEhZOWXJXYXJHeEF0NlJ5dE1QNWRDbldB",
   "outputDirectory": "public",
   "functions": {
     "api/pricing.js": {
