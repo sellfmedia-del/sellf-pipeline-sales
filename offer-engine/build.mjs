@@ -18,7 +18,7 @@ const html=await readFile(path.join(here,'public/offers/preview.html'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.html'),html.replace('<html lang="tr">','<html lang="tr" data-logo-service="ready">'));
 const js=await readFile(path.join(here,'public/offers/preview.js'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.js'),js.replace("fetch('/index.html'","fetch('/crm-source.html'"));
-await writeFile(path.join(here,'public/index.html'),'<!doctype html><html lang="tr"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/offers/preview.html"><title>Teklif hazırlığı önizlemesi</title><a href="/offers/preview.html">Önizlemeyi aç</a></html>');
+await writeFile(path.join(here,'public/index.html'),'<!doctype html><html lang="tr"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/offers/preview.html?storage=1"><title>Teklif hazırlığı önizlemesi</title><a href="/offers/preview.html?storage=1">Önizlemeyi aç</a></html>');
 
 // Deterministic synthetic example: no paid model, customer data or persistence.
 process.chdir(here);

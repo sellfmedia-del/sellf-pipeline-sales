@@ -2,30 +2,9 @@
 (async function () {
   'use strict';
 
-  document.querySelectorAll('[data-preview-width]').forEach(button => {
-    button.addEventListener('click', () => {
-      document.getElementById('preview-frame').style.width = button.dataset.previewWidth === 'mobile' ? 'min(390px, 100%)' : '100%';
-      document.querySelectorAll('[data-preview-width]').forEach(item => {
-        item.setAttribute('aria-pressed', String(item === button));
-      });
-    });
-  });
-
   function installFixture(logoServiceAvailable, persistedFixture) {
     window.PipelineOfferPersistence=Boolean(persistedFixture);
     if(logoServiceAvailable) {
-      // Preview-only example files enter the same FileReader/upload path as a
-      // selected screenshot. The processor's response is never mocked.
-      window.addEventListener('message',event=>{
-        if(event.source!==parent||event.data?.type!=='offer-logo-example'||typeof event.data.image!=='string'||event.data.image.length>2800000||!event.data.image.startsWith('data:image/png;base64,'))return;
-        if(!document.querySelector('#offer-brief-dialog'))document.querySelector('.offer-create')?.click();
-        const input=document.querySelector('#ob-logo-screenshot');
-        if(!input)return;
-        const bytes=Uint8Array.from(atob(event.data.image.split(',')[1]),char=>char.charCodeAt(0));
-        const transfer=new DataTransfer();
-        transfer.items.add(new File([bytes],'ornek-logo.png',{type:'image/png'}));
-        input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
-      });
       window.PipelineLogoRequest=payload=>new Promise((resolve,reject)=>{
         const requestId=crypto.randomUUID();
         const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('Logo hazırlama süresi aşıldı.'));},80000);
@@ -86,6 +65,12 @@
         timeline: [{ type: 'Toplantı', date: '17 Ekim 2026', note: 'Markanın hedefleri ve hizmet ihtiyaçları görüşüldü.' }]
       }]
     };
+    // Keep the normal five-stage Pipeline board around the separate test card.
+    // These display-only empty columns never create or update database rows.
+    if(rows.columns.length===1&&rows.spaces.length===1){
+      const offerColumn=rows.columns[0],stages=[['Yeni Lead','#378ADD'],['İlk Temas','#639922'],['Teklif Aşamasında','#BA7517'],['Sözleşme Gönderildi','#D4537E'],['Kazanıldı','#1D9E75']];
+      rows.columns=stages.map(([title,dot],i)=>title===offerColumn.title?offerColumn:{id:'preview-stage-'+i,space_id:rows.spaces[0].id,title,dot});
+    }
     const blocked = () => { throw new Error('Bu önizleme salt okunurdur.'); };
     const user = persistedFixture?.user || { id: 'demo-user' };
     window.fetch = blocked;
@@ -111,10 +96,10 @@
       }
     };
     document.addEventListener('DOMContentLoaded', () => {
-      // Fixture queries finish before this scheduled callback; no production reads.
+      // Start on the original board; open card details only when clicked.
       setTimeout(() => {
-        openModal(rows.leads[0].id);
         const makeReadOnly = () => {
+          document.querySelectorAll('#crm-view .card').forEach(el => { el.draggable = false; });
           document.querySelectorAll('#crm-view input, #crm-view textarea').forEach(el => { el.readOnly = true; });
           document.querySelectorAll('#crm-view select, #crm-view button:not(.modal-close):not(.offer-create):not(.offer-view)').forEach(el => { el.disabled = true; });
         };
@@ -134,7 +119,7 @@
   const message = document.getElementById('preview-error');
   try {
     let persistentFixture=null;
-    if(new URLSearchParams(location.search).get('storage')==='1'){
+    if(document.documentElement.dataset.logoService==='ready'&&new URLSearchParams(location.search).get('storage')!=='0'){
       let state=await fetch('/api/preview-session',{cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Test alanı açılamadı.');return d;});
       if(!state.ready){
         message.textContent='Ayrı test kartı ve teklif sürümleriyle uçtan uca deneyebilirsin. Mevcut Pipeline kayıtları kullanılmaz. ';
@@ -142,7 +127,6 @@
         state=await new Promise(resolve=>button.addEventListener('click',async()=>{button.disabled=true;try{const r=await fetch('/api/preview-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})});const d=await r.json();if(!r.ok)throw Error(d.error||'Test oturumu açılamadı.');resolve(d);}catch(error){button.disabled=false;message.firstChild.textContent=error.message+' ';}}));
       }
       persistentFixture=state.fixture;
-      document.querySelector('header p').textContent='Kalıcı test alanı: Teklifler ve test kartı değeri kaydedilir. Gerçek Pipeline/Travis verileri kullanılmaz.';
       document.querySelector('#preview-frame').title='Ayrı test kartıyla teklif akışı';
     }
     const response = await fetch('/index.html', { cache: 'no-store' });
@@ -217,20 +201,6 @@
       catch{frame.contentWindow.postMessage({type:'offer-store-result',requestId,error:'Test kayıt servisine bağlanılamadı.'},'*');}
     });
     message.hidden = true;
-    document.querySelectorAll('[data-logo-example]').forEach(button=>{
-      button.hidden=document.documentElement.dataset.logoService!=='ready';
-      button.addEventListener('click',async()=>{
-        button.disabled=true;
-        try{
-          const response=await fetch('/examples/logo-'+button.dataset.logoExample+'.png');
-          if(!response.ok)throw new Error('Örnek görsel yüklenemedi.');
-          const blob=await response.blob();
-          const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
-          frame.contentWindow.postMessage({type:'offer-logo-example',image},'*');
-        }catch{message.hidden=false;message.textContent='Örnek görsel açılamadı. Kendi ekran görüntünü yükleyebilirsin.';}
-        finally{button.disabled=false;}
-      });
-    });
   } catch (error) {
     message.textContent = error.message||'Önizleme açılamadı. Sayfayı yenileyerek tekrar deneyebilirsin.';
   }

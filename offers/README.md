@@ -6,7 +6,7 @@ This directory contains the isolated Pipeline card extension, preparation flow a
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
 - `brief-form.*`: isolated dialog, editable brief, source context and review state. Form input never mutates the CRM lead or calls the bulk `save()` function.
 - `logo-control.*`: screenshot upload, mandatory background removal, original/transparent comparison, deferred final visual review and logo-only placement background. Visual approval is reserved for the eventual proposal draft. Users can upload ordinary PNG/JPEG/WebP screenshots without preparing a transparent PNG first. Website blur no longer triggers automatic site capture.
-- `preview.*`: synthetic read-only CRM fixture; the offer brief and research flow are interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the uploaded image to the same-origin logo API; a separate bridge sends the selected brief fields to the BHS API. PNGs remain in memory. No production Supabase client is initialized.
+- `preview.*`: original full-screen Pipeline board using an isolated test fixture; the offer brief and research flow are interactive. Its sandbox blocks direct network access and storage. In the worker preview a checked parent-message bridge sends only the uploaded image to the same-origin logo API; a separate bridge sends the selected brief fields to the BHS API. PNGs remain in memory. No production Supabase client is initialized.
 
 ## Accepted pricing and value rules
 
@@ -25,3 +25,7 @@ All changes stay on a feature branch and Vercel Preview until user approval. Do 
 ## Contract request
 
 The customer form opens a native mailto draft to the two approved Sellf addresses with the selected persisted alternative/total, version and customer link, without its password. The user sends it from their email application. No email provider setup or automatic delivery is required.
+
+## Preview entry
+
+The normal worker entry opens the persistent test area by default. After the one-time “Test alanını aç” action, the original Pipeline board fills the viewport, with the normal five stages and a separate test card in “Teklif Aşamasında”. Open that card, then use its “Teklif Oluştur” button. No demo toolbar, device selector or example-logo selector is shown, and card details no longer open automatically. Existing test sessions resume directly on the board. Explicit `?storage=0` is reserved for disposable read-only diagnostic tests. This source revision still awaits preview deployment because of the previously confirmed Vercel daily deployment limit.

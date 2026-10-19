@@ -39,9 +39,11 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
      return route.fulfill({contentType:type,body});
     }catch{return route.fulfill({status:404,body:'Not found'});}
    });
-   await page.goto('https://preview.vercel.app/offers/preview.html');
+   await page.goto('https://preview.vercel.app/offers/preview.html?storage=0');
    const frame=page.frameLocator('#preview-frame');
-   await frame.locator('.offer-create').click();
+   assert.equal(await page.locator('header,nav,[data-logo-example],[data-preview-width]').count(),0);
+   await frame.locator('.card').first().waitFor();assert.equal(await frame.locator('#overlay').evaluate(el=>el.classList.contains('open')),false);assert.equal(await frame.locator('.column').count(),5);
+   await frame.locator('.card').first().click();await frame.locator('.offer-create').click();
    const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
    await frame.locator('#ob-segment').selectOption('corporate');
    await frame.locator('#ob-website').fill('brand.example');
@@ -105,7 +107,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
    if(url.pathname==='/api/logo-upload'){const logo=await prepareUploadedLogo(req.postDataJSON().image);return route.fulfill({contentType:'application/json',body:JSON.stringify({...logo,logoProof:logoProof(secret,url.host,logo)})});}
    try{const file=path.join(process.cwd(),'public',url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
   });
-  await page.goto('https://preview.vercel.app/offers/preview.html');const frame=page.frameLocator('#preview-frame');await frame.locator('.offer-create').click();const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
+  await page.goto('https://preview.vercel.app/offers/preview.html?storage=0');const frame=page.frameLocator('#preview-frame');await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.frames()[1].evaluate(()=>JSON.stringify(db));
   await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);

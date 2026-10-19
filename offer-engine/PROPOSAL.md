@@ -10,7 +10,7 @@ Growth's plan includes full BHS in the first two weeks, strategy/calendar 4–6 
 
 ## Current test setup
 
-`/offers/preview.html?storage=1` opens a persistent, isolated test area. An explicit “Test alanını aç” action creates a synthetic preview-only Auth account plus a separate test card. No human account is impersonated and no signup email is sent. Subsequent requests use an encrypted, host-bound, HttpOnly/Secure/SameSite=Strict session cookie. JWTs/refresh tokens never enter iframe messages, browser storage or output artifacts.
+`/offers/preview.html` now defaults to the persistent isolated test area; `?storage=1` remains supported. Its normal entry is the original full-screen Pipeline board: click the test card, then “Teklif Oluştur”. Example-logo/device demo controls and automatic card opening have been removed. Desktop/mobile browser entry and preparation tests pass. This entry correction, like the mailto correction, awaits deployment under the confirmed quota block. An explicit “Test alanını aç” action creates a synthetic preview-only Auth account plus a separate test card. No human account is impersonated and no signup email is sent. Subsequent requests use an encrypted, host-bound, HttpOnly/Secure/SameSite=Strict session cookie. JWTs/refresh tokens never enter iframe messages, browser storage or output artifacts.
 
 The separate Supabase function `pipeline-offer-preview-store` accepts only a new private worker credential. Its stored verification hash is inaccessible to anonymous/authenticated clients. The function uses platform-provided credentials internally; no existing Supabase service-role key has been read, copied or embedded into Vercel. It exposes a fixed operation list and only accesses these new tables:
 
@@ -56,6 +56,6 @@ Before/after fingerprints of the existing Pipeline lead and space rows matched e
 
 The first real insert test exposed successful PostgREST inserts returning an empty HTTP 201 body. Both storage adapters now handle empty successful responses, with a regression test. The deployed preview gateway is version 3.
 
-The existing persistent preview is https://sellf-offer-engine-p077tufbt-yigit-konuks-projects.vercel.app/offers/preview.html?storage=1. It uses real isolated test records, but its deployed worker predates the mailto correction and still contains the old publication gate. Do not describe that preview as containing the final mailto change until redeployed.
+The existing persistent preview is https://sellf-offer-engine-p077tufbt-yigit-konuks-projects.vercel.app/offers/preview.html?storage=1. It uses real isolated test records, but its deployed worker predates the mailto and board-entry corrections: it still contains the demo toolbar, automatic card opening and old publication gate. Do not describe that preview as containing the final mailto change until redeployed.
 
 Vercel rejected further deployments with HTTP 402 `api-deployments-free-per-day` (more than 100), retry after 24 hours. The mailto revision is complete in source and locally tested; updating the protected preview is blocked by that deployment quota. No billing changes or quota workarounds were attempted. Production release remains outside the current authorization.

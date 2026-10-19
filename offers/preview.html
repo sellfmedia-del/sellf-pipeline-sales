@@ -3,35 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pipeline · Teklif bölümü önizlemesi</title>
+  <meta name="robots" content="noindex,nofollow">
+  <title>Pipeline · Test alanı</title>
   <style>
     * { box-sizing: border-box; }
-    body { height:100dvh;display:flex;flex-direction:column;overflow:hidden;margin: 0; font: 12px/1.5 system-ui, sans-serif; color: #1a1917; background: #f7f6f3; }
-    header { flex-shrink:0;padding: 10px 16px; border-bottom: 1px solid #e2e0d8; background: white; }
-    header p { margin: 2px 0 0; color: #6b6963; }
-    nav { display: flex; flex-wrap:wrap; gap: 6px; margin-top: 8px; }
-    nav button { padding: 4px 10px; border: 1px solid #c8c6bc; border-radius: 7px; background: white; font: inherit; cursor: pointer; }
-    nav button[aria-pressed="true"] { background: #1a1917; color: white; }
-    iframe { display: block; border: 0; width: 100%; flex:1 1 auto;height:0;min-height:0; margin: 0 auto; }
-    iframe[hidden] { display: none; }
-    #preview-error { padding: 16px; }
+    body { height:100dvh;display:flex;flex-direction:column;overflow:hidden;margin:0;font:14px/1.5 system-ui,sans-serif;color:#1a1917;background:#f7f6f3; }
+    iframe { display:block;border:0;width:100%;flex:1 1 auto;height:0;min-height:0; }
+    [hidden] { display:none!important; }
+    #preview-error { max-width:460px;margin:auto;padding:32px; }
+    #preview-error button { display:block;margin-top:16px;padding:10px 16px;border:0;border-radius:6px;background:#1a1917;color:white;font:inherit;cursor:pointer; }
   </style>
 </head>
 <body>
-  <header>
-    <strong>Teklif hazırlığı · Akış önizlemesi</strong>
-    <p>Örnek veriler kullanılır; değişiklikler kaydedilmez. Kartın Teklif alanından brief ekranını açıp deneyebilirsin.</p>
-    <nav aria-label="Önizleme boyutu">
-      <a href="/offers/preview.html?storage=1">Kalıcı kayıtla test et ↗</a>
-      <a href="/offers/template-preview.html">Örnek teklifi doğrudan aç ↗</a>
-      <button type="button" data-preview-width="desktop" aria-pressed="true">Masaüstü</button>
-      <button type="button" data-preview-width="mobile" aria-pressed="false">Mobil</button>
-      <button type="button" data-logo-example="white" hidden>Beyaz logo örneği</button>
-      <button type="button" data-logo-example="color" hidden>Renkli logo örneği</button>
-    </nav>
-  </header>
-  <div id="preview-error" role="status">Önizleme yükleniyor…</div>
-  <iframe id="preview-frame" title="Örnek Pipeline kartı" sandbox="allow-scripts allow-forms" hidden></iframe>
+  <div id="preview-error" role="status">Pipeline test alanı yükleniyor…</div>
+  <iframe id="preview-frame" title="Pipeline test panosu" sandbox="allow-scripts allow-forms" hidden></iframe>
   <script src="/offers/preview.js"></script>
 </body>
 </html>
