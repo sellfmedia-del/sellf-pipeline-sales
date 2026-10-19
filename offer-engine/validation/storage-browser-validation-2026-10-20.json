@@ -1,0 +1,17 @@
+{
+  "kind": "browser-real-preview-db-synthetic-models",
+  "passed": true,
+  "realDatabase": true,
+  "geminiCalls": 0,
+  "realMailSends": 0,
+  "mailTransport": "fake",
+  "checks": [
+    "browser_real_test_session",
+    "logo_bhs_price_proposal_ui",
+    "browser_saves_real_version_and_card_value",
+    "real_persisted_password_portal",
+    "real_contract_queue_fake_mail_transport",
+    "mobile_reload_restores_saved_document_and_private_link"
+  ],
+  "phase": "complete"
+}

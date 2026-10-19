@@ -1,0 +1,23 @@
+{
+  "kind": "isolated-real-storage-validation",
+  "passed": true,
+  "geminiCalls": 0,
+  "realMailSends": 0,
+  "mailTransport": "fake",
+  "productionDataAccess": false,
+  "checks": [
+    "real_auth_session_and_separate_card",
+    "atomic_version_and_value_update",
+    "idempotent_save",
+    "revision_updates_only_test_card_value",
+    "invalid_save_rolls_back_version_and_value",
+    "password_protected_persisted_customer_view",
+    "durable_idempotent_contract_queue_fixed_recipients_and_saved_amount",
+    "cross_owner_read_and_write_rejected"
+  ],
+  "phase": "complete",
+  "testLeadId": "ea88ccb7-4f9b-4789-937a-dfe0fa164d61",
+  "monthlyValue": 106000,
+  "version": 2,
+  "contractRequests": 1
+}

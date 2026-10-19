@@ -9,7 +9,7 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
   const key=admin?secret:publicKey;
   const response=await fetchImpl(url+path,{method,headers:{apikey:key,...(jwt?{Authorization:'Bearer '+jwt}:key?.startsWith('eyJ')?{Authorization:'Bearer '+key}:{}),...(body?{'Content-Type':'application/json'}:{}),...(prefer?{Prefer:prefer}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),redirect:'error'});
   if(!response.ok){const error=new Error('Test kayıt servisi işlemi tamamlayamadı.');error.status=response.status;throw error;}
-  return response.status===204?null:response.json();
+  const raw=await response.text();return raw.trim()?JSON.parse(raw):null;
  }
  async function user(jwt){
   if(!text(jwt,5000))throw Error('Test oturumu gerekli.');
