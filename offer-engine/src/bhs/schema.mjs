@@ -20,7 +20,7 @@ export const reportSchema=object({
 
 // Use the provider's documented subset. Keep all length limits in the strict
 // server schema; unsupported string keywords must not break generation.
-function providerSchema(schema){
+export function providerSchema(schema){
   if(schema.anyOf){const base=schema.anyOf.find(s=>s.type!=='null');return {...providerSchema(base),type:[base.type,'null']};}
   const result={...schema};delete result.minLength;delete result.maxLength;delete result.minItems;delete result.maxItems;
   if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,providerSchema(value)]));

@@ -1,4 +1,5 @@
-import {providerReportSchema} from './schema.mjs';
+import {providerReportSchema,providerSchema} from './schema.mjs';
+import {sourcePlanSchema,sourcePlanPrompt} from './source-plan.mjs';
 import {researchPrompt,extractionPrompt} from './prompts.mjs';
 const endpoint='https://generativelanguage.googleapis.com/v1beta/interactions';
 const agents=['deep-research-preview-04-2026','deep-research-max-preview-04-2026'];
@@ -55,7 +56,11 @@ export function createResearchProvider({apiKey=process.env.OFFER_GEMINI_API_KEY,
   }
   return Object.freeze({configured,agent,model,
     start(brief,asOf){return request('',{agent,input:researchPrompt(brief,asOf),background:true,store:true,agent_config:{type:'deep-research',visualization:'off'},tools:[{type:'google_search'},{type:'url_context'}]});},
-    poll(id){return request('/'+interactionId(id)+'?include_input=false');},
+    poll(id,{includeInput=false}={}){return request('/'+interactionId(id)+'?include_input='+String(includeInput));},
+    discoverSources(brief,research){
+      if(research?.status!=='completed')throw new ResearchError('invalid_report','Tamamlanmış ön araştırma gerekli.');
+      return request('',{model,input:sourcePlanPrompt(brief,modelText(research)),background:true,store:true,tools:[{type:'google_search'}],generation_config:{max_output_tokens:8192,thinking_level:'low'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(sourcePlanSchema)}});
+    },
     structure(brief,research){
       interactionId(research?.id);
       const text=modelText(research);
