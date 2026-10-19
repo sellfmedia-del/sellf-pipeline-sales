@@ -7,10 +7,13 @@ export function failureReason(message){
   for(const [name,pattern]of [['context_limit',/context.{0,30}(limit|length|window)|too many tokens|input.{0,20}token.{0,20}exceed/i],['invalid_key',/API key not valid|API_KEY_INVALID/i],['billing_required',/billing|paid tier|free tier/i],['model_unavailable',/not found|not supported|unknown model/i],['permission_denied',/permission|access denied/i],['quota',/quota|rate limit|resource.exhausted/i],['invalid_request',/unknown name|unknown field|invalid argument/i]])if(pattern.test(String(message)))return name;
   return 'request_rejected';
 }
+const knownErrorCodes=new Set('invalid_request failed_precondition out_of_range parameter_unknown authentication payment_required permission_denied not_found model_not_found already_exists aborted rate_limit_exceeded quota_exceeded too_many_requests cancelled api_error unimplemented service_unavailable deadline_exceeded safety recitation language prohibited_content spii blocklist content_blocked malformed_function_call malformed_tool_call unexpected_tool_call too_many_tool_calls missing_thought_signature'.split(' '));
 export function interactionFailure(value){
   const error=new ResearchError('research_failed','Araştırma veya yapılandırma tamamlanamadı. Sonuç teklif için kullanılmadı.');
   error.interactionStatus=['failed','cancelled','incomplete','requires_action'].includes(value.status)?value.status:'unknown';
-  error.providerReason=failureReason((value.errors||[value.error]).filter(Boolean).map(e=>e.message||e.code||'').join(' '));
+  const faults=[...(Array.isArray(value.errors)?value.errors:[]),value.error].filter(Boolean);
+  error.providerCodes=[...new Set(faults.map(e=>knownErrorCodes.has(e.code)?e.code:'unknown'))];
+  error.providerReason=failureReason(faults.map(e=>e.message||e.code||'').join(' '));
   return error;
 }
 export function interactionId(id){if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{8,512}$/.test(id))throw new ResearchError('invalid_job','Araştırma kimliği geçersiz.');return id;}

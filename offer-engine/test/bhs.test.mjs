@@ -43,6 +43,11 @@ test('missing score stays unknown; weights are never renormalized and evidence c
  const report=fixture();report.dimensions[0].score=null;report.dimensions[0].dataStatus='insufficient';
  const result=await verify(report);assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,null);
 });
+test('a model cannot reintroduce a partial BHS percentage into the report while the server total is unknown',async()=>{
+ const report=fixture();report.dimensions[3].score=null;report.dimensions[3].dataStatus='insufficient';
+ const result=await verify(report,{rawReport:modelText(research())+'\nÖn BHS: 54.5/85, yaklaşık %64 orta sağlık.'});
+ assert.equal(result.status,'review');assert.equal(result.data.scoring.total,null);assert.ok(result.data.quality.issues.some(x=>x.includes('oranlanmış')));
+});
 test('missing or duplicate dimensions and unsupported scores cannot pass',async()=>{
  for(const change of [r=>r.dimensions[0].dataStatus='insufficient',r=>r.dimensions[0].findingIds=[],r=>r.dimensions[0].comparisonCompetitorIds=[],r=>r.dimensions[0].id='operations']){
   const report=fixture();change(report);assert.equal((await verify(report)).status,'review');
@@ -147,6 +152,8 @@ test('provider diagnostics classify configuration errors without returning upstr
 test('background execution faults expose only a safe category and never provider text',()=>{
  const error=interactionFailure({status:'failed',errors:[{code:'invalid_argument',message:'Input token count exceeds the context window: PRIVATE KEY'}]});
  assert.equal(error.interactionStatus,'failed');assert.equal(error.providerReason,'context_limit');assert.ok(!JSON.stringify(error).includes('PRIVATE KEY'));assert.ok(!error.message.includes('PRIVATE KEY'));
+ const legacy=interactionFailure({status:'failed',errors:[],error:{code:'api_error',message:'PRIVATE KEY'}});
+ assert.deepEqual(legacy.providerCodes,['api_error']);assert.ok(!JSON.stringify(legacy).includes('PRIVATE KEY'));
 });
 test('financial PDF evidence is extracted in a bounded worker and checked against the source quote',async()=>{
  const stream='BT /F1 12 Tf 30 700 Td ('+quote+') Tj ET';

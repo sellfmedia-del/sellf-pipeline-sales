@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node scripts/research-probe.mjs --resume v1_Chc2eGZXYXByLUVlR0Uxc2dQdC1HSGlRdxIXNnhmV2Fwci1FZUdFMXNnUHQtR0hpUXc",
+  "buildCommand": "npm run build && node scripts/research-probe.mjs --resume v1_Chc2eGZXYXByLUVlR0Uxc2dQdC1HSGlRdxIXNnhmV2Fwci1FZUdFMXNnUHQtR0hpUXc v1_ChZ5eF9XYXJ0VzNvakswd19KZ2FPaERBEhZ5eF9XYXJ0VzNvakswd19KZ2FPaERB",
   "outputDirectory": "public",
   "functions": {
     "api/audit.js": {
