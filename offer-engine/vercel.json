@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "node build.mjs && node scripts/storage-validation.mjs",
   "outputDirectory": "public",
   "functions": {
     "api/pricing.js": {
@@ -17,6 +17,9 @@
       "maxDuration": 60
     },
     "api/offer.js": {
+      "maxDuration": 60
+    },
+    "api/preview-session.js": {
       "maxDuration": 60
     }
   },

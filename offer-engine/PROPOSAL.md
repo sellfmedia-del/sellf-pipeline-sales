@@ -1,44 +1,49 @@
-# Proposal composition and release boundary
+# Proposal preparation and isolated pre-release testing
 
-The customer renderer implements the approved two-option white/blue design: real Sellf artwork × original transparent customer logo; “Marka özel teklifi”; visual six-dimension BHS, real priority counts, expandable source report; exactly two total monthly fees; included service details without item prices; selectable scope, beginning plan and contract form. No new root CRM layout or Travis code changes.
+The approved customer template retains real Sellf × original transparent customer logo, “Marka özel teklifi”, visual source-backed six-dimension BHS, exactly two monthly service totals, expandable service details without item prices, and Growth / Operations / Manual beginning plans. Gemini owns bounded copy; deterministic pricing, verified evidence, original pixels and operator review remain authoritative. Existing Pipeline layout, root APIs, Travis files and production branch remain unchanged.
 
-## Engine ownership
+## Engines
 
-- Logo: existing deterministic screenshot background removal and unchanged artwork. A server HMAC binds the processed PNG and its quality evidence. Light/white logos receive a dark logo-only area. Operator visual approval happens on the composed proposal.
-- BHS: existing Gemini Deep Research, source capture, grounding and semantic validation. No new research is started when composing an offer.
-- Pricing: bounded Gemini scope selection, deterministic segment costs and integer-kuruş calculation. Exactly Growth + Operations and Operations bundle; no hidden third option. Signed result binds the exact audit, brief, session and host.
-- Proposal: the existing verified Gemini Interactions adapter writes bounded Turkish headline/subtitle and chooses only existing finding IDs. No tools/web research, raw CRM object, images, costs or price-setting authority. Server-owned projection retains the exact logo, both monthly amounts, actual findings/null scores, exclusions and selected services. Invalid output fails visibly; it never becomes a ready fabricated document. A signed completion binds the original card/space, plan, logo and upstream snapshots.
+Logo upload performs actual deterministic background removal; a server receipt binds original output and technical quality. Light logos get a dark logo-only area, with final operator visual approval on the offer. BHS uses the previously verified Gemini Deep Research/source capture/semantic pipeline; offer composition does not restart research. Pricing selects context-appropriate scope then calculates segment costs in integer kuruş. Gemini proposal composition selects only existing findings and writes bounded brand copy; it cannot change the two totals, redraw the logo or add service scope. Signed upstream receipts bind brief, host, session, card, plan and results.
 
-Growth/Operations/Manual are beginning-plan modes, separate from fee alternatives. Growth's first alternative includes the full BHS in the first two weeks, strategy/calendar 4–6 weeks after BHS approval, then selected operations. The Operations alternative contains no Growth audit/strategy steps. Explicit Operations mode uses operations steps. Manual steps and timing pass through unchanged to both options. Actual selected services supply the focus; BHS priorities appear in their own verified map. Operator review is required before saving/publication.
+Growth's plan includes full BHS in the first two weeks, strategy/calendar 4–6 weeks after BHS approval, then selected operations. The Operations alternative has no Growth audit/strategy steps. Manual timings/steps pass through unchanged. Initial BHS priorities and the selected service order supply context and focus. Operator review gates saving and publication.
 
-## Storage and customer portal: implemented, not enabled
+## Current test setup
 
-`../supabase/migrations/20261019211351_isolated_offer_versions.sql` is a **review copy**, not applied to the connected database. It adds only private offer-version and contract-request tables, owner RLS/indexes and an authenticated SECURITY INVOKER save RPC. The RPC verifies space ownership/lead membership, locks that lead, deduplicates request IDs, creates a version and updates only that lead's `value` in the same transaction. Failure rolls both writes back. Existing columns/notes/timeline/Travis tables/policies are untouched. No migration or customer-data write has been run.
+`/offers/preview.html?storage=1` opens a persistent, isolated test area. An explicit “Test alanını aç” action creates a synthetic preview-only Auth account plus a separate test card. No human account is impersonated and no signup email is sent. Subsequent requests use an encrypted, host-bound, HttpOnly/Secure/SameSite=Strict session cookie. JWTs/refresh tokens never enter iframe messages, browser storage or output artifacts.
 
-`/api/offer` verifies Pipeline JWT via Supabase, exact proposal/pricing receipts, original lead/space and both explicit reviews before the RPC. The frontend updates its in-memory card value only after a successful response; it never calls CRM `save()`. A synthetic preview refuses all storage writes. An enabled same-origin integration is required for the real Pipeline release; the isolated worker preview is not yet wired as the production Pipeline backend.
+The separate Supabase function `pipeline-offer-preview-store` accepts only a new private worker credential. Its stored verification hash is inaccessible to anonymous/authenticated clients. The function uses platform-provided credentials internally; no existing Supabase service-role key has been read, copied or embedded into Vercel. It exposes a fixed operation list and only accesses these new tables:
 
-Release prerequisites, scoped only to the offer worker:
+- `pipeline_offer_preview_leads`: synthetic cards, with owner RLS.
+- `pipeline_offer_preview_versions`: versioned customer documents and pricing snapshots, with owner RLS.
+- `pipeline_offer_preview_requests`: durable contract-request queue, with operator read access scoped by ownership.
+- `pipeline_offer_preview_gateway_config`: service-only configuration hash, with RLS and no client grants.
 
-1. Review/test/apply the additive SQL to the intended Pipeline database.
-2. Set `OFFER_SUPABASE_URL`, `OFFER_SUPABASE_ANON_KEY` (public key) and `OFFER_PERSISTENCE_ENABLED=true` for the approved environment. Admin version saves use the current user's JWT, never service-role auth.
-3. Server-only `OFFER_PORTAL_SECRET` (at least 32 random characters) and `OFFER_SUPABASE_SERVICE_ROLE_KEY` are required for the password-protected customer portal and durable notification queue. It is never embedded into the client. No existing secret has been read or repurposed. Tables have no anonymous grants.
-4. Set server-only `OFFER_RESEND_API_KEY` and `OFFER_MAIL_FROM` with a verified sender. No email was sent during tests. Publication fails closed if storage, portal or mail is unconfigured.
-5. Complete the authorized same-origin production route and live release separately. Vercel Authentication stays enabled on previews. Current APIs remain preview-only; a public customer URL is not yet live.
+Applied migrations are `20261019213806_isolated_offer_preview_storage.sql` and `20261019214503_preview_owner_link_recovery.sql`. The SECURITY INVOKER save RPC checks authenticated ownership, locks only the synthetic card, deduplicates requests, inserts a version and updates that test card's value atomically. A failed transaction preserves both. It never updates public.leads/public.spaces or any Travis table. Existing real tables and policies are untouched. The previously prepared production schema remains an unapplied review copy at `schema/production-offer-storage.sql`.
 
-Publishing creates a random 256-bit capability token plus a random 96-bit password. Stored values are a token SHA-256 and a token-bound, server-HMAC password hash. Customer credentials stay in memory; the fragment is cleared immediately, with no third-party assets/referrer leakage. Customer passwords use the dedicated `OFFER_PORTAL_SECRET`, independent of Gemini credentials. Rotating that portal secret requires reissuing customer links/passwords.
+The preview wrapper preserves the existing CRM interface using only returned synthetic rows and a checked parent bridge. General CRM writes stay blocked. Offer save/publish/list actions pass through the authenticated test service. Operator link/password recovery uses an encrypted owner-only envelope; customer queries cannot retrieve it. Saved offers can be reopened after refresh. Publishing here creates only a Vercel-protected test customer URL, not a production release.
 
-Contract requests are priced from the persisted published version, never customer inputs. Both fixed server-owned recipients are `yigit@sellfmedia.com` and `businessdevelopment@sellfmedia.com`. The immutable queue records brand, version, chosen option, true monthly total and requester. A conditional pending→sending claim and stable Resend idempotency key prevent repeated sends. Provider acceptance is recorded; it is not proof of inbox delivery. Unknown network outcomes stay uncertain for operator reconciliation instead of being automatically sent again. The customer UI does not claim success on an uncertain result. An outbox dashboard/reconciliation operation is a remaining live-operations task.
+## Environment and mail
 
-## Validation limits
+Only the dedicated offer worker's Preview environment has been configured with:
 
-Unit tests cover immutable projection, manual plans, missing data, mismatched brief/logo/price/context/session, exact signed save, required operator reviews, fixed recipients, price tampering and duplicate/failed notification paths. Browser tests run real screenshot processing, signed pricing/proposal handlers, deterministic fees and customer renderer on desktop/mobile with mocked BHS/Gemini output. They check real logo pixels load, two alternatives, no item prices, Operations plan, review gates, no overflow and unchanged synthetic CRM rows. A separate desktop/mobile customer-portal test exercises wrong/correct password, selected-option request submission, both fixed recipients, persisted fee selection and no credential storage using a fake mail transport. Across the worker suites, 86 unique tests passed; 54 existing Pipeline/Travis tests also passed. The standalone deterministic example passed at 1024, 390 and 320 pixels.
+- `OFFER_PREVIEW_MODE=true`, `OFFER_PERSISTENCE_ENABLED=true`.
+- `OFFER_STORAGE_GATEWAY_URL` and new sensitive `OFFER_STORAGE_GATEWAY_KEY`.
+- A new sensitive `OFFER_PORTAL_SECRET`, independent of Gemini.
+- The existing `OFFER_GEMINI_API_KEY`, which has not been read or changed.
 
-These tests do not establish that the pending SQL has executed on PostgreSQL, that a real offer was saved/published in Pipeline, or that mail reached the two inboxes. Do not describe the full live process as finished until those release checks pass.
+Real notification delivery also needs operator-supplied `OFFER_RESEND_API_KEY` and `OFFER_MAIL_FROM` for a verified sender. Never retrieve another application's mail key or copy its production secrets. Publication remains gated on actual mail configuration; no fake delivery mode is exposed to users.
 
-## Immediate design review
+Contract request amounts come from the saved published version, never customer input. Server-owned recipients are always `yigit@sellfmedia.com` and `businessdevelopment@sellfmedia.com`. Queue bodies are immutable; conditional claim and stable provider idempotency keys prevent repeat sends. Unknown outcomes remain uncertain for reconciliation. Provider acceptance is not proof of inbox delivery. No real email is sent by automated validation.
 
-`/offers/template-preview.html` opens the customer renderer directly using explicitly labelled synthetic BHS/brand data and the real deterministic workbook calculator. Its example white logo goes through actual screenshot processing during build. It sends no messages, performs no CRM writes and starts no Gemini calls. The full preparation flow remains at `/offers/preview.html`.
+## Validation boundaries
 
-## Actual Gemini adapter check
+Local browser/unit tests cover transparent logo handling, signed results, exact amounts, manual plans, no item prices, owner checks, session encryption, invalid keys, price tampering, password portal, both recipients and duplicate/failed notification paths. Test wrapper layout is checked on desktop/mobile, including visible footer actions.
 
-On 2026-10-19 one synthetic composition was generated through the configured Gemini Interactions adapter (`gemini-4-argon`). The completed response was replayed without starting a second generation and passed Growth, Operations and Manual projection checks. Both exact monthly amounts (150,000 and 66,000 TRY), the processed white-logo pixels and unknown BHS scores stayed unchanged. No Deep Research run, CRM write or real email was performed. The initial replay check incorrectly compared manual-step object key order; it was corrected to deep structural equality. Final evidence: https://sellf-offer-engine-clvcis4kk-yigit-konuks-projects.vercel.app/proposal-validation.json (protected validation deployment).
+The opt-in `scripts/storage-validation.mjs` exercises real Supabase Auth and the isolated database through the same handlers: first save/value update, duplicate save, revision, transaction rollback, customer password access, persisted contract queue, and cross-owner denial. It uses explicitly synthetic data and a fake mail transport labelled `synthetic-validation-only/...`; it never calls Gemini or sends mail. Ordinary builds never run this script. Restore any diagnostic branch to `npm run build` afterward.
+
+A separate real Gemini composition was verified on 2026-10-19 using one synthetic generation and replaying the completed response. Growth/Operations/Manual projections preserved both 150,000 / 66,000 TRY totals, logo pixels and null BHS scores. Full Deep Research was not rerun.
+
+## Production release remains separate
+
+This work does not merge main, change production environments, enable a public customer deployment, or connect offer writes to real Pipeline cards. Before production release, review/apply the separate production schema, wire the approved same-origin backend, configure production-specific secrets/sender and run authorized real-card/value plus inbox tests. The current user instruction is pre-release testing only.

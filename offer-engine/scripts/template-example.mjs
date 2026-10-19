@@ -13,4 +13,5 @@ export async function writeTemplateExample(){
  const logo={stage:'logo',status:'review',data:await prepareUploadedLogo('data:image/png;base64,'+(await readFile('public/examples/logo-white.png')).toString('base64'))};
  const proposal=await proposalEngine.run({brief,copy:{headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Örnek Marka için strateji, uygulama ve ölçümü bir araya getiren işbirliği teklifimiz.',findingIds:['demo-f0','demo-f1']}},{audit,pricing,logo});
  await writeFile('public/examples/proposal.json',JSON.stringify({demo:true,document:proposal.data}));
+ return {proposal,pricing,audit,brief,logo};
 }

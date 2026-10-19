@@ -1,6 +1,6 @@
 # Offer preparation boundary
 
-This directory contains the isolated Pipeline card extension, preparation flow and approved customer template. Audit, pricing, logo and proposal remain separate engines. The protected preview composes customer offers. Storage/publication code is present but disabled pending the additive SQL review and dedicated server/mail configuration. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
+This directory contains the isolated Pipeline card extension, preparation flow and approved customer template. Audit, pricing, logo and proposal remain separate engines. The protected preview composes customer offers. Persistent pre-release testing is isolated in dedicated preview tables; production storage/publication stays disabled. Real BHS/model calls are supported only in the separate protected service when its own research credentials are configured. Screenshot background removal is provided only in the separate protected `offer-engine` preview.
 
 - `card-section.*`: card summary, entry button and authorized latest-version read. All styles are scoped to the new section.
 - `brief-model.js`: immutable source snapshots, input validation and URL normalization.
@@ -10,7 +10,7 @@ This directory contains the isolated Pipeline card extension, preparation flow a
 
 ## Accepted pricing and value rules
 
-The isolated worker now calculates the two alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. The customer template and Gemini composition are implemented; storage and notification release prerequisites are listed in `../offer-engine/PROPOSAL.md`.
+The isolated worker now calculates the two alternatives; see `../offer-engine/PRICING.md`. Numeric budget is optional. Meeting context directs the selected scope; BHS investment suggestions are not fee or budget inputs. Qualitative budget concerns never prevent a price result. The customer template, Gemini composition and isolated persistent test setup are implemented; remaining notification/release prerequisites are listed in `../offer-engine/PROPOSAL.md`.
 
 The two customer alternatives each show the total monthly invoice amount. The first-two-month Growth staffing distinction is internal costing context, not a separate customer invoice period.
 
@@ -20,4 +20,4 @@ Use only the chosen KOBİ, Kurumsal or Key Account pricing columns. Growth + ope
 
 ## Release boundary
 
-All changes stay on a feature branch and Vercel Preview until user approval. Do not change Travis files, migrations, existing CRM/auth code, environment variables or production data. Database migrations require separate SQL review and approval. Live deployment needs separate explicit approval.
+All changes stay on a feature branch and Vercel Preview until user approval. Do not change Travis files, migrations, existing CRM/auth code, environment variables or production data. The user authorized isolated test setup; its migrations affect only new preview tables. The production migration and live deployment still need explicit release approval.

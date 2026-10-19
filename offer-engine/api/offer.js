@@ -1,7 +1,9 @@
+import {createPreviewStore} from '../src/proposal/preview-store.mjs';
+import {sessionFor} from '../src/proposal/preview-session.mjs';
 import {createOfferStore} from '../src/proposal/storage.mjs';
 import {createContractMailer,contractMessage} from '../src/proposal/mail.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
-export function createOfferHandler({getStore=()=>createOfferStore(),getMailer=()=>createContractMailer(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
+export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE==='true'?createPreviewStore():createOfferStore(),getMailer=()=>createContractMailer(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Teklif kaydı yalnızca korumalı önizlemede açık.'});
@@ -12,8 +14,10 @@ export function createOfferHandler({getStore=()=>createOfferStore(),getMailer=()
   try{
    if(Number(req.headers['content-length'])>4200000)throw Error('Teklif boyutu sınırı aşıldı.');
    const b=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!b||JSON.stringify(b).length>4200000)throw Error('Teklif bilgileri geçersiz.');
-   const token=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9._-]{20,5000})$/)?.[1];
-   if(['save','publish','list'].includes(b.action)&&!token)throw Error('Kaydetmek için Pipeline oturumu gerekli. Bu önizlemede kayıt ve kart değeri değiştirilmedi.');
+   const suppliedToken=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9._-]{20,5000})$/)?.[1];
+   const testSession=store.mode==='isolated-preview'&&['save','publish','list','outbox'].includes(b.action)?await sessionFor(req,res,store,getPortalSecret()):null;
+   const token=suppliedToken||testSession?.accessToken;
+   if(['save','publish','list','outbox'].includes(b.action)&&!token)throw Error('Kaydetmek için Pipeline oturumu gerekli. Bu önizlemede kayıt ve kart değeri değiştirilmedi.');
    if(b.action==='save'){
     if(b.logoApproved!==true||b.scopeApproved!==true)throw Error('Logo ve kapsam kontrolünü tamamla.');
     const session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];if(!session)throw Error('Teklif doğrulama oturumu gerekli.');
@@ -23,7 +27,8 @@ export function createOfferHandler({getStore=()=>createOfferStore(),getMailer=()
     const offer=await store.save(token,{p_lead_id:b.leadId,p_space_id:b.spaceId,p_request_id:b.proposal.runId,p_document:document,p_pricing:b.pricing.data});
     return res.status(200).json({offer});
    }
-   if(b.action==='list')return res.status(200).json({offers:await store.list(token,String(b.leadId||''))});
+   if(b.action==='outbox'){if(store.mode!=='isolated-preview')throw Error('Test bildirimleri bu ortamda kapalı.');return res.status(200).json({requests:await store.outbox(token)});}
+   if(b.action==='list'){const rows=await store.list(token,String(b.leadId||''));return res.status(200).json({offers:rows.map(row=>{const {ownerLink,...offer}=row;return {...offer,...(ownerLink?{publicUrl:'https://'+host+'/offers/customer.html#'+ownerLink.token,password:ownerLink.password}:{})};})});}
    if(b.action==='publish'){
     if(!store.portalConfigured()||!mailer.configured()||!getPortalSecret())throw Error('Müşteri bağlantısı için teklif kayıt ve e-posta bağlantıları tamamlanmalı.');
     if(!/^[a-f0-9-]{36}$/.test(b.offerId))throw Error('Teklif kaydı geçersiz.');
@@ -32,7 +37,7 @@ export function createOfferHandler({getStore=()=>createOfferStore(),getMailer=()
    }
    if(!['access','request'].includes(b.action))throw Error('Teklif işlemi geçersiz.');
    const offer=await store.access(b.token,b.password,getPortalSecret());
-   if(b.action==='access')return res.status(200).json({id:offer.id,version:offer.version,document:offer.customer_document});
+   if(b.action==='access')return res.status(200).json({id:offer.id,version:offer.version,document:{...offer.customer_document,version:offer.version}});
    if(!mailer.configured())throw Error('Sözleşme bildirimi için e-posta bağlantısı henüz tanımlı değil.');
    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(b.requestId)||typeof b.name!=='string'||!b.name.trim()||b.name.length>160||/[\r\n]/.test(b.name)||typeof b.email!=='string'||b.email.length>254||! /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(b.email))throw Error('Yetkili adı ve geçerli iş e-postası gerekli.');
    const alternative=offer.customer_document.alternatives.find(a=>a.id===b.alternativeId);if(!alternative)throw Error('Geçerli işbirliği alternatifini seç.');
