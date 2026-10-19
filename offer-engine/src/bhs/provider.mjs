@@ -19,7 +19,16 @@ export function createResearchProvider({apiKey=process.env.OFFER_GEMINI_API_KEY,
     if(!configured())throw new ResearchError('not_configured','BHS araştırma bağlantısı henüz tanımlı değil.');
     let response;
     try{response=await fetchImpl(endpoint+path,{method:body?'POST':'GET',headers:{'x-goog-api-key':apiKey,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000),redirect:'error'});}catch{throw new ResearchError('provider_unavailable','Araştırma servisine ulaşılamadı. Yeni araştırma otomatik başlatılmadı.');}
-    if(!response.ok)throw new ResearchError(response.status===429?'quota':'provider_error',response.status===429?'Araştırma servisinin kullanım sınırına ulaşıldı.':'Araştırma servisi isteği tamamlayamadı.');
+    if(!response.ok){
+      // Classify errors without exposing provider text, request context or keys.
+      let reason='request_rejected';
+      try{
+        const message=String((await response.json())?.error?.message||'');
+        for(const [name,pattern]of [['invalid_key',/API key not valid|API_KEY_INVALID/i],['billing_required',/billing|paid tier|free tier/i],['model_unavailable',/not found|not supported|unknown model/i],['permission_denied',/permission|access denied/i],['quota',/quota|rate limit/i],['invalid_request',/unknown name|unknown field|invalid argument/i]])if(pattern.test(message)){reason=name;break;}
+      }catch{/* Keep the safe generic classification. */}
+      const error=new ResearchError(response.status===429?'quota':'provider_error',response.status===429?'Araştırma servisinin kullanım sınırına ulaşıldı.':'Araştırma servisi isteği tamamlayamadı.');
+      error.providerStatus=response.status;error.providerReason=reason;throw error;
+    }
     const bytes=await response.arrayBuffer();
     if(bytes.byteLength>4*1024*1024)throw new ResearchError('provider_size','Araştırma yanıtı boyut sınırını aştı.');
     let value;try{value=JSON.parse(Buffer.from(bytes).toString('utf8'));}catch{throw new ResearchError('provider_format','Araştırma yanıtı okunamadı.');}
