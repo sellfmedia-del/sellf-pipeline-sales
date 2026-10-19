@@ -1,4 +1,5 @@
 // Explicit diagnostic only. Ordinary builds never start provider calls.
+import {isDeepStrictEqual} from 'node:util';
 import {readFile,writeFile} from 'node:fs/promises';
 import {createResearchProvider,modelText} from '../src/bhs/provider.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
@@ -27,7 +28,7 @@ try{
  for(const planMode of ['growth','operations','manual']){
   const result=await proposalEngine.run({brief,copy,planMode,manualSteps},{audit,pricing,logo});assertResult('proposal',result);
   if(JSON.stringify(result.data.alternatives.map(a=>a.monthlyAmount))!==JSON.stringify(pricing.data.alternatives.map(a=>a.monthlyAmount))||result.data.logo.image!==logo.data.candidates[0].image||result.data.bhs.scoring.total!==null||result.status!=='review')throw Error('Projection check failed.');
-  if(planMode==='manual'&&JSON.stringify(result.data.plans.operations_bundle.steps)!==JSON.stringify(manualSteps))throw Error('Manual plan changed.');
+  if(planMode==='manual'&&!isDeepStrictEqual(result.data.plans.operations_bundle.steps,manualSteps))throw Error('Manual plan changed.');
   checks.push({mode:planMode,passed:true,alternatives:result.data.alternatives.map(a=>({id:a.id,monthlyAmount:a.monthlyAmount})),operationsIncludesGrowth:result.data.plans.operations_bundle.steps.some(s=>/Tam BHS|Strateji/.test(s.title))});
  }
  output={...output,passed:true,provider:provider.model,copy,checks,pricesUnchanged:true,logoUnchanged:true,unknownScoresPreserved:true,crmWrites:0,mailSends:0};

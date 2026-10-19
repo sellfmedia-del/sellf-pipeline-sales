@@ -59,7 +59,7 @@ begin
   if v.lead_id<>p_lead_id or v.customer_document<>p_document or v.pricing_snapshot<>p_pricing then raise exception 'Request changed'; end if;
   return jsonb_build_object('id',v.id,'version',v.version,'monthlyAmount',v.monthly_amount,'state',v.state,'reused',true);
  end if;
- if p_document->>'schemaVersion'<>'proposal-v1' or jsonb_array_length(p_document->'alternatives')<>2 or p_document#>>'{logo,reviewed}'<>'true' then raise exception 'Invalid offer'; end if;
+ if p_document->>'schemaVersion' is distinct from 'proposal-v1' or jsonb_typeof(p_document->'alternatives') is distinct from 'array' or coalesce(jsonb_array_length(p_document->'alternatives'),0)<>2 or p_document#>>'{alternatives,0,id}' is distinct from 'growth_operations' or p_document#>>'{alternatives,1,id}' is distinct from 'operations_bundle' or p_document#>>'{logo,reviewed}' is distinct from 'true' then raise exception 'Invalid offer'; end if;
  select (a->>'monthlyAmount')::numeric into amount from jsonb_array_elements(p_document->'alternatives') a where a->>'id'=p_document->>'recommendedAlternativeId';
  if amount is null or amount<0 then raise exception 'Invalid amount'; end if;
  select coalesce(max(version),0)+1 into n from public.pipeline_offer_versions where lead_id=p_lead_id;
