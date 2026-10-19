@@ -1,11 +1,14 @@
 import chromium from '@sparticuz/chromium';
 import {chromium as playwright} from 'playwright-core';
 import {resolveTarget} from '../network.mjs';
+import {enterCountrySite} from '../capture.mjs';
 
 // Fresh public browser, no saved identity or credentials. Every resource and
 // redirect goes through the same DNS-pinned bounded reader as ordinary fetches.
-export async function renderEvidencePages(candidates,{read,deadline,browser:providedBrowser}={}){
- const browser=providedBrowser||await playwright.launch({args:[...chromium.args,'--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],executablePath:await chromium.executablePath(),headless:true});
+export async function renderEvidencePages(candidates,{read,deadline,browser:providedBrowser,onDiagnostic=()=>{}}={}){
+ let browser;
+ try{browser=providedBrowser||await playwright.launch({args:[...chromium.args.filter(arg=>!['--single-process','--disable-web-security'].includes(arg)),'--disable-quic','--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],executablePath:await chromium.executablePath(),headless:true});}
+ catch{onDiagnostic({reason:'render_browser_start_failed'});return [];}
  const results=[];
  try{
   for(const candidate of candidates){
@@ -19,12 +22,13 @@ export async function renderEvidencePages(candidates,{read,deadline,browser:prov
      try{const response=await read(req.url(),{headers:req.headers()});await route.fulfill({status:response.status,headers:response.headers,body:response.body});}catch{await route.abort().catch(()=>{});}
     });
     const page=await context.newPage();
-    const response=await page.goto(candidate.finalUrl,{waitUntil:'load',timeout:Math.max(1000,Math.min(16000,deadline-Date.now()-1000))});
+    const response=await page.goto(candidate.finalUrl,{waitUntil:'domcontentloaded',timeout:Math.max(1000,Math.min(16000,deadline-Date.now()-1000))});
     if(!response||response.status()!==200)continue;
-    await page.waitForTimeout(Math.max(0,Math.min(1200,deadline-Date.now()-1000)));
+    await enterCountrySite(page,deadline).catch(()=>{});
+    await page.waitForTimeout(Math.max(0,Math.min(2500,deadline-Date.now()-1000)));
     const result=await page.evaluate(()=>({title:document.title.slice(0,300),text:document.body.innerText.slice(0,250000)}));
     if(!/verify you are human|access denied|captcha|just a moment/i.test(result.title+' '+result.text.slice(0,1000)))results.push({...candidate,...result,finalUrl:page.url()});
-   }catch{/* Unreadable pages remain unavailable, never fabricated. */}
+   }catch(error){onDiagnostic({url:candidate.url,reason:error.name==='TimeoutError'?'render_timeout':'render_failed'});}
    finally{await context.close();}
   }
  }finally{if(!providedBrowser)await browser.close();}

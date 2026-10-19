@@ -72,7 +72,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=6500
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:'unavailable'});continue;}
     const page=result.page;
-    if(page.text.length<1200&&page.method==='html'&&(entityHosts.has(host(page.finalUrl))||/kap\.org\.tr$/.test(host(page.finalUrl))))renderCandidates.push(page);
+    if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl))))renderCandidates.push(page);
     else keep(page);
     const pageHost=host(page.finalUrl);
     if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);for(const link of page.links.slice(0,2))if(entityHosts.has(host(link.url)))enqueue(link.url,pageHost===brandHost);}
@@ -80,7 +80,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=6500
   }
   if(renderCandidates.length&&clock()<deadline-3000){
    const renderPages=render||(await import('./render-source.mjs')).renderEvidencePages;
-   let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline});}catch{/* Retain readable public HTML; unreadable pages stay unavailable. */}
+   let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
    pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<maxSources)keep({...page,method:'rendered'});});
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&sources.length<maxSources)keep(page);else unavailable.push({url:page.url,reason:'render_unavailable'});}

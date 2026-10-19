@@ -22,7 +22,7 @@ try{
   log('running',{id:plan.id,status:plan.status});await new Promise(r=>setTimeout(r,15000));plan=await provider.poll(plan.id);
  }
  if(plan.status!=='completed')throw interactionFailure(plan);
- proof.sourcePlan=parseSourcePlan(JSON.parse(modelText(plan)));proof.citations=citationUrls(plan);proof.status='source_plan_complete';
+ proof.sourcePlan=parseSourcePlan(JSON.parse(modelText(plan)));proof.citations=citationUrls(plan);proof.sourcePlanUsage=plan.usage;proof.stepCounts=(plan.steps||[]).reduce((counts,s)=>(counts[s.type]=(counts[s.type]||0)+1,counts),{});proof.status='source_plan_complete';
  log('source_plan_completed',{entities:proof.sourcePlan.entities.length,sources:proof.sourcePlan.sources.length});
  if(process.argv[2]==='--collect'){
   proof.evidence=await createEvidenceCollector()(brief,proof.sourcePlan);proof.status='evidence_ready';
