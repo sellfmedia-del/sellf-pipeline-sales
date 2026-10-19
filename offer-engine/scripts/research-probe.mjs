@@ -29,7 +29,8 @@ try{
   proof.researchId=start.id;log('research_started',{id:start.id});
   const research=await waitFor(start);
   log('research_completed',{characters:modelText(research).length,citations:citationUrls(research).length});
-  proof.research=research;
+  const finalOutput=(research.steps||[]).filter(step=>step.type==='model_output').at(-1);
+  proof.research={id:research.id,status:research.status,usage:research.usage,steps:finalOutput?[{type:'model_output',content:(finalOutput.content||[]).filter(part=>part.type==='text')}]:[]};
   const structured=process.argv[4]?await provider.poll(process.argv[4]):await provider.structure(brief,research.id);
   proof.structureId=structured.id;log('structure_started',{id:structured.id});
   const structure=await waitFor(structured);
