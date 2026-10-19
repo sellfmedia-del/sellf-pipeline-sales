@@ -97,6 +97,10 @@ export async function verifyReport(report,{brief,rawReport,citations,verifySourc
   const brandHost=new URL(brief.website).hostname.replace(/^www\./,'');
   if(!data.sources.some(s=>validSourceIds.has(s.id)&&new URL(s.url).hostname.replace(/^www\./,'')===brandHost))add('Markanın kendi domaininden kimlik kanıtı doğrulanamadı.');
   const completeScores=dimMap.size===6&&dimensions.every(d=>dimMap.get(d.id)?.score!==null);
+  // A null server total must not coexist with a model-written partial total or
+  // percentage in the report/summary. Real provider validation exposed this.
+  const modelTotalClaim=[rawReport,data.summary].some(text=>String(text).split('\n').some(line=>/(?:\bBHS\b|Marka Sağlık Skoru)/i.test(line)&&/(?:%\s*\d|\d+(?:[.,]\d+)?\s*\/\s*\d+|TOPLAM[^\n]*\d)/i.test(line)));
+  if(!completeScores&&modelTotalClaim)add('Araştırma metninde eksik boyutlara rağmen toplam veya oranlanmış BHS puanı sunulmuş.');
   const total=completeScores&&issues.length===0?Math.round(dimensions.reduce((sum,d)=>sum+dimMap.get(d.id).score*d.weight,0)*100)/100:null;
   data.scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Eksik veya doğrulanmamış boyutlar nedeniyle toplam hesaplanmadı.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
   data.services=data.serviceRecommendations.map(s=>s.name);

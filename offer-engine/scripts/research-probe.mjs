@@ -20,7 +20,11 @@ async function waitFor(initial){
     await new Promise(resolve=>setTimeout(resolve,15000));
     value=await provider.poll(value.id);
   }
-  if(value.status!=='completed')throw interactionFailure(value);
+  if(value.status!=='completed'){
+    const error=interactionFailure(value);
+    log('interaction_failed',{id:value.id,status:error.interactionStatus,providerCodes:error.providerCodes,providerReason:error.providerReason});
+    throw error;
+  }
   return value;
 }
 try{
@@ -43,7 +47,7 @@ try{
   proof.status=proof.result.status;
   log('completed',{status:proof.status,quality:proof.result.data.quality,score:proof.result.data.scoring});
 }catch(error){
-  proof.status='failed';proof.error={code:error.code||'probe_error',interactionStatus:error.interactionStatus||null,providerStatus:error.providerStatus||null,providerReason:error.providerReason||null};
+  proof.status='failed';proof.error={code:error.code||'probe_error',interactionStatus:error.interactionStatus||null,providerCodes:error.providerCodes||[],providerStatus:error.providerStatus||null,providerReason:error.providerReason||null};
   // Error.message from arbitrary upstream code is deliberately not logged.
   log('failed',proof.error);
 }
