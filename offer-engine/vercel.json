@@ -2,6 +2,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
+    "api/audit.js": {
+      "maxDuration": 90,
+      "includeFiles": "src/bhs/methodology.txt"
+    },
     "api/logo.js": {
       "maxDuration": 90,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"

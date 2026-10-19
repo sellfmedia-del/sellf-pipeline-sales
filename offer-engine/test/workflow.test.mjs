@@ -19,7 +19,15 @@ test('unreviewed logos and missing upstream results cannot reach proposal assemb
   const workflow=createOfferWorkflow();
   await assert.rejects(()=>workflow.run('proposal',{}),/logo/);
   await assert.rejects(()=>workflow.run('pricing',{}),/audit/);
-  await assert.rejects(()=>workflow.run('audit',{}),/henüz bağlı değil/);
+  await assert.rejects(()=>workflow.run('audit',{}),/Brief/);
   assert.throws(()=>assertResult('logo',{status:'ready',data:{generated:false,reviewed:false,candidates:[{image:'data:image/png;base64,AAA',quality:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}]}}),/kontrolü/);
   assert.throws(()=>assertResult('pricing',{status:'ready',data:{currency:'TRY',costVersion:'1',alternatives:[{monthlyAmount:100,billingPeriod:'two-months'}]}}),/aylık/);
+});
+test('a technically valid unreviewed logo can enter a proposal draft, which stays in review',async()=>{
+  const workflow=createOfferWorkflow({proposal:{version:'test',async run(){return {status:'ready',data:{sections:[]}};}}});
+  const logo={stage:'logo',status:'review',data:{generated:false,candidates:[{image:'data:image/png;base64,AAA',quality:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}]}};
+  const audit={stage:'audit',status:'ready',data:{findings:[],services:[]}};
+  const pricing={stage:'pricing',status:'ready',data:{currency:'TRY',costVersion:'test',alternatives:[1,2,3].map(id=>({id,billingPeriod:'monthly',monthlyAmount:100*id}))}};
+  const result=await workflow.run('proposal',{}, {logo,audit,pricing});
+  assert.equal(result.status,'review');assert.equal(logo.status,'review');
 });

@@ -31,13 +31,14 @@
     };
   }
 
-  function validate(draft) {
+  function validate(draft, { requireLogoReview = false } = {}) {
     const errors = {};
     if (!text(draft.brandName).trim()) errors.brandName = 'Marka adını gir.';
     if (!segments.includes(draft.segment)) errors.segment = 'Bir müşteri segmenti seç.';
     if (!webUrl(draft.website)) errors.website = 'Geçerli bir web sitesi adresi gir.';
     const uploadValid=draft.logo?.sourceType==='upload'&&draft.logo.reviewed===true&&draft.logo.quality?.transparency===true&&draft.logo.quality?.matteStable===true&&draft.logo.quality?.touchesEdge===false&&draft.logo.quality?.changedSolid===0;
-    const processedLogo=uploadValid&&draft.logo?.status==='ready'&&draft.logo?.sourceWebsite===webUrl(draft.website)&&draft.logo?.generated===false&&draft.logo?.image?.startsWith('data:image/png;base64,');
+    const pendingReview=!requireLogoReview&&draft.logo?.sourceType==='upload'&&draft.logo?.status==='review'&&draft.logo?.quality?.transparency===true&&draft.logo?.quality?.matteStable===true&&draft.logo?.quality?.touchesEdge===false&&draft.logo?.quality?.changedSolid===0;
+    const processedLogo=(pendingReview||uploadValid&&draft.logo?.status==='ready')&&draft.logo?.sourceWebsite===webUrl(draft.website)&&draft.logo?.generated===false&&draft.logo?.image?.startsWith('data:image/png;base64,');
     if (!processedLogo) errors.logoUrl = draft.logo?.status==='loading'?'Logo hazırlanıyor. Tamamlanmasını bekle.':draft.logo?.status==='review'?'Şeffaf logoyu ekran görüntüsüyle karşılaştırıp kontrolü tamamla.':'Logo ekran görüntüsünü yükleyip şeffaf sonucu kontrol et.';
     if (!text(draft.goals).trim()) errors.goals = 'Markanın hedeflerini belirt.';
     if (!text(draft.needs).trim()) errors.needs = 'İhtiyaçları ve öncelikleri belirt.';

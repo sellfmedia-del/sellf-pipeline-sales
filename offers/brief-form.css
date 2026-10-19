@@ -63,6 +63,13 @@
 #offer-brief-dialog .ob-review-data > div { padding: 10px 0; border-bottom: 1px solid var(--border); }
 #offer-brief-dialog .ob-review-data dt { color: var(--ob-muted); font-size: 11px; margin-bottom: 3px; }
 #offer-brief-dialog .ob-review-data dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+#offer-brief-dialog .ob-audit-report { overflow-wrap:anywhere; }
+#offer-brief-dialog .ob-audit-report h3 { margin:22px 0 10px; font-size:16px; }
+#offer-brief-dialog .ob-audit-report article { padding:12px 0; border-bottom:1px solid var(--border); }
+#offer-brief-dialog .ob-audit-report h4 { font-size:13px; margin:0 0 6px; }
+#offer-brief-dialog .ob-audit-report p { margin:7px 0; }
+#offer-brief-dialog .ob-audit-raw { white-space:pre-wrap; font:12px/1.7 inherit; margin-top:12px; }
+#offer-brief-dialog .ob-brief-details { margin-top:22px; }
 @media (max-width: 600px) {
   #offer-brief-dialog { width: calc(100% - 16px); max-height: calc(100dvh - 16px); }
   #offer-brief-dialog .ob-header, #offer-brief-dialog .ob-body { padding: 18px 16px; }

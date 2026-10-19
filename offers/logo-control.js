@@ -9,23 +9,22 @@
       <p id="ol-upload-status" class="ol-status" role="status">Ekran görüntüsü bekleniyor.</p>
       <div class="ol-result" hidden>
         <div class="ol-comparison"><figure><figcaption>Yüklediğin ekran görüntüsü</figcaption><div class="ol-original"><img alt="Yüklenen logo ekran görüntüsü"></div></figure><figure><figcaption>Şeffaf logo</figcaption><div class="ol-checker"><img alt="Arka planı kaldırılan marka logosu"></div></figure></div>
-        <p class="ol-quality"></p><label class="ol-review"><input type="checkbox"> Logonun harfleri, renkleri ve detayları doğru görünüyor.</label>
+        <p class="ol-quality"></p><p class="ol-status">Görsel onayı, teklif taslağı oluştuğunda teklif üzerinde yapılacak. Analize devam etmek için burada onay vermen gerekmez.</p>
         <label class="ol-background-label">Logo alanının zemini<select class="ol-background"><option value="auto">Otomatik</option><option value="#ffffff">Beyaz</option><option value="#171717">Koyu</option><option value="#626262">Gri</option></select></label>
         <div class="ol-placement"><span>Sellf</span><div class="ol-logo-zone"><img alt="Teklif üst bölümündeki logo yerleşimi"></div></div><p class="ol-placement-label">Teklif üst bölümündeki yerleşim örneği · Zemin yalnızca logo alanına uygulanır.</p>
       </div>`;
-    const status=container.querySelector('#ol-upload-status'),input=container.querySelector('.ol-file'),result=container.querySelector('.ol-result'),check=container.querySelector('.ol-review input'),background=container.querySelector('.ol-background');
+    const status=container.querySelector('#ol-upload-status'),input=container.querySelector('.ol-file'),result=container.querySelector('.ol-result'),background=container.querySelector('.ol-background');
     const normalize=()=>window.PipelineOfferBriefModel.webUrl(getWebsite());
     function apply(){
       if(!selected)return;
       const color=background.value==='auto'?(selected.placement?.background||'#ffffff'):background.value;
       container.querySelector('.ol-logo-zone').style.background=color;
-      onChange({status:check.checked?'ready':'review',image:selected.image,source:selected.source,sourceType:'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:check.checked,generated:false});
+      onChange({status:'review',image:selected.image,source:selected.source,sourceType:'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:false,generated:false});
     }
-    check.addEventListener('change',apply);
-    background.addEventListener('change',()=>{check.checked=false;apply();});
+    background.addEventListener('change',apply);
     input.addEventListener('change',async()=>{
       const request=++epoch,file=input.files?.[0];
-      selected=null;check.checked=false;result.hidden=true;onChange(null);
+      selected=null;result.hidden=true;onChange(null);
       if(!file){status.textContent='Ekran görüntüsü bekleniyor.';return;}
       const error=window.PipelineOfferBriefModel.validateLogo(file);
       if(error){status.textContent=error;return;}
@@ -43,14 +42,14 @@
         container.querySelector('.ol-checker img').src=candidate.image;
         container.querySelector('.ol-placement img').src=candidate.image;
         background.value='auto';
-        container.querySelector('.ol-quality').textContent='Şeffaf PNG hazır · '+candidate.quality.width+' × '+candidate.quality.height+' px. Orijinal ile karşılaştırıp aşağıdan kontrol et.';
+        container.querySelector('.ol-quality').textContent='Şeffaf PNG hazır · '+candidate.quality.width+' × '+candidate.quality.height+' px. Teklif taslağı için hazırlandı.';
         result.hidden=false;status.textContent='Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
       }catch(error){
         if(disposed||request!==epoch)return;
         status.textContent=error.message||'Görsel işlenemedi.';onChange({status:'error',sourceType:'upload'});
       }
     });
-    return {invalidate(){if(selected){check.checked=false;apply();}},destroy(){disposed=true;++epoch;}};
+    return {invalidate(){if(selected)apply();},destroy(){disposed=true;++epoch;}};
   }
   window.PipelineLogoControl=Object.freeze({mount});
 })();

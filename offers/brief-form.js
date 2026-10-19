@@ -1,4 +1,4 @@
-/* Brief UI only. It never writes to the CRM, runs an audit or persists files. */
+/* Isolated offer brief and research UI. No CRM writes or file persistence. */
 (function () {
   'use strict';
   let active = null;
@@ -40,13 +40,14 @@
           </fieldset>
         </form>
         <section class="ob-review" aria-labelledby="ob-review-title" hidden>
-          <span class="ob-review-tag">BRIEF KONTROLÜ TAMAMLANDI</span><h2 id="ob-review-title">Analiz için bilgiler hazır</h2><p class="ob-review-notice">BHS motoru henüz bağlı değil. Bu önizlemede araştırma başlatılmaz ve teklif oluşturulmaz.</p><dl class="ob-review-data"></dl>
+          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><div class="ob-audit-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
       <footer class="ob-footer"><p>Önizleme: Düzenlemeler kaydedilmez.</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector('form');
     let reviewing = false;
+    let task = null;
     const source = draft.source;
     dialog.querySelector('.ob-subtitle').textContent = source.company + ' · ' + source.contact;
     fields.forEach(name => { form.elements[name].value = draft[name]; });
@@ -64,6 +65,7 @@
 
     function sync() { fields.forEach(name => { draft[name] = form.elements[name].value; }); }
     function close() {
+      stopTask();
       logoControl?.destroy();
       dialog.close();
       dialog.remove();
@@ -94,10 +96,73 @@
       dialog.querySelector('.ob-review').hidden = !value;
       dialog.querySelector('.ob-next').hidden = value;
       dialog.querySelector('.ob-edit').hidden = !value;
+      dialog.querySelectorAll('.ob-steps li').forEach((step,i)=>{if(i===(value?1:0))step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');});
       dialog.querySelector('.ob-body').scrollTop = 0;
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
     }
-    dialog.querySelector('.ob-edit').addEventListener('click', () => setReview(false));
+    function stopTask(){
+      if(!task)return;
+      task.stopped=true;
+      if(task.ticket)window.PipelineAuditRequest?.({action:'cancel',brief:task.brief,ticket:task.ticket}).catch(()=>{});
+      task=null;
+    }
+    dialog.querySelector('.ob-edit').addEventListener('click', () => {stopTask();draft.audit=null;setReview(false);});
+    function renderAudit(result){
+      draft.audit=result;
+      const box=dialog.querySelector('.ob-audit-report'),data=result.data;
+      box.replaceChildren();
+      function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
+      function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
+      paragraph(data.summary);
+      heading('Ön BHS boyutları');
+      const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
+      data.dimensions.forEach(d=>{
+        const article=document.createElement('article');box.appendChild(article);
+        const h=document.createElement('h4');h.textContent=names[d.id]+' · '+(d.score===null?'Yeterli veri yok':d.score+'/100');article.appendChild(h);
+        paragraph(d.rationale,article);
+        if(d.gaps.length)paragraph('Eksikler: '+d.gaps.join(' · '),article);
+      });
+      paragraph('Ön BHS toplamı: '+(data.scoring.total===null?'Hesaplanmadı':data.scoring.total+'/100'));
+      paragraph(data.scoring.note);
+      heading('Rakip seti');data.competitors.forEach(p=>paragraph(p.name+' — '+p.scaleReason+' '+p.audienceReason+' '+p.geographyReason));
+      heading('Öncelikli bulgular');data.findings.forEach(f=>paragraph((f.kind==='inference'?'Çıkarım: ':f.kind==='brief'?'Müşteri beyanı: ':'Gözlem: ')+f.statement+' '+f.impact+' ['+f.sourceIds.join(', ')+']'));
+      heading('Hizmet hipotezleri');data.serviceRecommendations.forEach(s=>paragraph(s.name+' — '+s.hypothesis+' Ölçüm: '+s.measurement));
+      heading('Doğrulanacak sorular');data.meetingQuestions.forEach(q=>paragraph(q.question));
+      heading('Kaynaklar');data.sources.forEach(s=>paragraph(s.id+' · '+s.title+' · '+s.url+' · '+(s.publishedAt||'Yayın tarihi bilinmiyor')+' · '+s.verification.status));
+      if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');data.quality.issues.forEach(x=>paragraph(x));}
+      const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
+      summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
+      dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
+      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve kapsam kontrolleri tamamlandı. Fiyat ve teklif aşaması henüz bağlı değil.':'Eksik veya doğrulanamayan kaynaklar nedeniyle bu sonuç henüz teklif aşamasına aktarılamaz.';
+    }
+    async function runAudit(){
+      const notice=dialog.querySelector('.ob-review-notice');
+      if(typeof window.PipelineAuditRequest!=='function'){
+        dialog.querySelector('#ob-review-title').textContent='BHS araştırma bağlantısı gerekli';
+        notice.textContent='Bu önizlemede araştırma servisi bağlı değil. Teklif veya araştırma sonucu oluşturulmadı.';return;
+      }
+      const current={stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
+      dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
+      let action='start';
+      try{
+        for(;;){
+          notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':action==='structure'?'Araştırma BHS yapısına aktarılıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
+          const response=await window.PipelineAuditRequest({action,brief:current.brief,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          if(response.ticket)current.ticket=response.ticket;
+          if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
+          if(response.phase==='complete'){renderAudit(response.result);task=null;return;}
+          if(response.phase==='research_complete'){action='structure';continue;}
+          action='status';
+          if(response.phase==='structure')notice.textContent='Araştırma tamamlandı. BHS bulguları, puan gerekçeleri ve kaynak bağlantıları hazırlanıyor…';
+          await new Promise(resolve=>setTimeout(resolve,10000));
+          if(current.stopped)return;
+        }
+      }catch(error){
+        if(current.stopped)return;
+        dialog.querySelector('#ob-review-title').textContent='BHS araştırması tamamlanamadı';
+        notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+' Yeni araştırma otomatik başlatılmadı.';
+      }finally{if(dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}
+    }
     form.addEventListener('submit', event => {
       event.preventDefault();
       if (reviewing) return;
@@ -124,7 +189,7 @@
       details.replaceChildren();
       const values = [
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
-        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Ekran görüntüsünden hazırlandı · Şeffaf PNG · Görsel kontrol tamamlandı' : 'Hazırlanmadı'],
+        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Şeffaf PNG hazır · Görsel onay teklif taslağında yapılacak' : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
         ['Aylık bütçe', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
         ['Toplantı notları', draft.meetingNotes || 'Belirtilmedi']
@@ -136,8 +201,10 @@
         row.append(dt, dd); details.appendChild(row);
       });
       const title = dialog.querySelector('#ob-review-title');
+      title.textContent='Araştırma hazırlanıyor';dialog.querySelector('.ob-audit-report').replaceChildren();
       title.tabIndex = -1;
       setReview(true);
+      runAudit();
     });
     dialog.showModal();
     form.elements.brandName.focus();

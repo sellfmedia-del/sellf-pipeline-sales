@@ -61,17 +61,20 @@ test('different cards and empty notes produce independent snapshots',()=>{
   assert.equal(two.meetingNotes,'');
   assert.equal(one.source.company,'Example Brand');
 });
-test('automatically captured logos must be complete, original and tied to the current website',()=>{
+test('processed logos must be complete, original and tied to the current website',()=>{
   const draft=valid();
   assert.deepEqual(model.validate(draft),{});
   assert.ok(model.validate({...draft,website:'other.example'}).logoUrl);
   assert.ok(model.validate({...draft,logo:{...draft.logo,status:'loading'}}).logoUrl);
-  assert.ok(model.validate({...draft,logo:{...draft.logo,status:'review'}}).logoUrl);
+  assert.deepEqual(model.validate({...draft,logo:{...draft.logo,status:'review',reviewed:false}}),{});
+  assert.ok(model.validate({...draft,logo:{...draft.logo,status:'review'}},{requireLogoReview:true}).logoUrl);
   assert.ok(model.validate({...draft,logo:{...draft.logo,generated:true}}).logoUrl);
 });
-test('uploaded screenshots cannot pass without background removal and explicit visual review',()=>{
+test('background removal is mandatory; visual review is deferred until final proposal approval',()=>{
   const draft=valid();
   assert.deepEqual(model.validate(draft),{});
   assert.ok(model.validate({...draft,logo:{...draft.logo,reviewed:false}}).logoUrl);
+  assert.deepEqual(model.validate({...draft,logo:{...draft.logo,status:'review',reviewed:false}}),{});
+  assert.ok(model.validate({...draft,logo:{...draft.logo,status:'review',reviewed:false}},{requireLogoReview:true}).logoUrl);
   for(const quality of [{transparency:false,matteStable:true,touchesEdge:false},{transparency:true,matteStable:false,touchesEdge:false},{transparency:true,matteStable:true,touchesEdge:true}])assert.ok(model.validate({...draft,logo:{...draft.logo,quality}}).logoUrl);
 });
