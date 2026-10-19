@@ -21,8 +21,8 @@ export function snapshotBrief(input){
   if(!['https:','http:'].includes(url.protocol)||url.username||url.password||!url.hostname.includes('.'))throw Error('Brief web sitesi geçersiz.');
   url.hash='';result.website=url.href;
   const budget=input.budget;
-  if(budget!==undefined&&budget!==''&&(!Number.isFinite(Number(budget))||Number(budget)<0))throw Error('Brief bütçesi geçersiz.');
-  result.budget=budget===undefined||budget===''?null:Number(budget);
+  if(budget!==undefined&&budget!==null&&budget!==''&&(!Number.isFinite(Number(budget))||Number(budget)<0))throw Error('Brief bütçesi geçersiz.');
+  result.budget=budget===undefined||budget===null||budget===''?null:Number(budget);
   // Do not send the lead object, contact details, logo, CRM IDs or credentials.
   return result;
 }

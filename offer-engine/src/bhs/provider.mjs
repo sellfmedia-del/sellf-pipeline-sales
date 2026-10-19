@@ -1,5 +1,7 @@
 import {providerReportSchema,providerSchema} from './schema.mjs';
 import {sourcePlanSchema,sourcePlanPrompt} from './source-plan.mjs';
+import {synthesisEnvelope} from './grounded-report.mjs';
+import {semanticEnvelope,semanticSchema} from './semantic.mjs';
 import {researchPrompt,extractionPrompt} from './prompts.mjs';
 const endpoint='https://generativelanguage.googleapis.com/v1beta/interactions';
 const agents=['deep-research-preview-04-2026','deep-research-max-preview-04-2026'];
@@ -59,8 +61,10 @@ export function createResearchProvider({apiKey=process.env.OFFER_GEMINI_API_KEY,
     poll(id,{includeInput=false}={}){return request('/'+interactionId(id)+'?include_input='+String(includeInput));},
     discoverSources(brief,research){
       if(research?.status!=='completed')throw new ResearchError('invalid_report','Tamamlanmış ön araştırma gerekli.');
-      return request('',{model,input:sourcePlanPrompt(brief,modelText(research)),background:true,store:true,tools:[{type:'google_search'}],generation_config:{max_output_tokens:8192,thinking_level:'low'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(sourcePlanSchema)}});
+      return request('',{model,input:sourcePlanPrompt(brief,modelText(research))+'\nGerçek ön araştırma kaynak bağlantıları (hepsi okunacak aday): '+JSON.stringify(citationUrls(research)),background:true,store:true,tools:[{type:'google_search'}],generation_config:{max_output_tokens:8192,thinking_level:'low'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(sourcePlanSchema)}});
     },
+    synthesize(brief,packet){return request('',{model,input:JSON.stringify(synthesisEnvelope(brief,packet)),background:true,store:true,generation_config:{max_output_tokens:32768,thinking_level:'medium'},response_format:{type:'text',mime_type:'application/json',schema:providerReportSchema}});},
+    assess(brief,packet,report){return request('',{model,input:JSON.stringify(semanticEnvelope(brief,packet,report)),background:true,store:true,generation_config:{max_output_tokens:12288,thinking_level:'medium'},response_format:{type:'text',mime_type:'application/json',schema:providerSchema(semanticSchema)}});},
     structure(brief,research){
       interactionId(research?.id);
       const text=modelText(research);

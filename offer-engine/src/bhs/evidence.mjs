@@ -35,10 +35,10 @@ export function assertEvidencePacket(packet,brief){
  }
  return packet;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=65000,maxSources=24}={}){
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24}={}){
  return async function collect(brief,sourcePlan){
   const plan=parseSourcePlan(sourcePlan),deadline=clock()+timeout;
-  const fetchPage=read||createPublicFetcher({deadline,maxRequests:160,maxBytes:48*1024*1024});
+  const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
   const queue=[],seen=new Set(),expandedHosts=new Set(),sources=[],unavailable=[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>{try{return host(e.website);}catch{return '';}}));entityHosts.add(brandHost);
   function enqueue(url,front=false){const value=publicUrl(url);if(value&&!seen.has(value)&&seen.size<80){seen.add(value);front?queue.unshift(value):queue.push(value);}}
@@ -72,7 +72,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=6500
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:'unavailable'});continue;}
     const page=result.page;
-    if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl))))renderCandidates.push(page);
+    if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push(page);}
     else keep(page);
     const pageHost=host(page.finalUrl);
     if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);for(const link of page.links.slice(0,2))if(entityHosts.has(host(link.url)))enqueue(link.url,pageHost===brandHost);}

@@ -147,14 +147,16 @@
       let action='start';
       try{
         for(;;){
-          notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':action==='structure'?'Araştırma BHS yapısına aktarılıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
+          notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'){renderAudit(response.result);task=null;return;}
+          if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           action='status';
-          if(response.phase==='structure')notice.textContent='Araştırma tamamlandı. BHS bulguları, puan gerekçeleri ve kaynak bağlantıları hazırlanıyor…';
+          const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
+          if(stages[response.phase])notice.textContent=stages[response.phase];
           await new Promise(resolve=>setTimeout(resolve,10000));
           if(current.stopped)return;
         }

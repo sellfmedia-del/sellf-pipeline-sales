@@ -38,7 +38,7 @@
       });
       window.PipelineAuditRequest=payload=>new Promise((resolve,reject)=>{
         const requestId=crypto.randomUUID();
-        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('BHS bağlantısı zaman aşımına uğradı.'));},100000);
+        const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('BHS bağlantısı zaman aşımına uğradı.'));},200000);
         function receive(event){
           if(event.source!==parent||event.data?.type!=='offer-audit-result'||event.data?.requestId!==requestId)return;
           clearTimeout(timer);window.removeEventListener('message',receive);

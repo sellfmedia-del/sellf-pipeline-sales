@@ -15,7 +15,7 @@ export interface AuditData {
   serviceRecommendations:Array<{id:string;name:string;hypothesis:string;findingIds:string[];measurement:string}>;
   criticalOpportunityFindingId:string|null;criticalRiskFindingId:string|null;services:string[];
   scoring:{total:number|null;weights:Array<{id:BhsDimension;weight:number}>;note:string};
-  quality:{checksPassed:boolean;issues:string[];scope:'citation-and-quote-checks';semanticBenchmark:'pending'|'passed'|'failed';customerApproval:'pending'};
+  quality:{checksPassed:boolean;citationChecksPassed?:boolean;issues:string[];scope:'citation-and-quote-checks'|'citation-quote-and-semantic-checks';semanticBenchmark:'pending'|'passed'|'failed';customerApproval:'pending'};
   usage:{research:unknown;structure:unknown};
 }
 export interface PricingData {currency:'TRY';costVersion:string;alternatives:Array<{id:string;billingPeriod:'monthly';monthlyAmount:number}>;}

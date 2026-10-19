@@ -11,8 +11,8 @@ export function createTicketCodec(secret){
       const [text,mac,...rest]=token.split('.'),expected=sign(text,session,host);
       if(rest.length||!mac||mac.length!==expected.length||!timingSafeEqual(Buffer.from(mac),Buffer.from(expected)))throw new ResearchError('invalid_job','Araştırma kaydı doğrulanamadı.');
       let data;try{data=JSON.parse(Buffer.from(text,'base64url').toString('utf8'));}catch{throw new ResearchError('invalid_job','Araştırma kaydı okunamadı.');}
-      if(!Number.isFinite(data.startedAt)||data.startedAt>now+5000||now-data.startedAt>ttl||!['research','structure'].includes(data.phase)||!/^[a-f0-9]{64}$/.test(data.hash))throw new ResearchError('expired_job','Araştırma kaydının süresi dolmuş veya geçersiz.');
-      interactionId(data.researchId);if(data.phase==='structure')interactionId(data.structureId);
+      if(!Number.isFinite(data.startedAt)||data.startedAt>now+5000||now-data.startedAt>ttl||!['research','source_plan','synthesis','semantic','structure'].includes(data.phase)||!/^[a-f0-9]{64}$/.test(data.hash))throw new ResearchError('expired_job','Araştırma kaydının süresi dolmuş veya geçersiz.');
+      interactionId(data.researchId);const field={structure:'structureId',source_plan:'sourcePlanId',synthesis:'synthesisId',semantic:'semanticId'}[data.phase];if(field)interactionId(data[field]);
       return data;
     }
   };
