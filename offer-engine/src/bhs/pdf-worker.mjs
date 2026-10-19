@@ -13,4 +13,4 @@ try{
   }
   parentPort.postMessage({text:chunks.join('\n'),pages:pdf.numPages});
 }catch{parentPort.postMessage({error:'pdf_unreadable'});}
-finally{await pdf?.destroy();}
+finally{try{await pdf?.loadingTask?.destroy();}catch{/* Worker termination also releases resources; cleanup must not overwrite a result. */}}
