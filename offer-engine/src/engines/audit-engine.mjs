@@ -19,7 +19,7 @@ export function createAuditEngine({verifySource}={}){
       result.data.quality.checksPassed=result.data.quality.citationChecksPassed&&semantic.status==='passed';
       result.status=result.data.quality.checksPassed?'ready':'review';
       if(result.status!=='ready'){result.data.scoring.total=null;result.data.scoring.note='Kaynak veya içerik doğrulaması tamamlanmadığı için toplam hesaplanmadı.';}
-      Object.assign(result.data,{schemaVersion:'bhs-v1',methodologyVersion:'sellf-pre-bhs-2026-10-19-evidence-v2',briefHash:briefHash(brief),rawReport,researchId:input.researchId,structureId:input.synthesisId,semanticId:input.semanticId,packetHash:evidenceHash(packet),semanticReview:semantic.assessment,evidenceSources:packet.sources.map(({excerpts,...metadata})=>metadata),usage:input.usage||null});
+      Object.assign(result.data,{schemaVersion:'bhs-v1',methodologyVersion:'sellf-pre-bhs-2026-10-19-evidence-v2',briefHash:briefHash(brief),rawReport,researchId:input.researchId,structureId:input.synthesisId,semanticId:input.semanticId,revisionId:input.revisionId,packetHash:evidenceHash(packet),semanticReview:semantic.assessment,evidenceSources:packet.sources.map(({excerpts,...metadata})=>metadata),usage:input.usage||null});
       return result;
     }
     const {research,structure}=input;

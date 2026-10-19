@@ -98,7 +98,7 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
         result=await engine.run({brief,research,structure:interaction});
       }else{
         const envelope=readStoredEnvelope(interaction,'sellf-bhs-semantic-v1',brief);
-        result=await engine.run({brief,packet:envelope.packet,report:envelope.report,assessment:JSON.parse(modelText(interaction)),researchId:job.researchId,synthesisId:job.synthesisId,semanticId:job.semanticId,usage:{semantic:interaction.usage||null}});
+        result=await engine.run({brief,packet:envelope.packet,report:envelope.report,assessment:JSON.parse(modelText(interaction)),researchId:job.researchId,synthesisId:job.synthesisId,semanticId:job.semanticId,revisionId:job.revisionId,usage:{semantic:interaction.usage||null}});
       }
       return res.status(200).json({phase:'complete',result:{...result,stage:'audit',engineVersion:engine.version,inputHash:hash,runId:job.runId}});
     }catch(error){

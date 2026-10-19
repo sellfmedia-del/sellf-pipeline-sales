@@ -2,7 +2,7 @@
 
 ## Source and scope
 
-The framework is extracted verbatim from the final `BHS Audit` section of the user-supplied `02-Promptlar.docx` (original SHA-256 `946c9f27d21aee7f45503b6c57b8d4db19a09692093a02ac4dfb346730c5b44c`). `src/bhs/methodology.txt` contains only this section, not the unrelated blog/social prompts. Runtime methodology version: `sellf-pre-bhs-2026-10-19-v1`.
+The framework is extracted verbatim from the final `BHS Audit` section of the user-supplied `02-Promptlar.docx` (original SHA-256 `946c9f27d21aee7f45503b6c57b8d4db19a09692093a02ac4dfb346730c5b44c`). `src/bhs/methodology.txt` contains only this section, not the unrelated blog/social prompts. The grounded path uses `sellf-pre-bhs-2026-10-19-evidence-v2`; the legacy adapter retains `sellf-pre-bhs-2026-10-19-v1`.
 
 Six dimensions and fixed weights: financial signals 25%, operational signals 20%, funnel 20%, digital assets 15%, perception 10%, competitive position 10%. Research must establish 3–5 comparable competitors before scoring and cover the nine report sections: brand overview, dimensions, weighted score, onboarding unknowns, critical opportunity, greatest risk, 5–8 meeting questions, competitor benchmarks, sources. The brief's goals, needs, services and meeting context direct research; services do not predetermine the findings.
 
@@ -10,13 +10,14 @@ The user's latest missing-data decision overrides the original prompt's instruct
 
 ## Provider flow
 
-The preview-only API runs five resumable stages:
+The preview-only API runs six resumable stages:
 
 1. Gemini Deep Research Max discovers the brand, market and candidate hypotheses using the approved brief.
 2. A separate Google Search interaction locates primary brand/legal-entity pages and three to five competitor sites. Its entity labels and proposed URLs are untrusted candidates.
 3. A bounded server reader fetches those public pages and observed relevant links. It extracts HTML/plain text or text-based PDFs and uses a fresh public Chromium context for thin JavaScript pages. Only actual returned text enters the versioned evidence packet; unavailable pages do not become evidence. Actual cited primary discovery links are independently read as well as source-plan candidates. Labelled publisher metadata can establish identity but not performance. An official registry document explicitly declaring the exact brand website can establish identity when the site reader returns no content.
 4. A separate model writes the structured BHS from that evidence packet. It does not receive the earlier research narrative. Every quotation must occur inside a captured excerpt or in text segments whose stored offsets prove exact adjacency; final publisher URLs and packet source IDs must match. The visible full report is rendered from the verified structured result.
-5. A context-isolated model reviews every finding, all six dimensions, every non-null benchmark and the overall entity/period/claim scope. The server checks exact review coverage, packet/report hashes and financial comparison prerequisites. Citation checks and semantic checks must both pass before the audit can authorize downstream pricing.
+5. One bounded editorial pass qualifies overconfident interpretations and limits missing-data language to the actual search packet. It can edit approved text fields only, cannot introduce numeric tokens absent from the original report, cannot change source IDs, scores, benchmarks or reference lists, and never repeats in a loop.
+6. A context-isolated model reviews every finding, all six dimensions, every non-null benchmark and the overall entity/period/claim scope. The server checks exact review coverage, packet/report hashes, financial comparison prerequisites and explicit scope overclaims. A brand ID declared by the authenticated source plan can identify benchmark brand rows; mixed brief references can supply context only when independent factual findings also support a service. Citation checks and semantic checks must both pass before the audit can authorize downstream pricing.
 
 Interactions use Google's background REST API with provider-side storage. Stored user input carries the evidence packet across requests; no CRM database or new application store is used. Only explicitly typed user input is eligible for recovery, never model/tool/thought output. Provider grammar omits unsupported length keywords; the complete bounded server contract stays strict. Legacy extraction tickets remain readable, but cannot authorize pricing without semantic approval.
 
@@ -42,7 +43,7 @@ The preview remains behind Vercel Authentication and API routes require VERCEL_E
 
 ## One-off provider probes
 
-Normal feature builds run only `npm run build`; they never start research. Explicit scripts run only in protected Preview on the validation branch with a temporary build command. `research-probe.mjs` retains the legacy diagnostic path. `evidence-probe.mjs --discover RESEARCH_ID` reuses a completed research job for source discovery; `--collect SOURCE_PLAN_ID` performs read-only evidence collection. `--synthesize SOURCE_PLAN_ID` starts one grounded report and one separate semantic review. `--resume-synthesis ID` or `--resume-review ID` reuses a known job after a timeout instead of repeating paid work. The test artifact contains public synthetic-brief evidence and final outputs, never credentials or intermediate reasoning. Restore the validation branch to normal builds when the explicit run ends.
+Normal feature builds run only `npm run build`; they never start research. Explicit scripts run only in protected Preview on the validation branch with a temporary build command. `research-probe.mjs` retains the legacy diagnostic path. `evidence-probe.mjs --discover RESEARCH_ID` reuses a completed research job for source discovery; `--collect SOURCE_PLAN_ID` performs read-only evidence collection. `--synthesize SOURCE_PLAN_ID` starts one grounded report and one separate semantic review. `--resume-synthesis ID`, `--resume-editor EDITOR_ID SYNTHESIS_ID`, or `--resume-review ID` reuses a known job after a timeout instead of repeating paid research or synthesis. Resuming a completed synthesis starts the bounded editor and a new final assessment; resume a known review ID to repeat only final server validation. The test artifact contains public synthetic-brief evidence and final outputs, never credentials or intermediate reasoning. Restore the validation branch to normal builds when the explicit run ends.
 
 ## Documentation checked
 

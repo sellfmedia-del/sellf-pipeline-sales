@@ -112,3 +112,11 @@ test('authenticated source-plan brand IDs and mixed brief/context references do 
  assert.equal((await createAuditEngine().run({brief,packet,report,assessment})).status,'ready');
  report.serviceRecommendations[0].findingIds=['f1'];assessment.reportHash=reportHash(report);assert.equal((await createAuditEngine().run({brief,packet,report,assessment})).status,'review');
 });
+
+test('leading meeting questions and unsupported public-data absence cannot pass silently',async()=>{
+ const {applyEdits,interpretationIssues}=await import('../src/bhs/editor.mjs');const {report}=context();
+ report.meetingQuestions[0].question='Sessizlik üstünlüğünüz nasıl satılıyor?';report.competitors[0].scaleReason='Finansal ciro verisi kamuya açık olmamakla birlikte aynı ölçektedir.';
+ assert.equal(interpretationIssues(report).length,2);
+ const edited=applyEdits(report,{edits:[{target:'question.question',id:'q0',value:'Sessizlik iddiası bağımsız olarak ölçülmüş müdür?'},{target:'competitor.scaleReason',id:report.competitors[0].id,value:'Bu taramada aynı dönem finansal veri bulunmadı; ürün kapsamı üzerinden karşılaştırılmıştır.'}]});assert.deepEqual(interpretationIssues(edited),[]);
+ assert.throws(()=>applyEdits(report,{edits:[{target:'question.question',id:'q999',value:'Unknown question'}]}));
+});

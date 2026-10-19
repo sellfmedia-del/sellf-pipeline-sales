@@ -1,6 +1,6 @@
 # Real provider validation — 2026-10-19
 
-Status: **not accepted for proposal use**. Successful authentication is not a quality benchmark pass.
+Status: **corrected synthetic-brand BHS result passed source and semantic checks**. The complete offer workflow is not yet implemented or released. Earlier failed runs below are retained as development evidence; authentication alone was never a quality pass.
 
 ## Test and isolation
 
@@ -43,7 +43,7 @@ The revised research instructions have not passed a fresh real research benchmar
 
 ## Evidence-first implementation and live retest
 
-The semantic reviewer is now implemented and connected to the preview UI/API. The lifecycle is research → source plan → fetched evidence → grounded synthesis → separate semantic review. Actual provider-stored user input was recovered successfully with `include_input=true`; the evidence packet does not depend on serverless process memory or a CRM write.
+The semantic reviewer is now implemented and connected to the preview UI/API. The lifecycle is research → source plan → fetched evidence → grounded synthesis → bounded editorial qualification → separate semantic review. Actual provider-stored user input was recovered successfully with `include_input=true`; the evidence packet does not depend on serverless process memory or a CRM write.
 
 The first grounded run reused the original Deep Research job and the completed source-plan job. The source plan made three Google Search calls. Twelve source pages were read, then a 21-finding report and a separate coverage-complete semantic review completed. All six scores correctly remained null. Entity/period separation and the eight-row benchmark were materially better than the original report.
 
@@ -58,4 +58,18 @@ Corrections from that run:
 - Brand identity can be established by a matched quotation from the brand site or by a primary official registry document explicitly declaring that exact website. Email domains, lookalikes, unrelated news and other country domains do not qualify. The actual KAP activity PDF declares `www.silverline.com`; this is identity evidence, not evidence that the website works.
 - Missing core identity or fewer than three read competitor sites stop the paid report writer before synthesis starts.
 
-A final live retest uses the same original research/source-plan jobs, newly fetched primary evidence and the corrected writer/reviewer. Record its final acceptance result below. Main/production, Travis code/environment and all CRM records remain unchanged. Pricing and final proposal generation are still unconfigured; the user will review one integrated proposal after those stages are complete.
+A final live retest uses the same original research/source-plan jobs, newly fetched primary evidence and the corrected writer/reviewer. The final result is recorded below. Main/production, Travis code/environment and all CRM records remain unchanged. Pricing and final proposal generation are still unconfigured; the user will review one integrated proposal after those stages are complete.
+
+The second grounded report matched all 14 selected literal source quotes, including two actual KAP PDFs and current official financial tables. It correctly distinguishes 2025 full-year figures from 2026 six-month cumulative figures. Before final qualification, strict validation exposed two reference-contract mismatches: the authenticated source-plan brand ID was used instead of the legacy literal `brand`, and one service contained a valid mixture of factual evidence and brief context. The validator now resolves the authenticated brand alias and requires actual factual support while permitting brief context; brief-only service support still fails. Manual reading also required qualified language for self-reported technical-call rates and public-data absence. The bounded editor addresses text fields, followed by a fresh isolated review; the original completed synthesis is reused.
+
+The editor is bounded to existing report text targets, including competitor scope statements and meeting questions. It cannot change scores, sources, benchmark data or reference lists. Numeric tokens must already occur in the original report. An initial per-field number guard was too strict: it blocked a correct date or reported ratio already present elsewhere in the same report when clarifying the summary or impact. The guard now checks original-report numeric tokens; the completed editorial response was reused rather than requested again. Deterministic interpretation checks also reject leading unmeasured-superiority questions and unqualified public-data-absence claims. Final validation uses a fresh independent review of the qualified report.
+
+## Final observed result
+
+The corrected public synthetic Silverline result is `ready`: 14 selected source quotations matched actual captured text; the separate semantic review passed all configured checks with no issues. The report contains 19 findings across six dimensions, three sourced competitors, all eight benchmark metrics, six meeting questions and four service hypotheses. It renders to 44,604 characters. The latest official producer financial values were checked against KAP: 2025 full-year and 2026 six-month cumulative periods remain explicitly separate. Historical related-company terms and reported technical-call rates are qualified rather than presented as independently established current advantages. All six scores and the total stay null because comparable scoring evidence is incomplete. A ready evidence-supported report does not require invented scores.
+
+Protected final test artifact: https://sellf-offer-engine-mvob9v1bi-yigit-konuks-projects.vercel.app/evidence-probe.json . The completed report and editorial responses were reused; no additional Deep Research search was started. Development used an initial qualification pass and a targeted refinement after adding question/competitor-scope checks. The normal UI performs one bounded editorial pass with those expanded targets, followed by an independent review; it has no unbounded self-rewrite loop. The actual corrected packet/report/assessment was also replayed successfully against the final local audit engine without network requests or new model work.
+
+Verification: 64 worker tests and 54 existing/root tests passed, including real Chromium desktop/mobile flows, source reading and public navigation, exact quote boundaries, PDF extraction, signed stage transitions, editor bounds, leading-question rejection, alias mapping and brief-only service rejection. No worker tests were skipped in that full run. Protected root API/Travis files remain byte-identical to main; Pipeline index.html and existing CSS are unchanged in this step. No database calls, CRM writes, migrations, production changes or customer publication occurred.
+
+This acceptance is limited to the corrected synthetic case and configured verification gates. It does not establish universal brand coverage, human audit equivalence, or cross-provider research parity. The brand website itself remained unreadable by this reader; its exact domain was independently confirmed by the official KAP activity report. Scoring unknowns and unavailable metrics stay explicit. Pricing, final proposal generation and eventual estimated-value persistence remain the next stages.

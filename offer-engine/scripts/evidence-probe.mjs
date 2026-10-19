@@ -11,7 +11,7 @@ import {createEvidenceCollector,assertCoreEvidence} from '../src/bhs/evidence.mj
 if(process.env.VERCEL_ENV!=='preview'||!['--discover','--resume-plan','--collect','--synthesize','--resume-synthesis','--resume-review','--resume-editor','--refine-editor'].includes(process.argv[2]))throw Error('Explicit preview-only evidence probe required.');
 const provider=createResearchProvider();
 const brief=snapshotBrief({brandName:'Silverline TR',segment:'corporate',website:'https://www.silverline.com/tr-TR',goals:'Türkiye pazarında bayi ağını ve kârlı büyümeyi değerlendirmek.',needs:'B2B bayi büyümesi ile tüketici talebi, satış sonrası servis ve dijital varlıklar arasındaki ilişkiyi araştırmak.',services:'Büyüme danışmanlığı, pazarlama ve operasyon seçeneklerinin araştırmaya dayalı değerlendirilmesi.',meetingNotes:'Kamuya açık kaynaklarla kalite karşılaştırması için hazırlanmış test briefidir. Hedefler test senaryosudur; müşteri beyanı değildir. Eski örnek rapordaki sayıları doğru kabul etme.',budget:''});
-const proof={test:'public-synthetic-silverline-evidence',brief,status:'starting'};
+const proof={researchId:'v1_Chc2eGZXYXByLUVlR0Uxc2dQdC1HSGlRdxIXNnhmV2Fwci1FZUdFMXNnUHQtR0hpUXc',test:'public-synthetic-silverline-evidence',brief,status:'starting'};
 const log=(event,data={})=>console.log('EVIDENCE_PROBE '+JSON.stringify({event,...data}));
 try{
  async function completed(job){
@@ -39,7 +39,7 @@ try{
   review=await completed(review);review=await provider.poll(review.id,{includeInput:true});
   const context=readStoredEnvelope(review,'sellf-bhs-semantic-v1',brief);
   proof.evidence=context.packet;proof.report=context.report;proof.semanticText=modelText(review);proof.semanticId=review.id;
-  proof.result=await createAuditEngine().run({brief,packet:context.packet,report:context.report,assessment:JSON.parse(modelText(review)),synthesisId:proof.synthesisId,semanticId:review.id});
+  proof.result=await createAuditEngine().run({brief,packet:context.packet,report:context.report,assessment:JSON.parse(modelText(review)),researchId:proof.researchId,synthesisId:proof.synthesisId,revisionId:proof.revisionId,semanticId:review.id});
   proof.status='complete';log('result',{status:proof.result.status,issues:proof.result.data.quality.issues});
  }
  if(['--resume-editor','--refine-editor'].includes(process.argv[2])){
