@@ -61,6 +61,14 @@ test('50 TL ceiling blocks work before executing, including distinct concurrent 
  assert.equal(result.filter(x=>x.status==='fulfilled').length,1);assert.equal(executed,1);
  assert.ok((await a.status()).chargedKurus<=5000);
 });
+test('a rejected nested provider cannot mark the free coordinator successful',async()=>{
+ const db=store(),ledger=createLedger(db.call),error=Object.assign(Error('rejected'),{definitelyNotBilled:true,providerStatus:400});
+ await assert.rejects(ledger.once('coordinator',{},0,()=>ledger.once('provider',{},1000,async()=>{throw error;})));
+ assert.equal(db.steps.get('provider').state,'complete');
+ assert.equal(db.steps.get('provider').value.rejected,true);
+ assert.equal(db.steps.get('coordinator').state,'uncertain');
+ assert.equal((await ledger.status()).chargedKurus,500);
+});
 test('reviewed tariffs reject unknown models and expired rates',()=>{
  assert.equal(quoteSearch(),116);
  assert.equal(quoteModel('gemini-3.1-pro-preview',20000,16384,time),1704);
