@@ -6,7 +6,7 @@
       "maxDuration": 60
     },
     "api/audit.js": {
-      "maxDuration": 180,
+      "maxDuration": 300,
       "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}"
     },
     "api/logo.js": {

@@ -1,12 +1,12 @@
 import {randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
-import {createResearchProvider,interactionId,modelText} from '../src/bhs/provider.mjs';
+import {interactionId,modelText} from '../src/bhs/provider.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {normalizePlan,compositionHash} from '../src/proposal/composition.mjs';
 import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
-export function createProposalHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,now=Date.now}={}){
+export function createProposalHandler({getProvider=null,getSecret=()=>process.env.OFFER_GEMINI_API_KEY,now=Date.now}={}){
  const starts=new Map();
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
@@ -27,9 +27,16 @@ export function createProposalHandler({getProvider=()=>createResearchProvider(),
    const logo={stage:'logo',status:'review',data:logoData};assertResult('logo',logo);
    const context={leadId:body.context?.leadId,spaceId:body.context?.spaceId};
    if(Object.values(context).some(v=>typeof v!=='string'||!v||v.length>200))throw Error();
-   const plan=normalizePlan(body),inputHash=compositionHash(brief,body.audit,body.pricing,logo,{...plan,context,logoBackground:body.logoBackground}),provider=getProvider();
-   if(!provider.configured())throw Error();
+   const plan=normalizePlan(body),inputHash=compositionHash(brief,body.audit,body.pricing,logo,{...plan,context,logoBackground:body.logoBackground});
    const claims={...context,briefHash:hash,auditHash:approval.auditHash,pricingHash:approval.pricingHash,inputHash};
+   if(!getProvider){
+    if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
+    const result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+    const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
+    return res.status(200).json({phase:'complete',result:envelope,saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
+   }
+   const provider=getProvider();
+   if(!provider.configured())throw Error();
    if(body.action==='start'){
     if(typeof body.requestId!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(body.requestId))throw Error();
     for(const[k,v]of starts)if(now()-v.at>7200000)starts.delete(k);

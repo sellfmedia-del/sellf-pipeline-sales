@@ -53,6 +53,15 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
     return reply({accessToken:session.access_token,refreshToken:session.refresh_token,expiresAt:Date.now()+session.expires_in*1000});
    }
    if(action==='fixture')return reply(await fixture(body.jwt));
+   if(action==='budget'){
+    const who=await user(body.jwt);
+    if(!['begin','status','get','reserve','complete','uncertain'].includes(body.op)||!text(body.leadId,100)||
+       body.step!==undefined&&!/^[A-Za-z0-9:_-]{1,160}$/.test(body.step)||
+       body.hash!==undefined&&!/^[a-f0-9]{64}$/.test(body.hash)||
+       body.token!==undefined&&!uuid.test(body.token)||
+       body.amount!==undefined&&(!Number.isSafeInteger(body.amount)||body.amount<0||body.amount>4500))throw Error('Maliyet kaydı geçersiz.');
+    return reply(await db('/rest/v1/rpc/pipeline_offer_budget_op',{method:'POST',body:{p_owner:who.id,p_lead:body.leadId,p_op:body.op,p_step:body.step||null,p_hash:body.hash||null,p_amount:body.amount||0,p_token:body.token||null,p_value:body.value??null}}));
+   }
    if(action==='sync_cards'){
     const who=await user(body.jwt),jwt=body.jwt;
     if(!Array.isArray(body.leads)||body.leads.length>100)throw Error('En fazla 100 test kartı kullanılabilir.');

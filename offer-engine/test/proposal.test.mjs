@@ -25,6 +25,16 @@ async function fixture(){
 }
 function response(){return {statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v;},status(n){this.statusCode=n;return this;},json(data){this.data=data;return this;}};}
 function request(body,auth=false){return {method:'POST',headers:{host,origin:'https://'+host,cookie:'__Host-offer-research='+session,...(auth?{authorization:'Bearer '+'x'.repeat(40)}:{})},body};}
+test('default proposal endpoint composes signed Pro copy with no additional paid model and binds the budget card',async()=>{
+ const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const f=await fixture();f.audit.data.proposalCopy=copy;
+  const codec=createPricingProof(secret),handler=createProposalHandler({getSecret:()=>secret});
+  const body={action:'start',context:{leadId:'lead1',spaceId:'space1'},brief:f.brief,audit:f.audit,pricing:f.pricing,logo:{...f.logo.data,logoProof:logoProof(secret,host,f.logo.data)},proposalProof:codec.encode({kind:'pricing_ready',createdAt:Date.now(),briefHash:briefHash(f.brief),auditHash:digest(f.audit),pricingHash:digest(f.pricing),budgetLeadId:'lead1'},session,host)};
+  const done=response();await handler(request(body),done);assert.equal(done.statusCode,200);assert.equal(done.data.result.status,'review');assert.ok(done.data.saveProof);
+  const changed=response();await handler(request({...body,context:{leadId:'other',spaceId:'space1'}}),changed);assert.equal(changed.statusCode,422);
+ }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});
 test('assembly preserves two exact monthly totals, original logo and unknown BHS; no costs or item prices reach customer data',async()=>{
  const f=await fixture(),before=structuredClone(f),r=await proposalEngine.run({brief:f.brief,copy},f);
  assert.equal(r.status,'review');assert.equal(r.data.alternatives.length,2);assert.deepEqual(r.data.alternatives.map(a=>a.monthlyAmount),f.pricing.data.alternatives.map(a=>a.monthlyAmount));

@@ -10,6 +10,7 @@ import {readStoredEnvelope,parseGroundedReport} from '../src/bhs/grounded-report
 import {modelText} from '../src/bhs/provider.mjs';
 import {createAuditEngine} from '../src/engines/audit-engine.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
+import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 
 export function createAuditHandler({getProvider=()=>createResearchProvider(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,validateWebsite=validatePublicBrief,engine=createAuditEngine(),collect=createEvidenceCollector(),now=Date.now,logger=console}={}){
   // Best-effort per-instance dedupe only; no database or durable store is used.
@@ -127,4 +128,6 @@ export function createAuditHandler({getProvider=()=>createResearchProvider(),get
     }
   };
 }
-export default createAuditHandler();
+// The legacy factory above is retained for protocol regression tests only.
+// Deployed requests can reach only the persistent, bounded research handler.
+export default createBoundedAuditHandler();

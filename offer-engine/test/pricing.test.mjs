@@ -17,6 +17,18 @@ function context(extra={}){
  return {brief,audit,scope};
 }
 const run=({brief,audit,scope},options={})=>pricingEngine.run({brief,scope,...options},{audit});
+test('default pricing endpoint reuses signed budgeted scope without any provider call',async()=>{
+ const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const {brief,audit,scope}=context();audit.data.scopePlan=scope;
+  const secret='budgeted-test',session='s'.repeat(43),host='preview.vercel.app';
+  const pricingProof=createPricingProof(secret).encode({kind:'audit_ready',createdAt:Date.now(),briefHash:briefHash(brief),auditHash:digest(audit),budgetLeadId:'lead1'},session,host);
+  const handler=createPricingHandler({getSecret:()=>secret}),res={setHeader(){},status(n){this.code=n;return this;},json(value){this.data=value;return this;}};
+  await handler({method:'POST',headers:{host,origin:'https://'+host,cookie:'__Host-offer-research='+session},body:{action:'start',brief,audit,pricingProof}},res);
+  assert.equal(res.code,200);assert.equal(res.data.result.data.alternatives.length,2);
+  assert.equal(createPricingProof(secret).decode(res.data.proposalProof,session,host).budgetLeadId,'lead1');
+ }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});
 test('workbook corporate example: exact cost, floor and ideal; two scope alternatives, no CRM writes',async()=>{
  const ctx=context(),before=JSON.stringify(ctx),result=await run(ctx),data=result.data;
  assertResult('pricing',result);assert.equal(result.status,'ready');assert.equal(data.costVersion,costVersion);

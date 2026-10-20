@@ -1,5 +1,11 @@
 # Isolated offer service
 
+The current preview defaults to bounded Tavily discovery + Gemini Pro analysis,
+with a persistent per-card spending ledger. Deep Research Max is not used by the
+deployed handler. See [BUDGET.md](BUDGET.md) for setup, cost assumptions, test
+evidence and the still-pending real quality comparison. Historical Deep Research
+details below describe the retained legacy adapter only.
+
 This package deploys independently with Vercel root directory `offer-engine`. It has its own pinned lockfile and dependencies. It does not modify the Pipeline installation, Travis functions, existing environment variables or database.
 
 The build renders a direct copy of the existing Pipeline app at `/`, with an isolated session/data adapter and the approved offer section. There is no iframe or demo toolbar in this primary entry. Build with `sourceFilesOutsideRootDirectory: true`; only this package's `api` directory is deployed as backend functions in the worker project. No live card records are included in the preview.

@@ -265,8 +265,9 @@
       try{
         for(;;){
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
-          const response=await window.PipelineAuditRequest({action,brief:current.brief,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
+          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent='Kalıcı test alanı · Maliyet üst hesabı: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL';}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
           if(response.nextAction==='advance'){action='advance';continue;}
@@ -279,7 +280,7 @@
         }
       }catch(error){
         if(current.stopped)return;
-        const transport=error.code==='audit_transport',canResume=transport&&error.canResume&&current.ticket;
+        const transport=error.code==='audit_transport',canResume=transport&&(error.canResume||current.bounded)&&current.ticket;
         dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
         if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
