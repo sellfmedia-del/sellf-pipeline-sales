@@ -7,6 +7,7 @@ import {createAuditEngine} from '../engines/audit-engine.mjs';
 import {hash,BudgetError} from '../budget/ledger.mjs';
 import {scopeSchema,scopeEnvelope,validateScope} from '../pricing/scope.mjs';
 import {copySchema,validateCopy} from '../proposal/composition.mjs';
+import {focusEvidence,boundedReportSchema} from './bounded-contract.mjs';
 
 export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','semantic','complete'];
 export const stageKey=(brief,phase)=>'audit:'+phase+':'+hash(brief);
@@ -60,21 +61,23 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
    return {packet,recoveryUsed:!recovery.skipped};
   }
   if(phase==='synthesis'){
-   const {packet}=await previous('recovery_evidence');
-   const schema={type:'object',properties:{report:reportSchema,scope:scopeSchema,copy:copySchema},required:['report','scope','copy'],additionalProperties:false};
+   const {packet:fullPacket}=await previous('recovery_evidence'),packet=focusEvidence(fullPacket,brief);
+   const schema={type:'object',properties:{report:boundedReportSchema(packet),scope:scopeSchema,copy:copySchema},required:['report','scope','copy'],additionalProperties:false};
    const envelope=synthesisEnvelope(brief,packet),scopeGuide=scopeEnvelope(brief,{summary:'Aynı yanıtta üretilen report',findings:[],serviceRecommendations:[]});
-   const generated=await providers.generate('synthesis',{...envelope,outputInstructions:'report alanında tam BHS, scope alanında yalnız briefte konuşulan fiyatlanabilir hizmet planı, copy alanında kısa teklif girişi üret. Scope/copy findingIds sadece aynı report içindeki kimlikler olabilir. copy.headline ve accent en fazla 70, subtitle en fazla 240 karakter; yeni fiyat, sayı, süre veya sonuç vaadi yok. Katalogdaki fiyatlar model tarafından hesaplanmaz.',scopeGuide},schema,{model:'gemini-3.1-pro-preview',maxOutputTokens:16384,thinkingLevel:'MEDIUM'});
+   const generated=await providers.generate('synthesis',{...envelope,outputInstructions:'report alanında eksiksiz BHS: her altı boyuta ikişer, toplam TAM 12 somut bulgu; en az 8 farklı okunmuş kaynak ve 3 rakip şart. Kaynak kimlikleri sadece verilen evN değerleri, rakip kimlikleri sadece entity planındaki okunmuş rakipler olmalı. Kaynak alıntıları harfiyen 24–200 karakter, reportExcerpt=statement. Şirket/ülke/dönem kıyasını bozma, tekil şikâyetten yaygın sorun çıkartma. Gereksiz uzun yazma: her statement en fazla 260, impact/goalConnection 200, rationale 400 karakter. Dış ölçüm yoksa null; eksik veri düşük sağlık değildir. scope alanında yalnız briefte konuşulan fiyatlanabilir hizmet planı, copy alanında kısa teklif girişi üret. Scope/copy findingIds sadece aynı report kimlikleri. copy.headline ve accent en fazla 70, subtitle en fazla 240 karakter; yeni fiyat, sayı, süre veya sonuç vaadi yok. Katalog fiyatlarını hesaplama.',scopeGuide},schema,{model:'gemini-4-argon',maxOutputTokens:8192,thinkingLevel:'LOW'});
    const report=parseGroundedReport(JSON.stringify(generated.data.report));
    if(report.findings.length<12||report.competitors.length<3||report.sources.length<8)throw new BudgetError('quality_coverage','BHS kapsamı kalite eşiğini karşılamıyor.');
    validateScope(generated.data.scope,brief,report);
    const scopePlan=generated.data.scope,proposalCopy=validateCopy(generated.data.copy,report);
-   return {report,scopePlan,proposalCopy,usage:generated.usage,model:generated.model};
+   return {report,scopePlan,proposalCopy,analysisPacket:packet,fullPacketHash:evidenceHash(fullPacket),usage:generated.usage,model:generated.model};
   }
   if(phase==='semantic'){
-   const {packet}=await previous('recovery_evidence'),{report,scopePlan,proposalCopy}=await previous('synthesis');
-   const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),semanticSchema,{maxOutputTokens:8192,thinkingLevel:'MEDIUM'});
+   const synthesis=await previous('synthesis'),{report,scopePlan,proposalCopy}=synthesis,packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
+   const reviewSchema=structuredClone(semanticSchema);reviewSchema.properties.findings.minItems=report.findings.length;reviewSchema.properties.findings.maxItems=report.findings.length;reviewSchema.properties.findings.items.properties.id.enum=report.findings.map(f=>f.id);reviewSchema.properties.dimensions.minItems=6;
+   const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),reviewSchema,{maxOutputTokens:4096,thinkingLevel:'LOW'});
    const result=await engine.run({brief,packet,report,assessment:generated.data,researchId:'bounded_'+hash(brief).slice(0,24),synthesisId:'pro_'+hash(report).slice(0,24),semanticId:'review_'+hash(generated.data).slice(0,24),usage:{semantic:generated.usage}});
    result.data.researchMethod='bounded-primary-evidence-pro';result.data.packetHash=evidenceHash(packet);
+   result.data.fullPacketHash=synthesis.fullPacketHash;result.data.analysisSourceCount=packet.sources.length;
    result.data.scopePlan=scopePlan;result.data.proposalCopy=proposalCopy;
    return result;
   }

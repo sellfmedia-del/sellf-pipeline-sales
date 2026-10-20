@@ -20,11 +20,11 @@ export const reportSchema=object({
 
 // Use the provider's documented subset. Keep all length limits in the strict
 // server schema; unsupported string keywords must not break generation.
-export function providerSchema(schema){
-  if(schema.anyOf){const base=schema.anyOf.find(s=>s.type!=='null');return {...providerSchema(base),type:[base.type,'null']};}
-  const result={...schema};delete result.minLength;delete result.maxLength;delete result.minItems;delete result.maxItems;
-  if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,providerSchema(value)]));
-  if(schema.items)result.items=providerSchema(schema.items);
+export function providerSchema(schema,{arrayBounds=false}={}){
+  if(schema.anyOf){const base=schema.anyOf.find(s=>s.type!=='null');return {...providerSchema(base,{arrayBounds}),type:[base.type,'null']};}
+  const result={...schema};delete result.minLength;delete result.maxLength;if(!arrayBounds){delete result.minItems;delete result.maxItems;}
+  if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,providerSchema(value,{arrayBounds})]));
+  if(schema.items)result.items=providerSchema(schema.items,{arrayBounds});
   if(schema.maxLength)result.description='Keep text within '+schema.maxLength+' characters; server validates this limit.';
   if(schema.maxItems!==undefined)result.description='Use '+(schema.minItems||0)+' to '+schema.maxItems+' entries. Server validates the exact bounds.';
   return result;
