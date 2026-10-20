@@ -15,3 +15,9 @@ test('locator cannot accept missing, reversed or out-of-range boxes; transparenc
  for(const region of [{found:false,box:[]},{found:true,box:[0,0,10,1001]},{found:true,box:[500,500,200,200]}])await assert.rejects(cropLogoRegion(source,region),/tespit/);
  const result=await prepareUploadedLogo('data:image/png;base64,'+source.toString('base64'),{locate:()=>assert.fail('transparent input requires no paid localization')});assert.equal(result.candidates[0].quality.transparency,true);
 });
+
+test('Retina page screenshots over four megapixels retain a normal header-sized logo',async()=>{
+ const source=await sharp(Buffer.from('<svg width="2560" height="1600"><rect width="2560" height="1600" fill="white"/><rect x="80" y="80" width="132" height="90" fill="#185FA5"/><rect x="800" y="80" width="1000" height="100" fill="black"/></svg>')).png().toBuffer();
+ const result=await prepareUploadedLogo('data:image/png;base64,'+source.toString('base64'),{locate:async()=>({found:true,box:[50,31.25,106.25,82.8125],backgroundPoints:[]})});
+ assert.equal(result.candidates[0].quality.width,156);assert.equal(result.candidates[0].quality.changedSolid,0);assert.equal(result.candidates[0].quality.transparency,true);
+});

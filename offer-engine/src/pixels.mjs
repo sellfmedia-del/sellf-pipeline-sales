@@ -6,7 +6,7 @@ export async function finishLogo(buffer, reference,{backgroundPoints=[]}={}) {
   const {width,height}=info;
   const referencePixels=reference?await sharp(reference).ensureAlpha().raw().toBuffer():null;
   if(referencePixels && referencePixels.length!==original.length)throw new Error('Logo karşılaştırma boyutları uyuşmuyor.');
-  if(width*height>4000000) throw new Error('Logo kesiti çok büyük.');
+  if(width*height>16000000) throw new Error('Logo kesiti çok büyük.');
   const data=Buffer.from(original);
   const n=width*height;
   let clear=0,opaque=0;
@@ -89,7 +89,7 @@ export async function finishLogo(buffer, reference,{backgroundPoints=[]}={}) {
   const nativeTight=method==='native-transparency'&&left===0&&top===0&&right===width-1&&bottom===height-1;
   const touchesEdge=!nativeTight&&(left<1||top<1||right>width-2||bottom>height-2);
   const compositingError=method==='edge-matte'?error/(n*3):0;
-  const transparency=Array.from({length:n},(_,p)=>data[p*4+3]).some(a=>a<245);
+  let transparency=false;for(let p=0;p<n;p++)if(data[p*4+3]<245){transparency=true;break;}
   const sourceMismatchRatio=sourceMismatch/Math.max(1,foreground);
   const approved=matteStable&&transparency&&changedSolid===0&&compositingError<1.5&&!touchesEdge&&sourceMismatchRatio<.005;
   const png=await sharp(data,{raw:{width,height,channels:4}}).extract(trim).extend({top:12,bottom:12,left:12,right:12,background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
