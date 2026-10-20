@@ -10,7 +10,7 @@ import {copySchema,validateCopy} from '../proposal/composition.mjs';
 import {focusEvidence,compactReportSchema,hydrateReport} from './bounded-contract.mjs';
 
 export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','scope','semantic','complete'];
-export const stageKey=(brief,phase)=>'audit:'+phase+':'+hash(brief);
+export const stageKey=(brief,phase)=>'audit:'+phase+':'+(['synthesis','scope','semantic'].includes(phase)?'report-v2:':'')+hash(brief);
 export function seedQueries(brief){const brand=brief.brandName,domain=new URL(brief.website).hostname;return [
  `site:${domain} ${brand} hakkımızda ürün hizmet faaliyet`,
  `${brand} doğrudan rakipleri aynı ürün hedef kitle Türkiye`,

@@ -34,7 +34,7 @@ export function createLedger(call){
     if(!Number.isSafeInteger(actual)||actual<0||actual>amount)throw new BudgetError('provider_accounting','Doğrulanmış tüketim ayrılan üst tutarla eşleşmiyor.');
     await call('complete',{step:key,hash:inputHash,token,value,amount:actual});return value;}
    catch(error){
-    if(error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
+    if(amount>0&&error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
     try{await call('uncertain',{step:key,hash:inputHash,token,value:{code:error.code||'stage_failed'}});}catch{/* Reservation remains charged. */}throw error;}
   }
  };

@@ -6,8 +6,10 @@ There are no Deep Research / Max Interactions requests in the new HTTP flow.
 
 Discovery uses at most ten Tavily advanced searches (six initial searches and
 four focused searches). Public HTML/PDF sources are read by the existing SSRF
-protected collector. Flash creates the source plan. Gemini 3.1 Pro generates the
-full six-dimension report, scope and concise proposal copy in one bounded call.
+protected collector. Flash creates the source plan. Gemini 4 Argon generates the
+full six-dimension report. A separate bounded Flash call creates scope and concise
+proposal copy from the report and brief. Source URLs/titles are restored from
+verified evidence IDs; unmeasured benchmark cells remain explicitly null.
 Flash independently reviews source support, entity/period comparability,
 benchmarks and scoring. Failed evidence or semantic checks stop downstream use.
 Logo processing, fee mathematics and final composition make no paid model calls.
@@ -39,11 +41,11 @@ or spending ceiling stops the run, no weak substitute is silently published.
 
 ## Required preview setup
 
-Set `OFFER_TAVILY_API_KEY` in **sellf-offer-engine → Settings → Environment
-Variables**, for **Preview**, then rebuild this Git branch. `TAVILY_API_KEY` is
-also accepted. The existing Travis sensitive variable cannot be read back through
-the Vercel API; its value/configuration has not been changed. Gemini and the
-preview storage/session variables are already configured independently.
+The validation branch deploys `offer-engine` through a per-deployment override in
+the existing Pipeline project. It reuses that project's Preview `TAVILY_API_KEY`
+and `GEMINI_API_KEY` without reading, copying or changing either secret. New
+gateway/session variables are scoped to the validation branch. The project's
+production configuration and Git connection remain unchanged.
 
 ## Verification status
 
@@ -55,9 +57,14 @@ not reset the ledger; an exact 5,000-kurus balance rejected one additional kurus
 Anonymous and authenticated roles cannot execute the budget RPC; both tables
 have RLS. Existing production card/space fingerprints remained unchanged.
 
-The historical Silverline reference and cached evidence are available for a
-real comparison. No paid research was started while implementing this change.
-Tavily is missing in the offer project, so quality equivalence to the manual
-Deep Research + Pro workflow and live end-to-end cost remain **unverified**.
+The live Silverline test has collected 22 sources. Its first paid synthesis
+failed the coverage gate and was never accepted, priced or published. Failed
+paid attempts remain on the same card's ledger. Documented Google HTTP 400
+rejections are not billed and are recorded as zero-cost rejected receipts;
+identical rejected requests cannot automatically replay. A small Argon request
+confirmed model/key availability. As of the last completed request, the same
+test card has accounted for 3,501 kurus including its infrastructure allowance.
+The revised full-report schema is under live validation. Quality equivalence to
+the manual Deep Research + Pro workflow and live end-to-end cost remain **unverified**.
 Fixture tests are not evidence of equivalent research quality. Do not approve
 production release until a real report has passed that comparison.
