@@ -35,6 +35,10 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    }
    const ticket=codec.encode(job,session,host),cost=()=>ledger.status();
    if(action==='cancel')return res.status(200).json({status:'cancelled',cost:await cost()});
+   if(action==='preflight'){
+    const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
+    log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
+   }
    if(!['start','status','advance'].includes(action))throw Error();
    for(const name of phases.filter(x=>x!=='complete')){
     const step=await ledger.get(stageKey(brief,name));
