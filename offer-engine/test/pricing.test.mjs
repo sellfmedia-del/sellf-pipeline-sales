@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pricingEngine} from '../src/engines/pricing-engine.mjs';
 import {catalog,costVersion} from '../src/pricing/catalog.mjs';
-import {scopeEnvelope,parseTarget} from '../src/pricing/scope.mjs';
+import {scopeEnvelope,parseTarget,validateScope} from '../src/pricing/scope.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {createPricingHandler} from '../api/pricing.js';
@@ -20,7 +20,7 @@ const run=({brief,audit,scope},options={})=>pricingEngine.run({brief,scope,...op
 test('default pricing endpoint reuses signed budgeted scope without any provider call',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
-  const {brief,audit,scope}=context();audit.data.scopePlan=scope;
+  const {brief,audit,scope}=context();audit.data.scopePlan=validateScope(scope,brief,audit.data);
   const secret='budgeted-test',session='s'.repeat(43),host='preview.vercel.app';
   const pricingProof=createPricingProof(secret).encode({kind:'audit_ready',createdAt:Date.now(),briefHash:briefHash(brief),auditHash:digest(audit),budgetLeadId:'lead1'},session,host);
   const handler=createPricingHandler({getSecret:()=>secret}),res={setHeader(){},status(n){this.code=n;return this;},json(value){this.data=value;return this;}};
@@ -138,4 +138,14 @@ test('provider failure or invalid scope still returns priced alternatives once, 
   const invalid=createPricingHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async planPricing(){return {id:'scope_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'{"price":3000000}'}]}]};}})});
   const start=response();await invalid(request(body),start);const done=response();await invalid(request({...body,action:'status',ticket:start.data.ticket}),done);assert.equal(done.statusCode,200);assert.equal(done.data.result.data.alternatives.length,2);
  }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});
+
+test('stored scope is safe to revalidate and cannot smuggle a derived price target',async()=>{
+ const ctx=context(),normalized=validateScope(ctx.scope,ctx.brief,ctx.audit.data);
+ assert.deepEqual(validateScope(normalized,ctx.brief,ctx.audit.data),normalized);
+ normalized.target={scope:'sellf_fee',min:0,max:1,quote:'invented'};normalized.fallback=true;
+ const result=await run({...ctx,scope:normalized});
+ assert.equal(result.data.scope.target,null);assert.equal(result.data.scope.provisional,false);
+ assert.deepEqual(result.data.alternatives,(await run(ctx)).data.alternatives);
+ assert.throws(()=>validateScope({...normalized,unexpected:true},ctx.brief,ctx.audit.data));
 });

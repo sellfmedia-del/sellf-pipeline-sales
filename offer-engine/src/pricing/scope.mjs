@@ -54,8 +54,11 @@ export function parseTarget(quote,scope,brief){
  return {scope,min:values.length===2?values[0]:0,max:values.at(-1),quote};
 }
 export function validateScope(value,brief,audit){
- assertSchema(value,scopeSchema,'scope');
- const plan=structuredClone(value),ids=new Set(),findings=new Set(audit.findings.map(f=>f.id)),warnings=[];
+ // Stored BHS scope includes derived metadata. Recompute it from the original
+ // scope fields on every boundary; never trust a stored target or fallback flag.
+ const {target:storedTarget,warnings:storedWarnings,fallback:storedFallback,...raw}=value||{};
+ assertSchema(raw,scopeSchema,'scope');
+ const plan=structuredClone(raw),ids=new Set(),findings=new Set(audit.findings.map(f=>f.id)),warnings=[];
  for(const service of plan.services){
   if(ids.has(service.serviceId))throw Error('Tekrarlanan hizmet kapsamı.');ids.add(service.serviceId);
   if(!Number.isInteger(service.priority)||service.findingIds.some(id=>!findings.has(id)))throw Error('Hizmet dayanağı geçersiz.');
