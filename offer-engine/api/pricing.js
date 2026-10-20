@@ -5,8 +5,9 @@ import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {pricingEngine} from '../src/engines/pricing-engine.mjs';
 import {costVersion} from '../src/pricing/catalog.mjs';
 import {assertResult} from '../src/contracts.mjs';
+import {offerGeminiKey} from '../src/config.mjs';
 
-export function createPricingHandler({getProvider=null,getSecret=()=>process.env.OFFER_GEMINI_API_KEY,engine=pricingEngine,now=Date.now}={}){
+export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,engine=pricingEngine,now=Date.now}={}){
  const starts=new Map();
  return async function handler(req,res){
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');

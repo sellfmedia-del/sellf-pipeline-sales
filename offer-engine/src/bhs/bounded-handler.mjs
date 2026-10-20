@@ -4,8 +4,9 @@ import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,tariff,BudgetError} from '../budget/ledger.mjs';
 import {createBoundedProviders} from '../budget/providers.mjs';
 import {phases,stageKey,runBoundedStage} from './bounded-research.mjs';
+import {offerGeminiKey} from '../config.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,validateWebsite=validatePublicBrief,runStage=runBoundedStage,now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=runBoundedStage,now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});

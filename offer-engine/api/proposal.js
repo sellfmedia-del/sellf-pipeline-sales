@@ -6,7 +6,8 @@ import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {normalizePlan,compositionHash} from '../src/proposal/composition.mjs';
 import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
-export function createProposalHandler({getProvider=null,getSecret=()=>process.env.OFFER_GEMINI_API_KEY,now=Date.now}={}){
+import {offerGeminiKey} from '../src/config.mjs';
+export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey,now=Date.now}={}){
  const starts=new Map();
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');

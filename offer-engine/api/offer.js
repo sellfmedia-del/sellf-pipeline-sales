@@ -2,7 +2,7 @@ import {createPreviewStore} from '../src/proposal/preview-store.mjs';
 import {sessionFor} from '../src/proposal/preview-session.mjs';
 import {createOfferStore} from '../src/proposal/storage.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
-export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE==='true'?createPreviewStore():createOfferStore(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
+export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE==='true'?createPreviewStore():createOfferStore(),getSecret=()=>process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY,getPortalSecret=()=>process.env.OFFER_PORTAL_SECRET}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Teklif kaydı yalnızca korumalı önizlemede açık.'});

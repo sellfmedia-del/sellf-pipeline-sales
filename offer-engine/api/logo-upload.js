@@ -13,7 +13,8 @@ export default async function handler(req,res){
   try{
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
     const result=await createOfferWorkflow().run('logo',{image:body?.image});
-    return res.status(200).json({...result.data,...(process.env.OFFER_GEMINI_API_KEY?{logoProof:logoProof(process.env.OFFER_GEMINI_API_KEY,req.headers.host,result.data)}:{})});
+    const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
+    return res.status(200).json({...result.data,...(secret?{logoProof:logoProof(secret,req.headers.host,result.data)}:{})});
   }catch(error){
     const message=String(error.message);
     return res.status(422).json({error:/PNG|Görsel|Logo|Bu görselde/.test(message)?message.slice(0,250):'Görsel okunamadı. Geçerli bir PNG, JPG veya WebP ekran görüntüsü seç.'});

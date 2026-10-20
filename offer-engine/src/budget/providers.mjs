@@ -1,9 +1,10 @@
 import {BudgetError,hash,quoteModel,quoteSearch,tariff} from './ledger.mjs';
 import {failureReason} from '../bhs/provider.mjs';
 import {providerSchema} from '../bhs/schema.mjs';
+import {offerGeminiKey} from '../config.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
-export function createBoundedProviders({ledger,geminiKey=process.env.OFFER_GEMINI_API_KEY,tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now}={}){
+export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now}={}){
  let fxChecked=0;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
  async function checkCurrency(){

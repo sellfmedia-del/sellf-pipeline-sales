@@ -30,8 +30,8 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
   try{
    const key=req.headers.get('x-offer-store-key');if(!/^[A-Za-z0-9_-]{43}$/.test(key||''))return reply({error:'Yetki gerekli.'},401);
    const keyHash=Array.from(new Uint8Array(await cryptoImpl.subtle.digest('SHA-256',new TextEncoder().encode(key)))).map(x=>x.toString(16).padStart(2,'0')).join('');
-   const configured=await db('/rest/v1/pipeline_offer_preview_gateway_config?select=key_hash&id=eq.true&limit=1');
-   if(configured?.[0]?.key_hash!==keyHash)return reply({error:'Yetki doğrulanamadı.'},403);
+   const configured=await db('/rest/v1/pipeline_offer_preview_gateway_config?select=key_hash,preview_key_hash&id=eq.true&limit=1');
+   if(![configured?.[0]?.key_hash,configured?.[0]?.preview_key_hash].includes(keyHash))return reply({error:'Yetki doğrulanamadı.'},403);
    if(Number(req.headers.get('content-length'))>4200000)throw Error('Test girdisi çok büyük.');
    const raw=await req.text();if(raw.length>4200000)throw Error('Test girdisi çok büyük.');
    const body=JSON.parse(raw),{action}=body;
