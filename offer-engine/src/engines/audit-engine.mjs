@@ -1,3 +1,5 @@
+import {directAuditResult} from '../bhs/direct-report.mjs';
+import {runBoundedStage} from '../bhs/direct-research.mjs';
 import {snapshotBrief,briefHash} from '../bhs/brief.mjs';
 import {modelText,citationUrls,ResearchError} from '../bhs/provider.mjs';
 import {verifyReport} from '../bhs/verify.mjs';
@@ -8,6 +10,7 @@ import {assessSemantics} from '../bhs/semantic.mjs';
 export function createAuditEngine({verifySource}={}){
   return Object.freeze({id:'audit',version:'0.3.0',async run(input){
     const brief=snapshotBrief(input?.brief);
+    if(input.synthesis)return directAuditResult(brief,input.synthesis);
     if(input.packet){
       const packet=assertEvidencePacket(input.packet,brief),rawReport=renderGroundedReport(input.report);
       const result=await verifyReport(input.report,{brief,rawReport,brandEntityId:packet.entities.find(e=>e.role==='brand')?.id,citations:packet.sources.map(s=>s.finalUrl),verifySource:evidenceSourceVerifier(packet)});
@@ -35,4 +38,4 @@ export function createAuditEngine({verifySource}={}){
     return result;
   }});
 }
-export const auditEngine=createAuditEngine();
+export const auditEngine=Object.freeze({...createAuditEngine(),version:'0.4.0',runStage:runBoundedStage});

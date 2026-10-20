@@ -33,5 +33,15 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/:slug([a-z0-9-]+-teklifi)",
+      "destination": "/offers/customer.html"
+    },
+    {
+      "source": "/:slug([a-z0-9-]+-teklifi-v[0-9]+-[a-f0-9]+)",
+      "destination": "/offers/customer.html"
+    }
   ]
 }

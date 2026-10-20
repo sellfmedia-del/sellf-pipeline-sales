@@ -18,17 +18,17 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
   return (critical.has(f.id)?1000:0)+(linked.has(f.id)?100:0)+([...words].filter(w=>terms.has(w)).length*3)+({high:30,medium:20,low:10}[f.priority]||0);
  };
  const sorted=findings.map((f,i)=>({f,i,rank:rank(f)})).filter(({f})=>typeof f.statement==='string'&&f.statement.trim()).sort((a,b)=>b.rank-a.rank||a.i-b.i);
- const selected=[],seen=new Set(),groups={high:0,medium:0,low:0},dimensions=new Set();
- // First diversify dimensions, then fill remaining slots with relevant findings.
- for(const diverse of [true,false])for(const {f} of sorted){
-  if(selected.length===6)break;
-  const key=normalize(short(f.statement,160)).replace(/\s+/g,' ').trim(),priority=['high','medium','low'].includes(f.priority)?f.priority:'low';
-  if(seen.has(key)||groups[priority]>=2||diverse&&!critical.has(f.id)&&dimensions.has(f.dimension))continue;
-  selected.push({...f,priority,statement:short(f.statement,160),impact:short(f.impact,200)});seen.add(key);groups[priority]++;dimensions.add(f.dimension);
+ const selected=[],seen=new Set(),covered=new Set();
+ // No global or per-heading finding count: all methodology dimensions remain.
+ for(const {f} of sorted){
+  const key=normalize(short(f.statement,160)).replace(/\s+/g,' ').trim();
+  if(seen.has(key))continue;
+  if(covered.has(f.dimension)&&!critical.has(f.id)&&!linked.has(f.id)&&f.priority!=='high')continue;
+  selected.push({...f,statement:short(f.statement,160),impact:short(f.impact,200)});seen.add(key);covered.add(f.dimension);
  }
  const sourceIds=new Set(selected.flatMap(f=>array(f.sourceIds)));
  return {summary:short(audit.summary,240),scoring:audit.scoring?{total:audit.scoring.total}:undefined,
-  dimensions:array(audit.dimensions).slice(0,6).map(d=>({id:d.id,score:d.score,dataStatus:d.dataStatus,rationale:short(d.rationale,220)})),
+  dimensions:array(audit.dimensions).map(d=>{const items=selected.filter(f=>f.dimension===d.id).map(f=>({id:f.id,text:f.statement}));for(const [label,values] of [['Güçlü yön',d.strengths],['Gelişim alanı',d.gaps]]){const text=short(array(values).find(v=>typeof v==='string'&&v.trim()),160);if(text&&!items.some(i=>i.text===text))items.push({text:label+': '+text});}return {id:d.id,score:d.score,dataStatus:d.dataStatus,rationale:short(d.rationale,220),highlights:items};}),
   findings:selected.map(f=>({id:f.id,dimension:f.dimension,priority:f.priority,statement:f.statement,impact:f.impact,sourceIds:array(f.sourceIds)})),
-  sources:array(audit.sources).filter(s=>sourceIds.has(s.id)).slice(0,6).map(s=>({id:s.id,title:short(s.title,96),url:s.url}))};
+  sources:array(audit.sources).filter(s=>sourceIds.has(s.id)).slice(0,24).map(s=>({id:s.id,title:short(s.title,96),url:s.url}))};
 }

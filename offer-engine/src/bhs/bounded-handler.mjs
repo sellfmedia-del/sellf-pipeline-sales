@@ -3,11 +3,11 @@ import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,tariff,BudgetError} from '../budget/ledger.mjs';
 import {createBoundedProviders} from '../budget/providers.mjs';
-import {phases,stageKey,runBoundedStage} from './direct-research.mjs';
-import {directAuditResult} from './direct-report.mjs';
+import {phases,stageKey} from './direct-research.mjs';
+import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=runBoundedStage,now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -59,7 +59,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     break;
    }
    const synthesis=(await ledger.get(stageKey(brief,'synthesis'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
-   const audit=directAuditResult(brief,synthesis);
+   const audit=await auditEngine.run({brief,synthesis});
    const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-v2',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;

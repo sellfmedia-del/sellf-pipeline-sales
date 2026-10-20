@@ -2,8 +2,9 @@
 
 The current preview uses parallel Tavily discovery and Gemini Pro with the
 complete approved `methodology.txt`. Its full BHS JSON goes directly into proposal
-assembly as input. Customer output contains at most six selected short findings,
-two per existing priority, plus compact dimension takeaways. The full report stays
+assembly as input. The BHS input keeps every original methodology section and dimension. Customer
+output selects relevant short findings plus compact dimension takeaways; there
+is no artificial six-heading or six-finding cap. The full report stays
 in the research record and is not embedded in the customer proposal. Selection
 favors existing critical opportunity/risk IDs, chosen-service links, brief relevance
 and dimension coverage. It makes no model calls. There is no separate semantic/content reviewer or recovery research
@@ -54,3 +55,9 @@ Native mailto opens a draft to `yigit@sellfmedia.com` and `businessdevelopment@s
 ## Direct app preview
 
 Start at `/` and select “Test alanını aç” once. Create or open a test card, save its meeting context, then use “Teklif Oluştur” through logo, BHS, price, composition, review/save, customer link/password and mailto. Test cards persist only in the separate preview table; no production data is read or written. Space/column layout uses owner-scoped local metadata. The original Pipeline source and Travis remain unchanged. No provider mocks are enabled at runtime.
+
+Approved offers publish to a password-protected `/<brand>-teklifi` path on the
+Vercel offer deployment. Repeated publication preserves credentials. Same-name
+collisions use a versioned path; existing fragment links remain compatible.
+The DNS for `offerletter.sellfmedia.com` currently belongs to the old Wix site,
+so no DNS switch or production promotion is part of this preview deployment.

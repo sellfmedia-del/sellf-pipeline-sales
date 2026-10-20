@@ -2,6 +2,7 @@
 // or mutates public.leads, public.spaces, or any Travis table.
 const tables={leads:'pipeline_offer_preview_leads',versions:'pipeline_offer_preview_versions',requests:'pipeline_offer_preview_requests'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+const validSlug=v=>typeof v==='string'&&v.length<=120&&/^[a-z0-9]+(?:-[a-z0-9]+)*-teklifi(?:-v\d+-[a-f0-9]{8})?$/.test(v);
 const text=(v,max=200)=>typeof v==='string'&&v.length>0&&v.length<=max;
 export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={}){
  const url=env('SUPABASE_URL'),secret=env('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(env('SUPABASE_SECRET_KEYS')||'{}').default,publicKey=env('SUPABASE_ANON_KEY')||JSON.parse(env('SUPABASE_PUBLISHABLE_KEYS')||'{}').default;
@@ -82,7 +83,7 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
     await db('/rest/v1/'+tables.leads+'?owner_id=eq.'+who.id+'&'+body.field+'=eq.'+encodeURIComponent(body.value),{method:'DELETE'});
     return reply({deleted:true});
    }
-   if(['save','list','publish','outbox'].includes(action)){
+   if(['save','list','publish','publication','outbox'].includes(action)){
     const who=await user(body.jwt),jwt=body.jwt;
     if(action==='save'){
      if(!text(body.args?.p_lead_id)||!text(body.args?.p_space_id)||!text(body.args?.p_request_id,80))throw Error('Test kartı bilgileri geçersiz.');
@@ -93,8 +94,21 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
      return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at,customer_document,operator_link_envelope&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1',{admin:false,jwt}));
     }
     if(action==='outbox')return reply(await db('/rest/v1/'+tables.requests+'?select=id,offer_id,alternative_id,requester_name,requester_email,monthly_amount,delivery_state,provider_id,created_at&order=created_at.desc&limit=30',{admin:false,jwt}));
-    if(!uuid.test(body.id)||!/^[a-f0-9]{64}$/.test(body.tokenHash)||!/^[a-f0-9]{64}$/.test(body.passwordHash)||!text(body.operatorLinkEnvelope,5000))throw Error('Test bağlantısı geçersiz.');
-    return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,version',{method:'PATCH',admin:false,jwt,prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope}}));
+    if(!uuid.test(body.id))throw Error('Test teklifi geçersiz.');
+    const rows=await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,version,state,customer_document,operator_link_envelope',{admin:false,jwt});
+    const row=rows?.[0];if(!row)throw Error('Test teklifi bulunamadı.');
+    if(action==='publication')return reply(row);
+    if(!/^[a-f0-9]{64}$/.test(body.tokenHash)||!/^[a-f0-9]{64}$/.test(body.passwordHash)||!text(body.operatorLinkEnvelope,5000)||body.slug!==undefined&&!validSlug(body.slug))throw Error('Test bağlantısı geçersiz.');
+    if(body.slug===undefined)return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,version',{method:'PATCH',admin:false,jwt,prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope}}));
+    const collision=await db('/rest/v1/'+tables.versions+'?select=id&state=eq.published&customer_document->publication->>slug=eq.'+body.slug+'&id=neq.'+row.id+'&limit=1');
+    if(collision?.length)return reply({error:'Marka bağlantısı kullanımda.',code:'slug_unavailable'},422);
+    const compare=body.expectedEnvelope?'eq.'+encodeURIComponent(body.expectedEnvelope):'is.null';
+    return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&operator_link_envelope='+compare+'&select=id,version',{method:'PATCH',admin:false,jwt,prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope,customer_document:{...row.customer_document,publication:{slug:body.slug}}}}));
+   }
+   if(action==='resolve_slug'){
+    if(!validSlug(body.slug))throw Error('Teklif bağlantısı veya şifresi doğrulanamadı.');
+    const rows=await db('/rest/v1/'+tables.versions+'?select=id,operator_link_envelope&state=eq.published&customer_document->publication->>slug=eq.'+body.slug+'&limit=1');
+    if(rows?.length!==1)throw Error('Teklif bağlantısı veya şifresi doğrulanamadı.');return reply(rows[0]);
    }
    if(action==='access'){
     if(!/^[a-f0-9]{64}$/.test(body.tokenHash)||!/^[a-f0-9]{64}$/.test(body.passwordHash))throw Error('Test müşteri bağlantısı geçersiz.');

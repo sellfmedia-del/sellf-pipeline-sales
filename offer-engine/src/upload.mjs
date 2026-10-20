@@ -15,7 +15,7 @@ export async function prepareUploadedLogo(image) {
   const q=processed.quality;
   if(!q.transparency||!q.matteStable||q.changedSolid||q.compositingError>=1.5)throw new Error('Bu görselde arka plan logodan güvenle ayrılamadı. Logoya yakın, düz arka planlı bir ekran görüntüsü seç.');
   if(q.touchesEdge)throw new Error('Logo görselin kenarına değiyor. Logonun çevresinde biraz boşluk bulunan bir ekran görüntüsü seç.');
-  if(Math.max(q.width-24,q.height-24)<180||Math.min(q.width-24,q.height-24)<20)throw new Error('Logo teklif için fazla küçük. Daha yüksek çözünürlüklü bir ekran görüntüsü seç.');
+  if(Math.max(q.width-24,q.height-24)<180||Math.min(q.width-24,q.height-24)<8)throw new Error('Logo teklif için fazla küçük. Daha yüksek çözünürlüklü bir ekran görüntüsü seç.');
   const dataUrl=buffer=>'data:image/png;base64,'+buffer.toString('base64');
   const background=q.lightFraction>.03?(q.darkFraction>.15?'#626262':'#171717'):'#ffffff';
   const result={generated:false,sourceType:'upload',candidates:[{id:'uploaded-logo',source:dataUrl(source),image:dataUrl(processed.png),placement:{background,area:'logo-only'},quality:{...q,status:'review',requiresReview:true,sourceKind:'uploaded-screenshot'}}]};

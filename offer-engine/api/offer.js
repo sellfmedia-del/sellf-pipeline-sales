@@ -1,3 +1,4 @@
+import {publicationUrl} from '../src/proposal/publication.mjs';
 import {createPreviewStore} from '../src/proposal/preview-store.mjs';
 import {sessionFor} from '../src/proposal/preview-session.mjs';
 import {createOfferStore} from '../src/proposal/storage.mjs';
@@ -27,16 +28,16 @@ export function createOfferHandler({getStore=()=>process.env.OFFER_PREVIEW_MODE=
     return res.status(200).json({offer});
    }
    if(b.action==='outbox'){if(store.mode!=='isolated-preview')throw Error('Test bildirimleri bu ortamda kapalı.');return res.status(200).json({requests:await store.outbox(token)});}
-   if(b.action==='list'){const rows=await store.list(token,String(b.leadId||''));return res.status(200).json({offers:rows.map(row=>{const {ownerLink,...offer}=row;return {...offer,...(ownerLink?{publicUrl:'https://'+host+'/offers/customer.html#'+ownerLink.token,password:ownerLink.password}:{})};})});}
+   if(b.action==='list'){const rows=await store.list(token,String(b.leadId||''));return res.status(200).json({offers:rows.map(row=>{const {ownerLink,...offer}=row;return {...offer,...(ownerLink?{publicUrl:publicationUrl(host,ownerLink),password:ownerLink.password}:{})};})});}
    if(b.action==='publish'){
     if(!store.portalConfigured()||!getPortalSecret())throw Error('Müşteri bağlantısı için teklif kaydı ve bağlantı güvenliği tamamlanmalı.');
     if(!/^[a-f0-9-]{36}$/.test(b.offerId))throw Error('Teklif kaydı geçersiz.');
     const published=await store.publish(token,b.offerId,getPortalSecret());
-    return res.status(200).json({...published,url:'https://'+host+'/offers/customer.html#'+published.token});
+    return res.status(200).json({...published,url:publicationUrl(host,published)});
    }
    if(b.action==='request')throw Error('Sözleşme talebi, teklifteki e-posta düğmesiyle e-posta uygulamanızdan gönderilir.');
    if(b.action!=='access')throw Error('Teklif işlemi geçersiz.');
-   const offer=await store.access(b.token,b.password,getPortalSecret());
+   const offer=b.slug&&store.accessSlug?await store.accessSlug(b.slug,b.password,getPortalSecret()):await store.access(b.token,b.password,getPortalSecret());
    return res.status(200).json({id:offer.id,version:offer.version,document:{...offer.customer_document,version:offer.version}});
   }catch(error){return res.status(422).json({error:error.message||'Teklif işlemi tamamlanamadı.'});}
  };

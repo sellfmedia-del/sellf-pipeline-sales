@@ -66,3 +66,16 @@ test('upload endpoint stays preview-only and same-origin',async()=>{
     res=response();await handler({method:'POST',headers:{host:'preview.example',origin:'https://preview.example'},body:{image:await screenshot()}},res);assert.equal(res.code,200);assert.equal(res.body.candidates[0].quality.transparency,true);
   }finally{if(original===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=original;}
 });
+
+test('near-white JPEG screenshot and monochrome letter counters become transparent without recoloring ink',async()=>{
+ const image=await screenshot({background:'#f8f8f8',fill:'#151515',format:'jpeg'});
+ const result=await prepareUploadedLogo(image);const logo=result.candidates[0];
+ const {data,info}=await sharp(Buffer.from(logo.image.split(',')[1],'base64')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ assert.equal(data[3],0);assert.equal(data[(Math.floor(info.height/2)*info.width+Math.floor(info.width/2))*4+3],0);assert.equal(logo.quality.changedSolid,0);
+});
+test('tiny edge color variation and already-transparent tightly cropped artwork need no repeat upload',async()=>{
+ const image=await sharp(Buffer.from('<svg width="500" height="180"><rect width="500" height="180" fill="#fff"/><rect width="500" height="1" fill="#f4f4f4"/><rect x="50" y="40" width="400" height="100" fill="#185FA5"/></svg>')).png().toBuffer();
+ assert.equal((await prepareUploadedLogo('data:image/png;base64,'+image.toString('base64'))).candidates[0].quality.transparency,true);
+ const tight=await sharp(Buffer.from('<svg width="300" height="60"><rect width="300" height="60" rx="20" fill="#185FA5"/></svg>')).png().toBuffer();
+ assert.equal((await prepareUploadedLogo('data:image/png;base64,'+tight.toString('base64'))).candidates[0].quality.touchesEdge,false);
+});

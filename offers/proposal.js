@@ -27,7 +27,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};
   for(const key of ['urgent','important','low']){
    const items=findings.filter(f=>priority[f.priority]===key),list=$('#so-actions-'+key);list.replaceChildren();
-   items.slice(0,2).forEach(f=>{const li=add('li',f.statement,list);li.title=f.impact;});
+   items.forEach(f=>{const li=add('li',f.statement,list);li.title=f.impact;});
    if(!items.length)add('li','Bu öncelikte doğrulanmış bulgu yok.',list);
    $('#so-count-'+key).textContent=({urgent:'Acil',important:'Önemli',low:'Düşük öncelikli'})[key]+' · '+items.length;
   }
@@ -41,6 +41,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const labels=[names[id],d.score==null?'Veri eksik':d.score+'/100',d.dataStatus==='full'?'Kaynaklı değerlendirme':'İç veriyle doğrula'];
    labels.forEach((label,i)=>{if(i)add('span','→',flow);add('div',label,flow);});
    $('#so-takeaway').textContent=d.rationale;
+   let highlights=$('#so-dimension-highlights');if(!highlights){highlights=document.createElement('ul');highlights.className='so-dimension-highlights';highlights.id='so-dimension-highlights';$('#so-takeaway').after(highlights);}highlights.replaceChildren();for(const item of (d.highlights||[]))add('li',item.text,highlights);
    if(d.score!=null){const bar=add('div','',flow,'so-score');bar.style.gridColumn='1 / -1';const fill=add('span','',bar);fill.style.width=Math.max(0,Math.min(100,d.score))+'%';}
   }
   root.querySelectorAll('[data-dim]').forEach(b=>b.addEventListener('click',()=>dimension(b.dataset.dim)));dimension('financial');

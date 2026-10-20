@@ -22,7 +22,7 @@ rewrite or reject the model's interpretations. Missing measured metrics remain
 null; preliminary scores are labelled as estimates per the approved methodology.
 
 The full report JSON is retained in `audit.data.report` as internal input.
-`audit-selection.mjs` selects at most six existing findings (two per priority),
+`audit-selection.mjs` selects relevant existing findings without a six-heading/finding cap,
 160-character finding excerpts and 220-character dimension takeaways. It favors
 critical findings, selected-service links and brief relevance, deduplicates text,
 and changes no BHS scores. Full reports, benchmarks, onboarding questions and

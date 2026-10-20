@@ -1,5 +1,6 @@
 import {sealSession,openEnvelope} from './preview-session.mjs';
 import {randomBytes} from 'node:crypto';
+import {brandSlug,validSlug} from './publication.mjs';
 import {tokenHash,passwordHash} from './storage.mjs';
 export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,key=process.env.OFFER_STORAGE_GATEWAY_KEY,portalSecret=process.env.OFFER_PORTAL_SECRET,enabled=process.env.OFFER_PREVIEW_MODE==='true'&&process.env.OFFER_PERSISTENCE_ENABLED==='true',fetchImpl=fetch}={}){
  let capability;
@@ -12,7 +13,23 @@ export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,ke
   syncCards:(jwt,leads)=>call('sync_cards',{jwt,leads}),deleteCards:(jwt,field,value)=>call('delete_cards',{jwt,field,value}),
   bootstrap:()=>call('bootstrap'),refresh:refreshToken=>call('refresh',{refreshToken}),fixture:jwt=>call('fixture',{jwt}),
   save:(jwt,args)=>call('save',{jwt,args}),async list(jwt,leadId){const rows=await call('list',{jwt,leadId});return rows.map(row=>{const {operator_link_envelope,...value}=row;return {...value,...(operator_link_envelope?{ownerLink:openEnvelope(operator_link_envelope,portalSecret,'published-link:'+row.id)}:{})};});},outbox:jwt=>call('outbox',{jwt}),
-  async publish(jwt,id,secret){const token=randomBytes(32).toString('base64url'),password=randomBytes(12).toString('base64url');const rows=await call('publish',{jwt,id,tokenHash:tokenHash(token),passwordHash:passwordHash(secret,token,password),operatorLinkEnvelope:sealSession({token,password},secret,'published-link:'+id)});if(rows?.length!==1)throw Error('Test teklifi yayınlama yetkisi doğrulanamadı.');return {id,version:rows[0].version,token,password};},
+  async publish(jwt,id,secret){
+   const row=await call('publication',{jwt,id});if(!row)throw Error('Teklif kaydı bulunamadı.');
+   const existing=row.operator_link_envelope?openEnvelope(row.operator_link_envelope,secret,'published-link:'+id):null;
+   if(row.state==='published'&&existing?.slug)return {id,version:row.version,...existing};
+   const token=existing?.token||randomBytes(32).toString('base64url'),password=existing?.password||randomBytes(12).toString('base64url');
+   const base=brandSlug(row.customer_document?.brand?.name);
+   for(const slug of [base,base+'-v'+row.version+'-'+id.replaceAll('-','').slice(0,8)]){
+    try{
+     const link={token,password,slug},rows=await call('publish',{jwt,id,slug,expectedEnvelope:row.operator_link_envelope||null,tokenHash:tokenHash(token),passwordHash:passwordHash(secret,token,password),operatorLinkEnvelope:sealSession(link,secret,'published-link:'+id)});
+     if(rows?.length===1)return {id,version:rows[0].version,...link};
+     const current=await call('publication',{jwt,id});if(current?.state==='published'&&current.operator_link_envelope)return {id,version:current.version,...openEnvelope(current.operator_link_envelope,secret,'published-link:'+id)};
+     throw Error('Teklif yayın kaydı değişti; yeniden ücretli işlem gerekmez.');
+    }catch(error){if(!['slug_unavailable','database_23505'].includes(error.code))throw error;}
+   }
+   throw Error('Bu marka bağlantısı kullanılıyor; teklif taslağı korundu.');
+  },
+  async accessSlug(slug,password,secret){if(!validSlug(slug)||typeof password!=='string'||!password||password.length>128)throw Error('Teklif bağlantısı veya şifresi doğrulanamadı.');const row=await call('resolve_slug',{slug});if(!row?.operator_link_envelope)throw Error('Teklif bağlantısı veya şifresi doğrulanamadı.');const link=openEnvelope(row.operator_link_envelope,secret,'published-link:'+row.id);return this.access(link.token,password,secret);},
   async access(token,password,secret){if(!/^[A-Za-z0-9_-]{43}$/.test(token||'')||typeof password!=='string'||password.length>128)throw Error('Test bağlantısı veya şifresi geçersiz.');capability={tokenHash:tokenHash(token),passwordHash:passwordHash(secret,token,password)};return call('access',capability);},
   queue:(offer,input,payload)=>call('queue',{offerId:offer.id,input,payload,...capability}),claim:id=>call('claim',{id}),mark:(id,state,providerId)=>call('mark',{id,state,providerId})
  };

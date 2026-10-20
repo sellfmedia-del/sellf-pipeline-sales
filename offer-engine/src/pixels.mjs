@@ -11,7 +11,7 @@ export async function finishLogo(buffer, reference) {
   const n=width*height;
   let clear=0,opaque=0;
   for(let i=0;i<n;i++) { if(data[i*4+3]<10)clear++; if(data[i*4+3]>245)opaque++; }
-  const method=clear>n*.03 ? 'native-transparency' : 'edge-matte';
+  const method=clear>0 ? 'native-transparency' : 'edge-matte';
   let background=[255,255,255];
   let matteStable=true;
   if(method==='edge-matte') {
@@ -25,26 +25,30 @@ export async function finishLogo(buffer, reference) {
       b.count++; for(let c=0;c<3;c++)b.sum[c]+=data[p*4+c]; buckets.set(key,b);
     }
     const dominant=[...buckets.values()].sort((a,b)=>b.count-a.count)[0];
-    matteStable=dominant.count/edge.length>.8;
     background=dominant.sum.map(v=>Math.round(v/dominant.count));
+    const nearby=edge.filter(p=>background.every((v,c)=>Math.abs(data[p*4+c]-v)<=24));
+    matteStable=nearby.length/edge.length>.9;
+    if(matteStable)background=[0,1,2].map(c=>{const channel=nearby.map(p=>data[p*4+c]).sort((a,b)=>a-b);return channel[Math.floor(channel.length/2)];});
     if(matteStable) {
       const visited=new Uint8Array(n),queue=new Int32Array(n); let head=0,tail=0;
       const distance=p=>Math.max(...background.map((v,c)=>Math.abs(data[p*4+c]-v)));
-      const add=p=>{if(!visited[p] && distance(p)<=8){visited[p]=1;queue[tail++]=p;}};
+      const add=p=>{if(!visited[p] && distance(p)<=18){visited[p]=1;queue[tail++]=p;}};
       // A white-only mark on a dark uniform backdrop has background inside
       // letter counters as well. Clear those enclosed dark pixels too; colored
       // marks keep the conservative edge-only path and their white artwork.
-      let strong=0,white=0,chromatic=0;
-      if(background.every(c=>c<80))for(let p=0;p<n;p++)if(distance(p)>60){
+      let strong=0,white=0,dark=0,chromatic=0;
+      for(let p=0;p<n;p++)if(distance(p)>60){
         strong++;
         const rgb=[data[p*4],data[p*4+1],data[p*4+2]];
         if(rgb.every(c=>c>210))white++;
+        if(rgb.every(c=>c<80))dark++;
         if(Math.max(...rgb)-Math.min(...rgb)>18)chromatic++;
       }
       // Thin glyphs can contain many neutral gray antialias pixels. They must
       // not prevent white-only counter removal; any colored artwork still does.
-      const whiteOnly=strong>n*.001&&white/strong>.5&&chromatic/strong<.005;
-      if(whiteOnly){for(let p=0;p<n;p++)add(p);}else edge.forEach(add);
+      const whiteOnly=background.every(c=>c<80)&&strong>n*.001&&white/strong>.5&&chromatic/strong<.005;
+      const darkOnly=background.every(c=>c>210)&&strong>n*.001&&dark/strong>.5&&chromatic/strong<.005;
+      if(whiteOnly||darkOnly){for(let p=0;p<n;p++)add(p);}else edge.forEach(add);
       while(head<tail) {
         const p=queue[head++],x=p%width,y=Math.floor(p/width);
         data[p*4+3]=0;
@@ -82,7 +86,8 @@ export async function finishLogo(buffer, reference) {
   }
   if(right<left||bottom<top||foreground<n*.001)throw new Error('Logo kesiti boş görünüyor.');
   const trim={left,top,width:right-left+1,height:bottom-top+1};
-  const touchesEdge=left<1||top<1||right>width-2||bottom>height-2;
+  const nativeTight=method==='native-transparency'&&left===0&&top===0&&right===width-1&&bottom===height-1;
+  const touchesEdge=!nativeTight&&(left<1||top<1||right>width-2||bottom>height-2);
   const compositingError=method==='edge-matte'?error/(n*3):0;
   const transparency=Array.from({length:n},(_,p)=>data[p*4+3]).some(a=>a<245);
   const sourceMismatchRatio=sourceMismatch/Math.max(1,foreground);
