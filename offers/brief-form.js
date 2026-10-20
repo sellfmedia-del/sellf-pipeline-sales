@@ -144,7 +144,7 @@
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
-      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Kaynak ve içerik kontrolleri tamamlandı. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
+      dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
     }
     const formatMoney=value=>new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY',maximumFractionDigits:2}).format(value);
@@ -274,7 +274,7 @@
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           action='status';
-          const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',revision:'Kanıtların kapsamı ve yorumların kesinliği gözden geçiriliyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
+          const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',evidence:'Bulunan kaynaklar tek araştırma paketinde okunuyor…',scope:'BHS ve görüşme bağlamına uygun hizmet kapsamı hazırlanıyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',revision:'Kanıtların kapsamı ve yorumların kesinliği gözden geçiriliyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
           if(stages[response.phase])notice.textContent=stages[response.phase];
           await new Promise(resolve=>setTimeout(resolve,10000));
           if(current.stopped)return;
