@@ -3,14 +3,15 @@ import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,tariff,BudgetError} from '../budget/ledger.mjs';
 import {createBoundedProviders} from '../budget/providers.mjs';
-import {phases,stageKey,runBoundedStage} from './bounded-research.mjs';
+import {phases,stageKey,runBoundedStage} from './direct-research.mjs';
+import {directAuditResult} from './direct-report.mjs';
 import {offerGeminiKey} from '../config.mjs';
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=runBoundedStage,now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
-  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',tariffVersion:tariff.version,qualityBenchmark:'pending'});
+  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',tariffVersion:tariff.version,qualityBenchmark:'not_requested',contentReview:false});
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
@@ -40,21 +41,27 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
    if(!['start','status','advance'].includes(action))throw Error();
-   for(const name of phases.filter(x=>x!=='complete')){
-    const step=await ledger.get(stageKey(brief,name));
+   const pendingPhases=phases.filter(x=>x!=='complete');
+   const rows=await Promise.all(pendingPhases.map(name=>ledger.get(stageKey(brief,name))));
+   for(const [index,name] of pendingPhases.entries()){
+    const step=rows[index];
     if(step?.state==='complete')continue;
     phase=name;log('bhs_phase',{tariffVersion:tariff.version});
     if(step?.state==='uncertain'&&step.charge_kurus!==0)throw new BudgetError('budget_uncertain','Önceki aşama tamamlanamadı; kayıt ve ayrılmış maliyet korunuyor. Yeni ücretli çağrı başlatılmadı.');
     if(step?.state==='reserved')return res.status(200).json({phase,status:'in_progress',ticket,cost:await cost()});
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
+    const stageStarted=now();
     await runStage({phase,brief,ledger,providers});
-    log('bhs_response',{status:'stage_complete',cost:await cost()});
-    return res.status(202).json({phase:phases[phases.indexOf(phase)+1],status:'in_progress',ticket,cost:await cost()});
+    log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
+    const nextPhase=phases[phases.indexOf(phase)+1];
+    if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+    break;
    }
-   const audit=(await ledger.get(stageKey(brief,'semantic'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
+   const synthesis=(await ledger.get(stageKey(brief,'synthesis'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
+   const audit=directAuditResult(brief,synthesis);
    const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
-   const result={...final,stage:'audit',engineVersion:'bounded-evidence-pro-v1',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
+   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-v2',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){

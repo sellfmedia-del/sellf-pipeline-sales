@@ -5,9 +5,9 @@ import {offerGeminiKey} from '../config.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
 export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now}={}){
- let fxChecked=0;
+ let fxChecked=0,fxInFlight;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
- async function checkCurrency(){
+ async function readCurrency(){
   validTariff();if(now()-fxChecked<3600000)return;
   const response=await fetchImpl('https://www.tcmb.gov.tr/kurlar/today.xml',{signal:AbortSignal.timeout(10000),redirect:'error'});
   if(!response.ok)throw new BudgetError('fx_unavailable','Kur üst sınırı doğrulanamadı; ücretli işlem başlatılmadı.');
@@ -15,6 +15,10 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   const date=xml.match(/Tarih="(\d{2})\.(\d{2})\.(\d{4})"/),published=date?Date.UTC(Number(date[3]),Number(date[2])-1,Number(date[1])):NaN;
   if(!Number.isFinite(published)||now()-published>7*86400000||published>now()+86400000||!Number.isFinite(rate)||rate<=0||rate>tariff.usdTry)throw new BudgetError('fx_limit','Güncel kur bütçe varsayımıyla eşleşmiyor; yeni ücretli işlem başlatılmadı.');
   fxChecked=now();
+ }
+ async function checkCurrency(){
+  if(!fxInFlight)fxInFlight=readCurrency().finally(()=>{fxInFlight=null;});
+  return fxInFlight;
  }
  async function readJson(url,body,key,timeout){
   const response=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json',...key},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout),redirect:'error'});

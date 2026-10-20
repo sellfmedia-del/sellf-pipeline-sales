@@ -1,10 +1,11 @@
 # Isolated offer service
 
-The current preview defaults to bounded Tavily discovery + Gemini Pro analysis,
-with a persistent per-card spending ledger. Deep Research Max is not used by the
-deployed handler. See [BUDGET.md](BUDGET.md) for setup, cost assumptions, test
-evidence and the still-pending real quality comparison. Historical Deep Research
-details below describe the retained legacy adapter only.
+The current preview uses parallel Tavily discovery and Gemini Pro with the
+complete approved `methodology.txt`. Its full BHS JSON goes directly into proposal
+assembly. There is no separate semantic/content reviewer or recovery research
+loop. Technical JSON, URL safety, session/ownership and the persistent 50 TRY
+budget remain enforced. See [BUDGET.md](BUDGET.md). Historical Deep Research and
+reviewer details below describe retained legacy adapters only.
 
 This package deploys independently with Vercel root directory `offer-engine`. It has its own pinned lockfile and dependencies. It does not modify the Pipeline installation, Travis functions, existing environment variables or database.
 

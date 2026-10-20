@@ -112,3 +112,12 @@ test('Tavily advanced search is bounded, cached, and charged without free-quota 
  }});
  await provider.search('brand');await provider.search('brand');assert.equal(paid,1);assert.equal((await createLedger(db.call).status()).chargedKurus,616);
 });
+test('parallel discovery shares a single FX lookup and still reserves every paid search',async()=>{
+ const db=store();let fxCalls=0,paid=0,release;const ready=new Promise(r=>release=r);
+ const provider=createBoundedProviders({ledger:createLedger(db.call),geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async url=>{
+  if(url.includes('tcmb')){fxCalls++;await ready;return fx(46);}paid++;return json({results:[]});
+ }});
+ const pending=Promise.all(['brand finance','brand reviews','brand competitors'].map(q=>provider.search(q)));
+ await new Promise(r=>setImmediate(r));assert.equal(fxCalls,1);release();await pending;
+ assert.equal(paid,3);assert.equal((await createLedger(db.call).status()).chargedKurus,848);
+});

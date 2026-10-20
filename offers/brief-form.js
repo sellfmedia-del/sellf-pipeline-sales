@@ -124,7 +124,7 @@
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
       paragraph(data.summary);
-      if(data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
+      if(data.schemaVersion!=='bhs-v2-direct'&&data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
       heading('Ön BHS boyutları');
       const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
       data.dimensions.forEach(d=>{
@@ -139,7 +139,7 @@
       heading('Öncelikli bulgular');data.findings.forEach(f=>paragraph((f.kind==='inference'?'Çıkarım: ':f.kind==='brief'?'Müşteri beyanı: ':'Gözlem: ')+f.statement+' '+f.impact+' ['+f.sourceIds.join(', ')+']'));
       heading('Hizmet hipotezleri');data.serviceRecommendations.forEach(s=>paragraph(s.name+' — '+s.hypothesis+' Ölçüm: '+s.measurement));
       heading('Doğrulanacak sorular');data.meetingQuestions.forEach(q=>paragraph(q.question));
-      heading('Kaynaklar');data.sources.forEach(s=>paragraph(s.id+' · '+s.title+' · '+s.url+' · '+(s.publishedAt||'Yayın tarihi bilinmiyor')+' · '+s.verification.status));
+      heading('Kaynaklar');data.sources.forEach(s=>paragraph(s.id+' · '+(s.title||s.url)+' · '+s.url+' · '+(s.publishedAt||'Yayın tarihi bilinmiyor')+(data.schemaVersion==='bhs-v2-direct'?'':' · '+(s.verification?.status||''))));
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');data.quality.issues.forEach(x=>paragraph(x));}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
@@ -269,7 +269,8 @@
           if(response.ticket)current.ticket=response.ticket;
           if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent='Kalıcı test alanı · Maliyet üst hesabı: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL';}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.phase==='complete'){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
+          if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
+          if(response.phase==='complete'){action='status';continue;}
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           action='status';

@@ -51,3 +51,13 @@ Normal feature builds run only `npm run build`; they never start research. Expli
 - https://ai.google.dev/api/interactions-api
 
 Direct REST is used for the agent-specific Interactions lifecycle; no unrelated chat SDK or provider fallback was added. Defaults are documented preview-agent/model identifiers and remain configurable for later provider changes.
+# Current deployed BHS flow
+
+The default API now uses `direct-research.mjs` and `direct-report.mjs`: parallel
+Tavily searches, one source collection pass, Gemini 3.1 Pro with the full approved
+methodology, then proposal scope. It does not call a semantic reviewer, require
+content-review approval, or launch a second recovery research pass. The complete
+model report JSON is preserved in the customer proposal's BHS data. Existing
+paid stage records and the per-card budget remain reusable. Details below about
+the previous Deep Research/reviewer adapter are historical.
+
