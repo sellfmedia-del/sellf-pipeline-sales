@@ -30,7 +30,9 @@ export function focusEvidence(packet,brief){
  const focused={...packet,sources};assertCoreEvidence(focused,brief);return focused;
 }
 export function boundedReportSchema(packet){
- const schema=structuredClone(reportSchema),p=schema.properties,sourceIds=packet.sources.map(s=>s.id);
+ // reportSchema intentionally shares its generic ID schema. A JSON clone
+ // separates those nodes before source IDs and finding IDs receive enums.
+ const schema=JSON.parse(JSON.stringify(reportSchema)),p=schema.properties,sourceIds=packet.sources.map(s=>s.id);
  const readPeers=packet.entities.filter(e=>e.role==='competitor'&&packet.sources.some(s=>host(s.finalUrl)===host(e.website)&&!s.metadataOnly));
  const peerIds=readPeers.map(p=>p.id),findingIds=['financial','operations','funnel','digital','perception','competition'].flatMap(d=>[1,2].map(n=>d+'_'+n));
  p.sources.minItems=8;p.sources.maxItems=12;p.sources.items.properties.id.enum=sourceIds;p.sources.items.properties.url.enum=packet.sources.map(s=>s.finalUrl);
