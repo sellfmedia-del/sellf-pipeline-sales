@@ -72,14 +72,14 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
    const approved=await previous('semantic');if(approved.status!=='ready')throw new BudgetError('quality_review','BHS içerik doğrulamasını geçmedi; teklif motoru başlatılmadı.');
    const {report}=await previous('synthesis'),guide=scopeEnvelope(brief,report);
    const schema={type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false};
-   const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Yeni sayı/fiyat/süre/sonuç vaadi yok; findingIds sadece rapordaki kimlikler.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},schema,{maxOutputTokens:3072,thinkingLevel:'LOW'});
+   const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Yeni sayı/fiyat/süre/sonuç vaadi yok; findingIds sadece rapordaki kimlikler.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},schema,{maxOutputTokens:3072,thinkingLevel:'LOW',jsonMode:true});
    validateScope(generated.data.scope,brief,report);
    return {scopePlan:generated.data.scope,proposalCopy:validateCopy(generated.data.copy,report),usage:generated.usage};
   }
   if(phase==='semantic'){
    const synthesis=await previous('synthesis'),{report}=synthesis,packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
    const reviewSchema=structuredClone(semanticSchema);reviewSchema.properties.findings.minItems=report.findings.length;reviewSchema.properties.findings.maxItems=report.findings.length;reviewSchema.properties.findings.items.properties.id.enum=report.findings.map(f=>f.id);reviewSchema.properties.dimensions.minItems=6;
-   const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),reviewSchema,{maxOutputTokens:4096,thinkingLevel:'LOW'});
+   const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),reviewSchema,{maxOutputTokens:6144,thinkingLevel:'LOW',jsonMode:true});
    const result=await engine.run({brief,packet,report,assessment:generated.data,researchId:'bounded_'+hash(brief).slice(0,24),synthesisId:'pro_'+hash(report).slice(0,24),semanticId:'review_'+hash(generated.data).slice(0,24),usage:{semantic:generated.usage}});
    result.data.researchMethod='bounded-primary-evidence-pro';result.data.packetHash=evidenceHash(packet);
    result.data.fullPacketHash=synthesis.fullPacketHash;result.data.analysisSourceCount=packet.sources.length;

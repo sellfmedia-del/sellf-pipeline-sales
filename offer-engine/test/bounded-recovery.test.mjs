@@ -34,6 +34,10 @@ test('compact report restores only verified metadata and leaves unmeasured bench
  assert.throws(()=>hydrateReport({...value,sources:[{id:'invented'}]},packet));
 });
 function fixture(){const rows=new Map([[stageKey(brief,'source_plan'),{state:'complete',value:{plan,searches:[]}}]]);return {rows,ledger:{get:async k=>rows.get(k),once:async(k,_input,amount,run)=>{assert.equal(amount,0);const value=await run();rows.set(k,{state:'complete',value});return value;}}};}
+test('proposal planning cannot consume an unapproved BHS',async()=>{
+ const {ledger,rows}=fixture();rows.set(stageKey(brief,'semantic'),{state:'complete',value:{status:'review'}});
+ await assert.rejects(runBoundedStage({phase:'scope',brief,ledger,providers:{generate:()=>assert.fail('unapproved BHS must not reach proposal planning')}}),e=>e.code==='quality_review');
+});
 test('sufficient actual evidence skips the recovery model and reuses the packet',async()=>{
  const {ledger}=fixture(),packet=enough();
  const providers={search:async query=>({query,results:[]}),generate:()=>assert.fail('no recovery model needed')};
