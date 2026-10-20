@@ -1,8 +1,10 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm test && npm run build",
   "outputDirectory": "public",
   "functions": {
-    "api/logo-upload.js": {"maxDuration":90},
+    "api/logo-upload.js": {
+      "maxDuration": 90
+    },
     "api/pricing.js": {
       "maxDuration": 60
     },
