@@ -15,7 +15,9 @@ export async function resolveTarget(input, resolver = lookup) {
   if (/^(localhost|metadata)(\.|$)|\.(localhost|local|internal|test|invalid)$/.test(host)) throw new Error('Bu adres kullanılamaz.');
   const addresses = ipaddr.isValid(host) ? [{ address:host, family:ipaddr.parse(host).kind()==='ipv6'?6:4 }] : await resolver(host,{all:true});
   if (!addresses.length || addresses.some(a => !isPublicAddress(a.address))) throw new Error('Bu adres herkese açık değil.');
-  return { url, address:addresses[0] };
+  // Serverless egress may have no IPv6 route. Keep DNS pinning and reject any
+  // private answer, while preferring a validated IPv4 address when available.
+  return { url, address:addresses.find(a=>a.family===4)||addresses[0] };
 }
 
 export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, deadline=Date.now()+45000 }={}) {

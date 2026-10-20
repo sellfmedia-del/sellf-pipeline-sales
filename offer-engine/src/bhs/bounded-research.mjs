@@ -18,7 +18,7 @@ export function seedQueries(brief){const brand=brief.brandName,domain=new URL(br
  `${brand} müşteri yorumları bayi servis değerlendirme`,
  `${brand} dijital pazarlama e ticaret bayi satış kanalları`
  ];}
-export async function runBoundedStage({phase,brief,ledger,providers,collect=createEvidenceCollector(),engine=createAuditEngine()}){
+export async function runBoundedStage({phase,brief,ledger,providers,collect=createEvidenceCollector({onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))}),engine=createAuditEngine()}){
  const key=stageKey(brief,phase);
  return ledger.once(key,{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   const previous=async name=>{const value=await ledger.get(stageKey(brief,name));if(value?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');return value.value;};
