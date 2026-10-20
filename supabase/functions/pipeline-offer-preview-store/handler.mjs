@@ -8,7 +8,7 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
  async function db(path,{body,method='GET',jwt,admin=true,prefer}={}){
   const key=admin?secret:publicKey;
   const response=await fetchImpl(url+path,{method,headers:{apikey:key,...(jwt?{Authorization:'Bearer '+jwt}:key?.startsWith('eyJ')?{Authorization:'Bearer '+key}:{}),...(body?{'Content-Type':'application/json'}:{}),...(prefer?{Prefer:prefer}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),redirect:'error'});
-  if(!response.ok){const error=new Error('Test kayıt servisi işlemi tamamlayamadı.');error.status=response.status;throw error;}
+  if(!response.ok){const error=new Error('Test kayıt servisi işlemi tamamlayamadı.');error.status=response.status;try{const detail=await response.json();if(/^[A-Z0-9_]{1,30}$/.test(detail.code||''))error.code='database_'+detail.code;const reasons=['step input changed','budget not found','preview lead required','reservation ownership mismatch','invalid settled usage','step result too large'];if(reasons.includes(detail.message))error.code=detail.message.replaceAll(' ','_');}catch{}throw error;}
   const raw=await response.text();return raw.trim()?JSON.parse(raw):null;
  }
  async function user(jwt){
@@ -120,6 +120,6 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
     await db('/rest/v1/'+tables.requests+'?id=eq.'+body.id,{method:'PATCH',body:{delivery_state:body.state,...(body.providerId?{provider_id:body.providerId}:{})}});return reply({ok:true});
    }
    throw Error('Test işlemi geçersiz.');
-  }catch(error){return reply({error:error.message||'Test kayıt servisi tamamlanamadı.'},422);}
+  }catch(error){return reply({error:error.message||'Test kayıt servisi tamamlanamadı.',code:error.code||'preview_gateway'},422);}
  };
 }

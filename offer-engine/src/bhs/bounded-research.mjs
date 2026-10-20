@@ -38,7 +38,8 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
    followups.push(`site:${new URL(brief.website).hostname} ${brief.brandName} yıllık rapor finansal satış gelir müşteri`);
    const additional=[];for(const query of followups.slice(0,4))additional.push(await providers.search(query));
    const all=[...searches,...additional],extraSources=all.flatMap(x=>x.results.map(r=>r.url));
-   const packet=await collect(brief,plan,{extraSources}),coverageIssues=[];
+   let packet;try{packet=await collect(brief,plan,{extraSources});}catch(error){throw new BudgetError('evidence_invalid',/^Kanıt/.test(error.message||'')?error.message:'Kaynak paketinin teknik doğrulaması tamamlanamadı.');}
+   const coverageIssues=[];
    try{assertCoreEvidence(packet,brief);}catch(error){coverageIssues.push(error.message);}
    if(packet.sources.length<8)coverageIssues.push('BHS için en az sekiz okunmuş kaynak gerekli.');
    // Persist the actual packet even when coverage is incomplete. The recovery

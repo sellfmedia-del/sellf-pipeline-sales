@@ -6,7 +6,7 @@ export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,ke
  async function call(action,body={}){
   if(!enabled||!key||!/^https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/pipeline-offer-preview-store$/.test(url||''))throw Error('Kalıcı test alanı henüz etkin değil.');
   const r=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json','x-offer-store-key':key},body:JSON.stringify({action,...body}),signal:AbortSignal.timeout(40000),redirect:'error'});
-  let data;try{data=await r.json();}catch{throw Error('Test kayıt servisi yanıt vermedi.');}if(!r.ok)throw Error(data.error||'Test kaydı tamamlanamadı.');return data;
+  let data;try{data=await r.json();}catch{throw Error('Test kayıt servisi yanıt vermedi.');}if(!r.ok){const error=Error(data.error||'Test kaydı tamamlanamadı.');error.code=data.code||'preview_store_'+r.status;throw error;}return data;
  }
  return {configured:()=>enabled&&Boolean(url&&key),portalConfigured:()=>enabled&&Boolean(url&&key),mode:'isolated-preview',call,
   syncCards:(jwt,leads)=>call('sync_cards',{jwt,leads}),deleteCards:(jwt,field,value)=>call('delete_cards',{jwt,field,value}),

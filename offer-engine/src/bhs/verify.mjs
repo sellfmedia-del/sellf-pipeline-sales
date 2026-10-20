@@ -4,7 +4,7 @@ import {dimensions} from './brief.mjs';
 import {assertSchema} from './schema.mjs';
 import {extractPdfText} from './pdf.mjs';
 
-export const normalized=value=>String(value).normalize('NFKC').replace(/\s+/g,' ').trim();
+export const normalized=value=>String(value).toWellFormed().replace(/\u0000/g,'').normalize('NFKC').replace(/\s+/g,' ').trim();
 export function publicUrl(value){
   try{const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.hash||u.href.length>2048)return '';return u.href;}catch{return '';}
 }
