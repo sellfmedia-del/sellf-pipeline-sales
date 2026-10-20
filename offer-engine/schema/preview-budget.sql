@@ -40,6 +40,12 @@ begin
  if p_op='reserve' then
   if s.step_key is not null then
    if s.input_hash<>p_hash then raise exception 'step input changed'; end if;
+   -- A free coordinator may resume after a validation failure. Its nested
+   -- paid reservations remain immutable, charged and individually cached.
+   if s.charge_kurus=0 and p_amount=0 and s.state='uncertain' and p_token is not null then
+    update public.pipeline_offer_preview_budget_steps set state='reserved',claim_token=p_token,value=null where budget_id=b.id and step_key=p_step returning * into s;
+    return jsonb_build_object('claimed',true,'step',to_jsonb(s),'chargedKurus',b.charged_kurus);
+   end if;
    return jsonb_build_object('claimed',false,'step',to_jsonb(s),'chargedKurus',b.charged_kurus);
   end if;
   if p_hash !~ '^[a-f0-9]{64}$' or p_token is null or p_amount<0 or p_amount>4500 then raise exception 'invalid reservation'; end if;
