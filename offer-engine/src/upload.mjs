@@ -3,7 +3,7 @@ import { finishLogo } from './pixels.mjs';
 import {cropLogoRegion} from './logo-region.mjs';
 
 const MAX_BYTES=2*1024*1024;
-export async function prepareUploadedLogo(image,{locate}={}) {
+export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
   if(typeof image!=='string'||image.length>Math.ceil(MAX_BYTES/3)*4+100)throw new Error('Görsel en fazla 2 MB olabilir.');
   const match=/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
   if(!match||match[2].length%4)throw new Error('PNG, JPG veya WebP ekran görüntüsü yükle.');
@@ -16,7 +16,7 @@ export async function prepareUploadedLogo(image,{locate}={}) {
   let transparent=false;for(let i=3;i<data.length;i+=4)if(data[i]<10){transparent=true;break;}
   let cropped={image:source,backgroundPoints:[]};
   if(locate&&!transparent)cropped=await cropLogoRegion(source,await locate(source));
-  const processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints});
+  const processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints,chooseBackdrop});
   const q=processed.quality;
   if(!q.transparency||!q.matteStable||q.changedSolid||q.compositingError>=1.5)throw new Error('Bu görselde arka plan logodan güvenle ayrılamadı. Logoya yakın, düz arka planlı bir ekran görüntüsü seç.');
   if(q.touchesEdge)throw new Error('Logo görselin kenarına değiyor. Logonun çevresinde biraz boşluk bulunan bir ekran görüntüsü seç.');

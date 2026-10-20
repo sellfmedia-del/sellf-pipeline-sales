@@ -6,6 +6,8 @@ import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {plan} from './fixtures/evidence.mjs';
 import {directReportSchema,directResearchInstruction} from '../src/bhs/direct-report.mjs';
 import {researchTopics} from '../src/bhs/research-topics.mjs';
+import {prepareResearchInput} from '../src/bhs/research-input.mjs';
+import {researchHtmlText} from '../src/bhs/evidence.mjs';
 
 test('source excerpts retain nonfinancial methodology evidence on a long financial-heavy page',()=>{
  const text=('Revenue profit financial growth investment. '.repeat(600))+'\n'+('Customer review rating returns support team shipping subscription checkout. '.repeat(35));
@@ -24,4 +26,11 @@ test('customer selection keeps independent medium-priority research and benchmar
 });
 test('report contract explicitly covers every approved methodology area without introducing a second reviewer',()=>{
  assert.ok(directReportSchema.required.includes('researchCoverage'));const instruction=directResearchInstruction();for(const topics of Object.values(researchTopics))for(const topic of topics)assert.ok(instruction.includes(topic));assert.ok(instruction.includes('markanın o alanda başarısız olduğunu kanıtlamaz'));
+});
+
+test('irrelevant tool landing pages and other companies cannot crowd out brand research',()=>{
+ const brief={brandName:'One More Global Inc.',website:'https://onemoreglobalinc.com/'},sources=[{id:'brand',finalUrl:brief.website,title:'Official brand',excerpts:[{text:'Products and delivery'}]},{id:'unrelated',finalUrl:'https://linkedin.com/jobs/energy',title:'ON.energy logistics jobs',excerpts:[{text:'Logistics role'}]},{id:'tool',finalUrl:'https://similarweb.com/website/',title:'Website Traffic Checker',excerpts:[{text:'Try our generic analytics platform'}]},{id:'news',finalUrl:'https://publisher.example/news',title:'One More Global opens a new market',excerpts:[{text:'Reported brand event'}]}];
+ const out=prepareResearchInput(brief,{packet:{entities:[],sources},searches:[{query:'q',results:[{url:'https://generic.example/',title:'Search engine tools',content:'No specific brand data'},{url:'https://publisher.example/social',title:'One More Global Inc. social channels',content:'Brand-specific signals'}]}]});
+ assert.deepEqual(out.packet.sources.map(s=>s.id),['brand','news']);assert.equal(out.searchEvidence[0].results.length,1);assert.equal(sources.length,4);
+ assert.equal(researchHtmlText('<header>MENU MENU</header><nav>MENU</nav><main><p>Actual product subscription terms</p></main><footer>MENU MENU</footer>'),'Actual product subscription terms');
 });

@@ -20,6 +20,9 @@ export function publicMetadata(html){
  }
  return [...new Set(values)].join(' ');
 }
+export function researchHtmlText(html){
+ return normalized(plainHtml(Buffer.from(html.replace(/<(header|nav|footer|aside|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' '))));
+}
 export function sourceLinks(html,url){
  const links=[];
  for(const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)){
@@ -77,10 +80,10 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
     const contentType=response.headers['content-type']||'';
     if(/application\/pdf/i.test(contentType)||response.body.subarray(0,10).includes(Buffer.from('%PDF-'))){const result=await extractPdfText(response.body);return {url:input,finalUrl:url,title:new URL(url).pathname.split('/').at(-1)||'Financial report',text:result.text,method:'pdf',pages:result.pages,links:[]};}
     if(!/text\/(html|plain)|application\/xhtml\+xml/i.test(contentType))throw Error('unsupported');
-    const html=response.body.toString('utf8'),text=normalized(/html/.test(contentType)?plainHtml(response.body):html);
+    const html=response.body.toString('utf8'),text=/html/.test(contentType)?researchHtmlText(html):normalized(html);
     const title=normalized(plainHtml(Buffer.from(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||new URL(url).hostname))).slice(0,300);
     if(blockedText(title+' '+text))throw Error('access_wall');
-    const technicalSignals=/html/.test(contentType)?{https:new URL(url).protocol==='https:',mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
+    const technicalSignals=/html/.test(contentType)?{https:new URL(url).protocol==='https:',navigation:sourceLinks(html,url).slice(0,20),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
     return {url:input,finalUrl:url,title,text,technicalSignals,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
    }
    throw Error('redirect_limit');

@@ -77,6 +77,15 @@ export function validateScope(value,brief,audit){
  return {...plan,target,warnings,fallback:false};
 }
 
+// A model may paraphrase a briefQuote despite the literal-quote instruction.
+// Remove that false attribution when valid BHS references already support it;
+// never fabricate an exact quote or relax the pricing/save boundary validator.
+export function normalizeGeneratedScope(value,brief,audit){
+ const plan=structuredClone(value),ids=new Set(audit.findings.map(f=>f.id));
+ for(const service of plan?.services||[])if(service.briefQuote!==null&&!inBrief(service.briefQuote,brief)&&service.findingIds?.length&&service.findingIds.every(id=>ids.has(id)))service.briefQuote=null;
+ return plan;
+}
+
 // If scope generation is unavailable, still produce costed alternatives. These
 // cover a clearly labelled initial planning scope, not a fabricated full audit.
 export function fallbackScope(brief){

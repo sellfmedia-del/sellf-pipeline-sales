@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import {prepareUploadedLogo} from '../src/upload.mjs';
 import {cropLogoRegion} from '../src/logo-region.mjs';
+import {finishLogo} from '../src/pixels.mjs';
 
 test('screenshot localization cuts original pixels and excludes browser chrome and unrelated navigation',async()=>{
  const source=await sharp(Buffer.from('<svg width="1000" height="600"><rect width="1000" height="600" fill="#ddd"/><rect x="0" y="60" width="1000" height="100" fill="white"/><rect x="30" y="85" width="250" height="50" fill="#165baa"/><rect x="650" y="90" width="220" height="35" fill="black"/><rect x="0" y="180" width="1000" height="420" fill="#ad4052"/></svg>')).png().toBuffer();
@@ -20,4 +21,10 @@ test('Retina page screenshots over four megapixels retain a normal header-sized 
  const source=await sharp(Buffer.from('<svg width="2560" height="1600"><rect width="2560" height="1600" fill="white"/><rect x="80" y="80" width="132" height="90" fill="#185FA5"/><rect x="800" y="80" width="1000" height="100" fill="black"/></svg>')).png().toBuffer();
  const result=await prepareUploadedLogo('data:image/png;base64,'+source.toString('base64'),{locate:async()=>({found:true,box:[50,31.25,106.25,82.8125],backgroundPoints:[]})});
  assert.equal(result.candidates[0].quality.width,156);assert.equal(result.candidates[0].quality.changedSolid,0);assert.equal(result.candidates[0].quality.transparency,true);
+});
+
+test('enclosed canvas is removable while intentional white artwork stays intact',async()=>{
+ const source=await sharp(Buffer.from('<svg width="400" height="160"><rect width="400" height="160" fill="#fce5ea"/><rect x="30" y="20" width="340" height="120" rx="12" fill="red"/><rect x="38" y="28" width="324" height="104" rx="8" fill="#fce5ea"/><rect x="70" y="55" width="55" height="50" fill="white"/></svg>')).png().toBuffer();
+ const result=await finishLogo(source,undefined,{chooseBackdrop:async(_image,geometry)=>{assert.equal(geometry.regions.length,1);return geometry.regions.map(r=>r.id);}});
+ const {data,info}=await sharp(result.png).ensureAlpha().raw().toBuffer({resolveWithObject:true});assert.equal(data[(60*info.width+150)*4+3],0);assert.ok([...data].some((v,i)=>i%4===3&&v===255));assert.equal(result.quality.changedSolid,0);
 });

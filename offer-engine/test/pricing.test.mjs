@@ -149,3 +149,11 @@ test('stored scope is safe to revalidate and cannot smuggle a derived price targ
  assert.deepEqual(result.data.alternatives,(await run(ctx)).data.alternatives);
  assert.throws(()=>validateScope({...normalized,unexpected:true},ctx.brief,ctx.audit.data));
 });
+
+test('generated paraphrases lose false brief attribution while real BHS references keep the scope usable',async()=>{
+ const {normalizeGeneratedScope}=await import('../src/pricing/scope.mjs');
+ const brief={goals:'Grow',needs:'Need',services:'SEO',meetingNotes:''},audit={findings:[{id:'f1'}]};
+ const plan={services:[{briefQuote:'Paraphrase not in brief',findingIds:['f1']}]};
+ const normalized=normalizeGeneratedScope(plan,brief,audit);assert.equal(normalized.services[0].briefQuote,null);assert.equal(plan.services[0].briefQuote,'Paraphrase not in brief');
+ assert.equal(normalizeGeneratedScope({services:[{briefQuote:'Unproven',findingIds:[]}]},brief,audit).services[0].briefQuote,'Unproven');
+});

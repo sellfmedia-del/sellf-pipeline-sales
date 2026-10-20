@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 
 // Only removes edge-connected, near-uniform backdrop pixels. It never redraws a logo.
-export async function finishLogo(buffer, reference,{backgroundPoints=[]}={}) {
+export async function finishLogo(buffer, reference,{backgroundPoints=[],chooseBackdrop}={}) {
   const {data:original,info}=await sharp(buffer).ensureAlpha().raw().toBuffer({resolveWithObject:true});
   const {width,height}=info;
   const referencePixels=reference?await sharp(reference).ensureAlpha().raw().toBuffer():null;
@@ -53,6 +53,18 @@ export async function finishLogo(buffer, reference,{backgroundPoints=[]}={}) {
         const p=queue[head++],x=p%width,y=Math.floor(p/width);
         data[p*4+3]=0;
         if(x)add(p-1);if(x<width-1)add(p+1);if(y)add(p-width);if(y<height-1)add(p+width);
+      }
+      // Colored marks can enclose backdrop inside an outline or letter. Identify
+      // exact backdrop islands; a crop-level vision call distinguishes these
+      // from intentional white artwork without redrawing the mark.
+      if(chooseBackdrop){
+        const checked=new Uint8Array(visited),islands=[];
+        for(let start=0;start<n;start++)if(!checked[start]&&distance(start)<=18){
+          const pixels=[],pending=[start];checked[start]=1;let l=width,t=height,r=0,b=0;
+          for(let i=0;i<pending.length;i++){const p=pending[i],x=p%width,y=Math.floor(p/width);pixels.push(p);l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);for(const q of [x?p-1:-1,x<width-1?p+1:-1,y?p-width:-1,y<height-1?p+width:-1])if(q>=0&&!checked[q]&&distance(q)<=18){checked[q]=1;pending.push(q);}}
+          if(pixels.length>=3&&islands.length<32)islands.push({id:'bg'+islands.length,box:[t,l,b+1,r+1],area:pixels.length,pixels});
+        }
+        if(islands.length){const remove=await chooseBackdrop(buffer,{width,height,background,regions:islands.map(({pixels,...r})=>r)});if(!Array.isArray(remove)||remove.some(id=>!islands.some(r=>r.id===id)))throw Error('Logo iç boşlukları güvenle ayrıştırılamadı.');for(const island of islands)if(remove.includes(island.id))for(const p of island.pixels){visited[p]=1;data[p*4+3]=0;}}
       }
       // Decontaminate only the immediate antialias fringe next to removed backdrop.
       for(let p=0;p<n;p++) {
