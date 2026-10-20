@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
-import {stageKey,seedQueries} from '../src/bhs/bounded-research.mjs';
+import {stageKey,seedQueries,phases} from '../src/bhs/bounded-research.mjs';
 import {createPricingProof} from '../src/pricing/proof.mjs';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {brief as fixture} from './fixtures/bhs.mjs';
@@ -18,13 +18,13 @@ test('budgeted audit resumes durable completed stages across handlers and signs 
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1',spaceId:'space1'}};
   await handler(request(start),res);assert.equal(res.code,200);assert.equal(res.body.nextAction,'advance');
   const cookie=res.headers['Set-Cookie'].find(x=>x.startsWith('__Host-offer-research')).split(';')[0];let ticket=res.body.ticket;
-  for(let i=0;i<4;i++){
+  for(let i=0;i<phases.length-1;i++){
    handler=createBoundedAuditHandler(dependencies);res=response();
    await handler(request({...start,action:'advance',ticket},cookie),res);assert.equal(res.code,202);ticket=res.body.ticket;
   }
   res=response();await handler(request({...start,action:'status',ticket},cookie),res);assert.equal(res.body.phase,'complete');
-  const session=cookie.split('=')[1],proof=createPricingProof(secret).decode(res.body.pricingProof,session,host);assert.equal(proof.budgetLeadId,'lead1');assert.equal(stages,4);
-  res=response();await handler(request(start,cookie),res);assert.equal(res.body.phase,'complete');assert.equal(stages,4);assert.equal(begins,2);
+  const session=cookie.split('=')[1],proof=createPricingProof(secret).decode(res.body.pricingProof,session,host);assert.equal(proof.budgetLeadId,'lead1');assert.equal(stages,phases.length-1);
+  res=response();await handler(request(start,cookie),res);assert.equal(res.body.phase,'complete');assert.equal(stages,phases.length-1);assert.equal(begins,2);
   const invalid=response();await handler(request({...start,action:'status',ticket,brief:{...brief,goals:'changed'}},cookie),invalid);assert.equal(invalid.code,422);
  }finally{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;}
 });

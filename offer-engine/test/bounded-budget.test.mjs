@@ -67,7 +67,7 @@ test('provider reserves complete output ceiling, uses countTokens, never starts 
   requests.push({url,body:options?.body&&JSON.parse(options.body)});
   if(url.includes('tcmb'))return fx(46);
   if(url.endsWith(':countTokens'))return json({totalTokens:1000});
-  assert.ok(url.endsWith(':generateContent'));return json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:10,thoughtsTokenCount:20}});
+  assert.ok(url.endsWith(':generateContent'));return json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:10,thoughtsTokenCount:20,totalTokenCount:1030}});
  };
  const provider=createBoundedProviders({ledger,fetchImpl,now:()=>time,geminiKey:'test',tavilyKey:'test'});
  const result=await provider.generate('synthesis',{source:'text'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-3.1-pro-preview',maxOutputTokens:16384});
