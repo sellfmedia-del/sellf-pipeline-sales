@@ -40,9 +40,29 @@ export function boundedReportSchema(packet){
  p.findings.minItems=12;p.findings.maxItems=12;p.findings.items.properties.id.enum=findingIds;
  p.findings.items.properties.statement.maxLength=260;p.findings.items.properties.reportExcerpt.maxLength=260;p.findings.items.properties.impact.maxLength=200;p.findings.items.properties.goalConnection.maxLength=200;
  p.dimensions.items.properties.findingIds.minItems=2;p.dimensions.items.properties.rationale.maxLength=400;
+ for(const key of ['strengths','gaps']){p.dimensions.items.properties[key].maxItems=2;p.dimensions.items.properties[key].items.maxLength=180;}
+ p.dimensions.items.properties.onboardingQuestions.minItems=1;p.dimensions.items.properties.onboardingQuestions.maxItems=1;p.dimensions.items.properties.onboardingQuestions.items.maxLength=180;
  p.benchmarks.items.properties.entries.minItems=4;p.benchmarks.items.properties.entries.items.properties.entityId.enum=['brand',...peerIds];
  p.meetingQuestions.maxItems=6;p.meetingQuestions.items.properties.question.maxLength=200;
  p.serviceRecommendations.minItems=2;p.serviceRecommendations.maxItems=3;
  function bind(node,key){if(key==='sourceIds'){node.items.enum=sourceIds;node.maxItems=3;}if(key==='findingIds'){node.items.enum=findingIds;node.maxItems=3;}if(key==='comparisonCompetitorIds'){node.items.enum=peerIds;node.maxItems=3;}for(const[k,v]of Object.entries(node.properties||{}))bind(v,k);if(node.items)bind(node.items,'');}
  bind(schema,'');return schema;
+}
+export function compactReportSchema(packet){
+ const schema=boundedReportSchema(packet),p=schema.properties;
+ const omit=(node,keys)=>{for(const key of keys)delete node.properties[key];node.required=node.required.filter(key=>!keys.includes(key));};
+ omit(p.sources.items,['url','title']);omit(p.findings.items,['reportExcerpt']);omit(p.competitors.items,['website']);
+ p.benchmarks.minItems=0;p.benchmarks.items.properties.entries.minItems=1;p.benchmarks.items.properties.entries.maxItems=4;
+ p.benchmarks.items.properties.entries.items.properties.value={type:'string',minLength:1,maxLength:300};
+ return schema;
+}
+export function hydrateReport(value,packet){
+ const report=structuredClone(value);
+ report.sources=report.sources.map(s=>{const source=packet.sources.find(x=>x.id===s.id);if(!source)throw Error('Kanıt kimliği bilinmiyor.');return {...s,url:source.finalUrl,title:source.title};});
+ report.competitors=report.competitors.map(p=>{const peer=packet.entities.find(x=>x.id===p.id&&x.role==='competitor');if(!peer)throw Error('Rakip kimliği bilinmiyor.');return {...p,website:peer.website};});
+ report.findings=report.findings.map(f=>({...f,reportExcerpt:f.statement}));
+ const metrics=['webTraffic','domainAuthority','socialAudience','reviews','adActivity','contentMaturity','revenueOrGrowth','differentiator'],ids=['brand',...report.competitors.map(p=>p.id)];
+ if(new Set(report.benchmarks.map(x=>x.metric)).size!==report.benchmarks.length)throw Error('Yinelenen benchmark.');
+ report.benchmarks=metrics.map(metric=>{const supplied=report.benchmarks.find(x=>x.metric===metric)?.entries||[];if(new Set(supplied.map(x=>x.entityId)).size!==supplied.length||supplied.some(x=>!ids.includes(x.entityId)))throw Error('Benchmark kimliği geçersiz.');return {metric,entries:ids.map(entityId=>supplied.find(x=>x.entityId===entityId)||{entityId,value:null,unit:null,period:null,sourceIds:[]})};});
+ return report;
 }

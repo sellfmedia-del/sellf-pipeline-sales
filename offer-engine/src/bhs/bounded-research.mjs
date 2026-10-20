@@ -7,9 +7,9 @@ import {createAuditEngine} from '../engines/audit-engine.mjs';
 import {hash,BudgetError} from '../budget/ledger.mjs';
 import {scopeSchema,scopeEnvelope,validateScope} from '../pricing/scope.mjs';
 import {copySchema,validateCopy} from '../proposal/composition.mjs';
-import {focusEvidence,boundedReportSchema} from './bounded-contract.mjs';
+import {focusEvidence,compactReportSchema,hydrateReport} from './bounded-contract.mjs';
 
-export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','semantic','complete'];
+export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','scope','semantic','complete'];
 export const stageKey=(brief,phase)=>'audit:'+phase+':'+hash(brief);
 export function seedQueries(brief){const brand=brief.brandName,domain=new URL(brief.website).hostname;return [
  `site:${domain} ${brand} hakkımızda ürün hizmet faaliyet`,
@@ -62,17 +62,21 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
   }
   if(phase==='synthesis'){
    const {packet:fullPacket}=await previous('recovery_evidence'),packet=focusEvidence(fullPacket,brief);
-   const schema={type:'object',properties:{report:boundedReportSchema(packet),scope:scopeSchema,copy:copySchema},required:['report','scope','copy'],additionalProperties:false};
-   const envelope=synthesisEnvelope(brief,packet),scopeGuide=scopeEnvelope(brief,{summary:'Aynı yanıtta üretilen report',findings:[],serviceRecommendations:[]});
-   const generated=await providers.generate('synthesis',{...envelope,outputInstructions:'report alanında eksiksiz BHS: her altı boyuta ikişer, toplam TAM 12 somut bulgu; en az 8 farklı okunmuş kaynak ve 3 rakip şart. Kaynak kimlikleri sadece verilen evN değerleri, rakip kimlikleri sadece entity planındaki okunmuş rakipler olmalı. Kaynak alıntıları harfiyen 24–200 karakter, reportExcerpt=statement. Şirket/ülke/dönem kıyasını bozma, tekil şikâyetten yaygın sorun çıkartma. Gereksiz uzun yazma: her statement en fazla 260, impact/goalConnection 200, rationale 400 karakter. Dış ölçüm yoksa null; eksik veri düşük sağlık değildir. scope alanında yalnız briefte konuşulan fiyatlanabilir hizmet planı, copy alanında kısa teklif girişi üret. Scope/copy findingIds sadece aynı report kimlikleri. copy.headline ve accent en fazla 70, subtitle en fazla 240 karakter; yeni fiyat, sayı, süre veya sonuç vaadi yok. Katalog fiyatlarını hesaplama.',scopeGuide},schema,{model:'gemini-4-argon',maxOutputTokens:8192,thinkingLevel:'LOW'});
-   const report=parseGroundedReport(JSON.stringify(generated.data.report));
+   const envelope=synthesisEnvelope(brief,packet);
+   const generated=await providers.generate('synthesis',{...envelope,outputInstructions:'Yalnız eksiksiz BHS rapor JSONunu üret; teklif kapsamı veya fiyat yazma. Her altı boyuta ikişer, toplam TAM 12 somut bulgu; en az 8 farklı okunmuş kaynak ve 3 rakip şart. Kaynak kimlikleri sadece verilen evN değerleri, rakip kimlikleri entity planındaki okunmuş rakipler olmalı. Kaynak alıntıları harfiyen 24–200 karakter. url/title/website/reportExcerpt alanlarını sunucu gerçek kaynaktan tamamlayacak; bunları yazma. Benchmarks içine sadece kanıtlı non-null değerleri yaz; ölçülmeyen sekiz metrik/varlık satırlarını sunucu null ile tamamlayacak. Şirket/ülke/dönem kıyasını bozma, tekil şikâyetten yaygın sorun çıkartma. Her statement en fazla 260, impact/goalConnection 200, rationale 400 karakter. Puan için gerçek karşılaştırma yoksa null; eksik veri düşük sağlık değildir. Türkçe, kısa ama somut ve hedefle ilişkili yaz.'},compactReportSchema(packet),{model:'gemini-4-argon',maxOutputTokens:8192,thinkingLevel:'LOW'});
+   const report=parseGroundedReport(JSON.stringify(hydrateReport(generated.data,packet)));
    if(report.findings.length<12||report.competitors.length<3||report.sources.length<8)throw new BudgetError('quality_coverage','BHS kapsamı kalite eşiğini karşılamıyor.');
+   return {report,analysisPacket:packet,fullPacketHash:evidenceHash(fullPacket),usage:generated.usage,model:generated.model};
+  }
+  if(phase==='scope'){
+   const {report}=await previous('synthesis'),guide=scopeEnvelope(brief,report);
+   const schema={type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false};
+   const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Yeni sayı/fiyat/süre/sonuç vaadi yok; findingIds sadece rapordaki kimlikler.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},schema,{maxOutputTokens:3072,thinkingLevel:'LOW'});
    validateScope(generated.data.scope,brief,report);
-   const scopePlan=generated.data.scope,proposalCopy=validateCopy(generated.data.copy,report);
-   return {report,scopePlan,proposalCopy,analysisPacket:packet,fullPacketHash:evidenceHash(fullPacket),usage:generated.usage,model:generated.model};
+   return {scopePlan:generated.data.scope,proposalCopy:validateCopy(generated.data.copy,report),usage:generated.usage};
   }
   if(phase==='semantic'){
-   const synthesis=await previous('synthesis'),{report,scopePlan,proposalCopy}=synthesis,packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
+   const synthesis=await previous('synthesis'),{report}=synthesis,{scopePlan,proposalCopy}=await previous('scope'),packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
    const reviewSchema=structuredClone(semanticSchema);reviewSchema.properties.findings.minItems=report.findings.length;reviewSchema.properties.findings.maxItems=report.findings.length;reviewSchema.properties.findings.items.properties.id.enum=report.findings.map(f=>f.id);reviewSchema.properties.dimensions.minItems=6;
    const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),reviewSchema,{maxOutputTokens:4096,thinkingLevel:'LOW'});
    const result=await engine.run({brief,packet,report,assessment:generated.data,researchId:'bounded_'+hash(brief).slice(0,24),synthesisId:'pro_'+hash(report).slice(0,24),semanticId:'review_'+hash(generated.data).slice(0,24),usage:{semantic:generated.usage}});

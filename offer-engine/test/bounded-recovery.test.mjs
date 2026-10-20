@@ -5,7 +5,7 @@ import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
 import {context,plan} from './fixtures/evidence.mjs';
 import {normalized} from '../src/bhs/verify.mjs';
-import {focusEvidence,boundedReportSchema} from '../src/bhs/bounded-contract.mjs';
+import {focusEvidence,boundedReportSchema,compactReportSchema,hydrateReport} from '../src/bhs/bounded-contract.mjs';
 import {providerSchema} from '../src/bhs/schema.mjs';
 const brief=snapshotBrief(raw);
 test('source normalization removes JSONB-incompatible null bytes and repairs broken Unicode',()=>{
@@ -21,6 +21,16 @@ test('generation grammar enforces coverage and binds all references to read evid
  assert.deepEqual(schema.properties.findings.items.properties.sourceIds.items.enum,focused.sources.map(x=>x.id));
 });
 function enough(){const packet=context().packet;packet.sources.push(...packet.sources.map((s,i)=>({...s,id:'ev'+(i+5),url:s.url+'?document=2',finalUrl:s.finalUrl+'?document=2'})));return packet;}
+test('compact report restores only verified metadata and leaves unmeasured benchmarks unknown',()=>{
+ const packet=enough(),source=packet.sources[0],peer=packet.entities.find(x=>x.role==='competitor');
+ const schema=compactReportSchema(packet);assert.equal(schema.properties.sources.items.properties.url,undefined);
+ const value={sources:[{id:source.id}],competitors:[{id:peer.id}],findings:[{statement:'Kanıtlı bulgu'}],benchmarks:[]};
+ const report=hydrateReport(value,packet);
+ assert.equal(report.sources[0].url,source.finalUrl);assert.equal(report.competitors[0].website,peer.website);
+ assert.equal(report.benchmarks.length,8);assert.ok(report.benchmarks.every(x=>x.entries.every(e=>e.value===null&&e.sourceIds.length===0)));
+ assert.equal(value.sources[0].url,undefined);
+ assert.throws(()=>hydrateReport({...value,sources:[{id:'invented'}]},packet));
+});
 function fixture(){const rows=new Map([[stageKey(brief,'source_plan'),{state:'complete',value:{plan,searches:[]}}]]);return {rows,ledger:{get:async k=>rows.get(k),once:async(k,_input,amount,run)=>{assert.equal(amount,0);const value=await run();rows.set(k,{state:'complete',value});return value;}}};}
 test('sufficient actual evidence skips the recovery model and reuses the packet',async()=>{
  const {ledger}=fixture(),packet=enough();
