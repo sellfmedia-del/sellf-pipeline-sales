@@ -9,7 +9,7 @@ import {scopeSchema,scopeEnvelope,validateScope} from '../pricing/scope.mjs';
 import {copySchema,validateCopy} from '../proposal/composition.mjs';
 import {focusEvidence,compactReportSchema,hydrateReport} from './bounded-contract.mjs';
 
-export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','scope','semantic','complete'];
+export const phases=['source_plan','evidence','source_recovery','recovery_evidence','synthesis','semantic','scope','complete'];
 export const stageKey=(brief,phase)=>'audit:'+phase+':'+(['synthesis','scope','semantic'].includes(phase)?'report-v2:':'')+hash(brief);
 export function seedQueries(brief){const brand=brief.brandName,domain=new URL(brief.website).hostname;return [
  `site:${domain} ${brand} hakkımızda ürün hizmet faaliyet`,
@@ -69,6 +69,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
    return {report,analysisPacket:packet,fullPacketHash:evidenceHash(fullPacket),usage:generated.usage,model:generated.model};
   }
   if(phase==='scope'){
+   const approved=await previous('semantic');if(approved.status!=='ready')throw new BudgetError('quality_review','BHS içerik doğrulamasını geçmedi; teklif motoru başlatılmadı.');
    const {report}=await previous('synthesis'),guide=scopeEnvelope(brief,report);
    const schema={type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false};
    const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Yeni sayı/fiyat/süre/sonuç vaadi yok; findingIds sadece rapordaki kimlikler.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},schema,{maxOutputTokens:3072,thinkingLevel:'LOW'});
@@ -76,13 +77,12 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=crea
    return {scopePlan:generated.data.scope,proposalCopy:validateCopy(generated.data.copy,report),usage:generated.usage};
   }
   if(phase==='semantic'){
-   const synthesis=await previous('synthesis'),{report}=synthesis,{scopePlan,proposalCopy}=await previous('scope'),packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
+   const synthesis=await previous('synthesis'),{report}=synthesis,packet=synthesis.analysisPacket||(await previous('recovery_evidence')).packet;
    const reviewSchema=structuredClone(semanticSchema);reviewSchema.properties.findings.minItems=report.findings.length;reviewSchema.properties.findings.maxItems=report.findings.length;reviewSchema.properties.findings.items.properties.id.enum=report.findings.map(f=>f.id);reviewSchema.properties.dimensions.minItems=6;
    const generated=await providers.generate('semantic',semanticEnvelope(brief,packet,report),reviewSchema,{maxOutputTokens:4096,thinkingLevel:'LOW'});
    const result=await engine.run({brief,packet,report,assessment:generated.data,researchId:'bounded_'+hash(brief).slice(0,24),synthesisId:'pro_'+hash(report).slice(0,24),semanticId:'review_'+hash(generated.data).slice(0,24),usage:{semantic:generated.usage}});
    result.data.researchMethod='bounded-primary-evidence-pro';result.data.packetHash=evidenceHash(packet);
    result.data.fullPacketHash=synthesis.fullPacketHash;result.data.analysisSourceCount=packet.sources.length;
-   result.data.scopePlan=scopePlan;result.data.proposalCopy=proposalCopy;
    return result;
   }
   throw new BudgetError('invalid_phase','Araştırma aşaması geçersiz.');

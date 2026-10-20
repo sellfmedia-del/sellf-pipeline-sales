@@ -58,7 +58,7 @@ export function compactReportSchema(packet){
 }
 export function hydrateReport(value,packet){
  const report=structuredClone(value);
- report.sources=report.sources.map(s=>{const source=packet.sources.find(x=>x.id===s.id);if(!source)throw Error('Kanıt kimliği bilinmiyor.');return {...s,url:source.finalUrl,title:source.title};});
+ report.sources=report.sources.map(s=>{const source=packet.sources.find(x=>x.id===s.id);if(!source)throw Error('Kanıt kimliği bilinmiyor.');return {...s,url:source.finalUrl,title:(source.title.trim()||source.finalUrl).slice(0,300)};});
  report.competitors=report.competitors.map(p=>{const peer=packet.entities.find(x=>x.id===p.id&&x.role==='competitor');if(!peer)throw Error('Rakip kimliği bilinmiyor.');return {...p,website:peer.website};});
  report.findings=report.findings.map(f=>({...f,reportExcerpt:f.statement}));
  const metrics=['webTraffic','domainAuthority','socialAudience','reviews','adActivity','contentMaturity','revenueOrGrowth','differentiator'],ids=['brand',...report.competitors.map(p=>p.id)];

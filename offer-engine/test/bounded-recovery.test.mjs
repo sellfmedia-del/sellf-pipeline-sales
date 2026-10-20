@@ -22,11 +22,13 @@ test('generation grammar enforces coverage and binds all references to read evid
 });
 function enough(){const packet=context().packet;packet.sources.push(...packet.sources.map((s,i)=>({...s,id:'ev'+(i+5),url:s.url+'?document=2',finalUrl:s.finalUrl+'?document=2'})));return packet;}
 test('compact report restores only verified metadata and leaves unmeasured benchmarks unknown',()=>{
- const packet=enough(),source=packet.sources[0],peer=packet.entities.find(x=>x.role==='competitor');
+ const packet=enough(),source=packet.sources[0],peer=packet.entities.find(x=>x.role==='competitor');source.title='x'.repeat(400);
  const schema=compactReportSchema(packet);assert.equal(schema.properties.sources.items.properties.url,undefined);
  const value={sources:[{id:source.id}],competitors:[{id:peer.id}],findings:[{statement:'Kanıtlı bulgu'}],benchmarks:[]};
  const report=hydrateReport(value,packet);
  assert.equal(report.sources[0].url,source.finalUrl);assert.equal(report.competitors[0].website,peer.website);
+ assert.equal(report.sources[0].title.length,300);assert.equal(source.title.length,400);
+ source.title=' ';assert.equal(hydrateReport(value,packet).sources[0].title,source.finalUrl.slice(0,300));
  assert.equal(report.benchmarks.length,8);assert.ok(report.benchmarks.every(x=>x.entries.every(e=>e.value===null&&e.sourceIds.length===0)));
  assert.equal(value.sources[0].url,undefined);
  assert.throws(()=>hydrateReport({...value,sources:[{id:'invented'}]},packet));

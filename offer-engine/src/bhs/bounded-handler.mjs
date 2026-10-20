@@ -52,7 +52,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     log('bhs_response',{status:'stage_complete',cost:await cost()});
     return res.status(202).json({phase:phases[phases.indexOf(phase)+1],status:'in_progress',ticket,cost:await cost()});
    }
-   const final=(await ledger.get(stageKey(brief,'semantic'))).value;
+   const audit=(await ledger.get(stageKey(brief,'semantic'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
+   const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
    const result={...final,stage:'audit',engineVersion:'bounded-evidence-pro-v1',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
