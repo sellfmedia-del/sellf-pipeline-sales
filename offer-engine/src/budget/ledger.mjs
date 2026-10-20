@@ -22,7 +22,7 @@ export async function budgetFor(req,res,leadId,{store=createPreviewStore(),secre
 }
 export function createLedger(call){
  return {begin:()=>call('begin'),status:()=>call('status'),get:key=>call('get',{step:key}),
-  async once(key,input,amount,run){
+  async once(key,input,amount,run,{settle}={}){
    if(!Number.isSafeInteger(amount)||amount<0||amount>4500)throw new BudgetError('budget_limit','İşlem teklif bütçesini aşıyor.');
    const inputHash=hash(input),token=randomUUID(),reservation=await call('reserve',{step:key,hash:inputHash,amount,token});
    if(reservation.blocked)throw new BudgetError('budget_limit','Teklifin toplam 50 TL maliyet sınırına ulaşıldı. Yeni ücretli işlem başlatılmadı.');
@@ -30,7 +30,9 @@ export function createLedger(call){
     if(reservation.step?.state==='complete')return reservation.step.value;
     throw new BudgetError(reservation.step?.state==='uncertain'?'budget_uncertain':'budget_pending',reservation.step?.state==='uncertain'?'Önceki isteğin sonucu belirsiz; yeniden ücretli çağrı başlatılmadı.':'Bu aşama zaten çalışıyor. Aynı işlem yeniden başlatılmadı.');
    }
-   try{const value=await run();await call('complete',{step:key,hash:inputHash,token,value});return value;}
+   try{const value=await run(),actual=settle?settle(value):amount;
+    if(!Number.isSafeInteger(actual)||actual<0||actual>amount)throw new BudgetError('provider_accounting','Doğrulanmış tüketim ayrılan üst tutarla eşleşmiyor.');
+    await call('complete',{step:key,hash:inputHash,token,value,amount:actual});return value;}
    catch(error){try{await call('uncertain',{step:key,hash:inputHash,token,value:{code:error.code||'stage_failed'}});}catch{/* Reservation remains charged. */}throw error;}
   }
  };

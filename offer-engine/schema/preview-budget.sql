@@ -59,6 +59,11 @@ begin
   if s.step_key is null or s.claim_token<>p_token or s.input_hash<>p_hash then raise exception 'reservation ownership mismatch'; end if;
   if s.state='complete' then return to_jsonb(s); end if;
   if p_value is not null and pg_column_size(p_value)>1500000 then raise exception 'step result too large'; end if;
+  if p_op='complete' and p_value ? 'accountedKurus' then
+   if p_amount<0 or p_amount>s.charge_kurus or p_amount<>(p_value->>'accountedKurus')::integer then raise exception 'invalid settled usage';end if;
+   update public.pipeline_offer_preview_budgets set charged_kurus=charged_kurus-(s.charge_kurus-p_amount) where id=b.id;
+   update public.pipeline_offer_preview_budget_steps set charge_kurus=p_amount where budget_id=b.id and step_key=p_step;
+  end if;
   -- Never refund a failed/ambiguous call, even after restart or timeout.
   -- The conservative pre-call ceiling stays charged for the life of this lead.
   update public.pipeline_offer_preview_budget_steps set state=p_op,value=p_value where budget_id=b.id and step_key=p_step returning * into s;

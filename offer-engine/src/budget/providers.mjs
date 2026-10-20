@@ -48,13 +48,13 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    return ledger.once(step,body,amount,async()=>{
     const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},240000);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
-    if((usage.promptTokenCount||0)>upper||output>maxOutputTokens)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
+    if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
     if(candidate?.finishReason!=='STOP')throw new BudgetError('incomplete','Model çıktısı tamamlanmadı; eksik rapor teklif için kullanılmadı.');
     const text=(candidate.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
     let data;try{data=JSON.parse(text);}catch{throw new BudgetError('invalid_report','Model raporu beklenen JSON biçiminde değil.');}
-    return {data,usage,model,reservedKurus:amount,tariffVersion:tariff.version};
-   });
+    return {data,usage,model,reservedKurus:amount,accountedKurus:quoteModel(model,usage.promptTokenCount,output,now()),tariffVersion:tariff.version};
+   },{settle:value=>value.accountedKurus});
   }
  };
 }

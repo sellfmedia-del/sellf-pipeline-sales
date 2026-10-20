@@ -14,9 +14,10 @@ function store(){
   if(op==='reserve'){
    if(prior){assert.equal(prior.input_hash,a.hash);return {claimed:false,step:prior};}
    if(charged+a.amount>5000)return {blocked:true};
-   charged+=a.amount;steps.set(a.step,{state:'reserved',input_hash:a.hash,claim_token:a.token});return {claimed:true};
+   charged+=a.amount;steps.set(a.step,{state:'reserved',input_hash:a.hash,claim_token:a.token,charge_kurus:a.amount});return {claimed:true};
   }
   assert.equal(prior.claim_token,a.token);assert.equal(prior.input_hash,a.hash);
+  if(op==='complete'){assert.ok(a.amount>=0&&a.amount<=prior.charge_kurus);charged-=prior.charge_kurus-a.amount;}
   steps.set(a.step,{...prior,state:op,value:a.value});return steps.get(a.step);
  };
  return {call,steps};
@@ -38,6 +39,15 @@ test('failed or ambiguous paid work stays charged and cannot replay',async()=>{
  await assert.rejects(ledger.once('failed',{},1200,async()=>{throw Error('network lost');}));
  await assert.rejects(createLedger(db.call).once('failed',{},1200,()=>assert.fail()),e=>e.code==='budget_uncertain');
  assert.equal((await ledger.status()).chargedKurus,1700);
+});
+test('only verified successful usage releases unused reservation and concurrent workers share the settled balance',async()=>{
+ const db=store(),ledger=createLedger(db.call);
+ await ledger.once('pro',{},4000,async()=>({actual:1200}),{settle:x=>x.actual});
+ assert.equal((await createLedger(db.call).status()).chargedKurus,1700);
+ await createLedger(db.call).once('review',{},3000,async()=>({ok:true}));
+ assert.equal((await ledger.status()).chargedKurus,4700);
+ await assert.rejects(ledger.once('bad-usage',{},200,async()=>({actual:500}),{settle:x=>x.actual}),e=>e.code==='provider_accounting');
+ assert.equal((await ledger.status()).chargedKurus,4900);
 });
 test('50 TL ceiling blocks work before executing, including distinct concurrent steps',async()=>{
  const db=store(),a=createLedger(db.call),b=createLedger(db.call);let executed=0;
