@@ -53,7 +53,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){
-   const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason}:{})});
+   const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}:{})});
    if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
    return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.'});
   }

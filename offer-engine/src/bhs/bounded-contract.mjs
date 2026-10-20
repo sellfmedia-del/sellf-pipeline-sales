@@ -43,6 +43,6 @@ export function boundedReportSchema(packet){
  p.benchmarks.items.properties.entries.minItems=4;p.benchmarks.items.properties.entries.items.properties.entityId.enum=['brand',...peerIds];
  p.meetingQuestions.maxItems=6;p.meetingQuestions.items.properties.question.maxLength=200;
  p.serviceRecommendations.minItems=2;p.serviceRecommendations.maxItems=3;
- function bind(node,key){if(key==='sourceIds')node.items.enum=sourceIds;if(key==='findingIds')node.items.enum=findingIds;if(key==='comparisonCompetitorIds')node.items.enum=peerIds;for(const[k,v]of Object.entries(node.properties||{}))bind(v,k);if(node.items)bind(node.items,'');}
+ function bind(node,key){if(key==='sourceIds'){node.items.enum=sourceIds;node.maxItems=3;}if(key==='findingIds'){node.items.enum=findingIds;node.maxItems=3;}if(key==='comparisonCompetitorIds'){node.items.enum=peerIds;node.maxItems=3;}for(const[k,v]of Object.entries(node.properties||{}))bind(v,k);if(node.items)bind(node.items,'');}
  bind(schema,'');return schema;
 }

@@ -49,6 +49,12 @@ test('only verified successful usage releases unused reservation and concurrent 
  await assert.rejects(ledger.once('bad-usage',{},200,async()=>({actual:500}),{settle:x=>x.actual}),e=>e.code==='provider_accounting');
  assert.equal((await ledger.status()).chargedKurus,4900);
 });
+test('a documented non-billed rejection releases its reservation but cannot replay the same request',async()=>{
+ const db=store(),ledger=createLedger(db.call),error=Object.assign(Error('rejected'),{code:'provider_error',definitelyNotBilled:true,providerStatus:400});
+ await assert.rejects(ledger.once('rejected',{},1000,async()=>{throw error;}));
+ assert.equal((await ledger.status()).chargedKurus,500);
+ await assert.rejects(createLedger(db.call).once('rejected',{},1000,()=>assert.fail('must not replay')),e=>e.code==='provider_rejected');
+});
 test('50 TL ceiling blocks work before executing, including distinct concurrent steps',async()=>{
  const db=store(),a=createLedger(db.call),b=createLedger(db.call);let executed=0;
  const result=await Promise.allSettled([a.once('a',{},3000,async()=>++executed),b.once('b',{},3000,async()=>++executed)]);

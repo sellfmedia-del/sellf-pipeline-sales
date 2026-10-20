@@ -27,13 +27,15 @@ export function createLedger(call){
    const inputHash=hash(input),token=randomUUID(),reservation=await call('reserve',{step:key,hash:inputHash,amount,token});
    if(reservation.blocked)throw new BudgetError('budget_limit','Teklifin toplam 50 TL maliyet sınırına ulaşıldı. Yeni ücretli işlem başlatılmadı.');
    if(!reservation.claimed){
-    if(reservation.step?.state==='complete')return reservation.step.value;
+    if(reservation.step?.state==='complete'){if(reservation.step.value?.rejected)throw new BudgetError('provider_rejected','Bu istek sağlayıcı tarafından reddedilmiş; aynı istek tekrar başlatılmadı.');return reservation.step.value;}
     throw new BudgetError(reservation.step?.state==='uncertain'?'budget_uncertain':'budget_pending',reservation.step?.state==='uncertain'?'Önceki isteğin sonucu belirsiz; yeniden ücretli çağrı başlatılmadı.':'Bu aşama zaten çalışıyor. Aynı işlem yeniden başlatılmadı.');
    }
    try{const value=await run(),actual=settle?settle(value):amount;
     if(!Number.isSafeInteger(actual)||actual<0||actual>amount)throw new BudgetError('provider_accounting','Doğrulanmış tüketim ayrılan üst tutarla eşleşmiyor.');
     await call('complete',{step:key,hash:inputHash,token,value,amount:actual});return value;}
-   catch(error){try{await call('uncertain',{step:key,hash:inputHash,token,value:{code:error.code||'stage_failed'}});}catch{/* Reservation remains charged. */}throw error;}
+   catch(error){
+    if(error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
+    try{await call('uncertain',{step:key,hash:inputHash,token,value:{code:error.code||'stage_failed'}});}catch{/* Reservation remains charged. */}throw error;}
   }
  };
 }
