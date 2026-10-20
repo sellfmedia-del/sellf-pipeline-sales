@@ -7,10 +7,12 @@ There are no Deep Research / Max Interactions requests in the new HTTP flow.
 Discovery uses at most ten Tavily advanced searches (six initial searches and
 four focused searches). Public HTML/PDF sources are read by the existing SSRF
 protected collector. Flash creates the source plan. Gemini 4 Argon generates the
-full six-dimension report. A separate bounded Flash call creates scope and concise
-proposal copy from the report and brief. Source URLs/titles are restored from
+full six-dimension report as JSON. After independent semantic approval, a
+separate bounded Flash call creates scope and concise proposal copy from the
+approved report and brief. Source URLs/titles are restored from
 verified evidence IDs; unmeasured benchmark cells remain explicitly null.
-Flash independently reviews source support, entity/period comparability,
+Large contracts use JSON mode and strict server validation rather than a complex
+provider grammar. Flash independently reviews source support, entity/period comparability,
 benchmarks and scoring. Failed evidence or semantic checks stop downstream use.
 Logo processing, fee mathematics and final composition make no paid model calls.
 
@@ -63,8 +65,23 @@ paid attempts remain on the same card's ledger. Documented Google HTTP 400
 rejections are not billed and are recorded as zero-cost rejected receipts;
 identical rejected requests cannot automatically replay. A small Argon request
 confirmed model/key availability. As of the last completed request, the same
-test card has accounted for 3,501 kurus including its infrastructure allowance.
-The revised full-report schema is under live validation. Quality equivalence to
-the manual Deep Research + Pro workflow and live end-to-end cost remain **unverified**.
+test card has accounted for 4,811 kurus including its infrastructure allowance.
+The revised full-report JSON contains six dimensions, twelve findings, twelve
+sources and three competitors. Its schema, source and quote checks pass after
+normalizing empty source labels to their actual URLs. Independent semantic
+approval passed with no issues. Two deterministic monthly alternatives,
+proposal composition, a transparent test-logo handoff, isolated card saving,
+listing, private publication and password-based customer access all returned
+HTTP 200. The saved test card value matched the recommended 186,000 TRY monthly
+amount. No additional paid model ran after scope planning. The technical logo
+test used an existing Sellf reference, not a verified Silverline logo; it is not
+brand-logo quality evidence. Twenty focused tests pass. The UI rerun has one
+remaining screenshot timeout after functional checks.
+
+Quality equivalence to the manual Deep Research + Pro workflow and literal
+all-inclusive provider invoice cost remain **unverified**. Recorded application
+cost is below 50 TRY; every future source set is not guaranteed to produce an
+approved report within that limit. The ledger stops before any new step that
+would exceed its ceiling.
 Fixture tests are not evidence of equivalent research quality. Do not approve
 production release until a real report has passed that comparison.
