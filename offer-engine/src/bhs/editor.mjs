@@ -5,7 +5,10 @@ export const editSchema={type:'object',properties:{edits:{type:'array',minItems:
 export function interpretationIssues(report){
  const issues=[];
  for(const [i,q]of report.meetingQuestions.entries())if(/üstünlü[kğ]|avantajı/i.test(q.question)&&!/(?:var mı|kanıt|ölç|olup olmadığ|iddia)/i.test(q.question))issues.push('Soru ölçülmemiş üstünlük veya avantajı varsayıyor: q'+i);
- for(const peer of report.competitors)if(/kamuya açık.{0,60}(?:olma|bulunma|yer alma)/i.test(peer.scaleReason)&&!/(?:bu tarama|paket)/i.test(peer.scaleReason))issues.push('Rakipte veri yokluğu tarama kapsamıyla sınırlanmalı: '+peer.id);
+ for(const peer of report.competitors){
+  const unbounded=peer.scaleReason.toLocaleLowerCase('tr-TR').split(/[;.!?\n]+/).some(clause=>/kamuya açık.{0,60}(?:olma|bulunma|yer alma)/.test(clause)&&!/(?:bu tarama|paket|bu kaynak(?:ta|larda)|(?:okunan|incelenen|doğrulanan) kaynak(?:ta|larda))/.test(clause));
+  if(unbounded)issues.push('Rakipte veri yokluğu tarama kapsamıyla sınırlanmalı: '+peer.id);
+ }
  for(const d of report.dimensions)if(/kamuya açık (?:olmadığ|olmama|değil)/i.test(d.rationale))issues.push('Veri yokluğu bu taramanın kapsamıyla sınırlanmalı: '+d.id);
  for(const service of report.serviceRecommendations)if(/(?:beyan|iddia)[\s\S]{0,140}oranı(?:nın)?\s+avantaj/i.test(service.hypothesis))issues.push('Beyan edilen oran karşılaştırma olmadan avantaj sayılamaz: '+service.id);
  return issues;

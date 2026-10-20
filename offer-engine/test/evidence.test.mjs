@@ -120,3 +120,12 @@ test('leading meeting questions and unsupported public-data absence cannot pass 
  const edited=applyEdits(report,{edits:[{target:'question.question',id:'q0',value:'Sessizlik iddiası bağımsız olarak ölçülmüş müdür?'},{target:'competitor.scaleReason',id:report.competitors[0].id,value:'Bu taramada aynı dönem finansal veri bulunmadı; ürün kapsamı üzerinden karşılaştırılmıştır.'}]});assert.deepEqual(interpretationIssues(edited),[]);
  assert.throws(()=>applyEdits(report,{edits:[{target:'question.question',id:'q999',value:'Unknown question'}]}));
 });
+test('competitor data absence may be scoped to the cited source, but not to an unrelated sentence',async()=>{
+ const {interpretationIssues}=await import('../src/bhs/editor.mjs');const {report}=context(),peer=report.competitors[0];
+ for(const reason of ['Kamuya açık ciro veya üretim ölçeği verisi bu kaynakta yer almamaktadır.','İncelenen kaynakta kamuya açık finansal veri bulunmamaktadır.','Kamuya açık ciro bilgisi bu taramada doğrulanmış kaynak paketinde bulunmamaktadır.']){
+  peer.scaleReason=reason;assert.deepEqual(interpretationIssues(report),[]);
+ }
+ for(const reason of ['Kamuya açık ciro verisi bulunmamaktadır.','Bu kaynakta ürünler incelendi. Kamuya açık ciro verisi bulunmamaktadır.','Bu kaynakta ürünler incelendi; kamuya açık ciro verisi bulunmamaktadır.']){
+  peer.scaleReason=reason;assert.ok(interpretationIssues(report).some(x=>x.includes(peer.id)));
+ }
+});
