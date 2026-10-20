@@ -3,7 +3,7 @@ import {assertResult} from '../contracts.mjs';
 import {validateCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
 import {selectProposalAudit} from '../proposal/audit-selection.mjs';
 import {digest} from '../pricing/proof.mjs';
-export const proposalEngine=Object.freeze({id:'proposal',version:'0.4.0',async run(input,dependencies={}){
+export const proposalEngine=Object.freeze({id:'proposal',version:'0.5.0',async run(input,dependencies={}){
  const brief=snapshotBrief(input.brief),{audit,pricing,logo}=dependencies;
  for(const [name,result]of Object.entries({audit,pricing,logo}))assertResult(name,result);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief)||pricing.data.briefHash!==briefHash(brief))throw Error('Teklif girdileri aynı doğrulanmış brief için olmalı.');

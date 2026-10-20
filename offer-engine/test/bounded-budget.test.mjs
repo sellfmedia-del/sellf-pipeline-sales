@@ -121,3 +121,24 @@ test('parallel discovery shares a single FX lookup and still reserves every paid
  await new Promise(r=>setImmediate(r));assert.equal(fxCalls,1);release();await pending;
  assert.equal(paid,3);assert.equal((await createLedger(db.call).status()).chargedKurus,848);
 });
+
+test('logo pixels are included in token counting and generation under the same card ledger',async()=>{
+ const db=store(),seen=[];const provider=createBoundedProviders({ledger:createLedger(db.call),now:()=>time,geminiKey:'test',fetchImpl:async(url,options)=>{
+  if(url.includes('tcmb'))return fx(46);const body=JSON.parse(options.body);seen.push(body);
+  if(url.endsWith(':countTokens'))return json({totalTokens:1200});
+  return json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"found":true}'}]}}],usageMetadata:{promptTokenCount:1200,candidatesTokenCount:20,totalTokenCount:1220}});
+ }});
+ await provider.generate('logo-region',{instruction:'Locate only.'},{type:'object'},{image:{mimeType:'image/png',data:'AAAA'},maxOutputTokens:1024,jsonMode:true});
+ assert.deepEqual(seen[0].generateContentRequest.contents[0].parts[1],{inlineData:{mimeType:'image/png',data:'AAAA'}});assert.deepEqual(seen[1].contents[0].parts[1],seen[0].generateContentRequest.contents[0].parts[1]);assert.ok((await createLedger(db.call).status()).chargedKurus>500);
+});
+test('synthesis reserves room for scope, adapts only inside the substantial output envelope, and stops before spending when exhausted',async()=>{
+ for(const charged of [2800,3900]){
+  const db=store(),ledger=createLedger(db.call);await ledger.once('prior',{},charged-500,async()=>({}));let generated=0;
+  const provider=createBoundedProviders({ledger,now:()=>time,geminiKey:'test',fetchImpl:async(url,options)=>{
+   if(url.includes('tcmb'))return fx(46);if(url.endsWith(':countTokens'))return json({totalTokens:18000});generated++;const body=JSON.parse(options.body);assert.ok(body.generationConfig.maxOutputTokens>=12288);assert.ok(body.generationConfig.maxOutputTokens<=16384);
+   return json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}],usageMetadata:{promptTokenCount:18000,candidatesTokenCount:9000,totalTokenCount:27000}});
+  }});
+  const run=()=>provider.generate('synthesis',{}, {type:'object'},{model:'gemini-3.1-pro-preview',maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100});
+  if(charged===3900){await assert.rejects(run,e=>e.code==='budget_limit');assert.equal(generated,0);}else{await run();assert.equal(generated,1);assert.ok((await ledger.status()).chargedKurus<=4900);}
+ }
+});

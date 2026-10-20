@@ -61,7 +61,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const synthesis=(await ledger.get(stageKey(brief,'synthesis'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
    const audit=await auditEngine.run({brief,synthesis});
    const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
-   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-v2',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
+   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-v3',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){

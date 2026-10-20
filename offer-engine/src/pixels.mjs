@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 
 // Only removes edge-connected, near-uniform backdrop pixels. It never redraws a logo.
-export async function finishLogo(buffer, reference) {
+export async function finishLogo(buffer, reference,{backgroundPoints=[]}={}) {
   const {data:original,info}=await sharp(buffer).ensureAlpha().raw().toBuffer({resolveWithObject:true});
   const {width,height}=info;
   const referencePixels=reference?await sharp(reference).ensureAlpha().raw().toBuffer():null;
@@ -48,7 +48,7 @@ export async function finishLogo(buffer, reference) {
       // not prevent white-only counter removal; any colored artwork still does.
       const whiteOnly=background.every(c=>c<80)&&strong>n*.001&&white/strong>.5&&chromatic/strong<.005;
       const darkOnly=background.every(c=>c>210)&&strong>n*.001&&dark/strong>.5&&chromatic/strong<.005;
-      if(whiteOnly||darkOnly){for(let p=0;p<n;p++)add(p);}else edge.forEach(add);
+      if(whiteOnly||darkOnly){for(let p=0;p<n;p++)add(p);}else {edge.forEach(add);for(const [x,y] of backgroundPoints)if(Number.isInteger(x)&&Number.isInteger(y)&&x>=0&&x<width&&y>=0&&y<height)add(y*width+x);}
       while(head<tail) {
         const p=queue[head++],x=p%width,y=Math.floor(p/width);
         data[p*4+3]=0;

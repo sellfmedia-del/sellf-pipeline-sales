@@ -25,7 +25,7 @@ test('discovery searches start together and source limitations do not start a se
  }};
  const planning=runBoundedStage({phase:'source_plan',brief,ledger,providers});await new Promise(r=>setImmediate(r));assert.equal(started,8);release();await planning;
  packet.unavailable=[{url:plan.entities[1].website,reason:'HTTP_403'}];
- await runBoundedStage({phase:'evidence',brief,ledger,providers,collect:async()=>packet});assert.equal(started,10);
+ await runBoundedStage({phase:'evidence',brief,ledger,providers,collect:async()=>packet});assert.equal(started,14);
  const synthesis=await runBoundedStage({phase:'synthesis',brief,ledger,providers});assert.deepEqual(synthesis.report,report);assert.deepEqual(generated,['source_plan','synthesis']);
 });
 test('handoff preserves complete model JSON without semantic approval, recomputes only weighted arithmetic, and rejects unsafe URLs',()=>{

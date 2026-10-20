@@ -80,6 +80,8 @@
 
     const logoControl = window.PipelineLogoControl?.mount(dialog.querySelector('.ob-auto-logo'), {
       getWebsite: () => form.elements.website.value,
+      getContext: () => ({leadId:source.leadId,spaceId:source.spaceId}),
+      getBrandName: () => form.elements.brandName.value,
       onChange: value => { draft.logo = value; dialog.querySelector('#error-logoUrl').textContent = ''; }
     });
     form.elements.website.addEventListener('input', () => logoControl?.invalidate());

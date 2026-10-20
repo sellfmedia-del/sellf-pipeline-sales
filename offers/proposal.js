@@ -27,13 +27,13 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};
   for(const key of ['urgent','important','low']){
    const items=findings.filter(f=>priority[f.priority]===key),list=$('#so-actions-'+key);list.replaceChildren();
-   items.forEach(f=>{const li=add('li',f.statement,list);li.title=f.impact;});
+   items.forEach(f=>{const li=add('li',(f.kind==='inference'?'Çıkarım: ':'')+f.statement,list);li.title=f.impact;if(f.impact){const detail=add('details','',li);add('summary','İş etkisi ve dayanak',detail);add('p',f.impact,detail);add('small',(f.sourceIds||[]).join(' · '),detail);}});
    if(!items.length)add('li','Bu öncelikte doğrulanmış bulgu yok.',list);
    $('#so-count-'+key).textContent=({urgent:'Acil',important:'Önemli',low:'Düşük öncelikli'})[key]+' · '+items.length;
   }
   const foot=$('.so-chart-foot');foot.replaceChildren();
   add('span','Ön BHS: '+(data.bhs.scoring?.total==null?'Yeterli veri yok':data.bhs.scoring.total+'/100'),foot);
-  add('span','Öncelikler kaynaklı BHS bulgularından alınır.',foot);
+  add('span',(data.bhs.sources||[]).length+' kaynak · '+(data.bhs.competitors||[]).length+' rakip · Dışsal ön analiz',foot);
   function dimension(id){
    const d=(data.bhs.dimensions||[]).find(x=>x.id===id),flow=$('#so-flow');flow.replaceChildren();
    root.querySelectorAll('[data-dim]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.dim===id)));
@@ -46,6 +46,14 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   }
   root.querySelectorAll('[data-dim]').forEach(b=>b.addEventListener('click',()=>dimension(b.dataset.dim)));dimension('financial');
   $('.so-bhs-bar').addEventListener('click',function(){const p=$('#so-analysis');p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));this.querySelector('.so-link').textContent=p.hidden?'Analizi aç ↗':'Daralt −';});
+  const benchmarkNames={webTraffic:'Aylık web trafiği',domainAuthority:'Domain authority',socialAudience:'Sosyal kitle',reviews:'Yorumlar',adActivity:'Reklam aktivitesi',contentMaturity:'İçerik olgunluğu',revenueOrGrowth:'Ciro / büyüme',differentiator:'Farklılaştırıcı',preBhsScore:'Tahmini Ön BHS'};
+  if((data.bhs.benchmarks||[]).length){
+   const details=add('details','',$('#so-analysis'),'so-benchmark');add('summary','Rakip karşılaştırmasını incele',details);
+   const scroll=add('div','',details,'so-benchmark-scroll'),table=add('table','',scroll);add('caption','Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.',table);
+   const ids=[...new Set(data.bhs.benchmarks.flatMap(b=>b.entries.map(e=>e.entityId)))],peerNames=new Map((data.bhs.competitors||[]).map(p=>[p.id,p.name]));
+   const head=add('tr','',add('thead','',table));add('th','Metrik',head);ids.forEach(id=>add('th',peerNames.get(id)||data.brand.name,head));const body=add('tbody','',table);
+   for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',benchmarkNames[row.metric]||row.metric,tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?'Veri bulunamadı':[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
+  }
   const full=add('details','',$('#so-analysis'));add('summary','Seçili bulguların kaynakları',full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
   const options=$('.so-options');options.replaceChildren();let selected;

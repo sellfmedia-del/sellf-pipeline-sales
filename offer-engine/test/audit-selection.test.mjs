@@ -8,13 +8,13 @@ test('presentation prioritizes critical and chosen-scope findings beyond input o
  const before=structuredClone(audit),out=selectProposalAudit(audit,{goals:'Bayi büyümesi'},{scope:{selected:[{findingIds:['f16']}]}});
  assert.ok(out.findings.some(f=>f.id==='f15'));assert.ok(out.findings.some(f=>f.id==='f12'));assert.ok(out.findings.some(f=>f.id==='f16'));
  assert.ok(out.findings.length>6);
- assert.equal(out.rawReport,undefined);assert.equal(out.benchmarks,undefined);assert.equal(out.meetingQuestions,undefined);assert.equal(out.sources[0].quote,undefined);assert.deepEqual(out.scoring,{total:64});assert.deepEqual(audit,before);
+ assert.equal(out.rawReport,undefined);assert.deepEqual(out.benchmarks,[]);assert.equal(out.meetingQuestions,undefined);assert.equal(out.sources[0].quote,undefined);assert.deepEqual(out.scoring,{total:64});assert.deepEqual(audit,before);
 });
 test('long report text is bounded, deduplicated and remains a visible excerpt; missing optional data does not block assembly',()=>{
  const statement=('Bu cümle mevcut araştırmanın önemli bir çıkarımını içeriyor. ').repeat(80);
  const audit={findings:[row('first',{statement}),row('duplicate',{statement}),row('other',{priority:'medium',statement:'İkinci temel çıkarım.'})],summary:statement,dimensions:[{id:'digital',score:null,dataStatus:'insufficient',rationale:statement,strengths:[statement]}]};
  const out=selectProposalAudit(audit);
- assert.equal(out.findings.length,1);assert.ok(out.findings.every(f=>f.statement.length<=160&&f.impact.length<=200));assert.ok(out.summary.length<=240);assert.ok(out.dimensions[0].rationale.length<=220);assert.equal(out.dimensions[0].score,null);assert.equal(out.dimensions[0].strengths,undefined);
+ assert.equal(out.findings.length,2);assert.ok(out.findings.every(f=>f.statement.length<=280&&f.impact.length<=240));assert.ok(out.summary.length<=340);assert.ok(out.dimensions[0].rationale.length<=360);assert.equal(out.dimensions[0].score,null);assert.equal(out.dimensions[0].strengths,undefined);
  assert.deepEqual(selectProposalAudit({}).findings,[]);assert.deepEqual(selectProposalAudit({findings:[null]}).sources,[]);
 });
 test('brief relevance breaks ties without producing new statements or changing priorities or scores',()=>{

@@ -46,6 +46,6 @@ export function assertSchema(value,schema=reportSchema,path='report'){
   }
   if(type==='object'){
     if(schema.required.some(key=>!Object.hasOwn(value,key))||Object.keys(value).some(key=>!Object.hasOwn(schema.properties,key)))throw Error('BHS alanları geçersiz: '+path);
-    for(const [key,s]of Object.entries(schema.properties))assertSchema(value[key],s,path+'.'+key);
+    for(const [key,s]of Object.entries(schema.properties))if(Object.hasOwn(value,key))assertSchema(value[key],s,path+'.'+key);
   }
 }

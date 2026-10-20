@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  function mount(container,{getWebsite,onChange}){
+  function mount(container,{getWebsite,getContext,getBrandName,onChange}){
     let selected=null,verifiedData=null,disposed=false,epoch=0;
     container.innerHTML=`<div class="ol-header"><strong>Marka logosu</strong><span>Ekran görüntüsünden hazırlanır</span></div>
       <label class="ol-upload-label" for="ob-logo-screenshot">Logo ekran görüntüsü yükle</label>
@@ -33,7 +33,7 @@
         if(typeof window.PipelineLogoRequest!=='function')throw new Error('Logo işleme servisi bu önizlemede bağlı değil.');
         const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Görsel okunamadı.'));reader.onabort=()=>reject(new Error('Görsel okuma durduruldu.'));reader.readAsDataURL(file);});
         if(disposed||request!==epoch)return;
-        const data=await window.PipelineLogoRequest({mode:'upload',image});
+        const data=await window.PipelineLogoRequest({mode:'upload',image,context:getContext?.(),brandName:getBrandName?.()});
         if(disposed||request!==epoch)return;
         const candidate=data.candidates?.[0];
         if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
