@@ -41,6 +41,7 @@ test('assembly preserves two exact monthly totals, original logo and unknown BHS
  assert.equal(r.data.logo.image,f.logo.data.candidates[0].image);assert.equal(r.data.logo.background,'#171717');assert.equal(r.data.bhs.scoring.total,null);
  for(const a of r.data.alternatives)for(const s of a.services)for(const key of ['cost','monthlyAmount','minimumAmount','idealAmount'])assert.equal(s[key],undefined);
  assert.equal(r.data.alternatives[1].services.some(s=>s.id==='growth'),false);assert.equal(r.data.plans.operations_bundle.mode,'operations');
+ assert.equal(r.data.bhs.rawReport,undefined);assert.equal(r.data.bhs.meetingQuestions,undefined);assert.equal(r.data.bhs.benchmarks,undefined);
  assert.deepEqual(f,before);
 });
 test('manual plans pass through unchanged; operation plans do not add a full Growth audit; stale/unsupported copy cannot assemble',async()=>{

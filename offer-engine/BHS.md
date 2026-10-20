@@ -57,7 +57,8 @@ The default API now uses `direct-research.mjs` and `direct-report.mjs`: parallel
 Tavily searches, one source collection pass, Gemini 3.1 Pro with the full approved
 methodology, then proposal scope. It does not call a semantic reviewer, require
 content-review approval, or launch a second recovery research pass. The complete
-model report JSON is preserved in the customer proposal's BHS data. Existing
+model report JSON is preserved internally; the customer proposal receives only
+bounded selected findings and dimension takeaways, without a full-report panel. Existing
 paid stage records and the per-card budget remain reusable. Details below about
 the previous Deep Research/reviewer adapter are historical.
 

@@ -27,7 +27,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};
   for(const key of ['urgent','important','low']){
    const items=findings.filter(f=>priority[f.priority]===key),list=$('#so-actions-'+key);list.replaceChildren();
-   items.slice(0,3).forEach(f=>{const li=add('li',f.statement,list);li.title=f.impact;});
+   items.slice(0,2).forEach(f=>{const li=add('li',f.statement,list);li.title=f.impact;});
    if(!items.length)add('li','Bu öncelikte doğrulanmış bulgu yok.',list);
    $('#so-count-'+key).textContent=({urgent:'Acil',important:'Önemli',low:'Düşük öncelikli'})[key]+' · '+items.length;
   }
@@ -45,8 +45,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   }
   root.querySelectorAll('[data-dim]').forEach(b=>b.addEventListener('click',()=>dimension(b.dataset.dim)));dimension('financial');
   $('.so-bhs-bar').addEventListener('click',function(){const p=$('#so-analysis');p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));this.querySelector('.so-link').textContent=p.hidden?'Analizi aç ↗':'Daralt −';});
-  const full=add('details','',$('#so-analysis'));add('summary','Tam BHS ve kaynaklar',full);
-  add('div',data.bhs.rawReport||data.bhs.summary,full,'so-full-report');
+  const full=add('details','',$('#so-analysis'));add('summary','Seçili bulguların kaynakları',full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
   const options=$('.so-options');options.replaceChildren();let selected;
   const form=$('#so-request-form'),status=$('.so-request-status');

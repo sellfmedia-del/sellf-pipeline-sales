@@ -2,7 +2,11 @@
 
 The current preview uses parallel Tavily discovery and Gemini Pro with the
 complete approved `methodology.txt`. Its full BHS JSON goes directly into proposal
-assembly. There is no separate semantic/content reviewer or recovery research
+assembly as input. Customer output contains at most six selected short findings,
+two per existing priority, plus compact dimension takeaways. The full report stays
+in the research record and is not embedded in the customer proposal. Selection
+favors existing critical opportunity/risk IDs, chosen-service links, brief relevance
+and dimension coverage. It makes no model calls. There is no separate semantic/content reviewer or recovery research
 loop. Technical JSON, URL safety, session/ownership and the persistent 50 TRY
 budget remain enforced. See [BUDGET.md](BUDGET.md). Historical Deep Research and
 reviewer details below describe retained legacy adapters only.

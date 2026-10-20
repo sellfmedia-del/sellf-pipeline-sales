@@ -21,8 +21,12 @@ JSON transport checks, URL safety and weighted arithmetic. It does not review,
 rewrite or reject the model's interpretations. Missing measured metrics remain
 null; preliminary scores are labelled as estimates per the approved methodology.
 
-The full report JSON is retained in `audit.data.report` and copied into the
-proposal's BHS data. Scope and concise proposal copy use the BHS plus the card
+The full report JSON is retained in `audit.data.report` as internal input.
+`audit-selection.mjs` selects at most six existing findings (two per priority),
+160-character finding excerpts and 220-character dimension takeaways. It favors
+critical findings, selected-service links and brief relevance, deduplicates text,
+and changes no BHS scores. Full reports, benchmarks, onboarding questions and
+unselected source content are not included in the customer proposal. Scope and concise proposal copy use the BHS plus the card
 brief. Fees remain deterministic. Logo processing and final assembly make no paid
 model calls. Customer presentation keeps the approved layout.
 
