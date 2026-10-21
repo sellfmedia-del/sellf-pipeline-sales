@@ -14,7 +14,7 @@ test('budgeted audit resumes durable completed stages across handlers and signs 
  try{
   const steps=new Map();let stages=0,begins=0;
   const ledger={begin:async()=>{begins++;},get:async k=>steps.get(k),status:async()=>({chargedKurus:900,capKurus:5000})};
-  const dependencies={getSecret:()=>secret,getLedger:async(_req,_res,lead)=>{assert.equal(lead,'lead1');return ledger;},getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{},runStage:async({phase,brief})=>{stages++;assert.notEqual(phase,'semantic');steps.set(stageKey(brief,phase),{state:'complete',value:phase==='synthesis'?{report:context().report}:{}});}};
+  const dependencies={getSecret:()=>secret,getLedger:async(_req,_res,lead)=>{assert.equal(lead,'lead1');return ledger;},getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{},runStage:async({phase,brief,researchVersion})=>{stages++;assert.notEqual(phase,'semantic');assert.equal(researchVersion,'v5');steps.set(stageKey(brief,phase,researchVersion),{state:'complete',value:phase==='synthesis'?{report:context().report}:{}});}};
   let handler=createBoundedAuditHandler(dependencies),res=response();
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1',spaceId:'space1'}};
   await handler(request(start),res);assert.equal(res.code,200);assert.equal(res.body.nextAction,'advance');

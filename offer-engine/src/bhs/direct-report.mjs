@@ -5,8 +5,9 @@ import {renderGroundedReport} from './grounded-report.mjs';
 import {evidenceHash} from './evidence.mjs';
 import {publicUrl} from './verify.mjs';
 import {researchTopics} from './research-topics.mjs';
+import {methodologyAreas,methodologyAreasSchema,normalizeMethodologyAreas} from './methodology-areas.mjs';
 
-export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v4';
+export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
 export const directReportSchema=JSON.parse(JSON.stringify(reportSchema));
 directReportSchema.properties.benchmarks.maxItems=9;
@@ -14,6 +15,9 @@ directReportSchema.properties.benchmarks.items.properties.metric.enum.push('preB
 directReportSchema.properties.researchCoverage={type:'array',maxItems:80,items:{type:'object',additionalProperties:false,required:['dimension','topic','status','observation','sourceIds'],properties:{dimension:{type:'string',enum:dimensions.map(d=>d.id)},topic:{type:'string',maxLength:200},status:{type:'string',enum:['observed','partial','unavailable']},observation:{type:'string',maxLength:1000},sourceIds:{type:'array',maxItems:24,items:{type:'string',maxLength:80}}}}};
 directReportSchema.required.push('researchCoverage');
 directReportSchema.properties.findings.description='Each distinct supported research area needs its own factual finding. Do not collapse an entire dimension to one generic finding. Include specific product/pricing/channel/competitor examples. Separate observations from inference. Never pad findings from brief goals or missing evidence.';
+export const completeDirectReportSchema=structuredClone(directReportSchema);
+completeDirectReportSchema.properties.researchCoverage=methodologyAreasSchema;
+export function normalizeCompleteDirectReport(value){const report=structuredClone(value);report.researchCoverage=normalizeMethodologyAreas(report.researchCoverage,report.sources?.map(s=>s.id));return report;}
 const transportSchema=JSON.parse(JSON.stringify(directReportSchema));
 // Completed paid reports from the previous version remain readable and reusable.
 transportSchema.required=transportSchema.required.filter(k=>k!=='researchCoverage');
@@ -42,7 +46,7 @@ export function directAuditResult(brief,synthesis){
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  return {status:'ready',data:{...report,report,schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
-  quality:{checksPassed:true,issues:[],scope:'json-format-only',semanticBenchmark:'not_requested',customerApproval:'pending'},
+  quality:{checksPassed:true,issues:[],scope:'json-format-only',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
   researchMethod:'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,
   usage:synthesis.usage||null}};
 }

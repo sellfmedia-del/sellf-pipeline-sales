@@ -24,12 +24,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1],job;
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
-    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v4'};
+    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v5'};
    }else{
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   const researchVersion=job.researchVersion||'v3';if(!['v3','v4'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId),providers=getProviders({ledger});
    if(action==='start'){
