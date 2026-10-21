@@ -6,7 +6,8 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
  const contractRecipients=Object.freeze(['yigit@sellfmedia.com','businessdevelopment@sellfmedia.com']);
  function buildMailto(data,{offerUrl,offerId,alternativeId,name,email}){
   const url=new URL(offerUrl),alternative=data.alternatives.find(a=>a.id===alternativeId);
-  if(url.protocol!=='https:'||url.username||url.password||url.search||url.pathname!=='/offers/customer.html'||!/^#[A-Za-z0-9_-]{43}$/.test(url.hash))throw Error('Geçerli yayınlanmış teklif bağlantısı gerekli.');
+  const tokenLink=url.pathname==='/offers/customer.html'&&/^#[A-Za-z0-9_-]{43}$/.test(url.hash),slugLink=!url.hash&&url.pathname.length<=121&&/^\/[a-z0-9]+(?:-[a-z0-9]+)*-teklifi(?:-v\d+-[a-f0-9]{8})?$/.test(url.pathname);
+  if(url.protocol!=='https:'||url.username||url.password||url.search||!(tokenLink||slugLink))throw Error('Geçerli yayınlanmış teklif bağlantısı gerekli.');
   if(!alternative||!Number.isFinite(alternative.monthlyAmount))throw Error('Geçerli işbirliği alternatifini seç.');
   if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error('Yetkili adı ve geçerli iş e-postası gerekli.');
   const line=value=>String(value??'').replace(/[\r\n]/g,' ');

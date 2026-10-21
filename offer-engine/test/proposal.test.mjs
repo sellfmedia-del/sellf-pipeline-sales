@@ -101,4 +101,6 @@ test('mailto encodes Turkish text, fixes both recipients, uses selected saved to
  assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:input.offerUrl.replace('#','?password=private#')}));
  assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,name:'Name\r\nBcc: attacker@example.com'}));
  assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:'javascript:alert(1)'}));
+ const namedUrl='https://offerletter.sellfmedia.com/marka-teklifi';assert.ok(new URL(sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:namedUrl})).searchParams.get('body').includes(namedUrl));
+ assert.throws(()=>sandbox.window.PipelineProposal.buildMailto(data,{...input,offerUrl:'https://offerletter.sellfmedia.com/other/path'}));
 });
