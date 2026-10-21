@@ -1,0 +1,25 @@
+export type Stage='logo'|'audit'|'pricing'|'proposal';
+export type Status='ready'|'review';
+export interface BriefSnapshot {brandName:string;website:string;segment:'kobi'|'corporate'|'key_account';goals:string;needs:string;services:string;meetingNotes:string;budget:number|null;}
+export interface EngineResult<T=unknown> {stage:Stage;engineVersion:string;inputHash:string;runId:string;status:Status;data:T;}
+export interface LogoData {generated:false;sourceType:'upload';reviewed?:boolean;candidates:Array<{id:string;image:string;source:string;placement:{background:string;area:'logo-only'};quality:{transparency:true;matteStable:true;touchesEdge:false;changedSolid:0;[key:string]:unknown;}}>;}
+export type BhsDimension='financial'|'operations'|'funnel'|'digital'|'perception'|'competition';
+export interface AuditData {
+  schemaVersion:'bhs-v1'|'bhs-v2-direct';report?:Record<string,unknown>;methodologyVersion:string;briefHash:string;rawReport:string;summary:string;researchId:string;structureId:string;semanticId?:string;revisionId?:string;packetHash?:string;semanticReview?:unknown;evidenceSources?:Array<{id:string;url:string;finalUrl:string;title:string;method:string;contentHash:string;retrievedAt:string}>;
+  findings:Array<{id:string;dimension:BhsDimension;kind:'observation'|'inference'|'brief';statement:string;reportExcerpt:string;sourceIds:string[];impact:string;goalConnection:string;priority:'high'|'medium'|'low'}>;
+  sources:Array<{id:string;url:string;title:string;quote:string;publishedAt:string|null;period:string|null;scope:string;sourceType:'primary'|'secondary'|'review';verification?:{status:string;finalUrl?:string;checkedAt:string;format?:'pdf'|'html'|'rendered';pages?:number}}>;
+  dimensions:Array<{id:BhsDimension;score:number|null;rationale:string;dataStatus:'full'|'partial'|'insufficient';findingIds:string[];comparisonCompetitorIds:string[];strengths:string[];gaps:string[];onboardingQuestions:string[]}>;
+  competitors:Array<{id:string;name:string;website:string;scaleReason:string;audienceReason:string;geographyReason:string;sourceIds:string[]}>;
+  benchmarks:Array<{metric:string;entries:Array<{entityId:string;value:string|null;unit:string|null;period:string|null;sourceIds:string[]}>}>;
+  meetingQuestions:Array<{dimension:BhsDimension;question:string;findingIds:string[]}>;
+  serviceRecommendations:Array<{id:string;name:string;hypothesis:string;findingIds:string[];measurement:string}>;
+  criticalOpportunityFindingId:string|null;criticalRiskFindingId:string|null;services:string[];
+  scoring:{total:number|null;weights:Array<{id:BhsDimension;weight:number}>;note:string};
+  quality:{checksPassed:boolean;citationChecksPassed?:boolean;issues:string[];scope:'citation-and-quote-checks'|'citation-quote-and-semantic-checks'|'json-format-only';semanticBenchmark:'pending'|'passed'|'failed'|'not_requested';customerApproval:'pending'};
+  usage:Record<string,unknown>|null;
+}
+export interface PriceAlternative {id:'growth_operations'|'operations_bundle';name:string;billingPeriod:'monthly';monthlyAmount:number;minimumAmount:number;idealAmount:number;cost:number;accountCost:number;budgetFit:'unknown'|'within'|'above';services:Array<{serviceId:string;name:string;reason:string;cost:number;monthlyAmount?:number}>;}
+export interface PricingScope {summary:string;budgetPosture:'limited'|'unspecified';budgetQuote:string|null;statedBudget:number|null;statedBudgetScope:'unspecified';target:{scope:'sellf_fee'|'total_growth';min:number;max:number;quote:string}|null;selected:unknown[];deferred:unknown[];pending:unknown[];provisional:boolean;exclusions:string[];}
+export interface PricingData {schemaVersion:'pricing-v2';currency:'TRY';costVersion:string;briefHash:string;segment:BriefSnapshot['segment'];alternatives:PriceAlternative[];recommendedAlternativeId:PriceAlternative['id'];scope:PricingScope;costSnapshot:unknown;costSnapshotHash:string;notices:string[];valueSync:{performed:false;reason:string};}
+export interface ProposalData {schemaVersion:'proposal-v1';brand:{name:string;website:string};copy:{headline:string;accent:string;subtitle:string;findingIds:string[]};logo:{image:string;background:string;reviewed:boolean};alternatives:Array<{id:'growth_operations'|'operations_bundle';name:string;billingPeriod:'monthly';monthlyAmount:number;services:Array<{id:string;name:string;description:string}>}>;recommendedAlternativeId:'growth_operations'|'operations_bundle';plans:Record<string,{mode:'growth'|'operations'|'manual';steps:Array<{time:string;title:string}>;focus:string}>;bhs:Pick<AuditData,'summary'|'dimensions'|'findings'|'sources'|'scoring'|'rawReport'|'meetingQuestions'>;sections:string[];createdAt:string;provenance:Record<string,string>;valueSync:{performed:false;amount:number};}
+export interface Engine {id:Stage;version:string;run(input:unknown,dependencies?:Partial<Record<Stage,EngineResult>>):Promise<{status:Status;data:unknown}>;}

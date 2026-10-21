@@ -1,0 +1,24 @@
+{
+  "kind": "isolated-real-storage-validation",
+  "passed": true,
+  "geminiCalls": 0,
+  "realMailSends": 0,
+  "mailTransport": "mailto",
+  "productionDataAccess": false,
+  "checks": [
+    "real_auth_session_and_separate_card",
+    "atomic_version_and_value_update",
+    "idempotent_save",
+    "revision_updates_only_test_card_value",
+    "invalid_save_rolls_back_version_and_value",
+    "password_protected_persisted_customer_view",
+    "publication_without_mail_provider_and_mailto_draft_without_password_or_queue",
+    "cross_owner_read_and_write_rejected"
+  ],
+  "phase": "complete",
+  "testLeadId": "9b8610fe-a040-4b7e-a0ce-684112032967",
+  "monthlyValue": 106000,
+  "version": 2,
+  "contractRequests": 0,
+  "mailDrafts": 1
+}

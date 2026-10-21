@@ -1,0 +1,754 @@
+{
+  "sources": [
+    {
+      "id": "ev5",
+      "url": "https://onemore.global/",
+      "quote": "Shopping Cart Cart Total: 0.00 USD CHECK OUT Your Journey to Wellness Starts Here",
+      "scope": "Araştırma alanıyla ilgili seçilmiş kaynak kesiti; tam sayfa değildir.",
+      "title": "One More Global",
+      "period": "2026-10-21",
+      "sourceType": "primary",
+      "publishedAt": null
+    },
+    {
+      "id": "ev6",
+      "url": "https://www.arbonne.com/",
+      "quote": "Discover thoughtful, limited-edition favorites made for gifting",
+      "scope": "Tavily advanced: araştırma sorgusuna göre seçilen sayfa kesitleri",
+      "title": "www.arbonne.com",
+      "period": "2026-10-21",
+      "sourceType": "secondary",
+      "publishedAt": null
+    },
+    {
+      "id": "ev7",
+      "url": "https://onemoreglobalinc.com/",
+      "quote": "One More Global Inc. develops and distributes wellness and personal care products through a direct sales model",
+      "scope": "Tavily advanced: araştırma sorgusuna göre seçilen sayfa kesitleri",
+      "title": "onemoreglobalinc.com",
+      "period": "2026-10-21",
+      "sourceType": "primary",
+      "publishedAt": null
+    },
+    {
+      "id": "sr1",
+      "url": "https://onemoreglobalinc.com/products",
+      "quote": "portfolio of wellness, personal care, patch-format, and oral-strip products designed for convenient everyday use.",
+      "scope": "Arama motoru sonucu kesiti",
+      "title": "Wellness & Personal Care Products - One More Global Inc.",
+      "period": "2026-10-21",
+      "sourceType": "primary",
+      "publishedAt": null
+    },
+    {
+      "id": "sr2",
+      "url": "https://umbrex.com/resources/company-profiles/usana-health-sciences",
+      "quote": "USANA is a Salt Lake City-based consumer health company best known for selling nutritional supplements",
+      "scope": "Arama motoru sonucu kesiti",
+      "title": "USANA Health Sciences Inc Strategy and Business Model",
+      "period": "2026-10-21",
+      "sourceType": "secondary",
+      "publishedAt": null
+    }
+  ],
+  "summary": "One More Global, Houston merkezli ve 60'tan fazla ülkede faaliyet gösteren, geleneksel MLM (Doğrudan Satış) yapısıyla büyümüş bir sağlık ve kişisel bakım markasıdır. Markanın temel hedefi, mevcut distribütör ağını zedelemeden perakende (e-ticaret) kanalını monobrand bir stratejiyle güçlendirmektir. Ön analiz bulgularına göre, markanın dijital varlıkları, funnel bütünlüğü ve veri ölçüm altyapısı (analitik/piksel eksikliği), doğrudan tüketiciye (D2C) satış hedeflerini tam anlamıyla destekleyecek olgunlukta değildir. Rekabet setindeki USANA ve Arbonne gibi rakiplerin güçlü e-ticaret konumlandırmaları karşısında dijital bir dönüşüm ihtiyacı öne çıkmaktadır.",
+  "findings": [
+    {
+      "id": "f1",
+      "kind": "brief",
+      "impact": "D2C stratejisinin distribütör ağı ile rekabet etmeden nasıl konumlandırılacağı kritik bir yol haritası gerektiriyor.",
+      "priority": "high",
+      "dimension": "funnel",
+      "sourceIds": [],
+      "statement": "Marka, mevcut Multi Level Marketing (MLM) sistemini bozmadan, perakende e-ticaret üzerinden monobrand bir büyüme hedeflemektedir.",
+      "reportExcerpt": "MLM sistemiyle çalışıyorlar bu sistem zedelenmeden monobrand kapsamı artırılması ve ciroyu bu yöne kaydırma hedefi var.",
+      "goalConnection": "E-ticaret ciro artışı ve perakende marka büyümesi."
+    },
+    {
+      "id": "f2",
+      "kind": "observation",
+      "impact": "Reklam performansının ölçülmesi ve yeniden pazarlama süreçlerinin e-ticaret hunisi için çalıştırılamaması riskini taşır.",
+      "priority": "high",
+      "dimension": "digital",
+      "sourceIds": [
+        "ev5"
+      ],
+      "statement": "İncelenen web sitesi HTML kodlarında, e-ticaret dönüşümlerini izlemek için gerekli olan Meta Pixel veya Google Analytics etiketleri tespit edilememiştir.",
+      "reportExcerpt": "metaPixelTag: false, analyticsTags: false sinyalleri kaydedilmiştir.",
+      "goalConnection": "E-ticaret büyümesi için veri odaklı optimizasyon zorunludur."
+    },
+    {
+      "id": "f3",
+      "kind": "observation",
+      "impact": "Ürün yenilikçiliği (bant/strip) doğrudan e-ticaret pazarlamasında güçlü bir farklılaştırıcı (USP) olarak kullanılabilir.",
+      "priority": "medium",
+      "dimension": "financial",
+      "sourceIds": [
+        "ev7",
+        "sr1"
+      ],
+      "statement": "Marka; bant formatı (patch), oral strip ve kişisel bakım ürünlerini barındıran bir portföye sahiptir.",
+      "reportExcerpt": "A portfolio of practical patch-format products designed for convenient everyday wellness",
+      "goalConnection": "Monobrand perakende hikayesinin kurulması."
+    },
+    {
+      "id": "f4",
+      "kind": "observation",
+      "impact": "E-ticaret siparişleri için operasyonel olarak hazır bir kargo altyapısının sinyalini verir.",
+      "priority": "medium",
+      "dimension": "operations",
+      "sourceIds": [
+        "ev5"
+      ],
+      "statement": "Marka 60'tan fazla ülkeye gönderim yapmakta ve global bir lojistik ağına sahip olduğunu vurgulamaktadır.",
+      "reportExcerpt": "WORLDWIDE DELIVERY Shipping to 60+ countries globally",
+      "goalConnection": "Küresel e-ticaret büyümesini destekler."
+    },
+    {
+      "id": "f5",
+      "kind": "observation",
+      "impact": "Bağımsız güven sinyallerinin (UGC, Trustpilot) D2C kanalı için zenginleştirilmesi gerekmektedir.",
+      "priority": "low",
+      "dimension": "perception",
+      "sourceIds": [
+        "ev5"
+      ],
+      "statement": "Kendi sitelerinde 10K+ müşteri ve 4.9 ortalama puan beyan edilmesine rağmen, bağımsız değerlendirme platformlarına ait verilere ulaşılamamıştır.",
+      "reportExcerpt": "10K+ Happy Customers 60+ Countries Served 4.9 Average Rating",
+      "goalConnection": "D2C satın alma güvenini oluşturma."
+    },
+    {
+      "id": "f6",
+      "kind": "observation",
+      "impact": "Rakiplerin D2C hunisi, One More Global'e e-ticaret standartları açısından güçlü bir referans sunmaktadır.",
+      "priority": "high",
+      "dimension": "competition",
+      "sourceIds": [
+        "ev6"
+      ],
+      "statement": "Rakip Arbonne, kendi e-ticaret sitesi üzerinden net bir fiyatlama ve 'Add to Cart' (Sepete Ekle) akışı ile perakende tüketiciyi hedeflemektedir.",
+      "reportExcerpt": "Holiday Rouge Lip + Cheek Set # 5642 US 2026 $75.00 $60.00 PC Price quantity 1 ADD TO CART",
+      "goalConnection": "Rakiplerin perakende pazar payını kırmak."
+    }
+  ],
+  "benchmarks": [
+    {
+      "metric": "webTraffic",
+      "entries": [
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "domainAuthority",
+      "entries": [
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "socialAudience",
+      "entries": [
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "reviews",
+      "entries": [
+        {
+          "unit": "Self-reported Rating",
+          "value": "4.9",
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": [
+            "ev5"
+          ]
+        },
+        {
+          "unit": "Comparably",
+          "value": "4.7/5 Product Quality Score",
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": [
+            "sr2"
+          ]
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "adActivity",
+      "entries": [
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "contentMaturity",
+      "entries": [
+        {
+          "unit": null,
+          "value": "Basic e-commerce setup",
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": [
+            "ev5"
+          ]
+        },
+        {
+          "unit": null,
+          "value": "Science-oriented content, Brand Ambassadors",
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": [
+            "sr2"
+          ]
+        },
+        {
+          "unit": null,
+          "value": "Premium vegan gifting, D2C offers",
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": [
+            "ev6"
+          ]
+        }
+      ]
+    },
+    {
+      "metric": "revenueOrGrowth",
+      "entries": [
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    },
+    {
+      "metric": "differentiator",
+      "entries": [
+        {
+          "unit": null,
+          "value": "Patch and oral-strip wellness",
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": [
+            "ev7"
+          ]
+        },
+        {
+          "unit": null,
+          "value": "Science-backed, in-house manufacturing",
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": [
+            "sr2"
+          ]
+        },
+        {
+          "unit": null,
+          "value": "Vegan, clean nutrition",
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": [
+            "ev6"
+          ]
+        }
+      ]
+    },
+    {
+      "metric": "preBhsScore",
+      "entries": [
+        {
+          "unit": "Estimated Score",
+          "value": "45.5",
+          "period": "2026-10",
+          "entityId": "onemoreglobal",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "usana",
+          "sourceIds": []
+        },
+        {
+          "unit": null,
+          "value": null,
+          "period": "2026-10",
+          "entityId": "arbonne",
+          "sourceIds": []
+        }
+      ]
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "financial",
+      "gaps": [
+        "Ciro ve kârlılık gibi finansal büyüme sinyallerine dair dışsal veri yok.",
+        "B2C perakende kanalından gelen gelir oranının bilinmemesi."
+      ],
+      "score": 50,
+      "rationale": "Dışsal gelir ve ciro rakamlarına ulaşılamamıştır, ancak markanın 60+ ülkeye ürün göndermesi ve MLM modeli kaynaklı bir hacmi olduğu gözlemlenmektedir. Perakende ciro bilgisi belirsizdir.",
+      "strengths": [
+        "Küresel bir pazarda faaliyet gösteriyor olması.",
+        "İnovatif ürün formatları (Patch, Oral Strip)."
+      ],
+      "dataStatus": "insufficient",
+      "findingIds": [
+        "f3"
+      ],
+      "onboardingQuestions": [
+        "Mevcut toplam gelir içinde doğrudan perakende (e-ticaret) satışların payı nedir?",
+        "E-ticaret kanalı için öngörülen müşteri edinme maliyeti (CAC) hedefleriniz nelerdir?"
+      ],
+      "comparisonCompetitorIds": [
+        "usana"
+      ]
+    },
+    {
+      "id": "operations",
+      "gaps": [
+        "MLM ile D2C paketleme ve son kullanıcı teslimat süreçlerinin ayrışıp ayrışmadığı bilinmiyor.",
+        "Müşteri hizmetleri yanıt performansına dair veri bulunamadı."
+      ],
+      "score": 60,
+      "rationale": "Lojistik altyapısının 60 ülkeyi kapsaması olumludur. Ancak, iç ekip yapısı ve D2C satış modelinin lojistik maliyetlerini nasıl yöneteceğine dair veri bulunmamaktadır.",
+      "strengths": [
+        "Uluslararası dağıtım ağı (Worldwide Shipping).",
+        "İade ve iptal politikalarının dijitalde mevcut olması."
+      ],
+      "dataStatus": "partial",
+      "findingIds": [
+        "f4"
+      ],
+      "onboardingQuestions": [
+        "MLM distribütör gönderimleri ile D2C bireysel müşteri gönderimleri aynı lojistik merkezinden mi çıkıyor?",
+        "E-ticaret iade süreçlerini yönetecek iç ekibiniz mevcut mu?"
+      ],
+      "comparisonCompetitorIds": [
+        "usana",
+        "arbonne"
+      ]
+    },
+    {
+      "id": "funnel",
+      "gaps": [
+        "Müşteri toplama mekanizması (email aboneliği, değer önerisi) yetersiz.",
+        "MLM ile e-ticaret trafiğinin site üzerinde net ayrıştırılamaması."
+      ],
+      "score": 40,
+      "rationale": "Sitede e-ticaret için 'Shop' ve 'Checkout' adımları olmasına rağmen, analitik eksiklikleri ve net bir D2C lead magnet veya değer önerisi eksikliği huninin tam performans göstermediğine işaret etmektedir.",
+      "strengths": [
+        "Sepet ve ödeme sisteminin temel olarak entegre görünmesi."
+      ],
+      "dataStatus": "partial",
+      "findingIds": [
+        "f1"
+      ],
+      "onboardingQuestions": [
+        "Sitenizdeki 'Checkout' trafiğinin ne kadarı doğrudan son tüketiciden, ne kadarı distribütör yönlendirmesinden geliyor?",
+        "Marka farkındalığı için halihazırda dijital reklam hunisi kullanıyor musunuz?"
+      ],
+      "comparisonCompetitorIds": [
+        "arbonne"
+      ]
+    },
+    {
+      "id": "digital",
+      "gaps": [
+        "Temel izleme (Google Analytics, Meta Pixel) etiketlerinin kod üzerinde görünmemesi.",
+        "Performans ölçümü altyapı eksikliği."
+      ],
+      "score": 30,
+      "rationale": "Araştırmada ulaşılan sayfalarda temel analitik ve pazarlama piksellerinin bulunmaması ve organik trafik verilerine teknik erişim engeli (HTTP 403), dijital varlığın ölçülebilirlik seviyesinin çok düşük olduğunu gösteriyor.",
+      "strengths": [
+        "Ayrı bir kurumsal (inc) ve alışveriş (global) yapısının alan adı bazında kurulması."
+      ],
+      "dataStatus": "partial",
+      "findingIds": [
+        "f2"
+      ],
+      "onboardingQuestions": [
+        "Sitenizde halihazırda GTM veya benzeri bir veri takip aracı kurulu mu, varsa veriler izleniyor mu?",
+        "Hangi dijital platformlarda (Shopify, WooCommerce vb.) çalışıyorsunuz?"
+      ],
+      "comparisonCompetitorIds": [
+        "usana",
+        "arbonne"
+      ]
+    },
+    {
+      "id": "perception",
+      "gaps": [
+        "Şikayetvar, Trustpilot gibi dış denetim platformlarına dair veri alınamadı.",
+        "Arama hacmi ve sosyal bahislerin yönüne dair bağımsız gösterge yok."
+      ],
+      "score": 50,
+      "rationale": "Dış platformlardan bağımsız doğrulama yapılamamıştır. Web sitesindeki müşteri yorumları olumlu olsa da, dış kaynaklarda hacimli UGC veya yorum profiline rastlanmamıştır.",
+      "strengths": [
+        "Firma kendi platformlarında müşteri memnuniyet oranını yüksek göstermektedir (4.9)."
+      ],
+      "dataStatus": "insufficient",
+      "findingIds": [
+        "f5"
+      ],
+      "onboardingQuestions": [
+        "Bağımsız müşteri yorumları (Reviews) için aktif bir toplama sisteminiz var mı?",
+        "Müşteri sadakatini ölçen NPS gibi bir metrik takip ediyor musunuz?"
+      ],
+      "comparisonCompetitorIds": [
+        "usana"
+      ]
+    },
+    {
+      "id": "competition",
+      "gaps": [
+        "Rakiplerin organik görünürlük ve kullanıcı deneyimi (UX) standartlarının gerisinde kalınması."
+      ],
+      "score": 45,
+      "rationale": "Arbonne ve USANA gibi rakipler güçlü, yüksek trafikli ve analitik altyapısı sağlam e-ticaret portallarına sahiptir. One More Global bu markaların yanında henüz D2C e-ticaret alanında geride konumlanmaktadır.",
+      "strengths": [
+        "Yenilikçi ürün formatları (Patch, Strip) pazarda güçlü birer farklılaştırıcı."
+      ],
+      "dataStatus": "partial",
+      "findingIds": [
+        "f6"
+      ],
+      "onboardingQuestions": [
+        "Monobrand D2C markanız için USANA veya Arbonne dışında hedef aldığınız doğrudan rakipler kimler?",
+        "Perakende tüketiciye özel bir ürün veya fiyatlandırma stratejiniz rakiplere kıyasla nasıl şekillenecek?"
+      ],
+      "comparisonCompetitorIds": [
+        "usana",
+        "arbonne"
+      ]
+    }
+  ],
+  "competitors": [
+    {
+      "id": "usana",
+      "name": "USANA Health Sciences",
+      "website": "https://www.usana.com",
+      "sourceIds": [
+        "sr2"
+      ],
+      "scaleReason": "Established global MLM with a strong D2C e-commerce component and similar product range.",
+      "audienceReason": "Targeting wellness, supplement, and personal care buyers.",
+      "geographyReason": "Strong presence in the US and globally."
+    },
+    {
+      "id": "isagenix",
+      "name": "Isagenix",
+      "website": "https://www.isagenix.com",
+      "sourceIds": [],
+      "scaleReason": "Similar scale MLM in wellness transitioning toward broader retail appeal.",
+      "audienceReason": "Health and wellness consumers looking for supplements and personal care.",
+      "geographyReason": "US-based with international operations."
+    },
+    {
+      "id": "arbonne",
+      "name": "Arbonne",
+      "website": "https://www.arbonne.com",
+      "sourceIds": [
+        "ev6"
+      ],
+      "scaleReason": "Large-scale health and wellness MLM with a very strong e-commerce and retail-like brand presence.",
+      "audienceReason": "Premium wellness and personal care consumers.",
+      "geographyReason": "US-based with global reach."
+    }
+  ],
+  "meetingQuestions": [
+    {
+      "question": "E-ticaret ciro hedefiniz ile distribütör ağı gelirleri arasındaki dengeyi nasıl kurmayı planlıyorsunuz?",
+      "dimension": "financial",
+      "findingIds": [
+        "f1"
+      ]
+    },
+    {
+      "question": "Sitenizde performans metriklerini (Pixel, Google Analytics) ölçen bir sistem kurulu mu?",
+      "dimension": "digital",
+      "findingIds": [
+        "f2"
+      ]
+    },
+    {
+      "question": "Dünya çapındaki 60 ülkeye kargo gönderimi yaparken, D2C bireysel e-ticaret siparişleri için operasyonel kapasiteniz nedir?",
+      "dimension": "operations",
+      "findingIds": [
+        "f4"
+      ]
+    },
+    {
+      "question": "USANA ve Arbonne gibi e-ticaret yetkinliği yüksek rakiplere karşı, doğrudan tüketiciye hangi ana değer önerisiyle ulaşmayı hedefliyorsunuz?",
+      "dimension": "competition",
+      "findingIds": [
+        "f6"
+      ]
+    },
+    {
+      "question": "Web sitenizde müşteri adaylarını toplamak için mevcut 'Sepete Ekle' dışında bir e-posta bülteni veya içerik hunisi kurgulamayı planlıyor musunuz?",
+      "dimension": "funnel",
+      "findingIds": [
+        "f1"
+      ]
+    }
+  ],
+  "researchCoverage": {
+    "funnel_1": {
+      "status": "partial",
+      "sourceIds": [],
+      "observation": "Ad Library veya organik erişim verisine araç engeli sebebiyle ulaşılamadı."
+    },
+    "funnel_2": {
+      "status": "observed",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Ürünler için yönlendirme (Shop) kısımları var ancak lead magnet eksikliği gözlemleniyor."
+    },
+    "funnel_3": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Ölçüm etiketleri kaynak kodlarda tespit edilemedi (analytics/piksel eksikliği)."
+    },
+    "funnel_4": {
+      "status": "observed",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Sitede ürünlerin sepete eklenmesi ve 'CHECK OUT' akışı çalışır durumda."
+    },
+    "funnel_5": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "E-posta abonelik formlarına veya aktif UGC kampanyalarına dair sinyal alınamadı."
+    },
+    "digital_1": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "HTTPS protokolü (SSL) mevcut ancak PageSpeed verileri test edilemedi."
+    },
+    "digital_2": {
+      "status": "observed",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Analitik veya pazarlama etiketleri sayfada görünmüyor."
+    },
+    "digital_3": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "SEO authority ve trafik hacmi araç blokajı nedeniyle okunamadı."
+    },
+    "digital_4": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Sosyal medya kanal performansı ölçümlenemedi."
+    },
+    "digital_5": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Meta Ad Library verisi çekilemedi."
+    },
+    "financial_1": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Dışa açık yatırım veya ciro haberlerine ulaşılamadı."
+    },
+    "financial_2": {
+      "status": "observed",
+      "sourceIds": [
+        "ev7"
+      ],
+      "observation": "Ürünler bant (patch) ve oral strip formatlarında; perakende hacim belirsiz."
+    },
+    "financial_3": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "İşe alım platformlarına veya LinkedIn verilerine dış kaynaklı erişim sağlanamadı."
+    },
+    "financial_4": {
+      "status": "partial",
+      "sourceIds": [
+        "ev7"
+      ],
+      "observation": "Gelir ağırlıklı olarak MLM modeline konsantre; e-ticaret kırılımı belli değil."
+    },
+    "operations_1": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Genel merkez Houston, Amerika bölgesi ana operasyon noktası ancak ekip büyüklüğü bilinemiyor."
+    },
+    "operations_2": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "E-ticaret sitesinde checkout mevcut ancak CRM veya pazarlama otomasyon aracı sinyaline ulaşılamadı."
+    },
+    "operations_3": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "60'tan fazla ülkeye ürün gönderimi sağlandığı belirtiliyor. Şikayet temaları bağımsız sitelerden alınamadı."
+    },
+    "operations_4": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Lojistik altyapı büyüme vizyonuna uygun görünüyor ancak ölçeklenebilirlik için iç ekip verisi eksik."
+    },
+    "perception_1": {
+      "status": "partial",
+      "sourceIds": [
+        "ev5"
+      ],
+      "observation": "Kendi sitelerinde 10 bin müşteri ve 4.9 ortalama puan beyan edilmiş ancak bağımsız veri yok."
+    },
+    "perception_2": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Şikayetvar ve Trustpilot verilerine ulaşılamadı."
+    },
+    "perception_3": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Sosyal medya tonu ve aranma hacimleri teknik engel nedeniyle çekilemedi."
+    },
+    "competition_1": {
+      "status": "unavailable",
+      "sourceIds": [],
+      "observation": "Rakiplerle organik trafik veya sosyal etkileşim kıyaslaması yapılamadı."
+    },
+    "competition_2": {
+      "status": "observed",
+      "sourceIds": [
+        "sr2",
+        "ev6"
+      ],
+      "observation": "USANA bilim destekli takviyelere, Arbonne vegan hediyelik/perakende ürünlerine odaklanıyor."
+    },
+    "competition_3": {
+      "status": "partial",
+      "sourceIds": [
+        "ev6"
+      ],
+      "observation": "Rakipler, e-ticaret kanallarını D2C pazarlaması ile domine etmektedir."
+    }
+  },
+  "criticalRiskFindingId": "f2",
+  "serviceRecommendations": [],
+  "criticalOpportunityFindingId": "f3"
+}

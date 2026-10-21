@@ -1,0 +1,24 @@
+#offer-brief-dialog .ol-header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+#offer-brief-dialog .ol-header span{font-size:10px;background:var(--teal-bg);color:var(--teal);padding:3px 7px;border-radius:20px}
+#offer-brief-dialog .ol-upload-label{font-size:12px;margin-top:12px}
+#offer-brief-dialog input.ol-file[type=file]{position:static;width:100%;height:auto;opacity:1;max-width:100%;padding:10px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;font-size:12px}
+#offer-brief-dialog .ol-status,#offer-brief-dialog .ol-quality{font-size:12px;color:var(--text2);margin:8px 0;line-height:1.6}
+#offer-brief-dialog .ol-fetch{padding:7px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:7px;font-size:12px}
+#offer-brief-dialog .ol-fetch:disabled{opacity:.55;cursor:progress}
+#offer-brief-dialog .ol-comparison{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 8px}
+#offer-brief-dialog .ol-comparison figure{min-width:0;margin:0}
+#offer-brief-dialog .ol-comparison figcaption{color:var(--text2);font-size:11px;margin-bottom:6px}
+#offer-brief-dialog .ol-original,#offer-brief-dialog .ol-checker{height:120px;padding:12px;border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+#offer-brief-dialog .ol-checker{background-color:#eee;background-image:linear-gradient(45deg,#d2d2d2 25%,transparent 25%),linear-gradient(-45deg,#d2d2d2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#d2d2d2 75%),linear-gradient(-45deg,transparent 75%,#d2d2d2 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+#offer-brief-dialog .ol-comparison img{max-width:100%;max-height:100%;object-fit:contain}
+#offer-brief-dialog .ol-choice-label{margin:12px 0!important;font-size:11px!important}
+#offer-brief-dialog .ol-choice{margin-top:5px}
+#offer-brief-dialog .ol-review{display:flex;align-items:flex-start;gap:8px;font-weight:400;font-size:12px;background:var(--amber-bg);padding:10px;border-radius:7px}
+#offer-brief-dialog .ol-review input[type=checkbox]{width:16px;min-height:16px;height:16px;flex-shrink:0;margin-top:3px}
+#offer-brief-dialog .ol-placement{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px;border:1px solid var(--border);border-radius:8px;background:#fff;margin-top:14px}
+#offer-brief-dialog .ol-placement span{font-size:24px;font-weight:800;color:#1a1917}
+#offer-brief-dialog .ol-placement img{width:180px;height:64px;object-fit:contain}
+#offer-brief-dialog .ol-logo-zone{display:flex;align-items:center;justify-content:center;padding:12px;border-radius:6px;max-width:100%}
+#offer-brief-dialog .ol-background-label{margin-top:12px;font-size:11px}
+#offer-brief-dialog .ol-placement-label{font-size:10px;color:var(--text3);margin-top:5px}
+@media(max-width:600px){#offer-brief-dialog .ol-comparison{grid-template-columns:1fr}#offer-brief-dialog .ol-placement img{width:150px}}

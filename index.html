@@ -6,6 +6,16 @@
 <title>CRM Pipeline</title>
 <!-- Supabase JS CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="/offers/card-section.css">
+<link rel="stylesheet" href="/offers/brief-form.css">
+<link rel="stylesheet" href="/offers/proposal.css">
+<link rel="stylesheet" href="/offers/logo-control.css">
+<script src="/offers/brief-model.js"></script>
+<script src="/offers/logo-control.js"></script>
+<script src="/offers/proposal.js"></script>
+<script src="/offers/service-client.js"></script>
+<script src="/offers/brief-form.js"></script>
+<script src="/offers/card-section.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -722,12 +732,14 @@ function renderModal(){
           <div class="sidebar-key">Not</div>
           <textarea class="sidebar-select" style="height:72px;resize:vertical" placeholder="Genel not..." onchange="updateField('notes',this.value)">${lead.notes||''}</textarea>
         </div>
+        <section id="pipeline-offer-section" aria-label="Teklif"></section>
       </div>
     </div>
     <div class="modal-footer-bar">
       <button class="del-lead-btn" onclick="confirmDeleteLead()">Leadı sil</button>
       <div style="font-size:11px;color:var(--text3)">${(lead.timeline||[]).length} görüşme · ${(lead.contacts||[]).length} contact</div>
     </div>`;
+  window.PipelineOffers?.mount(document.getElementById('pipeline-offer-section'), { lead, spaceId: activeSpaceId });
 }
 
 function updateField(key,val){
