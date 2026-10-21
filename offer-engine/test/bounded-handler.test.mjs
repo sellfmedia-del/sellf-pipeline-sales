@@ -6,6 +6,8 @@ import {context} from './fixtures/evidence.mjs';
 import {createPricingProof} from '../src/pricing/proof.mjs';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {brief as fixture} from './fixtures/bhs.mjs';
+import {createDnsLookup} from '../src/network-dns.mjs';
+import {resolveTarget} from '../src/network.mjs';
 const brief=snapshotBrief(fixture),host='preview.vercel.app',secret='bounded-handler-test';
 const response=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(x){this.body=x;return this;}});
 const request=(body,cookie)=>({method:'POST',headers:{host,origin:'https://'+host,cookie},body});
@@ -44,4 +46,22 @@ test('reserved or uncertain stages cannot launch another paid worker',async()=>{
 test('seed discovery covers company, competitors, finance, market, reputation, and channels',()=>{
  const queries=seedQueries(brief);assert.equal(queries.length,8);assert.ok(queries.every(x=>x.includes(brief.brandName)));
  assert.ok(queries.some(x=>x.includes('finansal')));assert.ok(queries.some(x=>x.includes('yorum')));
+});
+test('start recovers an EBUSY address check without repeating or starting paid research',async()=>{
+ const before=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  let lookups=0,begins=0;const lookup=createDnsLookup({resolve:async()=>{if(++lookups===1)throw Object.assign(Error('busy'),{code:'EBUSY'});return [{address:'8.8.8.8',family:4}];},wait:async()=>{}});
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>({begin:async()=>{begins++;},get:async()=>null,status:async()=>({chargedKurus:500,capKurus:5000})}),getProviders:()=>({configured:()=>true}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('start must not call a paid stage'),logger:{}});
+  const res=response();await handler(request({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}}),res);
+  assert.equal(res.code,200);assert.equal(res.body.phase,'source_plan');assert.equal(res.body.nextAction,'advance');assert.equal(lookups,2);assert.equal(begins,1);
+ }finally{if(before===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=before;}
+});
+test('exhausted DNS checks cannot reach the budget or providers and produce a precise retry message',async()=>{
+ const before=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const lookup=createDnsLookup({resolve:async()=>{throw Object.assign(Error('busy'),{code:'EBUSY',syscall:'getaddrinfo'});},wait:async()=>{}});
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>({begin:()=>assert.fail('no budget write')}),getProviders:()=>({}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('no paid stage'),logger:{}});
+  const res=response();await handler(request({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}}),res);
+  assert.equal(res.code,503);assert.equal(res.body.code,'website_network_busy');assert.ok(res.body.error.includes('Ücretli BHS başlatılmadı'));
+ }finally{if(before===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=before;}
 });

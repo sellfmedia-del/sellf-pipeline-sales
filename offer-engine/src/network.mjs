@@ -1,4 +1,4 @@
-import { lookup } from 'node:dns/promises';
+import { lookupPublicTarget } from './network-dns.mjs';
 import http from 'node:http';
 import https from 'node:https';
 import { gunzipSync, brotliDecompressSync, inflateSync } from 'node:zlib';
@@ -8,7 +8,7 @@ export function isPublicAddress(address) {
   try { return ipaddr.process(address).range() === 'unicast'; } catch { return false; }
 }
 
-export async function resolveTarget(input, resolver = lookup) {
+export async function resolveTarget(input, resolver = lookupPublicTarget) {
   const url = new URL(input);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || (url.port && !['80','443'].includes(url.port))) throw new Error('Yalnızca herkese açık web sitesi adresleri kullanılabilir.');
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();

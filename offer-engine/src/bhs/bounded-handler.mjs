@@ -7,6 +7,7 @@ import {createBoundedProviders} from '../budget/providers.mjs';
 import {phases,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
+import {temporaryDnsError} from '../network-dns.mjs';
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),now=Date.now,logger=console}={}){
  return async(req,res)=>{
@@ -34,7 +35,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId),providers=getProviders({ledger});
    if(action==='start'){
-    await validateWebsite(brief);await ledger.begin();
+    phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
    }
    const ticket=codec.encode(job,session,host),cost=()=>ledger.status();
@@ -68,6 +69,10 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){
+   if(phase==='website_check'&&temporaryDnsError(error)){
+    log('bhs_error',{code:error.code,errorName:error.name,networkOperation:error.syscall||'dns_lookup',retryable:true});
+    return res.status(503).json({code:'website_network_busy',error:'Site adresinin ağ kontrolü geçici olarak meşgul. Ücretli BHS başlatılmadı; aynı karttan tekrar deneyebilirsin.'});
+   }
    const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}:{})});
    if(error.budgetDiagnostic)log('bhs_budget_preflight',error.budgetDiagnostic);
    if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
