@@ -1,3 +1,4 @@
+import {quoteCurrency} from '../src/pricing/currency.mjs';
 import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
@@ -26,6 +27,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    const approval=codec.decode(body.proposalProof,session,host,now());
    if(approval.kind!=='pricing_ready'||approval.briefHash!==hash||approval.auditHash!==digest(body.audit)||approval.pricingHash!==digest(body.pricing))throw Error();
    assertResult('audit',body.audit);assertResult('pricing',body.pricing);
+   if(quoteCurrency(body.brief?.currency)!==(body.pricing.data.quote?.currency||'TRY'))throw Error('Teklif para birimi fiyat kaydıyla eşleşmiyor.');
    const {logoProof:receipt,...logoData}=body.logo||{};logoProof(secret,host,logoData,receipt);
    const logo={stage:'logo',status:'review',data:logoData};assertResult('logo',logo);
    const context={leadId:body.context?.leadId,spaceId:body.context?.spaceId};

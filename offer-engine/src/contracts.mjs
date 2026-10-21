@@ -1,3 +1,4 @@
+import {assertQuote} from './pricing/currency.mjs';
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
 export function assertResult(stage,result){
   if(!['ready','review'].includes(result?.status)||!result.data||typeof result.data!=='object')throw new Error('Motor geçerli bir sonuç döndürmedi: '+stage);
@@ -11,6 +12,7 @@ export function assertResult(stage,result){
   if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
   if(stage==='pricing'){
     const p=result.data;
+    assertQuote(p);
     if(p.currency!=='TRY'||!p.costVersion||!Array.isArray(p.alternatives)||p.alternatives.length!==2||p.alternatives.some(a=>a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0))throw new Error('İki toplam aylık fiyat ve maliyet sürümü gerekli.');
     if(['pricing-v1','pricing-v2'].includes(p.schemaVersion)){
       if(p.alternatives.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!p.costSnapshotHash||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Fiyat alternatifleri veya maliyet kaydı eksik.');
@@ -24,6 +26,7 @@ export function assertResult(stage,result){
     const p=result.data;
     if(!Array.isArray(p.sections))throw new Error('Teklif bölümleri eksik.');
     if(p.schemaVersion==='proposal-v1'){
+      assertQuote(p,{requireReady:true});
       if(p.alternatives?.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!p.logo?.image?.startsWith('data:image/png;base64,')||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Teklif kapsamı veya logo eksik.');
       for(const a of p.alternatives)if(a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0||!p.plans?.[a.id]?.steps?.length||a.services.some(s=>['cost','monthlyAmount','minimumAmount','idealAmount'].some(key=>key in s)))throw Error('Müşteri teklifi toplamları veya hizmet alanları geçersiz.');
     }

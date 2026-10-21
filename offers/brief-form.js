@@ -3,7 +3,7 @@
   'use strict';
   let active = null;
   const labels = { kobi: 'KOBİ', corporate: 'Kurumsal', key_account: 'Key Account' };
-  const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'meetingNotes'];
+  const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'currency', 'meetingNotes'];
 
   function open(context, returnFocus) {
     const model = window.PipelineOfferBriefModel;
@@ -33,6 +33,7 @@
             <div class="ob-field ob-wide"><label for="ob-goals">Hedefler <span>*</span></label><textarea id="ob-goals" name="goals" placeholder="Marka hangi iş sonucuna ulaşmak istiyor?" maxlength="10000" required></textarea><p class="ob-error" id="error-goals"></p></div>
             <div class="ob-field ob-wide"><label for="ob-needs">İhtiyaçlar ve öncelikler <span>*</span></label><textarea id="ob-needs" name="needs" placeholder="Mevcut darboğazlar, öncelikler ve bilinen kısıtlar" maxlength="10000" required></textarea><p class="ob-error" id="error-needs"></p></div>
             <div class="ob-field ob-wide"><label for="ob-services">Konuşulan hizmetler <span>*</span></label><textarea id="ob-services" name="services" placeholder="Görüşmede konuşulan hizmetleri ve kapsamı belirt." maxlength="10000" required></textarea><p class="ob-error" id="error-services"></p></div>
+            <div class="ob-field"><label for="ob-currency">Teklif para birimi</label><select id="ob-currency" name="currency"><option value="TRY">TL · Türk lirası</option><option value="USD">USD · ABD doları</option></select><p class="ob-hint">Dolar teklifi güncel TCMB satış kuruyla hesaplanır. Bütçe ve iç maliyetler TL olarak kalır.</p><p class="ob-error" id="error-currency"></p></div>
             <div class="ob-field"><label for="ob-budget">Aylık bütçe, TL <small>(varsa)</small></label><input id="ob-budget" name="budget" type="number" inputmode="decimal" min="0" step="any" placeholder="Bilinmiyorsa boş bırak"><p class="ob-hint">Görüşmede belirtilen bütçedir; teklif fiyatı değildir.</p><p class="ob-error" id="error-budget"></p></div>
           </div></fieldset>
           <fieldset><legend>Toplantı notları ve bağlam</legend><div class="ob-field"><label for="ob-meetingNotes">Araştırmada kullanılacak notlar</label><textarea id="ob-meetingNotes" name="meetingNotes" class="ob-notes" maxlength="30000"></textarea><p class="ob-hint">Kart notları ve görüşme geçmişinden aktarıldı. Buradaki düzenlemeler kartın asıl kayıtlarını değiştirmez.</p></div>
@@ -150,18 +151,21 @@
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
     }
-    const formatMoney=value=>new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY',maximumFractionDigits:2}).format(value);
+    const formatMoney=(value,currency='TRY')=>new Intl.NumberFormat('tr-TR',{style:'currency',currency,maximumFractionDigits:2}).format(value);
     function renderPricing(result){
       draft.pricing=result;
       const box=dialog.querySelector('.ob-pricing'),data=result.data;box.replaceChildren();box.hidden=false;
       const add=(tag,text,parent=box)=>{const node=document.createElement(tag);node.textContent=text;parent.appendChild(node);return node;};
-      add('h3','Aylık fiyat alternatifleri');add('p',data.scope.summary);
+      add('h3','Aylık fiyat alternatifleri');
+      if(data.quote?.status==='ready'){const fx=data.quote.exchangeRate;add('p','Sabit teklif kuru: 1 USD = '+fx.rate+' TL · TCMB '+fx.publishedAt+'. Gönderilmiş teklifin tutarı kur değişikliğiyle güncellenmez.');}
+      if(data.quote?.status==='pending')add('p',data.quote.notice);add('p',data.scope.summary);
       add('p',data.scope.budgetPosture==='limited'?'Görüşmedeki bütçe kısıtı başlangıç kapsamına yansıtıldı.':'Bütçe belirtilmese de hizmet kapsamı ve maliyetlerden fiyat hesaplandı.');
       if(data.scope.budgetQuote)add('p','Görüşme dayanağı: '+data.scope.budgetQuote);
       data.alternatives.forEach(alternative=>{
         const article=document.createElement('article');box.appendChild(article);
         add('h4',alternative.name+(alternative.id===data.recommendedAlternativeId?' · Önerilen':''),article);
-        add('p',formatMoney(alternative.monthlyAmount)+' / ay',article);
+        const quoted=data.quote?.alternatives?.find(a=>a.id===alternative.id);
+        add('p',data.quote?.status==='pending'?'USD tutarı için kur bekleniyor':formatMoney(quoted?.monthlyAmount??alternative.monthlyAmount,quoted?'USD':'TRY')+' / ay',article);
         alternative.services.forEach(service=>add('p',service.name+' · '+service.reason,article));
         if(alternative.note)add('p',alternative.note,article);
         if(alternative.budgetFit==='above')add('p','Belirtilen teklif aralığının üzerinde; maliyet tabanının altına inilmedi.',article);
@@ -192,7 +196,7 @@
           const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelinePricingRequest({action:'cancel',brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.phase==='complete'){draft.proposalProof=response.proposalProof;renderPricing(response.result);dialog.querySelector('.ob-proposal-controls').hidden=false;dialog.querySelector('.ob-compose').hidden=false;task=null;return;}
+          if(response.phase==='complete'){draft.proposalProof=response.proposalProof;renderPricing(response.result);dialog.querySelector('.ob-proposal-controls').hidden=false;dialog.querySelector('.ob-compose').hidden=response.result.data.quote?.status==='pending';dialog.querySelector('.ob-price').hidden=response.result.data.quote?.status!=='pending';task=null;return;}
           action='status';await new Promise(resolve=>setTimeout(resolve,3000));if(current.stopped)return;
         }
       }catch(error){if(!current.stopped)notice.textContent=error.message||'Fiyat alternatifleri hazırlanamadı. Yeni model çağrısı otomatik başlatılmadı.';}
@@ -201,7 +205,7 @@
 
     dialog.querySelector('.ob-plan-mode').addEventListener('change',e=>{dialog.querySelector('.ob-manual-label').hidden=e.target.value!=='manual';invalidateProposal();});
     dialog.querySelector('.ob-manual-steps').addEventListener('input',invalidateProposal);
-    function invalidateProposal(){if(task?.kind==='proposal')stopTask();draft.proposal=null;draft.saveProof=null;draft.saved=null;for(const cls of ['ob-proposal','ob-approval','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;dialog.querySelector('.ob-compose').hidden=!draft.pricing;}
+    function invalidateProposal(){if(task?.kind==='proposal')stopTask();draft.proposal=null;draft.saveProof=null;draft.saved=null;for(const cls of ['ob-proposal','ob-approval','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;dialog.querySelector('.ob-compose').hidden=!draft.pricing||draft.pricing.data.quote?.status==='pending';}
     dialog.querySelector('.ob-compose').addEventListener('click',async()=>{
       if(task||!draft.pricing||!draft.logo?.verifiedData)return;
       const notice=dialog.querySelector('.ob-review-notice'),button=dialog.querySelector('.ob-compose');
@@ -320,7 +324,8 @@
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
         ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Şeffaf PNG hazır · Görsel onay teklif taslağında yapılacak' : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
-        ['Aylık bütçe', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
+        ['Teklif para birimi', draft.currency==='USD'?'USD · ABD doları':'TL · Türk lirası'],
+        ['Aylık bütçe, TL', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
         ['Toplantı notları', draft.meetingNotes || 'Belirtilmedi']
       ];
       values.forEach(([label, value]) => {

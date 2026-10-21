@@ -68,12 +68,12 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
 test('desktop and mobile finish BHS then two real deterministic price alternatives without budget or CRM writes',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  const browser=await playwright.launch({args:chromium.args.filter(arg=>!['--disable-web-security','--single-process'].includes(arg)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
- try{for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
+ try{for(const viewport of [{width:1440,height:1000},{width:390,height:844}].flatMap(viewport=>['TRY','USD'].map(currency=>({...viewport,currency})))){
   const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[],priceActions=[];let disconnected=0,completionReads=0;
   const previewFixture={user:{id:'test-user'},rows:{spaces:[{id:'test-space',name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()}],columns:[{id:'test-column',space_id:'test-space',title:'Teklif Aşamasında',dot:'#BA7517'}],leads:[{id:'test-lead',space_id:'test-space',col_id:'test-column',company:'Test Marka',name:'Test Yetkilisi',value:'',notes:'Toplantı bağlamı korunmalı.',contacts:[],timeline:[]}]}};
   const session='c'.repeat(43),secret='test-ui-pricing-secret';let completeAudit;
   const proposalHandler=createProposalHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async composeProposal(){return {id:'ui_proposal_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Bayi ağını ölçüm ve uygulamayla geliştirelim.',findingIds:['f0']})}]}]};}})});
-  const handler=createPricingHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async planPricing(){return {id:'ui_scope_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({summary:'Görüşmedeki servis ihtiyacına uygun başlangıç.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:'b2b',phase:'start',priority:1,reason:'Bayi büyümesi hedefi.',briefQuote:'Growth',findingIds:[]}],exclusions:[]})}]}]};}})});
+  const handler=createPricingHandler({getSecret:()=>secret,getExchangeRate:async()=>({provider:'TCMB',kind:'ForexSelling',base:'USD',quote:'TRY',rate:44.1234,publishedAt:'2026-10-21',checkedAt:'2026-10-21T17:00:00.000Z',source:'https://www.tcmb.gov.tr/kurlar/today.xml'}),getProvider:()=>({configured:()=>true,async planPricing(){return {id:'ui_scope_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({summary:'Görüşmedeki servis ihtiyacına uygun başlangıç.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:'b2b',phase:'start',priority:1,reason:'Bayi büyümesi hedefi.',briefQuote:'Growth',findingIds:[]}],exclusions:[]})}]}]};}})});
   const {context:fixture}=await import('./fixtures/evidence.mjs');
   const {renderGroundedReport}=await import('../src/bhs/grounded-report.mjs');
   page.setDefaultTimeout(10000);
@@ -113,7 +113,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
    try{const file=path.join(process.cwd(),'public',url.pathname==='/'?'index.html':url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
   });
   await page.goto('https://preview.vercel.app/');const frame=page;await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.evaluate(()=>JSON.stringify(db));
-  await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
+  await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-currency').selectOption(viewport.currency);await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
   if(viewport.width===390){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
@@ -122,7 +122,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   assert.match(await frame.locator('.ob-pricing').textContent(),/40.000/);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await frame.locator('.ob-compose').click();await frame.getByText('Teklif taslağı hazır',{exact:true}).waitFor();
-  assert.equal(await frame.locator('.ob-proposal .so-option').count(),2);
+  assert.equal(await frame.locator('.ob-proposal .so-option').count(),2);assert.match(await frame.locator('.so-option').first().textContent(),viewport.currency==='USD'?/USD \/ ay/:/TL \/ ay/);if(viewport.currency==='USD'){assert.match(await frame.locator('.so-exchange-rate').textContent(),/44,1234/);assert.equal(actions.filter(a=>a==='start').length,1);}
   assert.match(await frame.locator('.so-docmeta').textContent(),/Marka özel teklifi/);
   assert.equal(await frame.locator('.so-client').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(23, 23, 23)');
   assert.equal(await frame.locator('.so-client img').evaluate(el=>el.complete&&el.naturalWidth>0),true);
@@ -135,7 +135,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await frame.locator('.ob-logo-approved').check();await frame.locator('.ob-scope-approved').check();await frame.locator('.ob-save').click();await frame.getByText('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
-  if(process.env.OFFER_TEST_SCREENSHOTS==='1')await page.screenshot({path:'/workspace/scratch/5e08853fbefb/proposal-qa-'+viewport.width+'.png',fullPage:true});
+  if(process.env.OFFER_TEST_SCREENSHOTS==='1')await page.screenshot({path:'/workspace/scratch/28851c4d6589/proposal-qa-'+viewport.currency+'-'+viewport.width+'.png',fullPage:true});
   await frame.locator('.ob-edit').click();assert.equal(await frame.locator('#ob-budget').inputValue(),'');assert.equal(await frame.locator('.ob-pricing').isVisible(),false);assert.equal(await frame.locator('.ob-price').isVisible(),false);
   await context.close();
  }}finally{await browser.close();if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}

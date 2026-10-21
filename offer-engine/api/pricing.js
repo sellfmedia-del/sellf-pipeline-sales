@@ -4,11 +4,12 @@ import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {interactionId,modelText} from '../src/bhs/provider.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {pricingEngine} from '../src/engines/pricing-engine.mjs';
+import {quoteCurrency,createUsdTryRate,addQuote} from '../src/pricing/currency.mjs';
 import {costVersion} from '../src/pricing/catalog.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {offerGeminiKey} from '../src/config.mjs';
 
-export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,engine=pricingEngine,now=Date.now}={}){
+export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,engine=pricingEngine,now=Date.now,getExchangeRate=createUsdTryRate()}={}){
  const starts=new Map();
  return async function handler(req,res){
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
@@ -29,10 +30,13 @@ export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,
    if(approval.kind!=='audit_ready'||approval.briefHash!==hash||approval.auditHash!==digest(body.audit))throw Error('Brief veya BHS değişti; fiyat hesaplaması için doğrulanmış sonuç gerekli.');
    assertResult('audit',body.audit);
    if(body.audit.status!=='ready'||body.audit.data.briefHash!==hash)throw Error('Bu brief için doğrulanmış BHS gerekli.');
+   const currency=quoteCurrency(body.brief?.currency);
    const options={...(body.customCosts!==undefined?{customCosts:body.customCosts}:{}),...(body.influencerListAmount!==undefined?{influencerListAmount:body.influencerListAmount}:{})};
-   const inputHash=digest({brief,auditHash:approval.auditHash,options,version:engine.version});
+   const inputHash=digest({brief,auditHash:approval.auditHash,options,currency,quoteVersion:1,version:engine.version});
    async function finish(scope){
-    const result=await engine.run({brief,...options,...(scope?{scope}:{})},{audit:body.audit});assertResult('pricing',result);
+    const base=await engine.run({brief,...options,...(scope?{scope}:{})},{audit:body.audit});
+    let exchangeRate;if(currency==='USD')try{exchangeRate=await getExchangeRate();}catch{/* Preserve the priced scope; never relabel TRY as USD. */}
+    const result=addQuote(base,{currency,exchangeRate});assertResult('pricing',result);
     const envelope={...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()};
     return res.status(200).json({phase:'complete',result:envelope,proposalProof:codec.encode({kind:'pricing_ready',createdAt:now(),briefHash:hash,auditHash:approval.auditHash,pricingHash:digest(envelope),...(approval.budgetLeadId?{budgetLeadId:approval.budgetLeadId}:{})},session,host)});
    }

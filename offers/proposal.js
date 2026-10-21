@@ -3,6 +3,13 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
 
  const names={financial:'Finansal',operations:'Operasyon',funnel:'Funnel',digital:'Dijital',perception:'Algı',competition:'Rekabet'};
  const money=n=>new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n);
+ function quoteAmount(data,alternative){
+  if(!data.quote)return alternative.monthlyAmount;
+  const quoted=data.quote.alternatives?.find(a=>a.id===alternative.id);
+  if(data.quote.currency!=='USD'||data.quote.status!=='ready'||!quoted||!Number.isFinite(quoted.monthlyAmount)||quoted.monthlyAmount<0)throw Error('Dolar teklifi için doğrulanmış kur ve tutar gerekli.');
+  return quoted.monthlyAmount;
+ }
+ const currencyLabel=data=>data.quote?.currency==='USD'?'USD':'TL';
  const contractRecipients=Object.freeze(['yigit@sellfmedia.com','businessdevelopment@sellfmedia.com']);
  function buildMailto(data,{offerUrl,offerId,alternativeId,name,email}){
   const url=new URL(offerUrl),alternative=data.alternatives.find(a=>a.id===alternativeId);
@@ -12,7 +19,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error('Yetkili adı ve geçerli iş e-postası gerekli.');
   const line=value=>String(value??'').replace(/[\r\n]/g,' ');
   const subject='Sözleşme talebi · '+line(data.brand.name).slice(0,150);
-  const body=['Marka: '+line(data.brand.name),'Teklif: '+line(offerId)+' · v'+line(data.version),'Alternatif: '+line(alternative.name),'Aylık hizmet bedeli: '+money(alternative.monthlyAmount)+' TL / ay','Teklif bağlantısı: '+url.href,'Yetkili: '+name.trim(),'E-posta: '+email.trim()].join('\r\n');
+  const body=['Marka: '+line(data.brand.name),'Teklif: '+line(offerId)+' · v'+line(data.version),'Alternatif: '+line(alternative.name),'Aylık hizmet bedeli: '+money(quoteAmount(data,alternative))+' '+currencyLabel(data)+' / ay','Teklif bağlantısı: '+url.href,'Yetkili: '+name.trim(),'E-posta: '+email.trim()].join('\r\n');
   return 'mailto:'+contractRecipients.join(',')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
  }
  function mount(container,data,{offerUrl,offerId}={}){
@@ -70,16 +77,17 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    data.plans[id].steps.forEach(s=>{const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);});
    let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent='Çalışma odağı: '+data.plans[id].focus;
    $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+' ile ilerleyelim.';
-   $('#so-request-model').textContent=selected.name+' · '+money(selected.monthlyAmount)+' TL / ay';
+   $('#so-request-model').textContent=selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+' / ay';
   }
   for(const [i,a]of data.alternatives.entries()){
    const b=add('button','',options,'so-option');b.type='button';b.dataset.alternative=a.id;
    const meta=add('span','',b,'so-option-meta');add('span',i===0?'01 / ENTEGRE':'02 / UYGULAMA',meta);
    if(a.id===data.recommendedAlternativeId)add('span','Önerilen',meta,'so-recommended');
-   add('span',a.name,b,'so-option-title');const amount=add('span',money(a.monthlyAmount)+' ',b,'so-option-price');add('small','TL / ay',amount);
+   add('span',a.name,b,'so-option-title');const amount=add('span',money(quoteAmount(data,a))+' ',b,'so-option-price');add('small',currencyLabel(data)+' / ay',amount);
    b.addEventListener('click',()=>select(a.id));
   }
   select(data.recommendedAlternativeId);
+  if(data.quote?.status==='ready'){const fx=data.quote.exchangeRate;const note=add('p','Teklif kuru: 1 USD = '+new Intl.NumberFormat('tr-TR',{maximumFractionDigits:6}).format(fx.rate)+' TL · TCMB dolar satış kuru, '+fx.publishedAt+'. Bu teklifin USD tutarları sabittir.',$('.so-options').parentElement,'so-feenote so-exchange-rate');$('.so-options').after(note);}
   const exclusions=[...(data.exclusions||[]),...(data.pending||[]).map(s=>s.name+': ayrıca fiyatlandırılacak; bu toplama dahil değildir.'),...(data.deferred||[]).map(s=>s.name+': sonraki aşamaya ayrıldı.')];
   if(exclusions.length){const d=add('details','',$('.so-scope'));add('summary','Kapsam sınırları',d);const ul=add('ul','',d);exclusions.forEach(t=>add('li',t,ul));}
   $('#so-request-open').addEventListener('click',function(){form.hidden=!form.hidden;this.setAttribute('aria-expanded',String(!form.hidden));if(!form.hidden)form.elements.name.focus();});
