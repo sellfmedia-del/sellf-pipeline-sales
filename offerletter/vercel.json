@@ -37,6 +37,18 @@
     {
       "source": "/teklifinizi-arayin",
       "destination": "/search.html"
+    },
+    {
+      "source": "/en",
+      "destination": "/en/index.html"
+    },
+    {
+      "source": "/en/contact",
+      "destination": "/en/contact.html"
+    },
+    {
+      "source": "/en/find-your-proposal",
+      "destination": "/en/search.html"
     }
   ]
 }
