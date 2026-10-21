@@ -49,6 +49,35 @@
     {
       "source": "/en/find-your-proposal",
       "destination": "/en/search.html"
+    },
+    {
+      "source": "/:slug([a-z0-9-]+-teklifi)",
+      "destination": "https://sales.sellfmedia.com/offers/customer.html"
+    },
+    {
+      "source": "/:slug([a-z0-9-]+-teklifi-v[0-9]+-[a-f0-9]+)",
+      "destination": "https://sales.sellfmedia.com/offers/customer.html"
+    },
+    {
+      "source": "/offers/customer.html",
+      "destination": "https://sales.sellfmedia.com/offers/customer.html"
+    },
+    {
+      "source": "/offers/customer.js",
+      "destination": "https://sales.sellfmedia.com/offers/customer.js"
+    },
+    {
+      "source": "/offers/proposal.js",
+      "destination": "https://sales.sellfmedia.com/offers/proposal.js"
+    },
+    {
+      "source": "/offers/proposal.css",
+      "destination": "https://sales.sellfmedia.com/offers/proposal.css"
     }
-  ]
+  ],
+  "functions": {
+    "api/offer.js": {
+      "maxDuration": 60
+    }
+  }
 }

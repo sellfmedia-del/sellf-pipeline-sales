@@ -10,6 +10,14 @@ test('brand URL is a safe Turkish transliteration with no capability or password
  for(const slug of ['../marka','marka&owner_id=other','marka/teklifi','marka?token=secret'])assert.equal(validSlug(slug),false);
  assert.equal(publicationUrl('preview.vercel.app',{slug:'marka-teklifi',token:'PRIVATE',password:'PRIVATE'}),'https://preview.vercel.app/marka-teklifi');
 });
+test('production customer links use the configured Offerletter origin while preview links stay isolated',()=>{
+ const previous={VERCEL_ENV:process.env.VERCEL_ENV,OFFER_PUBLIC_ORIGIN:process.env.OFFER_PUBLIC_ORIGIN};
+ try{
+  process.env.VERCEL_ENV='production';process.env.OFFER_PUBLIC_ORIGIN='https://offerletter.sellfmedia.com';
+  assert.equal(publicationUrl('sales.sellfmedia.com',{slug:'multi-management-turkey-teklifi',password:'PRIVATE'}),'https://offerletter.sellfmedia.com/multi-management-turkey-teklifi');
+  process.env.VERCEL_ENV='preview';assert.equal(publicationUrl('preview.vercel.app',{slug:'marka-teklifi'}),'https://preview.vercel.app/marka-teklifi');
+ }finally{for(const [key,value]of Object.entries(previous))if(value===undefined)delete process.env[key];else process.env[key]=value;}
+});
 test('repeated publish reuses exact credentials; collision chooses a versioned path',async()=>{
  let row={id,version:2,state:'draft',customer_document:{brand:{name:'Marka'}}},writes=0,collision=true;
  const store=setup(async body=>{

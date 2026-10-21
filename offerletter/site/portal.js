@@ -1,10 +1,10 @@
 (function(){'use strict';
  const en=document.documentElement?.lang==='en';
  const copy=en?{
-  valid:'Extension format confirmed: ',pending:'. This preview does not open proposals yet.',invalid:'Enter the extension we shared. Example: your-brand-teklifi',
+  opening:'Opening your proposal…',invalid:'Enter the extension we shared. Example: your-brand-teklifi',
   subject:'About your proposal · ',greeting:'Hello Sellf team,',draft:'Your email app will open a draft. You can review and send it there.'
  }:{
-  valid:'Uzantı biçimi doğru: ',pending:'. Teklif erişimi, bağlantı adımı tamamlandığında açılacak.',invalid:'Size iletilen uzantıyı girin. Örnek: ornek-marka-teklifi',
+  opening:'Teklifiniz açılıyor…',invalid:'Size iletilen uzantıyı girin. Örnek: ornek-marka-teklifi',
   subject:'Teklif hakkında · ',greeting:'Merhaba Sellf ekibi,',draft:'E-posta taslağı uygulamanızda açılır. Gönderimi oradan tamamlayabilirsiniz.'
  };
  function extension(value){
@@ -17,7 +17,7 @@
  }
  document.querySelectorAll('[data-offer-search]').forEach(form=>form.addEventListener('submit',e=>{
   e.preventDefault();const input=form.elements.extension,status=form.querySelector('[role=status]');
-  try{const slug=extension(input.value);input.setAttribute('aria-invalid','false');status.textContent=copy.valid+slug+copy.pending;}
+  try{const slug=extension(input.value);input.setAttribute('aria-invalid','false');status.textContent=copy.opening;location.assign('/'+slug);}
   catch{input.setAttribute('aria-invalid','true');status.textContent=copy.invalid;input.focus();}
  }));
  document.querySelectorAll('[data-contact-form]').forEach(form=>form.addEventListener('submit',e=>{
