@@ -34,4 +34,5 @@
  window.PipelinePricingRequest ||= payload=>request('pricing',payload);
  window.PipelineProposalRequest ||= payload=>request('proposal',payload);
  window.PipelineOfferRequest ||= payload=>request('offer',payload,true);
+ window.PipelineOfferReuseRequest ||= payload=>request('offer-reuse',payload,true);
 })();

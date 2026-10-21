@@ -5,11 +5,13 @@
   const labels = { kobi: 'KOBİ', corporate: 'Kurumsal', key_account: 'Key Account' };
   const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'currency', 'meetingNotes'];
 
-  function open(context, returnFocus) {
+  function open(context, returnFocus, variant=null) {
     const model = window.PipelineOfferBriefModel;
     if (!model || !context?.lead?.id || !context.spaceId) return;
     if (active) return;
     const draft = model.createDraft(context);
+    const researchRuns=variant?{reuse:crypto.randomUUID(),new:crypto.randomUUID()}:null;
+    if(variant?.info){for(const key of ['segment','currency'])if(variant.info[key])draft[key]=variant.info[key];draft.brandName=variant.info.brand?.name||draft.brandName;draft.website=variant.info.brand?.website||'';}
     const dialog = document.createElement('dialog');
     dialog.id = 'offer-brief-dialog';
     dialog.setAttribute('aria-labelledby', 'offer-brief-title');
@@ -23,6 +25,7 @@
         <form id="offer-brief-form" novalidate>
           <p class="ob-intro">Karttaki bilgileri kontrol et, araştırmanın yönünü belirle. <span>*</span> işaretli alanlar zorunludur.</p>
           <div id="ob-errors" class="ob-errors" role="alert" hidden></div>
+          ${variant?`<fieldset class="ob-bhs-choice"><legend>BHS analizi</legend><label><input type="radio" name="bhsMode" value="reuse" checked> Mevcut BHS’yi kullan</label><label><input type="radio" name="bhsMode" value="new"> Yeni BHS yap</label><p class="ob-hint">Mevcut BHS seçilirse yeniden analiz yapılmaz. Yeni teklifin kapsamı bu formdaki bilgilere göre hazırlanır.</p></fieldset>`:''}
           <fieldset><legend>Marka bilgileri</legend><div class="ob-grid">
             <div class="ob-field"><label for="ob-brandName">Marka adı <span>*</span></label><input id="ob-brandName" name="brandName" required maxlength="200" autocomplete="organization"><p class="ob-error" id="error-brandName"></p></div>
             <div class="ob-field"><label for="ob-segment">Müşteri segmenti <span>*</span></label><select id="ob-segment" name="segment" required><option value="">Segment seç</option><option value="kobi">KOBİ</option><option value="corporate">Kurumsal</option><option value="key_account">Key Account</option></select><p class="ob-hint">Hesaplamada yalnızca bu segmentin maliyetleri kullanılır.</p><p class="ob-error" id="error-segment"></p></div>
@@ -85,6 +88,11 @@
       getBrandName: () => form.elements.brandName.value,
       onChange: value => { draft.logo = value; dialog.querySelector('#error-logoUrl').textContent = ''; }
     });
+    if(variant?.info?.logo)logoControl?.useSaved(variant.info.logo);
+    if(variant){
+      const update=()=>{dialog.querySelector('.ob-next').textContent=form.elements.bhsMode.value==='reuse'?'Mevcut BHS ile Devam Et':'Yeni BHS Analizini Hazırla';};
+      form.querySelectorAll('[name=bhsMode]').forEach(input=>input.addEventListener('change',update));update();
+    }
     form.elements.website.addEventListener('input', () => logoControl?.invalidate());
     fields.forEach(name => {
       const input = form.elements[name];
@@ -228,7 +236,7 @@
             dialog.querySelector('.ob-pricing').hidden=true;dialog.querySelector('.ob-research-report').hidden=true;
             dialog.querySelector('.ob-approval').hidden=false;dialog.querySelector('.ob-save').hidden=false;dialog.querySelector('.ob-publish').hidden=true;button.hidden=true;
             dialog.querySelectorAll('.ob-approval input').forEach(x=>x.checked=false);
-            dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent='Logo, kapsam ve planı bu teklif üzerinde kontrol et. Kaydetme, kart değerini önerilen aylık bedele günceller.';
+            dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent='Logo, kapsam ve planı bu teklif üzerinde kontrol et. '+(variant?'Yeni teklif ayrı kaydedilir; mevcut teklif ve kart değeri korunur.':'Kaydetme, kart değerini önerilen aylık bedele günceller.');
             task=null;dialog.querySelector('.ob-body').scrollTop=0;return;
           }
           action='status';await new Promise(resolve=>setTimeout(resolve,2500));if(current.stopped)return;
@@ -244,9 +252,9 @@
       try{
         const response=await window.PipelineOfferRequest({action,...(action==='save'?{proposal:draft.proposal,pricing:draft.pricing,saveProof:draft.saveProof,leadId:source.leadId,spaceId:source.spaceId,logoApproved:true,scopeApproved:true}:{offerId:draft.saved.id})});
         if(action==='save'){
-          draft.saved=response.offer;context.lead.value=String(response.offer.monthlyAmount);
-          window.dispatchEvent(new CustomEvent('pipeline-offer-saved',{detail:{leadId:source.leadId,spaceId:source.spaceId,value:context.lead.value,offer:response.offer}}));
-          status.textContent='Teklif v'+response.offer.version+' kaydedildi. Kart tahmini değeri: '+formatMoney(response.offer.monthlyAmount)+' / ay.';
+          draft.saved=response.offer;if(!variant)context.lead.value=String(response.offer.monthlyAmount);
+          window.dispatchEvent(new CustomEvent('pipeline-offer-saved',{detail:{leadId:source.leadId,spaceId:source.spaceId,value:context.lead.value,keepCardValue:Boolean(variant),offer:response.offer}}));
+          status.textContent='Teklif v'+response.offer.version+' kaydedildi. '+(variant?'Önceki teklif ve kart değeri korundu.':'Kart tahmini değeri: '+formatMoney(response.offer.monthlyAmount)+' / ay.');
           button.hidden=true;dialog.querySelector('.ob-publish').hidden=false;
         }else{status.textContent='Müşteri bağlantısı: '+response.url+' · Şifre: '+response.password;draft.published=response;window.dispatchEvent(new CustomEvent('pipeline-offer-published',{detail:{leadId:source.leadId,spaceId:source.spaceId,url:response.url,password:response.password}}));}
       }catch(error){status.textContent=error.message||'İşlem tamamlanamadı; kart değeri değiştirilmedi.';}
@@ -272,7 +280,7 @@
       try{
         for(;;){
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
-          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,...(variant?{sourceOfferId:variant.sourceOfferId,researchRunId:researchRuns.new}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+'Kontrollü maliyet tahmini: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL · Normal hedef: 20–30 TL';}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
@@ -338,8 +346,20 @@
       title.textContent='Araştırma hazırlanıyor';dialog.querySelector('.ob-research-report').replaceChildren();
       title.tabIndex = -1;
       setReview(true);
-      runAudit();
+      if(variant&&form.elements.bhsMode.value==='reuse')runReuse();else runAudit();
     });
+    async function runReuse(){
+      const current={kind:'reuse',stopped:false};task=current;
+      const notice=dialog.querySelector('.ob-review-notice');
+      dialog.querySelector('#ob-review-title').textContent='Mevcut BHS aktarılıyor';
+      notice.textContent='Kaydedilen araştırma korunuyor; yeni brief için kapsam ve teklif girişi hazırlanıyor. Yeni BHS yapılmıyor.';
+      try{
+        const result=await window.PipelineOfferReuseRequest({action:'prepare',sourceOfferId:variant.sourceOfferId,researchRunId:researchRuns.reuse,context:{leadId:source.leadId,spaceId:source.spaceId},brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))});
+        if(current.stopped)return;draft.pricingProof=result.pricingProof;renderAudit(result.result);
+        notice.textContent='Mevcut BHS kullanıldı. Yeni analiz yapılmadı; kapsam bu brief üzerinden hazırlandı.';
+      }catch(error){if(!current.stopped){dialog.querySelector('#ob-review-title').textContent='Mevcut BHS aktarılamadı';notice.textContent=error.message||'Kaydedilen araştırmaya ulaşılamadı. Yeni ücretli analiz başlatılmadı.';}}
+      finally{if(task===current)task=null;}
+    }
     dialog.showModal();
     form.elements.brandName.focus();
   }

@@ -49,14 +49,21 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
        body.hash!==undefined&&!/^[a-f0-9]{64}$/.test(body.hash)||
        body.token!==undefined&&!uuid.test(body.token)||
        body.amount!==undefined&&(!Number.isSafeInteger(body.amount)||body.amount<0||body.amount>4500))throw Error('Maliyet kaydı geçersiz.');
-    return reply(await db('/rest/v1/rpc/pipeline_offer_production_budget_op',{method:'POST',body:{p_owner:who.id,p_lead:body.leadId,p_op:body.op,p_step:body.step||null,p_hash:body.hash||null,p_amount:body.amount||0,p_token:body.token||null,p_value:body.value??null}}));
+    if(body.researchRunId!==undefined&&!uuid.test(body.researchRunId))throw Error('Araştırma kaydı geçersiz.');
+    return reply(await db('/rest/v1/rpc/'+(body.researchRunId?'pipeline_offer_additional_budget_op':'pipeline_offer_production_budget_op'),{method:'POST',body:{p_owner:who.id,p_lead:body.leadId,...(body.researchRunId?{p_research_run:body.researchRunId}:{}),p_op:body.op,p_step:body.step||null,p_hash:body.hash||null,p_amount:body.amount||0,p_token:body.token||null,p_value:body.value??null}}));
    }
-   if(['save','list','publish','publication','outbox'].includes(action)){
+   if(['save','save_variant','list','catalog','detail','prices','price_history','price_request','publish','publication','outbox'].includes(action)){
     const who=await user(body.jwt),jwt=body.jwt;
-    if(action==='save'){
+    if(action==='save'||action==='save_variant'){
      if(!text(body.args?.p_lead_id)||!text(body.args?.p_space_id)||!text(body.args?.p_request_id,80))throw Error('Test kartı bilgileri geçersiz.');
      await ownedLead(who.id,body.args.p_lead_id);
-     return reply(await db('/rest/v1/rpc/save_pipeline_offer_production',{method:'POST',body:{...body.args,p_owner:who.id}}));
+     if(action==='save_variant'&&!uuid.test(body.sourceOfferId))throw Error('Kaynak teklif geçersiz.');
+     const {p_lead_id,p_space_id,p_request_id,p_document,p_pricing}=body.args;
+     return reply(await db('/rest/v1/rpc/'+(action==='save_variant'?'save_pipeline_offer_variant':'save_pipeline_offer_production'),{method:'POST',body:{p_lead_id,p_space_id,p_request_id,p_document,p_pricing,p_owner:who.id,...(action==='save_variant'?{p_source_offer:body.sourceOfferId}:{})}}));
+    }
+    if(action==='catalog'){
+     await ownedLead(who.id,body.leadId);
+     return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at&owner_id=eq.'+who.id+'&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1000'));
     }
     if(action==='list'){
      await ownedLead(who.id,body.leadId);
@@ -64,15 +71,25 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
     }
     if(action==='outbox')throw Error('Bu işlem canlı teklif servisinde kapalı.');
     if(!uuid.test(body.id))throw Error('Test teklifi geçersiz.');
-    const rows=await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,lead_id,version,state,customer_document,operator_link_envelope',{});
+    const fields=['detail','prices'].includes(action)?'id,lead_id,space_id,version,state,monthly_amount,created_at,customer_document,pricing_snapshot,operator_link_envelope':'id,lead_id,version,state,customer_document,operator_link_envelope';
+    const rows=await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select='+fields,{});
     const row=rows?.[0];if(!row)throw Error('Teklif bulunamadı.');await ownedLead(who.id,row.lead_id);
+    if(action==='detail')return reply(row);
+    if(action==='price_request'){
+     if(!uuid.test(body.requestId))throw Error('İstek kaydı geçersiz.');
+     const changes=await db('/rest/v1/pipeline_offer_price_history?offer_id=eq.'+row.id+'&owner_id=eq.'+who.id+'&request_id=eq.'+body.requestId+'&select=after_prices,below_minimum_confirmed&limit=1');return reply(changes?.[0]||null);
+    }
+    if(action==='price_history')return reply(await db('/rest/v1/pipeline_offer_price_history?offer_id=eq.'+row.id+'&owner_id=eq.'+who.id+'&select=id,currency,before_prices,after_prices,below_minimum_confirmed,created_at&order=created_at.desc&limit=1000'));
+    if(action==='prices'){
+     if(!uuid.test(body.requestId)||!body.expectedDocument||!body.amounts)throw Error('Fiyat güncelleme bilgileri geçersiz.');
+     return reply(await db('/rest/v1/rpc/update_pipeline_offer_prices',{method:'POST',body:{p_owner:who.id,p_offer:row.id,p_request:body.requestId,p_expected:body.expectedDocument,p_amounts:body.amounts,p_confirm:body.confirmedBelowMinimum===true}}));
+    }
     if(action==='publication')return reply(row);
     if(!/^[a-f0-9]{64}$/.test(body.tokenHash)||!/^[a-f0-9]{64}$/.test(body.passwordHash)||!text(body.operatorLinkEnvelope,5000)||body.slug!==undefined&&!validSlug(body.slug))throw Error('Test bağlantısı geçersiz.');
     if(body.slug===undefined)return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,version',{method:'PATCH',prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope}}));
     const collision=await db('/rest/v1/'+tables.versions+'?select=id&state=eq.published&customer_document->publication->>slug=eq.'+body.slug+'&id=neq.'+row.id+'&limit=1');
     if(collision?.length)return reply({error:'Marka bağlantısı kullanımda.',code:'slug_unavailable'},422);
-    const compare=body.expectedEnvelope?'eq.'+encodeURIComponent(body.expectedEnvelope):'is.null';
-    return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&operator_link_envelope='+compare+'&select=id,version',{method:'PATCH',prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope,customer_document:{...row.customer_document,publication:{slug:body.slug}}}}));
+    return reply(await db('/rest/v1/rpc/publish_pipeline_offer_link',{method:'POST',body:{p_owner:who.id,p_offer:row.id,p_slug:body.slug,p_expected_envelope:body.expectedEnvelope||null,p_token_hash:body.tokenHash,p_password_hash:body.passwordHash,p_envelope:body.operatorLinkEnvelope}}));
    }
    if(action==='resolve_slug'){
     if(!validSlug(body.slug))throw Error('Teklif bağlantısı veya şifresi doğrulanamadı.');

@@ -27,6 +27,10 @@
     },
     "api/travis-run.js": {
       "maxDuration": 300
+    },
+    "api/offer-reuse.js": {
+      "maxDuration": 300,
+      "includeFiles": "offer-engine/src/bhs/**"
     }
   },
   "headers": [

@@ -24,6 +24,10 @@
     },
     "api/preview-session.js": {
       "maxDuration": 60
+    },
+    "api/offer-reuse.js": {
+      "maxDuration": 300,
+      "includeFiles": "src/bhs/**"
     }
   },
   "headers": [

@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   function mount(container,{getWebsite,getContext,getBrandName,onChange}){
-    let selected=null,verifiedData=null,disposed=false,epoch=0;
+    let selected=null,verifiedData=null,disposed=false,epoch=0,saved=false;
     container.innerHTML=`<div class="ol-header"><strong>Marka logosu</strong><span>Ekran görüntüsünden hazırlanır</span></div>
       <label class="ol-upload-label" for="ob-logo-screenshot">Logo ekran görüntüsü yükle</label>
       <input id="ob-logo-screenshot" class="ol-file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="ol-upload-hint ol-upload-status">
@@ -19,12 +19,12 @@
       if(!selected)return;
       const color=background.value==='auto'?(selected.placement?.background||'#ffffff'):background.value;
       container.querySelector('.ol-logo-zone').style.background=color;
-      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:false,generated:false});
+      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:saved?'saved':'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:saved,generated:false});
     }
     background.addEventListener('change',apply);
     input.addEventListener('change',async()=>{
       const request=++epoch,file=input.files?.[0];
-      selected=null;result.hidden=true;onChange(null);
+      selected=null;saved=false;result.hidden=true;onChange(null);
       if(!file){status.textContent='Ekran görüntüsü bekleniyor.';return;}
       const error=window.PipelineOfferBriefModel.validateLogo(file);
       if(error){status.textContent=error;return;}
@@ -49,7 +49,14 @@
         status.textContent=error.message||'Görsel işlenemedi.';onChange({status:'error',sourceType:'upload'});
       }
     });
-    return {invalidate(){if(selected)apply();},destroy(){disposed=true;++epoch;}};
+    return {useSaved(data){
+      const candidate=data?.candidates?.[0];if(!candidate||!data.logoProof)return;
+      ++epoch;selected=candidate;verifiedData=data;saved=true;
+      for(const selector of ['.ol-original img','.ol-checker img','.ol-placement img'])container.querySelector(selector).src=candidate.image;
+      background.value=candidate.placement?.background||'#ffffff';result.hidden=false;
+      container.querySelector('.ol-quality').textContent='Kaydedilen teklifin onaylı şeffaf logosu.';
+      status.textContent='Mevcut logo kullanılıyor. Gerekirse yeni ekran görüntüsü yükleyebilirsin.';apply();
+    },invalidate(){if(selected)apply();},destroy(){disposed=true;++epoch;}};
   }
   window.PipelineLogoControl=Object.freeze({mount});
 })();

@@ -6,6 +6,8 @@
   font: 13px/1.55 'DM Sans', system-ui, sans-serif;
   box-shadow: 0 12px 50px #0002;
 }
+#offer-brief-dialog .ob-bhs-choice label{display:block;margin:8px 0}
+#offer-brief-dialog .ob-bhs-choice input[type=radio]{display:inline-block;width:16px;height:16px;min-height:0;margin:0 8px 0 0;padding:0;vertical-align:-3px}
 #offer-brief-dialog[open] { display: flex; flex-direction: column; }
 #offer-brief-dialog::backdrop { background: #0006; }
 #offer-brief-dialog [hidden] { display: none !important; }

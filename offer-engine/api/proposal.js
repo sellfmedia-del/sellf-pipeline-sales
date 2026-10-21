@@ -33,7 +33,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    const context={leadId:body.context?.leadId,spaceId:body.context?.spaceId};
    if(Object.values(context).some(v=>typeof v!=='string'||!v||v.length>200))throw Error();
    const plan=normalizePlan(body),inputHash=compositionHash(brief,body.audit,body.pricing,logo,{...plan,context,logoBackground:body.logoBackground});
-   const claims={...context,briefHash:hash,auditHash:approval.auditHash,pricingHash:approval.pricingHash,inputHash};
+   const claims={...context,briefHash:hash,auditHash:approval.auditHash,pricingHash:approval.pricingHash,inputHash,...(approval.sourceOfferId?{sourceOfferId:approval.sourceOfferId}:{})};
    if(!getProvider){
     if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
     const result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});

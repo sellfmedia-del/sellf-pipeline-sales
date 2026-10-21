@@ -30,6 +30,6 @@ test('every saved card opens its persisted draft before publication and recovers
   await page.evaluate(()=>{window.document.querySelector('#card').remove();const card=window.document.createElement('div');window.document.body.append(card);window.PipelineOffers.mount(card,{lead:{id:'synthetic-lead'},spaceId:'synthetic-space'});});
   await page.locator('.offer-details a').waitFor();assert.equal(await page.locator('.offer-details dd').nth(2).textContent(),'synthetic-password');
   assert.deepEqual(await page.evaluate(()=>window.stored.customer_document),document);
-  assert.ok((await page.evaluate(()=>window.calls)).every(call=>['list','publish'].includes(call.action)));assert.deepEqual(errors,[]);await page.close();
+  assert.ok((await page.evaluate(()=>window.calls)).every(call=>['list','catalog','publish'].includes(call.action)));assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });

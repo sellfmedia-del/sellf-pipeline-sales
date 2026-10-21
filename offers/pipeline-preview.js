@@ -47,7 +47,7 @@
    };
   }
  };}};
- window.addEventListener('pipeline-offer-saved',event=>{const row=rows?.leads.find(row=>row.id===event.detail.leadId);if(row)row.value=String(event.detail.offer.monthlyAmount);});
+ window.addEventListener('pipeline-offer-saved',event=>{const row=rows?.leads.find(row=>row.id===event.detail.leadId);if(row&&!event.detail.keepCardValue)row.value=String(event.detail.offer.monthlyAmount);});
  document.addEventListener('DOMContentLoaded',()=>{
   const button=document.querySelector('#pipeline-test-start'),status=document.querySelector('#pipeline-test-status');
   button.addEventListener('click',async()=>{button.disabled=true;status.textContent='Test alanı açılıyor…';try{const state=await api({action:'start'});install(state.fixture);loading=Promise.resolve(state);await showCRM();status.textContent='';}catch(error){status.textContent=error.message;button.disabled=false;}});

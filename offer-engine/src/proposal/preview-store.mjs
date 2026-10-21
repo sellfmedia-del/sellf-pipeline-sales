@@ -13,6 +13,11 @@ export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,ke
   syncCards:(jwt,leads)=>call('sync_cards',{jwt,leads}),deleteCards:(jwt,field,value)=>call('delete_cards',{jwt,field,value}),
   bootstrap:()=>call('bootstrap'),refresh:refreshToken=>call('refresh',{refreshToken}),fixture:jwt=>call('fixture',{jwt}),
   save:(jwt,args)=>call('save',{jwt,args}),async list(jwt,leadId){const rows=await call('list',{jwt,leadId});return rows.map(row=>{const {operator_link_envelope,...value}=row;return {...value,...(operator_link_envelope?{ownerLink:openEnvelope(operator_link_envelope,portalSecret,'published-link:'+row.id)}:{})};});},outbox:jwt=>call('outbox',{jwt}),
+  saveVariant:(jwt,args,sourceOfferId)=>call('save_variant',{jwt,args,sourceOfferId}),
+  async detail(jwt,id){const row=await call('detail',{jwt,id});const {operator_link_envelope,...value}=row;return {...value,...(operator_link_envelope?{ownerLink:openEnvelope(operator_link_envelope,portalSecret,'published-link:'+id)}:{})};},
+  catalog:(jwt,leadId)=>call('catalog',{jwt,leadId}),
+  updatePrices:(jwt,input)=>call('prices',{jwt,...input}),
+  priceHistory:(jwt,id)=>call('price_history',{jwt,id}),
   async publish(jwt,id,secret){
    const row=await call('publication',{jwt,id});if(!row)throw Error('Teklif kaydı bulunamadı.');
    const existing=row.operator_link_envelope?openEnvelope(row.operator_link_envelope,secret,'published-link:'+id):null;

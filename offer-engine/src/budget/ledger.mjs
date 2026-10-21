@@ -24,10 +24,11 @@ export function consumedModel(model,input,output,fx,now=Date.now(),cachedInput=0
  return Math.ceil(usd*fx*1.03*100);
 }
 export function consumedSearch(credits,fx){if(!Number.isFinite(credits)||credits<0||credits>2||!Number.isFinite(fx)||fx<=0||fx>tariff.usdTry)throw new BudgetError('provider_accounting','Arama tüketimi veya kur kaydı geçersiz.');return Math.ceil(credits*tariff.tavilyCredit*fx*1.03*100);}
-export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
+export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=process.env.OFFER_PORTAL_SECRET,researchRunId}={}){
  if(typeof leadId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(leadId))throw new BudgetError('budget_context','Teklifin kart bilgisi gerekli.');
  const session=productionOffers()?(bearer(req)?{accessToken:bearer(req)}:null):await sessionFor(req,res,store,secret);if(!session)throw new BudgetError('budget_session','Pipeline oturumu gerekli.');
- const call=(op,args={})=>store.call('budget',{jwt:session.accessToken,leadId,op,...args});
+ if(researchRunId!==undefined&&!/^[a-f0-9-]{36}$/.test(researchRunId))throw new BudgetError('budget_context','Araştırma kaydı geçersiz.');
+ const call=(op,args={})=>store.call('budget',{jwt:session.accessToken,leadId,...(researchRunId?{researchRunId}:{}),op,...args});
  return createLedger(call);
 }
 export function createLedger(call){

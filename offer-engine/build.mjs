@@ -1,4 +1,4 @@
-import { mkdir,cp,readFile,writeFile } from 'node:fs/promises';
+import { mkdir,cp,readFile,writeFile,rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -26,6 +26,10 @@ await writeFile(path.join(here,'public/index.html'),production?pipelineSource:bu
 if(production){
  for(const name of ['travis.html','travis.css','travis.js'])await cp(path.join(root,name),path.join(here,'public',name));
 }
+// This reviewer sandbox has synthetic page-local state. Never publish its
+// fixtures or adapter to production, including after a reused local build dir.
+for(const name of ['variants-review.html','variants-review.js','variants-review-data.json'])await rm(path.join(here,'public/offers',name),{force:true});
+if(!production){const {buildVariantsReview}=await import('./src/preview/variants-build.mjs');await buildVariantsReview(path.join(here,'public'));}
 
 
 // Deterministic synthetic example: no paid model, customer data or persistence.

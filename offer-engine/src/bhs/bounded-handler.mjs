@@ -8,8 +8,9 @@ import {phases,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {temporaryDnsError} from '../network-dns.mjs';
+import {runtimeStore,bearer} from '../runtime.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -27,13 +28,19 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
     job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v5'};
+    if(body.context?.sourceOfferId){
+     if(!/^[a-f0-9-]{36}$/.test(body.context.sourceOfferId)||!/^[a-f0-9-]{36}$/.test(body.context.researchRunId||''))throw Error('Teklif kaydı geçersiz.');
+     const source=await getSourceOffer(req,body.context.sourceOfferId);
+     if(source.lead_id!==job.leadId||source.space_id!==job.spaceId)throw Error('Teklif farklı karta ait.');
+     job.sourceOfferId=source.id;job.researchRunId=body.context.researchRunId;
+    }
    }else{
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
    const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');
    const key=name=>stageKey(brief,name,researchVersion);
-   const ledger=await getLedger(req,res,job.leadId),providers=getProviders({ledger});
+   const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[])),providers=getProviders({ledger});
    if(action==='start'){
     phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
@@ -56,7 +63,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
-    await runStage({phase,brief,ledger,providers,researchVersion});
+    await runStage({phase,brief,ledger,providers,researchVersion,...(job.sourceOfferId?{freshResearch:true}:{})});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
     const nextPhase=phases[phases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
@@ -66,7 +73,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const audit=await auditEngine.run({brief,synthesis});
    const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
-   const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
+   const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){
