@@ -86,6 +86,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
   }
   if(phase==='scope'){
    const {report}=await previous('synthesis'),guide=scopeEnvelope(brief,report);
+   guide.audit.researchCoverage=report.researchCoverage||[];
    const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Fiyat veya yeni araştırma üretme. BHS içeriğini yeniden denetleme veya değiştirme.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},{type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false},{maxOutputTokens:3072,thinkingLevel:'LOW',jsonMode:true});
    return {scopePlan:validateScope(normalizeGeneratedScope(generated.data.scope,brief,report),brief,report),proposalCopy:validateCopy(generated.data.copy,report),usage:generated.usage};
   }

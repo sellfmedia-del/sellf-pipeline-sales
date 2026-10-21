@@ -29,3 +29,10 @@ test('v5 retains paid discovery/evidence and completes old methodology fields wi
  const first=await runBoundedStage({phase:'synthesis',brief,ledger,providers,researchVersion:'v5'});assert.equal(first.report.researchCoverage.length,24);assert.deepEqual(first.report.findings,report.findings);assert.deepEqual(rows.get(stageKey(brief,'synthesis','v4')).value.report,report);
  await runBoundedStage({phase:'synthesis',brief,ledger,providers,researchVersion:'v5'});assert.deepEqual(calls,['methodology_areas']);assert.equal(stageKey(brief,'evidence','v5'),stageKey(brief,'evidence','v4'));assert.notEqual(stageKey(brief,'synthesis','v5'),stageKey(brief,'synthesis','v4'));
 });
+
+test('scope selection receives every methodology area alongside brief and findings without calculating model prices',async()=>{
+ const report=context().report;report.researchCoverage=normalizeMethodologyAreas(areas());
+ const ledger={get:async key=>key===stageKey(brief,'synthesis','v5')?{state:'complete',value:{report}}:null,once:async(_key,_input,amount,run)=>{assert.equal(amount,0);return run();}};
+ const providers={generate:async(stage,input)=>{assert.equal(stage,'scope');assert.equal(input.audit.researchCoverage.length,24);assert.equal(input.brief.services,brief.services);assert.equal(input.audit.findings.length,report.findings.length);return {data:{scope:{summary:'Araştırma ve brief kapsamı.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[],exclusions:[]},copy:{headline:'Hedefler.',accent:'Birlikte büyüme.',subtitle:'Araştırmaya ve görüşmeye dayalı çalışma önerisi.',findingIds:[]}}};}};
+ await runBoundedStage({phase:'scope',brief,ledger,providers,researchVersion:'v5'});
+});
