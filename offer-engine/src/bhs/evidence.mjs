@@ -5,10 +5,10 @@ import {plainHtml,normalized,publicUrl} from './verify.mjs';
 import {briefHash} from './brief.mjs';
 import {packetBrandIdentity} from './identity.mjs';
 import {parseSourcePlan} from './source-plan.mjs';
+import {researchUrl,researchHost as host} from './research-url.mjs';
 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const evidenceHash=packet=>digest(packet);
-const host=url=>new URL(url).hostname.replace(/^www\./,'');
 const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment|bir hata oluştu!|beklenmedik bir hata meydana geldi/i.test(text.slice(0,1500));
 const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial|product|ürün|shop|store|pricing|price|fiyat|review|yorum|career|kariyer|job|contact|iletişim|shipping|delivery|return|iade|subscription|subscribe|blog|faq/i;
 export const evidenceTopics=[/revenue|profit|growth|funding|investment|ciro|büyüme|yatırım|fiyat|price|finans/gi,/team|employee|career|hiring|job|logistic|shipping|return|support|ekip|çalışan|kargo|iade|destek/gi,/cart|checkout|subscribe|subscription|newsletter|appointment|sepete|satın|randevu|abone|payment|trial/gi,/seo|search|traffic|website|social|instagram|tiktok|advert|reklam|takipçi|organic|content|içerik/gi,/review|rating|complaint|trustpilot|şikayet|yorum|puan|customer|müşteri/gi,/competitor|different|premium|market|rakip|farklı|pazar|position|konum/gi];
@@ -56,7 +56,7 @@ export function assertEvidencePacket(packet,brief){
 }
 export function assertCoreEvidence(packet,brief){
  if(!packetBrandIdentity(packet,brief))throw Error('Marka sitesinden veya alan adını bildiren resmî sicil kaynağından kimlik okunamadı.');
- const peerHosts=new Set(packet.entities.filter(e=>e.role==='competitor').map(e=>host(e.website)).filter(h=>packet.sources.some(s=>host(s.finalUrl)===h&&!s.metadataOnly)));
+ const peerHosts=new Set(packet.entities.filter(e=>e.role==='competitor').map(e=>host(e.website)).filter(h=>h&&packet.sources.some(s=>host(s.finalUrl)===h&&!s.metadataOnly)));
  if(peerHosts.size<3)throw Error('En az üç rakibin resmî kaynakları okunamadı.');
  return packet;
 }
@@ -76,8 +76,8 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   const plan=parseSourcePlan(sourcePlan),deadline=clock()+timeout;
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
   const queue=[],seen=new Set(),expandedHosts=new Set(),sources=[],unavailable=[],renderCandidates=[];
-  const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>{try{return host(e.website);}catch{return '';}}));entityHosts.add(brandHost);
-  function enqueue(url,front=false){const value=publicUrl(url);if(value&&!seen.has(value)&&seen.size<128){seen.add(value);front?queue.unshift(value):queue.push(value);}}
+  const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>host(e.website)).filter(Boolean));entityHosts.add(brandHost);
+  function enqueue(url,front=false){const value=researchUrl(url);if(value&&!seen.has(value)&&seen.size<128){seen.add(value);front?queue.unshift(value):queue.push(value);}}
   enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));
   // Interleave the planner and every search topic, rather than reading only
   // the first twelve discovery links (which mostly repeat corporate pages).
@@ -125,7 +125,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<maxSources)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<maxSources)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
-  onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?new URL(x.url).hostname:null,reason:x.reason}))});
+  onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?host(x.url)||null:null,reason:x.reason}))});
   return assertEvidencePacket(packet,brief);
  };
 }

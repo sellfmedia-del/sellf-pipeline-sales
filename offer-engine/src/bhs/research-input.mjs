@@ -1,9 +1,9 @@
+import {researchHost as host} from './research-url.mjs';
 const fold=value=>String(value||'').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
-const host=url=>new URL(url).hostname.replace(/^www\./,'');
 export function researchSourceSelector(brief,packet){
  const entities=[{name:brief.brandName,website:brief.website},...(packet.entities||[])];
- const hosts=new Set(entities.map(e=>host(e.website))),aliases=[...new Set(entities.flatMap(e=>[fold(e.name.replace(/\b(?:incorporated|inc|ltd|limited|corporation|corp)\.?\b/gi,'')),fold(host(e.website))]).filter(s=>s.length>=6))];
- return source=>{try{if(hosts.has(host(source.finalUrl||source.url)))return true;}catch{return false;}
+ const hosts=new Set(entities.map(e=>host(e.website)).filter(Boolean)),aliases=[...new Set(entities.flatMap(e=>[fold(e.name.replace(/\b(?:incorporated|inc|ltd|limited|corporation|corp)\.?\b/gi,'')),fold(host(e.website))]).filter(s=>s.length>=6))];
+ return source=>{const sourceHost=host(source.finalUrl||source.url);if(!sourceHost)return false;if(hosts.has(sourceHost))return true;
   const text=fold([source.url,source.title,source.content,...(source.excerpts||[]).map(e=>e.text)].filter(Boolean).join(' '));return aliases.some(alias=>text.includes(alias));
  };
 }

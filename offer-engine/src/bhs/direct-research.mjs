@@ -10,6 +10,7 @@ import {prepareResearchInput,compactResearchInput,boundedResearchContext} from '
 import {methodologyAreasGrammar,areaResearchInput,reportWithAreas} from './methodology-areas.mjs';
 import {groupedMethodologyQueries} from './methodology-search.mjs';
 import {readReusableResearch,saveReusableResearch} from './reuse.mjs';
+import {researchUrl,researchHost} from './research-url.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
@@ -28,7 +29,7 @@ export function seedQueries(brief){const brand='"'+brief.brandName.replace(/"/g,
 const collector=()=>createEvidenceCollector({timeout:75000,onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))});
 function legacyFollowupQueries(brief,plan){
  const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,5);
- const peerQueries=peers.map(e=>`${e.name} site:${new URL(e.website).hostname} products prices subscription reviews social followers revenue growth`);
+ const peerQueries=peers.map(e=>`${e.name} ${researchHost(e.website)?'site:'+researchHost(e.website)+' ':''}products prices subscription reviews social followers revenue growth`);
  const brand='"'+brief.brandName.replace(/"/g,'')+'"';
  const topics=[`${brand} reviews ratings complaints customer delivery returns Trustpilot Google Şikayetvar`,`${brand} Similarweb Semrush Ahrefs traffic authority Instagram followers Meta Ad Library`,`${brand} LinkedIn jobs team technology ecommerce checkout pricing annual revenue growth`];
  // Six follow-ups maximum, including an individual query for every peer.
@@ -39,7 +40,7 @@ export function followupQueries(brief,plan){
  const fallback=[`${brand} annual financial results revenue growth investment pricing`,`${brand} LinkedIn team careers logistics delivery returns customer support`,`${brand} site:${domain} products checkout subscription loyalty newsletter`,`${domain} SEO platform social followers Meta advertising`,`${brand} customer reviews ratings complaints returns`,`${brand} competitive positioning prices differentiator market channels`];
  const dimensions=['financial','operations','funnel','digital','perception','competition'];
  const topics=dimensions.map((id,i)=>plan.researchQueries?.find(q=>q.dimension===id)?.query||fallback[i]);
- const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,5).map(e=>`site:${new URL(e.website).hostname} "${e.name.replace(/"/g,'')}" products pricing subscription reviews`);
+ const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,5).map(e=>`${researchHost(e.website)?'site:'+researchHost(e.website)+' ':''}"${e.name.replace(/"/g,'')}" products pricing subscription reviews`);
  const profiles=[`site:similarweb.com/website/${domain} ${domain} traffic`,`site:semrush.com/website/${domain} ${domain} authority`,`${brand} site:${domain} products pricing delivery returns`];
  return [...topics,...peers,...profiles].slice(0,12).map(q=>q.slice(0,500));
 }
@@ -65,12 +66,14 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
   }
   if(phase==='evidence'){
    const planning=await previous('source_plan');if(planning.reusedSynthesis)return {reusedSynthesis:planning.reusedSynthesis};
-   const {plan,searches}=planning;
+   // Historical paid plans are normalized in memory; never reset/rewrite their
+   // ledger rows or repeat discovery just to repair address formatting.
+   const {searches}=planning,plan=parseSourcePlan(planning.plan);
    const old=researchVersion!=='v3'?await ledger.get(stageKey(brief,'evidence','v3')):null;
    let all,reading;
    if(old?.state==='complete'){all=old.value.searches;reading=Promise.resolve(old.value.packet);}
    else {const queries=researchVersion==='v5'?groupedMethodologyQueries(brief,plan).map(q=>q.query):researchVersion==='v3'?legacyFollowupQueries(brief,plan):followupQueries(brief,plan);const additional=await searchTogether(providers,queries,researchVersion==='v5'?{depth:'basic',maxResults:12}:undefined);all=[...searches,...additional];reading=collect(brief,plan,{extraSources:balancedSearchUrls(all)});}
-   const urls=[brief.website,...plan.entities.filter(e=>e.role==='competitor').slice(0,3).map(e=>e.website)];
+   const urls=[...new Set([brief.website,...plan.entities.filter(e=>e.role==='competitor').slice(0,3).map(e=>e.website)].map(researchUrl).filter(Boolean))];
    const extraction=researchVersion!=='v3'&&providers.extract?providers.extract(urls).catch(error=>({pages:[],failed:urls.map(url=>({url,reason:error.code||'extract_unavailable'}))})):Promise.resolve({pages:[]});
    const [read,extracted]=await Promise.all([reading.catch(()=>({version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date().toISOString().slice(0,10),entities:plan.entities,sources:[],unavailable:[{reason:'direct_read_unavailable'}]})),extraction]);
    const relevant=prepareResearchInput(brief,{packet:read,searches:all}).packet;
