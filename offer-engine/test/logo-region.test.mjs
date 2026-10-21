@@ -28,3 +28,20 @@ test('enclosed canvas is removable while intentional white artwork stays intact'
  const result=await finishLogo(source,undefined,{chooseBackdrop:async(_image,geometry)=>{assert.equal(geometry.regions.length,1);return geometry.regions.map(r=>r.id);}});
  const {data,info}=await sharp(result.png).ensureAlpha().raw().toBuffer({resolveWithObject:true});assert.equal(data[(60*info.width+150)*4+3],0);assert.ok([...data].some((v,i)=>i%4===3&&v===255));assert.equal(result.quality.changedSolid,0);
 });
+
+test('a shallow screenshot backdrop gradient is removed without treating cleared matte noise as damaged ink',async()=>{
+ const width=400,height=160,raw=Buffer.alloc(width*height*3);
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){const p=(y*width+x)*3,v=244+Math.round(10*x/(width-1));raw[p]=raw[p+1]=raw[p+2]=v;}
+ const source=await sharp(raw,{raw:{width,height,channels:3}}).composite([{input:Buffer.from('<svg width="400" height="160"><rect x="40" y="50" width="320" height="60" fill="#154696"/></svg>')}]).png().toBuffer();
+ const result=await prepareUploadedLogo('data:image/png;base64,'+source.toString('base64'));
+ assert.equal(result.candidates[0].quality.transparency,true);assert.equal(result.candidates[0].quality.changedSolid,0);assert.equal(result.candidates[0].quality.compositingError,0);
+ const {data}=await sharp(Buffer.from(result.candidates[0].image.split(',')[1],'base64')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ let opaque=0;for(let p=0;p<data.length;p+=4)if(data[p+3]===255){assert.deepEqual([...data.subarray(p,p+3)],[21,70,150]);opaque++;}assert.equal(opaque,320*60);
+});
+
+test('bounded crop expansion recovers a slightly under-sized localization without another locator or backdrop call',async()=>{
+ const source=await sharp(Buffer.from('<svg width="600" height="300"><rect width="600" height="300" fill="white"/><rect x="100" y="70" width="400" height="160" fill="#165baa"/></svg>')).png().toBuffer();
+ let locateCalls=0,backdropCalls=0;
+ const result=await prepareUploadedLogo('data:image/png;base64,'+source.toString('base64'),{locate:async()=>{locateCalls++;return {found:true,box:[290,190,710,810],backgroundPoints:[]};},chooseBackdrop:async()=>{backdropCalls++;return [];}});
+ assert.equal(locateCalls,1);assert.ok(backdropCalls<=1);assert.equal(result.candidates[0].quality.width,424);assert.equal(result.candidates[0].quality.height,184);assert.equal(result.candidates[0].quality.touchesEdge,false);assert.equal(result.candidates[0].quality.changedSolid,0);
+});

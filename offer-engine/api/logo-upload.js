@@ -35,7 +35,7 @@ export default async function handler(req,res){
     const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
     return res.status(200).json({...result.data,...(secret?{logoProof:logoProof(secret,req.headers.host,result.data)}:{})});
   }catch(error){
-    console.warn(JSON.stringify({event:'logo_upload_error',code:error.code||'logo_extraction',message:String(error.message).slice(0,250)}));
+    console.warn(JSON.stringify({event:'logo_upload_error',code:error.code||'logo_extraction',message:String(error.message).slice(0,250),...(error.logoQuality?{quality:error.logoQuality}:{})}));
     const message=String(error.message);
     return res.status(422).json({code:error.code||'logo_extraction',error:error.code||/PNG|Görsel|Logo|Bu görselde/.test(message)?message.slice(0,250):'Görsel okunamadı. Geçerli bir PNG, JPG veya WebP ekran görüntüsü seç.'});
   }finally{active--;}

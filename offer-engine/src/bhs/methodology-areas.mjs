@@ -15,8 +15,12 @@ export function normalizeMethodologyAreas(areas,sourceIds){
  if(!areas||Array.isArray(areas)||typeof areas!=='object'||Object.keys(areas).length!==methodologyAreas.length)throw new BudgetError('incomplete_methodology','BHS metodolojisinin zorunlu alanları eksik. Eksik rapor tamamlanmış olarak sunulmadı.');
  return methodologyAreas.map(({key,dimension,topic})=>{
   const a=areas[key];
-  if(!a||Object.keys(a).sort().join(',')!=='observation,sourceIds,status'||!['observed','partial','unavailable'].includes(a.status)||typeof a.observation!=='string'||!a.observation.trim()||a.observation.length>1000||!Array.isArray(a.sourceIds)||a.sourceIds.some(id=>typeof id!=='string'||allowed&&!allowed.has(id))||new Set(a.sourceIds).size!==a.sourceIds.length||a.status!=='unavailable'&&!a.sourceIds.length)throw new BudgetError('incomplete_methodology','BHS alanının biçimi veya kaynak referansı eksik. Yeni ücretli deneme otomatik başlatılmadı.');
-  return {dimension,topic,status:a.status,observation:a.observation,sourceIds:[...a.sourceIds]};
+  if(!a||Object.keys(a).sort().join(',')!=='observation,sourceIds,status'||!['observed','partial','unavailable'].includes(a.status)||typeof a.observation!=='string'||!a.observation.trim()||a.observation.length>1000||!Array.isArray(a.sourceIds)||a.sourceIds.some(id=>typeof id!=='string'||allowed&&!allowed.has(id))||new Set(a.sourceIds).size!==a.sourceIds.length||a.status==='observed'&&!a.sourceIds.length)throw new BudgetError('incomplete_methodology','BHS alanının biçimi veya kaynak referansı eksik. Yeni ücretli deneme otomatik başlatılmadı.');
+  // A partial area without a citation is unavailable evidence, never a sourced
+  // finding. Preserve the original observation and paid report; do not rerun the
+  // model merely to repair its status enum. Observed claims still need a source.
+  const status=a.status==='partial'&&!a.sourceIds.length?'unavailable':a.status;
+  return {dimension,topic,status,observation:a.observation,sourceIds:[...a.sourceIds]};
  });
 }
 

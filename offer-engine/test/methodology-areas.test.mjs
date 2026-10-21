@@ -18,6 +18,14 @@ test('missing methodology fields and invented source IDs cannot become a complet
  const invented=areas();invented.financial_1={status:'observed',observation:'A claim',sourceIds:['invented']};assert.throws(()=>normalizeMethodologyAreas(invented,['real']),/kaynak referansı/);
  const unsourced=areas();unsourced.funnel_3={status:'observed',observation:'A claim',sourceIds:[]};assert.throws(()=>normalizeMethodologyAreas(unsourced),/kaynak referansı/);
 });
+test('an unavailable research area mislabeled partial is normalized without inventing evidence or mutating the paid result',()=>{
+ const input=areas();input.funnel_1={status:'partial',observation:'Ad Library veya organik erişim verisine araç engeli sebebiyle ulaşılamadı.',sourceIds:[]};
+ const original=structuredClone(input),result=normalizeMethodologyAreas(input,['ev1']);
+ assert.equal(result.length,24);assert.equal(result.find(a=>a.topic===researchTopics.funnel[0]).status,'unavailable');
+ assert.deepEqual(result.find(a=>a.topic===researchTopics.funnel[0]).sourceIds,[]);assert.deepEqual(input,original);
+ const partial=areas();partial.funnel_1={status:'partial',observation:'Sayfa kesitinde ürün CTA metni görüldü.',sourceIds:['ev1']};
+ assert.equal(normalizeMethodologyAreas(partial,['ev1']).find(a=>a.topic===researchTopics.funnel[0]).status,'partial');
+});
 test('historical completion preserves paid findings, aliases the same source URL, and adds all methodology areas',()=>{
  const old=context().report,before=structuredClone(old),a=areas(),source=old.sources[0];a.funnel_1={status:'partial',observation:'Source-specific research observation.',sourceIds:['actual_source']};
  const result=reportWithAreas(old,a,[{id:'actual_source',url:source.url,title:source.title,text:'Read source text',method:'html'}]);assert.deepEqual(old,before);assert.deepEqual(result.findings,old.findings);assert.equal(result.sources.length,old.sources.length);assert.equal(result.researchCoverage.length,24);assert.deepEqual(result.researchCoverage.find(c=>c.topic===researchTopics.funnel[0]).sourceIds,[source.id]);

@@ -107,7 +107,10 @@ export async function finishLogo(buffer, reference,{backgroundPoints=[],chooseBa
     if(pixelLuminance>210)lightWeight+=a;if(pixelLuminance<55)darkWeight+=a;
     if(original[p*4+3]>245 && data[p*4+3]>245 && [0,1,2].some(c=>original[p*4+c]!==data[p*4+c]))changedSolid++;
     if(referencePixels && data[p*4+3]>245 && [0,1,2].some(c=>Math.abs(data[p*4+c]-referencePixels[p*4+c])>5))sourceMismatch++;
-    if(method==='edge-matte')for(let c=0;c<3;c++)error+=Math.abs(data[p*4+c]*(data[p*4+3]/255)+background[c]*(1-data[p*4+3]/255)-original[p*4+c]);
+    // Cleared matte pixels were already checked against the backdrop. JPEG
+    // noise and a shallow panel gradient are not damage to retained logo ink.
+    // Keep the original recomposition test for every retained/antialias pixel.
+    if(method==='edge-matte'&&data[p*4+3]>0)for(let c=0;c<3;c++)error+=Math.abs(data[p*4+c]*(data[p*4+3]/255)+background[c]*(1-data[p*4+3]/255)-original[p*4+c]);
   }
   if(right<left||bottom<top||foreground<n*.001)throw new Error('Logo kesiti boş görünüyor.');
   const trim={left,top,width:right-left+1,height:bottom-top+1};

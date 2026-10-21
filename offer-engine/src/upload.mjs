@@ -14,11 +14,26 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
   const source=await sharp(bytes,{limitInputPixels:16000000}).rotate().png().toBuffer();
   const {data}=await sharp(source).ensureAlpha().raw().toBuffer({resolveWithObject:true});
   let transparent=false;for(let i=3;i<data.length;i+=4)if(data[i]<10){transparent=true;break;}
-  let cropped={image:source,backgroundPoints:[]};
-  if(locate&&!transparent)cropped=await cropLogoRegion(source,await locate(source));
-  const processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints,chooseBackdrop});
+  let cropped={image:source,backgroundPoints:[]},region;
+  if(locate&&!transparent){region=await locate(source);cropped=await cropLogoRegion(source,region);}
+  let processed,extractionError;
+  try{processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints});}catch(error){if(!region)throw error;extractionError=error;}
+  // A locator box can be a few pixels inside the artwork. Try bounded wider
+  // crops of the same original before rejecting the screenshot. This is pixel
+  // processing only: localization and paid model calls are never repeated.
+  if(region&&(!processed||!processed.quality.matteStable||processed.quality.touchesEdge)){
+    for(const padding of [.16,.28]){
+      const candidate=await cropLogoRegion(source,region,{padding});
+      let preview;try{preview=await finishLogo(candidate.image);}catch{continue;}
+      if(preview.quality.matteStable&&!preview.quality.touchesEdge){
+        cropped=candidate;processed=preview;break;
+      }
+    }
+  }
+  if(!processed)throw extractionError;
+  if(chooseBackdrop&&processed.quality.matteStable&&!processed.quality.touchesEdge)processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints,chooseBackdrop});
   const q=processed.quality;
-  if(!q.transparency||!q.matteStable||q.changedSolid||q.compositingError>=1.5)throw new Error('Bu görselde arka plan logodan güvenle ayrılamadı. Logoya yakın, düz arka planlı bir ekran görüntüsü seç.');
+  if(!q.transparency||!q.matteStable||q.changedSolid||q.compositingError>=1.5){const error=new Error('Bu görselde arka plan logodan güvenle ayrılamadı. Logoya yakın, düz arka planlı bir ekran görüntüsü seç.');error.logoQuality=q;throw error;}
   if(q.touchesEdge)throw new Error('Logo görselin kenarına değiyor. Logonun çevresinde biraz boşluk bulunan bir ekran görüntüsü seç.');
   // The template's logo slot is 112×46 CSS pixels. A mandatory 180-pixel
   // cutoff incorrectly rejected otherwise sharp header-logo screenshots.
