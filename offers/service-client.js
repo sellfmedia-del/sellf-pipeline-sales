@@ -2,7 +2,7 @@
 (function(){'use strict';
  async function request(path,payload,auth){
   const headers={'Content-Type':'application/json'};
-  if(auth&&typeof supabaseClient!=='undefined'){
+  if(typeof supabaseClient!=='undefined'){
    const {data,error}=await supabaseClient.auth.getSession();if(error)throw Error('Pipeline oturumu doğrulanamadı.');
    if(data?.session?.access_token)headers.Authorization='Bearer '+data.session.access_token;
   }

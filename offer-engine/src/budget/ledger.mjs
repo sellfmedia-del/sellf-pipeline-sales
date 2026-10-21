@@ -1,5 +1,5 @@
 import {randomUUID,createHash} from 'node:crypto';
-import {createPreviewStore} from '../proposal/preview-store.mjs';
+import {runtimeStore,productionOffers,bearer} from '../runtime.mjs';
 import {sessionFor} from '../proposal/preview-session.mjs';
 
 export const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -24,9 +24,9 @@ export function consumedModel(model,input,output,fx,now=Date.now(),cachedInput=0
  return Math.ceil(usd*fx*1.03*100);
 }
 export function consumedSearch(credits,fx){if(!Number.isFinite(credits)||credits<0||credits>2||!Number.isFinite(fx)||fx<=0||fx>tariff.usdTry)throw new BudgetError('provider_accounting','Arama tüketimi veya kur kaydı geçersiz.');return Math.ceil(credits*tariff.tavilyCredit*fx*1.03*100);}
-export async function budgetFor(req,res,leadId,{store=createPreviewStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
+export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
  if(typeof leadId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(leadId))throw new BudgetError('budget_context','Teklifin kart bilgisi gerekli.');
- const session=await sessionFor(req,res,store,secret);if(!session)throw new BudgetError('budget_session','Teklif test oturumu gerekli.');
+ const session=productionOffers()?(bearer(req)?{accessToken:bearer(req)}:null):await sessionFor(req,res,store,secret);if(!session)throw new BudgetError('budget_session','Pipeline oturumu gerekli.');
  const call=(op,args={})=>store.call('budget',{jwt:session.accessToken,leadId,op,...args});
  return createLedger(call);
 }

@@ -270,7 +270,7 @@
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
-          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent='Kalıcı test alanı · Kontrollü maliyet tahmini: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL · Normal hedef: 20–30 TL';}
+          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+'Kontrollü maliyet tahmini: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL · Normal hedef: 20–30 TL';}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
           if(response.phase==='complete'){action='status';continue;}

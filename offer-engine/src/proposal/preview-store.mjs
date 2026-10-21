@@ -2,14 +2,14 @@ import {sealSession,openEnvelope} from './preview-session.mjs';
 import {randomBytes} from 'node:crypto';
 import {brandSlug,validSlug} from './publication.mjs';
 import {tokenHash,passwordHash} from './storage.mjs';
-export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,key=process.env.OFFER_STORAGE_GATEWAY_KEY,portalSecret=process.env.OFFER_PORTAL_SECRET,enabled=process.env.OFFER_PREVIEW_MODE==='true'&&process.env.OFFER_PERSISTENCE_ENABLED==='true',fetchImpl=fetch}={}){
+export function createPreviewStore({url=process.env.OFFER_STORAGE_GATEWAY_URL,key=process.env.OFFER_STORAGE_GATEWAY_KEY,portalSecret=process.env.OFFER_PORTAL_SECRET,enabled=process.env.OFFER_PREVIEW_MODE==='true'&&process.env.OFFER_PERSISTENCE_ENABLED==='true',production=false,platformJwt=process.env.OFFER_STORAGE_GATEWAY_ANON_KEY,fetchImpl=fetch}={}){
  let capability;
  async function call(action,body={}){
-  if(!enabled||!key||!/^https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/pipeline-offer-preview-store$/.test(url||''))throw Error('Kalıcı test alanı henüz etkin değil.');
-  const r=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json','x-offer-store-key':key},body:JSON.stringify({action,...body}),signal:AbortSignal.timeout(40000),redirect:'error'});
+  if(!enabled||!key||!(production?/^https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/pipeline-offer-store$/:/^https:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/pipeline-offer-preview-store$/).test(url||''))throw Error(production?'Teklif kayıt bağlantısı henüz etkin değil.':'Kalıcı test alanı henüz etkin değil.');
+  const r=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json','x-offer-store-key':key,...(production?{Authorization:'Bearer '+platformJwt}:{})},body:JSON.stringify({action,...body}),signal:AbortSignal.timeout(40000),redirect:'error'});
   let data;try{data=await r.json();}catch{throw Error('Test kayıt servisi yanıt vermedi.');}if(!r.ok){const error=Error(data.error||'Test kaydı tamamlanamadı.');error.code=data.code||'preview_store_'+r.status;throw error;}return data;
  }
- return {configured:()=>enabled&&Boolean(url&&key),portalConfigured:()=>enabled&&Boolean(url&&key),mode:'isolated-preview',call,
+ return {configured:()=>enabled&&Boolean(url&&key),portalConfigured:()=>enabled&&Boolean(url&&key),mode:production?'pipeline-production':'isolated-preview',call,
   syncCards:(jwt,leads)=>call('sync_cards',{jwt,leads}),deleteCards:(jwt,field,value)=>call('delete_cards',{jwt,field,value}),
   bootstrap:()=>call('bootstrap'),refresh:refreshToken=>call('refresh',{refreshToken}),fixture:jwt=>call('fixture',{jwt}),
   save:(jwt,args)=>call('save',{jwt,args}),async list(jwt,leadId){const rows=await call('list',{jwt,leadId});return rows.map(row=>{const {operator_link_envelope,...value}=row;return {...value,...(operator_link_envelope?{ownerLink:openEnvelope(operator_link_envelope,portalSecret,'published-link:'+row.id)}:{})};});},outbox:jwt=>call('outbox',{jwt}),

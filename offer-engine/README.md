@@ -1,3 +1,5 @@
+Current production deployment is described in [PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md). The standalone preview instructions below remain for pre-release testing.
+
 # Isolated offer service
 
 The current preview uses parallel Tavily discovery and Gemini Pro with the

@@ -1,3 +1,4 @@
+import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {createOfferWorkflow} from '../src/offer-workflow.mjs';
 import sharp from 'sharp';
@@ -10,12 +11,13 @@ let active=0;
 export default async function handler(req,res){
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Robots-Tag','noindex, nofollow');
-  if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Logo servisi yalnızca korumalı önizlemede açık.'});
+  if(!offersEnabled())return res.status(503).json({error:'Logo servisi yalnızca korumalı önizlemede açık.'});
   if(req.method!=='POST'){res.setHeader('Allow','POST');return res.status(405).json({error:'Bu işlem POST isteği gerektirir.'});}
   if(req.headers.origin&&req.headers.origin!=='https://'+req.headers.host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   if(active>=4)return res.status(429).json({error:'Bir görsel işleniyor. Kısa süre sonra tekrar dene.'});
   active++;
   try{
+    await authorizeProduction(req);
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
     let ledger;
     const generate=async(stage,source,input,schema)=>{

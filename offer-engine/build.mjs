@@ -21,7 +21,12 @@ const html=await readFile(path.join(here,'public/offers/preview.html'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.html'),html.replace('<html lang="tr">','<html lang="tr" data-logo-service="ready">'));
 const js=await readFile(path.join(here,'public/offers/preview.js'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.js'),js.replace("fetch('/index.html'","fetch('/crm-source.html'"));
-await writeFile(path.join(here,'public/index.html'),buildPipelinePreview(pipelineSource));
+const production=process.env.VERCEL_ENV==='production';
+await writeFile(path.join(here,'public/index.html'),production?pipelineSource:buildPipelinePreview(pipelineSource));
+if(production){
+ for(const name of ['travis.html','travis.css','travis.js'])await cp(path.join(root,name),path.join(here,'public',name));
+}
+
 
 // Deterministic synthetic example: no paid model, customer data or persistence.
 process.chdir(here);

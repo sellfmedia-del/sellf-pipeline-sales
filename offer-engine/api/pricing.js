@@ -1,3 +1,4 @@
+import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {interactionId,modelText} from '../src/bhs/provider.mjs';
@@ -11,12 +12,13 @@ export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,
  const starts=new Map();
  return async function handler(req,res){
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
-  if(process.env.VERCEL_ENV!=='preview')return res.status(503).json({error:'Fiyat servisi yalnızca korumalı önizlemede açık.'});
+  if(!offersEnabled())return res.status(503).json({error:'Fiyat servisi yalnızca korumalı önizlemede açık.'});
   if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()),costVersion,budgetRequired:false,providerDeterminesPrices:false});
   if(req.method!=='POST'){res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Bu işlem POST isteği gerektirir.'});}
   const host=req.headers.host;
   if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   try{
+    await authorizeProduction(req);
    if((Number(req.headers['content-length'])||0)>600000)throw Error('Fiyat hesaplama girdisi çok büyük.');
    const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
    if(!body||JSON.stringify(body).length>600000)throw Error('Fiyat hesaplama girdisi çok büyük.');
