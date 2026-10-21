@@ -8,7 +8,9 @@ function setup(run){return createPreviewStore({enabled:true,url,key:'key',portal
 test('brand URL is a safe Turkish transliteration with no capability or password',()=>{
  assert.equal(brandSlug('Çağrı Şirketi A.Ş.'),'cagri-sirketi-a-s-teklifi');assert.ok(validSlug('marka-teklifi'));assert.ok(validSlug('marka-teklifi-v2-a4f587f7'));
  for(const slug of ['../marka','marka&owner_id=other','marka/teklifi','marka?token=secret'])assert.equal(validSlug(slug),false);
- assert.equal(publicationUrl('preview.vercel.app',{slug:'marka-teklifi',token:'PRIVATE',password:'PRIVATE'}),'https://preview.vercel.app/marka-teklifi');
+ const environment=process.env.VERCEL_ENV;
+ try{process.env.VERCEL_ENV='preview';assert.equal(publicationUrl('preview.vercel.app',{slug:'marka-teklifi',token:'PRIVATE',password:'PRIVATE'}),'https://preview.vercel.app/marka-teklifi');}
+ finally{if(environment===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=environment;}
 });
 test('production customer links use the configured Offerletter origin while preview links stay isolated',()=>{
  const previous={VERCEL_ENV:process.env.VERCEL_ENV,OFFER_PUBLIC_ORIGIN:process.env.OFFER_PUBLIC_ORIGIN};
