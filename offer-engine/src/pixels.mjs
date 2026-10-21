@@ -64,7 +64,20 @@ export async function finishLogo(buffer, reference,{backgroundPoints=[],chooseBa
           for(let i=0;i<pending.length;i++){const p=pending[i],x=p%width,y=Math.floor(p/width);pixels.push(p);l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);for(const q of [x?p-1:-1,x<width-1?p+1:-1,y?p-width:-1,y<height-1?p+width:-1])if(q>=0&&!checked[q]&&distance(q)<=18){checked[q]=1;pending.push(q);}}
           if(pixels.length>=3&&islands.length<32)islands.push({id:'bg'+islands.length,box:[t,l,b+1,r+1],area:pixels.length,pixels});
         }
-        if(islands.length){const remove=await chooseBackdrop(buffer,{width,height,background,regions:islands.map(({pixels,...r})=>r)});if(!Array.isArray(remove)||remove.some(id=>!islands.some(r=>r.id===id)))throw Error('Logo iç boşlukları güvenle ayrıştırılamadı.');for(const island of islands)if(remove.includes(island.id))for(const p of island.pixels){visited[p]=1;data[p*4+3]=0;}}
+        if(islands.length){
+          // Give vision both the untouched crop and the actual removal preview.
+          // Geometry alone made outlined logos look like solid colored badges.
+          // This guide is never returned as customer artwork.
+          const preview=Buffer.from(data);
+          for(const island of islands)for(const p of island.pixels)preview[p*4+3]=0;
+          const checker=Buffer.alloc(n*4);
+          for(let p=0;p<n;p++){const shade=(Math.floor(p%width/8)+Math.floor(p/width/8))%2?205:245;checker[p*4]=checker[p*4+1]=checker[p*4+2]=shade;checker[p*4+3]=255;}
+          const proposed=await sharp(checker,{raw:{width,height,channels:4}}).composite([{input:await sharp(preview,{raw:{width,height,channels:4}}).png().toBuffer()}]).png().toBuffer();
+          const guide=await sharp({create:{width:width*2+8,height,channels:4,background:'#888'}}).composite([{input:buffer,left:0,top:0},{input:proposed,left:width+8,top:0}]).png().toBuffer();
+          const remove=await chooseBackdrop(buffer,{width,height,background,regions:islands.map(({pixels,...r})=>r)},guide);
+          if(!Array.isArray(remove)||remove.some(id=>!islands.some(r=>r.id===id)))throw Error('Logo iç boşlukları güvenle ayrıştırılamadı.');
+          for(const island of islands)if(remove.includes(island.id))for(const p of island.pixels){visited[p]=1;data[p*4+3]=0;}
+        }
       }
       // Decontaminate only the immediate antialias fringe next to removed backdrop.
       for(let p=0;p<n;p++) {
