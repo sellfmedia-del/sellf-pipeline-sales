@@ -80,7 +80,9 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
   if(phase==='synthesis'){
    const evidence=await previous('evidence');
    const reuse=evidence.reusedSynthesis||(researchVersion==='v5'?await readReusableResearch(brief,ledger):null);
-   if(reuse)return {...reuse,report:normalizeCompleteDirectReport(reuse.report),methodologyVersion:directMethodologyVersion};
+   // The original provider's paid accounting stays in its own immutable row.
+   // A free coordinator must not present that old charge as new settled usage.
+   if(reuse)return {report:normalizeCompleteDirectReport(reuse.report),model:reuse.model,usage:reuse.usage||null,reuse:reuse.reuse,...(reuse.analysisPacket?{analysisPacket:reuse.analysisPacket}:{}),...(reuse.fullPacketHash?{fullPacketHash:reuse.fullPacketHash}:{}),...(reuse.originalText?{originalModelText:reuse.originalText}:{}),outputIssues:reuse.issues||[],methodologyVersion:directMethodologyVersion};
    const research=prepareResearchInput(brief,evidence),{packet}=research,packed=researchVersion==='v5'?boundedResearchContext(research):compactResearchInput(research);
    const old=researchVersion==='v5'?await ledger.get(stageKey(brief,'synthesis','v4')):null;
    if(old?.state==='complete'){

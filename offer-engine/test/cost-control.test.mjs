@@ -10,7 +10,7 @@ import {pricingEngine} from '../src/engines/pricing-engine.mjs';
 import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 const now=Date.parse('2026-10-21T13:00:00Z'),raw=JSON.parse(readFileSync(new URL('./fixtures/one-more-fresh-report.json',import.meta.url)));
 const brief=snapshotBrief({brandName:'One More Global',website:'https://onemoreglobalinc.com/',segment:'corporate',goals:'ABD perakende büyümesi.',needs:'MLM modelinden perakendeye geçiş.',services:'Meta ve Google Ads',meetingNotes:'Güncellenmiş görüşme notu.',budget:null});
-const row={step_key:'model:synthesis:old-paid-request',created_at:'2026-10-21T12:00:00Z',value:{data:raw,model:'gemini-3.1-pro-preview'}};
+const row={step_key:'model:synthesis:old-paid-request',created_at:'2026-10-21T12:00:00Z',value:{data:raw,model:'gemini-3.1-pro-preview',accountedKurus:1332,reservedKurus:1800}};
 test('recorded usage with every methodology area fits the 20–30 TRY normal target without cutting Pro reasoning or report output',()=>{
  // Real cold Huel token usage, unchanged Pro model/output/thinking. Search
  // credit rate is the maximum public PAYG rate; free credits are not assumed.
@@ -28,7 +28,7 @@ test('legacy paid same-brand report is recoverable after a brief edit, with iden
 });
 test('the reported 42.77 TRY card resumes a paid report under a changed brief with zero research calls, preserves cost and reaches pricing',async()=>{
  const rows=new Map([[researchCacheKey(brief),{state:"complete",value:{...row,created_at:new Date().toISOString()}}]]),cost={capKurus:5000,chargedKurus:4277};let calls=0;
- const ledger={get:async k=>rows.get(k),status:async()=>cost,once:async(k,_input,amount,run)=>{assert.equal(amount,0);if(rows.has(k))return rows.get(k).value;const value=await run();rows.set(k,{state:'complete',value});return value;}};
+ const ledger={get:async k=>rows.get(k),status:async()=>cost,once:async(k,_input,amount,run)=>{assert.equal(amount,0);if(rows.has(k))return rows.get(k).value;const value=await run();if(Object.hasOwn(value,'accountedKurus'))assert.equal(value.accountedKurus,amount,'SQL settlement requires paid usage to stay out of a free coordinator');rows.set(k,{state:'complete',value});return value;}};
  const providers={search:()=>assert.fail('no new search'),extract:()=>assert.fail('no new extraction'),generate:async stage=>{calls++;assert.equal(stage,'scope');const error=Error('No scope budget');error.code='budget_limit';throw error;}};
  for(const phase of ['source_plan','evidence','synthesis','scope'])await runBoundedStage({phase,brief,ledger,providers,researchVersion:'v5'});
  const synthesis=rows.get(stageKey(brief,'synthesis','v5')).value,audit={stage:'audit',...directAuditResult(brief,synthesis)},scope=rows.get(stageKey(brief,'scope','v5')).value;
