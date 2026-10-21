@@ -49,7 +49,7 @@ export function assertEvidencePacket(packet,brief){
  if(packet?.version!=='sellf-evidence-v1'||packet.briefHash!==briefHash(brief)||!Array.isArray(packet.sources)||packet.sources.length>24||!packet.sources.length||JSON.stringify(packet).length>240000)throw Error('Kanıt paketi geçersiz.');
  const ids=new Set();
  for(const source of packet.sources){
-  if(!/^ev\d+$/.test(source.id)||ids.has(source.id)||!publicUrl(source.url)||!publicUrl(source.finalUrl)||!['html','pdf','rendered'].includes(source.method)||!Array.isArray(source.excerpts)||!source.excerpts.length||source.excerpts.length>7)throw Error('Kanıt kaynağı geçersiz.');ids.add(source.id);
+  if(!/^ev\d+$/.test(source.id)||ids.has(source.id)||!publicUrl(source.url)||!publicUrl(source.finalUrl)||!['html','pdf','rendered','extracted'].includes(source.method)||!Array.isArray(source.excerpts)||!source.excerpts.length||source.excerpts.length>7)throw Error('Kanıt kaynağı geçersiz.');ids.add(source.id);
   if(source.excerpts.some(e=>typeof e.text!=='string'||e.text.length>1800||e.text.length<24))throw Error('Kanıt metni sınırı geçersiz.');
  }
  return packet;
@@ -59,6 +59,17 @@ export function assertCoreEvidence(packet,brief){
  const peerHosts=new Set(packet.entities.filter(e=>e.role==='competitor').map(e=>host(e.website)).filter(h=>packet.sources.some(s=>host(s.finalUrl)===h&&!s.metadataOnly)));
  if(peerHosts.size<3)throw Error('En az üç rakibin resmî kaynakları okunamadı.');
  return packet;
+}
+export function mergeExtractedEvidence(packet,extraction={}){
+ const result=structuredClone(packet);
+ for(const page of extraction.pages||[]){
+  if(!publicUrl(page.url)||typeof page.text!=='string'||blockedText(page.text))continue;
+  const excerpts=evidenceExcerpts(page.text);if(!excerpts.length)continue;
+  const old=result.sources.findIndex(s=>s.url===page.url||s.finalUrl===page.url);
+  const captured={id:old>=0?result.sources[old].id:'ev'+(Math.max(0,...result.sources.map(s=>Number(s.id.slice(2))))+1),url:page.url,finalUrl:page.url,title:old>=0?result.sources[old].title:new URL(page.url).hostname,method:'extracted',excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date().toISOString(),scope:'Tavily advanced: araştırma sorgusuna göre seçilen sayfa kesitleri, sayfanın tamamı değildir.'};
+  if(old>=0){if(result.sources[old].technicalSignals)captured.technicalSignals=result.sources[old].technicalSignals;result.sources[old]=captured;}else if(result.sources.length<24)result.sources.push(captured);
+ }
+ result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic}={}){
  return async function collect(brief,sourcePlan,{extraSources=[]}={}){

@@ -142,3 +142,13 @@ test('synthesis reserves room for scope, adapts only inside the substantial outp
   if(charged===3900){await assert.rejects(run,e=>e.code==='budget_limit');assert.equal(generated,0);}else{await run();assert.equal(generated,1);assert.ok((await ledger.status()).chargedKurus<=4900);}
  }
 });
+
+test('advanced page extraction shares the card ceiling, caches paid work, and charges the whole credit block even for zero incremental usage',async()=>{
+ const db=store(),ledger=createLedger(db.call);let calls=0;
+ const provider=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,validateUrl:async url=>({url:new URL(url)}),fetchImpl:async(url,options)=>{
+  if(url.includes('tcmb'))return fx(46);calls++;const body=JSON.parse(options.body);assert.equal(body.extract_depth,'advanced');assert.equal(body.chunks_per_source,5);assert.ok(body.urls.length<=5);
+  return json({results:[{url:'https://brand.example/',raw_content:'Actual public source text.'}],usage:{credits:0}});
+ }});
+ await provider.extract(['https://brand.example/']);await provider.extract(['https://brand.example/']);assert.equal(calls,1);assert.equal((await ledger.status()).chargedKurus,616);
+ await assert.rejects(provider.extract(Array(6).fill('https://brand.example/')),e=>e.code==='invalid_query');
+});

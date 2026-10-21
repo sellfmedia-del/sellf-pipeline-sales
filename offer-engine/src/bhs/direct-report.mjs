@@ -6,7 +6,7 @@ import {evidenceHash} from './evidence.mjs';
 import {publicUrl} from './verify.mjs';
 import {researchTopics} from './research-topics.mjs';
 
-export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v3';
+export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v4';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
 export const directReportSchema=JSON.parse(JSON.stringify(reportSchema));
 directReportSchema.properties.benchmarks.maxItems=9;

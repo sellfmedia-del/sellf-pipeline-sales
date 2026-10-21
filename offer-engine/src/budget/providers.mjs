@@ -2,9 +2,10 @@ import {BudgetError,hash,quoteModel,quoteSearch,tariff} from './ledger.mjs';
 import {failureReason} from '../bhs/provider.mjs';
 import {providerSchema} from '../bhs/schema.mjs';
 import {offerGeminiKey} from '../config.mjs';
+import {resolveTarget} from '../network.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
-export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now}={}){
+export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget}={}){
  let fxChecked=0,fxInFlight;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
  async function readCurrency(){
@@ -36,6 +37,19 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   return value;
  }
  return {configured:()=>Boolean(geminiKey&&tavilyKey&&ledger),
+  async extract(urls){
+   await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Tavily bağlantısı gerekli.');
+   if(!Array.isArray(urls)||!urls.length||urls.length>5)throw new BudgetError('invalid_query','Kaynak okuma sınırı geçersiz.');
+   const safe=await Promise.all(urls.map(async url=>(await validateUrl(url)).url.href));
+   const input={urls:[...new Set(safe)],extract_depth:'advanced',format:'markdown',query:'Company products pricing subscriptions checkout delivery returns customer reviews team growth annual financial results technology and social links',chunks_per_source:5,timeout:20,include_images:false,include_usage:true};
+   // Up to five advanced extractions: two credits. Reserve the complete block
+   // even if this individual response reports zero incremental credits.
+   return ledger.once('extract:'+hash(input),input,quoteSearch(),async()=>{
+    const result=await readJson('https://api.tavily.com/extract',input,{Authorization:'Bearer '+tavilyKey},30000);
+    if(result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>2))throw new BudgetError('provider_accounting','Kaynak okuma tüketimi ayrılan sınırla eşleşmiyor.');
+    return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url))};
+   });
+  },
   async search(query){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');

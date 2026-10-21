@@ -23,7 +23,7 @@ test('discovery searches start together and source limitations do not start a se
   if(stage==='synthesis'){assert.ok(input.instruction.includes('ÖN BHS HESAPLAMA'));assert.equal(options.model,'gemini-3.1-pro-preview');return {data:report,usage:{},model:options.model};}
   assert.fail('no extra reviewer or recovery model');
  }};
- const planning=runBoundedStage({phase:'source_plan',brief,ledger,providers});await new Promise(r=>setImmediate(r));assert.equal(started,8);release();await planning;
+ const planning=runBoundedStage({phase:'source_plan',brief,ledger,providers});await new Promise(r=>setImmediate(r));assert.equal(started,2);release();await planning;
  packet.unavailable=[{url:plan.entities[1].website,reason:'HTTP_403'}];
  await runBoundedStage({phase:'evidence',brief,ledger,providers,collect:async()=>packet});assert.equal(started,14);
  const synthesis=await runBoundedStage({phase:'synthesis',brief,ledger,providers});assert.deepEqual(synthesis.report,report);assert.deepEqual(generated,['source_plan','synthesis']);
@@ -41,4 +41,13 @@ test('same card reuses the completed paid report without invoking a model again'
  rows.set(stageKey(brief,'synthesis'),{state:'complete',value:stored});
  const result=await runBoundedStage({phase:'synthesis',brief,ledger,providers:{generate:()=>assert.fail('must reuse paid report')}});
  assert.deepEqual(result,stored);assert.equal(directAuditResult(brief,result).status,'ready');
+});
+
+test('new research reuses paid historical discovery, reads essential pages once, and preserves the old report version',async()=>{
+ const {ledger,rows}=cachedLedger(),{packet}=context();
+ rows.set(stageKey(brief,'source_plan','v3'),{state:'complete',value:{plan,searches:[]}});
+ rows.set(stageKey(brief,'evidence','v3'),{state:'complete',value:{packet,searches:[]}});
+ let extracted=0;const providers={search:()=>assert.fail('no repeated searches'),generate:()=>assert.fail('no repeated planner'),extract:async urls=>{extracted++;assert.equal(urls[0],brief.website);assert.equal(urls.length,4);return {pages:[{url:brief.website,text:'Official products, customer delivery and subscription terms. '.repeat(4)}]};}};
+ await runBoundedStage({phase:'source_plan',brief,ledger,providers});const result=await runBoundedStage({phase:'evidence',brief,ledger,providers});assert.equal(extracted,1);assert.ok(result.packet.sources.some(s=>s.method==='extracted'));assert.deepEqual(rows.get(stageKey(brief,'evidence','v3')).value.packet,packet);
+ assert.notEqual(stageKey(brief,'synthesis','v3'),stageKey(brief,'synthesis','v4'));
 });

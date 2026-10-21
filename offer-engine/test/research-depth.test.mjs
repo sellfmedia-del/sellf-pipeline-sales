@@ -15,7 +15,7 @@ test('source excerpts retain nonfinancial methodology evidence on a long financi
  const links=sourceLinks('<a href="/products">Products</a><a href="/shipping">Shipping</a><a href="/subscribe">Subscribe</a><a href="/careers">Careers</a>','https://example.com');assert.equal(links.length,4);
 });
 test('every peer gets a distinct follow-up and later search topics enter the crawl before repeated early results',()=>{
- const queries=followupQueries({brandName:'Example'},plan);assert.equal(queries.length,6);
+ const queries=followupQueries({brandName:'Example',website:'https://brand.example/'},plan);assert.equal(queries.length,12);
  for(const e of plan.entities.filter(e=>e.role==='competitor'))assert.ok(queries.some(q=>q.includes('site:'+new URL(e.website).hostname)));
  const urls=balancedSearchUrls([{results:[{url:'https://a.example/first'},{url:'https://a.example/second'}]},{results:[{url:'https://b.example/reviews'}]}]);assert.deepEqual(urls,['https://a.example/first','https://b.example/reviews','https://a.example/second']);
 });

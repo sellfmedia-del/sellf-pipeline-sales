@@ -24,11 +24,13 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1],job;
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
-    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId};
+    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v4'};
    }else{
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');
+   const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId),providers=getProviders({ledger});
    if(action==='start'){
     await validateWebsite(brief);await ledger.begin();
@@ -42,7 +44,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    }
    if(!['start','status','advance'].includes(action))throw Error();
    const pendingPhases=phases.filter(x=>x!=='complete');
-   const rows=await Promise.all(pendingPhases.map(name=>ledger.get(stageKey(brief,name))));
+   const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    for(const [index,name] of pendingPhases.entries()){
     const step=rows[index];
     if(step?.state==='complete')continue;
@@ -52,16 +54,16 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
-    await runStage({phase,brief,ledger,providers});
+    await runStage({phase,brief,ledger,providers,researchVersion});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
     const nextPhase=phases[phases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     break;
    }
-   const synthesis=(await ledger.get(stageKey(brief,'synthesis'))).value,scope=(await ledger.get(stageKey(brief,'scope'))).value;
+   const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
    const audit=await auditEngine.run({brief,synthesis});
    const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
-   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-v3',inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
+   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId},session,host):null;
    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){
