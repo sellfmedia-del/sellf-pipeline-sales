@@ -25,6 +25,11 @@ function store(){
 const time=Date.parse('2026-10-20T12:00:00Z');
 const fx=rate=>new Response(`<Tarih_Date Tarih="20.10.2026"><Currency CurrencyCode="USD"><ForexSelling>${rate}</ForexSelling></Currency></Tarih_Date>`);
 const json=x=>new Response(JSON.stringify(x),{headers:{'Content-Type':'application/json'}});
+test('targeted one-credit queries preserve the hard ceiling and cannot reuse a two-credit request as if it were cheap',async()=>{
+ const db=store(),ledger=createLedger(db.call);let searches=0;
+ const providers=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async(url,init)=>{if(url.includes('tcmb'))return fx(40);searches++;const body=JSON.parse(init.body);assert.equal(body.auto_parameters,false);if(body.search_depth==='basic'){assert.equal(body.chunks_per_source,undefined);assert.equal(body.include_usage,true);}return json({results:[],usage:{credits:body.search_depth==='basic'?1:2}});}});
+ await providers.search('A company');await providers.search('A company',{depth:'basic'});await providers.search('A company',{depth:'basic'});assert.equal(searches,2);assert.equal((await ledger.status()).chargedKurus,500+116+58);
+});
 test('shared budget prevents concurrent duplicate paid work and caches completion',async()=>{
  const db=store(),one=createLedger(db.call),two=createLedger(db.call);let release,calls=0;
  const pending=one.once('same',{a:1},1000,async()=>{calls++;await new Promise(r=>release=r);return {ok:true};});

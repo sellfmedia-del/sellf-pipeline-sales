@@ -8,6 +8,7 @@ import {copySchema,validateCopy} from '../proposal/composition.mjs';
 import {directAuditResult,directResearchInstruction,directMethodologyVersion,directReportSchema,completeDirectReportSchema,normalizeCompleteDirectReport} from './direct-report.mjs';
 import {prepareResearchInput,compactResearchInput} from './research-input.mjs';
 import {methodologyAreasGrammar,areaResearchInput,reportWithAreas} from './methodology-areas.mjs';
+import {methodologySearchQueries} from './methodology-search.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
@@ -44,8 +45,9 @@ export function followupQueries(brief,plan){
 export function balancedSearchUrls(searches){
  const urls=[];for(let i=0;i<6;i++)for(const s of searches)if(s.results?.[i]?.url)urls.push(s.results[i].url);return [...new Set(urls)];
 }
-async function searchTogether(providers,queries){
- const results=await Promise.allSettled(queries.map(query=>providers.search(query)));
+async function searchTogether(providers,queries,options){
+ const results=[];
+ for(let offset=0;offset<queries.length;offset+=6)results.push(...await Promise.allSettled(queries.slice(offset,offset+6).map(query=>providers.search(query,options))));
  if(results.every(r=>r.status==='rejected'))throw new BudgetError('search_unavailable','Araştırma aramalarına ulaşılamadı; yeni ücretli arama otomatik başlatılmadı.');
  return results.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'unavailable'});
 }
@@ -64,7 +66,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
    const old=researchVersion!=='v3'?await ledger.get(stageKey(brief,'evidence','v3')):null;
    let all,reading;
    if(old?.state==='complete'){all=old.value.searches;reading=Promise.resolve(old.value.packet);}
-   else {let queries=researchVersion==='v3'?legacyFollowupQueries(brief,plan):followupQueries(brief,plan);if(researchVersion==='v5')queries=queries.slice(0,Math.max(10,6+plan.entities.filter(e=>e.role==='competitor').length));const additional=await searchTogether(providers,queries);all=[...searches,...additional];reading=collect(brief,plan,{extraSources:balancedSearchUrls(all)});}
+   else {const queries=researchVersion==='v5'?methodologySearchQueries(brief,plan).map(q=>q.query):researchVersion==='v3'?legacyFollowupQueries(brief,plan):followupQueries(brief,plan);const additional=await searchTogether(providers,queries,researchVersion==='v5'?{depth:'basic'}:undefined);all=[...searches,...additional];reading=collect(brief,plan,{extraSources:balancedSearchUrls(all)});}
    const urls=[brief.website,...plan.entities.filter(e=>e.role==='competitor').slice(0,3).map(e=>e.website)];
    const extraction=researchVersion!=='v3'&&providers.extract?providers.extract(urls).catch(error=>({pages:[],failed:urls.map(url=>({url,reason:error.code||'extract_unavailable'}))})):Promise.resolve({pages:[]});
    const [read,extracted]=await Promise.all([reading.catch(()=>({version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date().toISOString().slice(0,10),entities:plan.entities,sources:[],unavailable:[{reason:'direct_read_unavailable'}]})),extraction]);

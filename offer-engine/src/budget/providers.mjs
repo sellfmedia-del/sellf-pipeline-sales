@@ -50,12 +50,14 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url))};
    });
   },
-  async search(query){
+  async search(query,{depth='advanced'}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');
-   const input={query,search_depth:'advanced',max_results:6,chunks_per_source:3,include_answer:false,include_raw_content:false,auto_parameters:false};
-   return ledger.once('search:'+hash(query),input,quoteSearch(),async()=>{
+   if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');
+   const input={query,search_depth:depth,max_results:6,...(depth==='advanced'?{chunks_per_source:3}:{include_usage:true}),include_answer:false,include_raw_content:false,auto_parameters:false};
+   return ledger.once('search:'+(depth==='basic'?'basic:':'')+hash(query),input,quoteSearch(depth),async()=>{
     const result=await readJson('https://api.tavily.com/search',input,{Authorization:'Bearer '+tavilyKey},25000);
+    if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');
     return {query,results:(result.results||[]).slice(0,6).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)}))};
    });
   },

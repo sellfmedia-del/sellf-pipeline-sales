@@ -13,7 +13,7 @@ export function quoteModel(model,inputUpper,outputUpper,now=Date.now()){
  if(!Number.isSafeInteger(inputUpper)||inputUpper<0||!Number.isSafeInteger(outputUpper)||outputUpper<0||inputUpper>190000)throw new BudgetError('input_budget','Analiz girdisi güvenli maliyet sınırını aşıyor.');
  const rate=tariff.models[model];return Math.ceil((inputUpper*rate.input+outputUpper*rate.output)/1e6*tariff.usdTry*tariff.overhead*100);
 }
-export const quoteSearch=()=>Math.ceil(2*tariff.tavilyCredit*tariff.usdTry*tariff.overhead*100);
+export const quoteSearch=(depth='advanced')=>{if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');return Math.ceil((depth==='basic'?1:2)*tariff.tavilyCredit*tariff.usdTry*tariff.overhead*100);};
 export async function budgetFor(req,res,leadId,{store=createPreviewStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
  if(typeof leadId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(leadId))throw new BudgetError('budget_context','Teklifin kart bilgisi gerekli.');
  const session=await sessionFor(req,res,store,secret);if(!session)throw new BudgetError('budget_session','Teklif test oturumu gerekli.');
