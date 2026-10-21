@@ -6,7 +6,7 @@ import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {plan} from './fixtures/evidence.mjs';
 import {directReportSchema,directResearchInstruction} from '../src/bhs/direct-report.mjs';
 import {researchTopics} from '../src/bhs/research-topics.mjs';
-import {prepareResearchInput} from '../src/bhs/research-input.mjs';
+import {prepareResearchInput,compactResearchInput} from '../src/bhs/research-input.mjs';
 import {researchHtmlText} from '../src/bhs/evidence.mjs';
 
 test('source excerpts retain nonfinancial methodology evidence on a long financial-heavy page',()=>{
@@ -33,4 +33,11 @@ test('irrelevant tool landing pages and other companies cannot crowd out brand r
  const out=prepareResearchInput(brief,{packet:{entities:[],sources},searches:[{query:'q',results:[{url:'https://generic.example/',title:'Search engine tools',content:'No specific brand data'},{url:'https://publisher.example/social',title:'One More Global Inc. social channels',content:'Brand-specific signals'}]}]});
  assert.deepEqual(out.packet.sources.map(s=>s.id),['brand','news']);assert.equal(out.searchEvidence[0].results.length,1);assert.equal(sources.length,4);
  assert.equal(researchHtmlText('<header>MENU MENU</header><nav>MENU</nav><main><p>Actual product subscription terms</p></main><footer>MENU MENU</footer>'),'Actual product subscription terms');
+});
+
+test('research transport keeps source facts and navigation while removing duplicate metadata and overlapping text',()=>{
+ const technicalSignals={https:true,navigation:[{url:'https://brand.example/subscribe',label:'Subscribe'}]};
+ const input={packet:{sources:[{id:'a',url:'https://brand.example/',technicalSignals,excerpts:[{text:'Revenue 100. Delivery 2 days.',offset:0},{text:'Delivery 2 days. Subscription 20%.',offset:13}]},{id:'b',url:'https://brand.example/shop',technicalSignals,excerpts:[{text:'[Plan](https://brand.example/subscribe) $24.95 ![Logo](https://brand.example/logo.png)',offset:0}]}]},searchEvidence:[{query:'pricing',results:[]}]},original=structuredClone(input),out=compactResearchInput(input);
+ assert.deepEqual(input,original);assert.equal(out.packet.sources.length,2);assert.equal(Object.keys(out.packet.sharedTechnicalSignals).length,1);assert.equal(Object.values(out.packet.sharedNavigation)[0].url,'https://brand.example/subscribe');
+ assert.equal(out.packet.sources[0].excerpts.map(e=>e.text).join(''),'Revenue 100. Delivery 2 days. Subscription 20%.');assert.match(out.packet.sources[1].excerpts[0].text,/Plan \$24\.95 Logo/);assert.deepEqual(out.searchEvidence,input.searchEvidence);
 });

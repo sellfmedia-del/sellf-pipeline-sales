@@ -78,7 +78,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(minOutputTokens<maxOutputTokens||reserveForFollowingKurus){
     const status=await ledger.status(),available=status.capKurus-status.chargedKurus-reserveForFollowingKurus;
     while(maxOutputTokens>minOutputTokens&&quoteModel(model,upper,maxOutputTokens,now())>available)maxOutputTokens=Math.max(minOutputTokens,maxOutputTokens-1024);
-    if(quoteModel(model,upper,maxOutputTokens,now())>available)throw new BudgetError('budget_limit','Bu kartın kalan maliyeti, ayrıntılı BHS için yeterli değil. Önceki sonuçlar ve harcamalar korundu; yeni ücretli model çağrısı yapılmadı.');
+    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit','Bu kartın kalan maliyeti, ayrıntılı BHS için yeterli değil. Önceki sonuçlar ve harcamalar korundu; yeni ücretli model çağrısı yapılmadı.');error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:available};throw error;}
     body.generationConfig.maxOutputTokens=maxOutputTokens;
    }
    const amount=quoteModel(model,upper,maxOutputTokens,now());

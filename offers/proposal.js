@@ -22,7 +22,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const client=$('.so-client');client.replaceChildren();client.style.background=data.logo.background;const img=document.createElement('img');img.alt=data.brand.name+' logosu';img.src=data.logo.image;client.append(img);
   const h=$('h1');h.replaceChildren();h.append(document.createTextNode(data.copy.headline),document.createElement('br'));add('span',data.copy.accent,h);
   $('.so-sub').textContent=data.copy.subtitle;
-  if(data.bhs.summary)$('.so-bhs-brief').textContent=data.bhs.summary;
+  if(data.bhs.summary){const summary=document.createElement('p');summary.className='so-bhs-brief so-feenote';summary.textContent=data.bhs.summary;$('#so-analysis').prepend(summary);}
   $('footer span').textContent=data.brand.name+' için özel olarak hazırlanmıştır.';
   $('.so-bhs-icon').textContent='◎';
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};

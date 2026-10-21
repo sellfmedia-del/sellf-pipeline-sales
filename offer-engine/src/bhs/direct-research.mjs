@@ -6,7 +6,7 @@ import {hash,BudgetError} from '../budget/ledger.mjs';
 import {scopeSchema,scopeEnvelope,validateScope,normalizeGeneratedScope} from '../pricing/scope.mjs';
 import {copySchema,validateCopy} from '../proposal/composition.mjs';
 import {directAuditResult,directResearchInstruction,directMethodologyVersion,directReportSchema} from './direct-report.mjs';
-import {prepareResearchInput} from './research-input.mjs';
+import {prepareResearchInput,compactResearchInput} from './research-input.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
@@ -72,8 +72,8 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
    return {packet,searches:all,searchCount:all.length,extractedSourceCount:extracted.pages?.length||0};
   }
   if(phase==='synthesis'){
-   const evidence=await previous('evidence'),{packet,searchEvidence}=prepareResearchInput(brief,evidence);
-   const generated=await providers.generate('synthesis',{instruction:directResearchInstruction(),brief,packet,searchEvidence},directReportSchema,{model:'gemini-3.1-pro-preview',maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,thinkingLevel:'MEDIUM',jsonMode:true});
+   const evidence=await previous('evidence'),research=prepareResearchInput(brief,evidence),{packet}=research,packed=compactResearchInput(research);
+   const generated=await providers.generate('synthesis',{instruction:directResearchInstruction()+'\nTaşıma notu: technicalSignals.ref alanlarını packet.sharedTechnicalSignals sözlüğünden, navigation ref alanlarını packet.sharedNavigation sözlüğünden çöz. Aynı metadata yalnız bir kez gönderilir; bu kanıt eksikliği değildir. Kaynak metinlerinde Markdown görsel adresleri çıkarılmış, bağlantı etiketleri korunmuştur.',brief,...packed},directReportSchema,{model:'gemini-3.1-pro-preview',maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,thinkingLevel:'MEDIUM',jsonMode:true});
    const synthesis={report:generated.data,analysisPacket:packet,fullPacketHash:evidenceHash(packet),usage:generated.usage,model:generated.model,methodologyVersion:directMethodologyVersion};
    directAuditResult(brief,synthesis);return synthesis;
   }
