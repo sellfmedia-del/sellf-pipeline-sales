@@ -126,6 +126,7 @@
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
       paragraph(data.summary);
+      if(data.researchReuse)paragraph('Mevcut marka araştırması korundu; teklif kapsamı güncel brief üzerinden seçilecek. '+(data.researchReuse.contextNeedsConfirmation?'Bulguların güncel hedef pazar ve görüşme bağlamına uygunluğunu kapsam onayında kontrol et.':''));
       if(data.schemaVersion!=='bhs-v2-direct'&&data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
       heading('Ön BHS boyutları');
       const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
@@ -142,9 +143,9 @@
       heading('Hizmet hipotezleri');data.serviceRecommendations.forEach(s=>paragraph(s.name+' — '+s.hypothesis+' Ölçüm: '+s.measurement));
       heading('Doğrulanacak sorular');data.meetingQuestions.forEach(q=>paragraph(q.question));
       heading('Kaynaklar');data.sources.forEach(s=>paragraph(s.id+' · '+(s.title||s.url)+' · '+s.url+' · '+(s.publishedAt||'Yayın tarihi bilinmiyor')+(data.schemaVersion==='bhs-v2-direct'?'':' · '+(s.verification?.status||''))));
-      if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');data.quality.issues.forEach(x=>paragraph(x));}
+      if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
-      summary.textContent='Kaynaklı araştırmanın tamamı';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
+      summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
@@ -269,7 +270,7 @@
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
-          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent='Kalıcı test alanı · Maliyet üst hesabı: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL';}
+          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent='Kalıcı test alanı · Kontrollü maliyet tahmini: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL · Normal hedef: 20–30 TL';}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
           if(response.phase==='complete'){action='status';continue;}

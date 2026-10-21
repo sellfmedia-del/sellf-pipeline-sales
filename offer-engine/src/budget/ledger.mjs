@@ -6,14 +6,24 @@ export const hash=value=>createHash('sha256').update(JSON.stringify(value)).dige
 export class BudgetError extends Error{constructor(code,message){super(message);this.code=code;}}
 // A tariff is valid only for its reviewed date range. Expired/unknown prices
 // fail closed. The conversion is a conservative envelope, not a quoted FX rate.
-export const tariff=Object.freeze({version:'sellf-bounded-2026-10-20-v1',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,capKurus:5000,infraKurus:500,
- models:{'gemini-3.1-pro-preview':{input:2,output:12},'gemini-4-argon':{input:2,output:10},'gemini-3.8-flash':{input:.75,output:3.75}},tavilyCredit:.008});
+export const tariff=Object.freeze({version:'sellf-bounded-2026-10-20-v1',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,normalTargetKurus:3000,capKurus:5000,infraKurus:500,
+ models:{'gemini-3.1-pro-preview':{input:2,output:12,cachedInput:.2},'gemini-4-argon':{input:2,output:10,cachedInput:.1},'gemini-3.8-flash':{input:.75,output:3.75,cachedInput:.075}},tavilyCredit:.008});
 export function quoteModel(model,inputUpper,outputUpper,now=Date.now()){
  if(now>=Date.parse(tariff.expires)||!tariff.models[model])throw new BudgetError('tariff_expired','Maliyet tarifesi doğrulanmadan yeni ücretli işlem başlatılamaz.');
  if(!Number.isSafeInteger(inputUpper)||inputUpper<0||!Number.isSafeInteger(outputUpper)||outputUpper<0||inputUpper>190000)throw new BudgetError('input_budget','Analiz girdisi güvenli maliyet sınırını aşıyor.');
  const rate=tariff.models[model];return Math.ceil((inputUpper*rate.input+outputUpper*rate.output)/1e6*tariff.usdTry*tariff.overhead*100);
 }
 export const quoteSearch=(depth='advanced')=>{if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');return Math.ceil((depth==='basic'?1:2)*tariff.tavilyCredit*tariff.usdTry*tariff.overhead*100);};
+// Reservation and consumed usage are different quantities. Keep the original
+// conservative ceiling for in-flight requests; settle verified usage at the
+// published FX snapshot plus a visible 3% conversion allowance, not at 72 TRY/USD.
+export function consumedModel(model,input,output,fx,now=Date.now(),cachedInput=0){
+ quoteModel(model,input,output,now);
+ if(!Number.isFinite(fx)||fx<=0||fx>tariff.usdTry||!Number.isSafeInteger(cachedInput)||cachedInput<0||cachedInput>input)throw new BudgetError('provider_accounting','Kullanım veya kur kaydı geçersiz.');
+ const rate=tariff.models[model],usd=((input-cachedInput)*rate.input+cachedInput*rate.cachedInput+output*rate.output)/1e6;
+ return Math.ceil(usd*fx*1.03*100);
+}
+export function consumedSearch(credits,fx){if(!Number.isFinite(credits)||credits<0||credits>2||!Number.isFinite(fx)||fx<=0||fx>tariff.usdTry)throw new BudgetError('provider_accounting','Arama tüketimi veya kur kaydı geçersiz.');return Math.ceil(credits*tariff.tavilyCredit*fx*1.03*100);}
 export async function budgetFor(req,res,leadId,{store=createPreviewStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
  if(typeof leadId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(leadId))throw new BudgetError('budget_context','Teklifin kart bilgisi gerekli.');
  const session=await sessionFor(req,res,store,secret);if(!session)throw new BudgetError('budget_session','Teklif test oturumu gerekli.');

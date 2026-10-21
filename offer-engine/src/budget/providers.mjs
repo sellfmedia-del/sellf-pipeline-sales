@@ -1,4 +1,4 @@
-import {BudgetError,hash,quoteModel,quoteSearch,tariff} from './ledger.mjs';
+import {BudgetError,hash,quoteModel,quoteSearch,tariff,consumedModel,consumedSearch} from './ledger.mjs';
 import {failureReason} from '../bhs/provider.mjs';
 import {providerSchema} from '../bhs/schema.mjs';
 import {offerGeminiKey} from '../config.mjs';
@@ -7,7 +7,7 @@ import {readPartialOutput} from '../bhs/partial-output.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
 export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget}={}){
- let fxChecked=0,fxInFlight;
+ let fxChecked=0,fxInFlight,fxSnapshot;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
  async function readCurrency(){
   validTariff();if(now()-fxChecked<3600000)return;
@@ -16,7 +16,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   const xml=await response.text(),block=xml.match(/<Currency\b[^>]*(?:CurrencyCode|Kod)="USD"[^>]*>([\s\S]*?)<\/Currency>/)?.[1],rate=Number(block?.match(/<ForexSelling>([\d.]+)<\/ForexSelling>/)?.[1]);
   const date=xml.match(/Tarih="(\d{2})\.(\d{2})\.(\d{4})"/),published=date?Date.UTC(Number(date[3]),Number(date[2])-1,Number(date[1])):NaN;
   if(!Number.isFinite(published)||now()-published>7*86400000||published>now()+86400000||!Number.isFinite(rate)||rate<=0||rate>tariff.usdTry)throw new BudgetError('fx_limit','Güncel kur bütçe varsayımıyla eşleşmiyor; yeni ücretli işlem başlatılmadı.');
-  fxChecked=now();
+  fxSnapshot={usdTry:rate,publishedAt:new Date(published).toISOString().slice(0,10),conversionAllowance:.03};fxChecked=now();
  }
  async function checkCurrency(){
   if(!fxInFlight)fxInFlight=readCurrency().finally(()=>{fxInFlight=null;});
@@ -48,22 +48,24 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    return ledger.once('extract:'+hash(input),input,quoteSearch(),async()=>{
     const result=await readJson('https://api.tavily.com/extract',input,{Authorization:'Bearer '+tavilyKey},30000);
     if(result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>2))throw new BudgetError('provider_accounting','Kaynak okuma tüketimi ayrılan sınırla eşleşmiyor.');
-    return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url))};
-   });
+    return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url)),fx:fxSnapshot,creditsUpper:2,accountedKurus:consumedSearch(2,fxSnapshot.usdTry)};
+   },{settle:value=>value.accountedKurus});
   },
-  async search(query,{depth='advanced'}={}){
+  async search(query,{depth='advanced',maxResults=6}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');
    if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');
-   const input={query,search_depth:depth,max_results:6,...(depth==='advanced'?{chunks_per_source:3}:{include_usage:true}),include_answer:false,include_raw_content:false,auto_parameters:false};
-   return ledger.once('search:'+(depth==='basic'?'basic:':'')+hash(query),input,quoteSearch(depth),async()=>{
+   if(!Number.isSafeInteger(maxResults)||maxResults<1||maxResults>12)throw new BudgetError('invalid_query','Arama sonuç sınırı geçersiz.');
+   const input={query,search_depth:depth,max_results:maxResults,...(depth==='advanced'?{chunks_per_source:3}:{include_usage:true}),include_answer:false,include_raw_content:false,auto_parameters:false};
+   return ledger.once('search:'+(depth==='basic'?'basic:':'')+(maxResults===6?'':'r'+maxResults+':')+hash(query),input,quoteSearch(depth),async()=>{
     const result=await readJson('https://api.tavily.com/search',input,{Authorization:'Bearer '+tavilyKey},25000);
     if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');
-    return {query,results:(result.results||[]).slice(0,6).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)}))};
-   });
+    const credits=depth==='basic'?1:2;
+    return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
+   },{settle:value=>value.accountedKurus});
   },
   async generate(stage,input,schema,{model='gemini-3.8-flash',maxOutputTokens=4096,minOutputTokens=maxOutputTokens,reserveForFollowingKurus=0,thinkingLevel='LOW',jsonMode=false,image}={}){
-   await checkCurrency();if(!geminiKey)throw new BudgetError('not_configured','Gemini bağlantısı gerekli.');
+   if(!geminiKey)throw new BudgetError('not_configured','Gemini bağlantısı gerekli.');
    if(!Object.hasOwn(tariff.models,model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>16384)throw new BudgetError('model_budget','Model veya çıktı bütçesi izinli değil.');
    const context={...input,...(jsonMode?{outputContract:schema}:{})};delete context.instruction;delete context.outputInstructions;
    const instruction=[input.instruction,input.outputInstructions].filter(x=>typeof x==='string').join('\n');
@@ -73,6 +75,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(!Number.isSafeInteger(minOutputTokens)||minOutputTokens<1||minOutputTokens>maxOutputTokens||!Number.isSafeInteger(reserveForFollowingKurus)||reserveForFollowingKurus<0)throw new BudgetError('model_budget','Çıktı bütçesi geçersiz.');
    const step='model:'+stage+':'+hash({body,minOutputTokens,reserveForFollowingKurus}),cached=await ledger.get(step);
    if(cached?.state==='complete'){if(cached.value?.rejected)throw new BudgetError('provider_rejected','Bu model isteği daha önce reddedildi; aynı istek yeniden başlatılmadı.');return cached.value;}
+   await checkCurrency();
    // Exact request is tokenized before generation. Additional input allowance
    // covers control/schema overhead; no tools, media, history or autonomous loop.
    const count=await readJson(base+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey},20000);
@@ -85,6 +88,11 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     body.generationConfig.maxOutputTokens=maxOutputTokens;
    }
    const amount=quoteModel(model,upper,maxOutputTokens,now());
+   const status=await ledger.status(),estimatedKurus=consumedModel(model,count.totalTokens,maxOutputTokens,fxSnapshot.usdTry,now());
+   const costDecision={tier:status.chargedKurus+estimatedKurus>tariff.normalTargetKurus?'quality_exception':'normal',estimatedKurus,normalTargetKurus:tariff.normalTargetKurus,capKurus:tariff.capKurus};
+   // Above-target work is identifiable and bounded; never silently shorten the
+   // approved research or switch models to manufacture a lower displayed cost.
+   if(costDecision.tier==='quality_exception')console.info(JSON.stringify({event:'bhs_cost_exception',stage,model,...costDecision,reason:'required_context_and_full_output_envelope'}));
    return ledger.once(step,body,amount,async()=>{
     const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},240000);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
@@ -95,7 +103,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const text=(candidate.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
     let parsed;try{parsed={data:JSON.parse(text)};}catch{if(!offerContent)throw new BudgetError('invalid_report','Model raporu beklenen JSON biçiminde değil.');parsed=readPartialOutput(text);}
     if(candidate.finishReason==='MAX_TOKENS')parsed={...parsed,originalText:text,issues:[...(parsed.issues||[]),'model_output_limit']};
-    return {...parsed,usage,model,reservedKurus:amount,accountedKurus:quoteModel(model,usage.promptTokenCount,output,now()),tariffVersion:tariff.version};
+    return {...parsed,usage,model,reservedKurus:amount,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:tariff.version,accountingVersion:'verified-usage-fx-v2'};
    },{settle:value=>value.accountedKurus});
   }
  };

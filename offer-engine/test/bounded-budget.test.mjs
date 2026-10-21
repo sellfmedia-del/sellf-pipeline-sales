@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createLedger,quoteModel,quoteSearch,tariff} from '../src/budget/ledger.mjs';
+import {createLedger,quoteModel,quoteSearch,tariff,consumedModel,consumedSearch} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
 
 // Two worker instances share the same durable-store contract. The SQL lock is
@@ -34,13 +34,13 @@ test('truncated BHS output is retained, cost-settled and reused without a second
  }});
  const schema={type:'object',properties:{}},options={model:'gemini-3.1-pro-preview',maxOutputTokens:4096};
  const result=await provider.generate('synthesis',{},schema,options),cost=await ledger.status();assert.equal(result.originalText,raw);assert.equal(result.data.summary,'Mevcut araştırma.');assert.equal(result.data.findings.length,1);assert.equal(result.data.sources,undefined);
- assert.ok(result.issues.includes('model_output_limit'));assert.equal(result.accountedKurus,quoteModel(result.model,1000,100,time));
+ assert.ok(result.issues.includes('model_output_limit'));assert.equal(result.accountedKurus,consumedModel(result.model,1000,100,40,time));
  assert.deepEqual(await provider.generate('synthesis',{},schema,options),result);assert.equal(paid,1);assert.deepEqual(await ledger.status(),cost);
 });
 test('targeted one-credit queries preserve the hard ceiling and cannot reuse a two-credit request as if it were cheap',async()=>{
  const db=store(),ledger=createLedger(db.call);let searches=0;
  const providers=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async(url,init)=>{if(url.includes('tcmb'))return fx(40);searches++;const body=JSON.parse(init.body);assert.equal(body.auto_parameters,false);if(body.search_depth==='basic'){assert.equal(body.chunks_per_source,undefined);assert.equal(body.include_usage,true);}return json({results:[],usage:{credits:body.search_depth==='basic'?1:2}});}});
- await providers.search('A company');await providers.search('A company',{depth:'basic'});await providers.search('A company',{depth:'basic'});assert.equal(searches,2);assert.equal((await ledger.status()).chargedKurus,500+116+58);
+ await providers.search('A company');await providers.search('A company',{depth:'basic'});await providers.search('A company',{depth:'basic'});assert.equal(searches,2);assert.equal((await ledger.status()).chargedKurus,500+consumedSearch(2,40)+consumedSearch(1,40));
 });
 test('shared budget prevents concurrent duplicate paid work and caches completion',async()=>{
  const db=store(),one=createLedger(db.call),two=createLedger(db.call);let release,calls=0;
@@ -127,7 +127,7 @@ test('Tavily advanced search is bounded, cached, and charged without free-quota 
  const provider=createBoundedProviders({ledger:createLedger(db.call),geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async(url,options)=>{
   if(url.includes('tcmb'))return fx(46);paid++;const body=JSON.parse(options.body);assert.equal(body.search_depth,'advanced');assert.equal(body.auto_parameters,false);assert.equal(body.max_results,6);return json({results:[{url:'https://example.com',content:'evidence'}]});
  }});
- await provider.search('brand');await provider.search('brand');assert.equal(paid,1);assert.equal((await createLedger(db.call).status()).chargedKurus,616);
+ await provider.search('brand');await provider.search('brand');assert.equal(paid,1);assert.equal((await createLedger(db.call).status()).chargedKurus,500+consumedSearch(2,46));
 });
 test('parallel discovery shares a single FX lookup and still reserves every paid search',async()=>{
  const db=store();let fxCalls=0,paid=0,release;const ready=new Promise(r=>release=r);
@@ -136,7 +136,7 @@ test('parallel discovery shares a single FX lookup and still reserves every paid
  }});
  const pending=Promise.all(['brand finance','brand reviews','brand competitors'].map(q=>provider.search(q)));
  await new Promise(r=>setImmediate(r));assert.equal(fxCalls,1);release();await pending;
- assert.equal(paid,3);assert.equal((await createLedger(db.call).status()).chargedKurus,848);
+ assert.equal(paid,3);assert.equal((await createLedger(db.call).status()).chargedKurus,500+3*consumedSearch(2,46));
 });
 
 test('logo pixels are included in token counting and generation under the same card ledger',async()=>{
@@ -166,6 +166,6 @@ test('advanced page extraction shares the card ceiling, caches paid work, and ch
   if(url.includes('tcmb'))return fx(46);calls++;const body=JSON.parse(options.body);assert.equal(body.extract_depth,'advanced');assert.equal(body.chunks_per_source,5);assert.ok(body.urls.length<=5);
   return json({results:[{url:'https://brand.example/',raw_content:'Actual public source text.'}],usage:{credits:0}});
  }});
- await provider.extract(['https://brand.example/']);await provider.extract(['https://brand.example/']);assert.equal(calls,1);assert.equal((await ledger.status()).chargedKurus,616);
+ await provider.extract(['https://brand.example/']);await provider.extract(['https://brand.example/']);assert.equal(calls,1);assert.equal((await ledger.status()).chargedKurus,500+consumedSearch(2,46));
  await assert.rejects(provider.extract(Array(6).fill('https://brand.example/')),e=>e.code==='invalid_query');
 });

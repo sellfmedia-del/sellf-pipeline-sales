@@ -62,7 +62,7 @@ export function boundedResearchContext(input){
   });
  }
  const selected=result.searchEvidence.map(s=>({...s,results:[]})),seen=new Set();let size=0;
- for(let rank=0;rank<6;rank++)for(let i=0;i<result.searchEvidence.length;i++){
+ for(let rank=0;rank<12;rank++)for(let i=0;i<result.searchEvidence.length;i++){
   const r=result.searchEvidence[i].results[rank];if(!r)continue;
   const value={...r,content:r.content.slice(0,600)},key=value.url+'\n'+value.content;if(seen.has(key))continue;
   const length=JSON.stringify(value).length;if(size+length>18000)continue;selected[i].results.push(value);seen.add(key);size+=length;

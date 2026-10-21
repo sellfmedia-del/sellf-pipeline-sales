@@ -18,3 +18,11 @@ export function methodologySearchQueries(brief,plan){
  const rows=methodologyAreas.map(a=>{const index=Number(a.key.split('_').at(-1))-1,base=a.dimension==='digital'?domain:brand,peer=a.dimension==='competition'&&peers.length?' '+peers.map(p=>'"'+p+'"').join(' '):'';return {...a,query:(base+peer+' '+terms[a.dimension][index][tr?1:0]).slice(0,500)};});
  return rows.sort((a,b)=>Number(a.key.split('_').at(-1))-Number(b.key.split('_').at(-1))||methodologyAreas.findIndex(x=>x.key===a.key)-methodologyAreas.findIndex(x=>x.key===b.key));
 }
+
+// Related areas share a retrieval request, never a report slot. Twelve results
+// per request retain the previous 144 candidate slots across all 24 areas.
+export function groupedMethodologyQueries(brief,plan){
+ const byKey=new Map(methodologySearchQueries(brief,plan).map(a=>[a.key,a]));
+ const groups=[['financial_1','financial_4'],['operations_2','digital_2'],['funnel_2','funnel_4'],['digital_1','competition_1'],['perception_1','digital_4'],['competition_2','financial_2'],['financial_3','operations_1'],['operations_3','perception_2'],['operations_4','competition_3'],['funnel_1','digital_5'],['funnel_3','digital_3'],['funnel_5','perception_3']];
+ return groups.map(keys=>{const areas=keys.map(key=>byKey.get(key)),words=areas.flatMap(a=>a.query.split(/\s+/));return {keys,areas,query:[...new Set(words)].join(' ').slice(0,500)};});
+}

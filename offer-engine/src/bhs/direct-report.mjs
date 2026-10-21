@@ -31,6 +31,7 @@ reportExcerpt statement ile aynı olsun. Kaynak URL ve başlıklarını JSON iç
 // This is a format/transport adapter, not a second content reviewer.
 export function directAuditResult(brief,synthesis){
  const report=offerReport(synthesis.report);
+ if(synthesis.reuse?.contextNeedsConfirmation)report.transfer.issues.push({path:'briefContext',reason:'existing_brand_research_current_scope_requires_confirmation'});
  for(const reason of synthesis.outputIssues||[])report.transfer.issues.push({path:'modelOutput',reason});
  report.transfer.contentComplete=report.transfer.issues.length===0;
  if(JSON.stringify(report).length>1500000)throw Error('BHS JSON boyutu aktarım sınırını aşıyor.');
@@ -40,7 +41,7 @@ export function directAuditResult(brief,synthesis){
  const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
- return {status:'ready',data:{...report,report,...(synthesis.originalModelText?{originalModelText:synthesis.originalModelText}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
+ return {status:'ready',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),...(synthesis.originalModelText?{originalModelText:synthesis.originalModelText}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
   quality:{checksPassed:true,contentComplete:report.transfer.contentComplete,issues:report.transfer.issues,scope:'offer-transfer-only',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
   researchMethod:'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,
   usage:synthesis.usage||null}};

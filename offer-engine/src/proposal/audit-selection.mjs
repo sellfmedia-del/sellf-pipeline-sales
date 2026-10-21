@@ -11,7 +11,8 @@ function short(value,max){
 }
 export function selectProposalAudit(audit={},brief={},pricing={}){
  const knownSources=new Set(array(audit.sources).map(s=>s?.id));
- const findings=array(audit.findings).filter(f=>f&&typeof f==='object'&&f.kind!=='brief').map(f=>{const sourceIds=array(f.sourceIds).filter(id=>knownSources.has(id));return {...f,sourceIds,...(!sourceIds.length?{verification:'unverified'}:{})};}),linked=new Set(array(pricing.scope?.selected).flatMap(s=>array(s.findingIds)));
+ const contextPending=audit.researchReuse?.contextNeedsConfirmation===true;
+ const findings=array(audit.findings).filter(f=>f&&typeof f==='object'&&f.kind!=='brief').map(f=>{const sourceIds=array(f.sourceIds).filter(id=>knownSources.has(id));return {...f,sourceIds,...(!sourceIds.length||contextPending?{verification:'unverified'}:{})};}),linked=new Set(array(pricing.scope?.selected).flatMap(s=>array(s.findingIds)));
  const critical=new Set([audit.criticalOpportunityFindingId,audit.criticalRiskFindingId].filter(Boolean));
  const terms=new Set(normalize([brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' ')).match(/[\p{L}\p{N}]{4,}/gu)||[]);
  const rank=f=>{
