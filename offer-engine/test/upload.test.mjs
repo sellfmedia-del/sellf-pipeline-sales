@@ -57,14 +57,15 @@ test('invalid, disguised and oversized uploads are rejected before use',async()=
   const png=await screenshot();
   await assert.rejects(()=>prepareUploadedLogo(png.replace('image/png','image/jpeg')),/PNG/);
 });
-test('upload endpoint stays preview-only and same-origin',async()=>{
+test('upload endpoint stays closed without explicit production enablement and remains same-origin',async()=>{
+  const productionFlag=process.env.OFFER_PRODUCTION_ENABLED;delete process.env.OFFER_PRODUCTION_ENABLED;
   const original=process.env.VERCEL_ENV;
   const response=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},status(code){this.code=code;return this;},json(data){this.body=data;return this;}});
   try{
     process.env.VERCEL_ENV='production';let res=response();await handler({method:'POST',headers:{}},res);assert.equal(res.code,503);
     process.env.VERCEL_ENV='preview';res=response();await handler({method:'POST',headers:{host:'preview.example',origin:'https://other.example'}},res);assert.equal(res.code,403);
     res=response();await handler({method:'POST',headers:{host:'preview.example',origin:'https://preview.example'},body:{image:await screenshot()}},res);assert.equal(res.code,200);assert.equal(res.body.candidates[0].quality.transparency,true);
-  }finally{if(original===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=original;}
+  }finally{if(productionFlag===undefined)delete process.env.OFFER_PRODUCTION_ENABLED;else process.env.OFFER_PRODUCTION_ENABLED=productionFlag;if(original===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=original;}
 });
 
 test('near-white JPEG screenshot and monochrome letter counters become transparent without recoloring ink',async()=>{

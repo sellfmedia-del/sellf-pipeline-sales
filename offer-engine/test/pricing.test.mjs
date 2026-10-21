@@ -116,6 +116,7 @@ const session='a'.repeat(43),host='preview.vercel.app',secret='test-pricing-secr
 function request(body,extra={}){return {method:'POST',headers:{host,origin:'https://'+host,cookie:'__Host-offer-research='+session,...extra},body};}
 function signed(ctx,now=Date.now()){return createPricingProof(secret).encode({kind:'audit_ready',createdAt:now,briefHash:briefHash(ctx.brief),auditHash:digest(ctx.audit)},session,host);}
 test('pricing API binds actual approved audit to host/session/brief; idempotent paid start and deterministic completion',async()=>{
+ const productionFlag=process.env.OFFER_PRODUCTION_ENABLED;delete process.env.OFFER_PRODUCTION_ENABLED;
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
   const ctx=context(),proof=signed(ctx),body={action:'start',requestId:'price_request_12345678',brief:ctx.brief,audit:ctx.audit,pricingProof:proof};let starts=0;
@@ -126,7 +127,7 @@ test('pricing API binds actual approved audit to host/session/brief; idempotent 
   const other=response();await handler(request(body,{cookie:'__Host-offer-research='+'b'.repeat(43)}),other);assert.equal(other.statusCode,422);assert.equal(starts,1);
   const origin=response();await handler(request(body,{origin:'https://elsewhere.example'}),origin);assert.equal(origin.statusCode,403);
   process.env.VERCEL_ENV='production';const closed=response();await handler(request(body),closed);assert.equal(closed.statusCode,503);
- }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+ }finally{if(productionFlag===undefined)delete process.env.OFFER_PRODUCTION_ENABLED;else process.env.OFFER_PRODUCTION_ENABLED=productionFlag;if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
 });
 test('provider failure or invalid scope still returns priced alternatives once, without inventing budget or retrying paid POST',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
