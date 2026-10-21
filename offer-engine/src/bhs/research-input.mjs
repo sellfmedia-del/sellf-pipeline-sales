@@ -46,3 +46,26 @@ export function compactResearchInput(input){
  result.packet.sharedNavigation=navigation;
  return result;
 }
+
+// Bounded retrieval context for the larger, area-by-area discovery. Originals
+// remain in the durable evidence packet. Keep every read source, every selected
+// topic excerpt and source ID; only the window sent to Pro is bounded.
+export function boundedResearchContext(input){
+ const result=compactResearchInput(input);
+ const signal=/revenue|funding|investment|price|\$|₺|delivery|return|shipping|team|employees|subscription|checkout|review|rating|complaint|followers|engagement|traffic|authority|analytics|pixel|mobile|ciro|yatırım|fiyat|kargo|iade|ekip|çalışan|abonelik|ödeme|yorum|şikayet|takipçi|etkileşim|trafik/gi;
+ for(const source of result.packet.sources){
+  const width=Math.max(300,Math.floor(2400/Math.max(1,source.excerpts.length)));
+  source.excerpts=source.excerpts.map(e=>{
+   if(e.text.length<=width)return e;
+   const candidates=[];for(let start=0;start<e.text.length;start+=Math.max(1,width-80)){const text=e.text.slice(start,start+width);candidates.push({start,text,score:(text.match(signal)||[]).length});}
+   const best=candidates.sort((a,b)=>b.score-a.score||a.start-b.start)[0];return {...e,text:best.text,offset:(e.offset||0)+best.start,scope:'Araştırma alanıyla ilgili seçilmiş kaynak kesiti; tam sayfa değildir.'};
+  });
+ }
+ const selected=result.searchEvidence.map(s=>({...s,results:[]})),seen=new Set();let size=0;
+ for(let rank=0;rank<6;rank++)for(let i=0;i<result.searchEvidence.length;i++){
+  const r=result.searchEvidence[i].results[rank];if(!r)continue;
+  const value={...r,content:r.content.slice(0,600)},key=value.url+'\n'+value.content;if(seen.has(key))continue;
+  const length=JSON.stringify(value).length;if(size+length>18000)continue;selected[i].results.push(value);seen.add(key);size+=length;
+ }
+ result.searchEvidence=selected.filter(s=>s.results.length);return result;
+}

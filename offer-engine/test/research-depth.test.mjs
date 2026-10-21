@@ -6,7 +6,7 @@ import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {plan} from './fixtures/evidence.mjs';
 import {directReportSchema,directResearchInstruction} from '../src/bhs/direct-report.mjs';
 import {researchTopics} from '../src/bhs/research-topics.mjs';
-import {prepareResearchInput,compactResearchInput} from '../src/bhs/research-input.mjs';
+import {prepareResearchInput,compactResearchInput,boundedResearchContext} from '../src/bhs/research-input.mjs';
 import {researchHtmlText} from '../src/bhs/evidence.mjs';
 
 test('source excerpts retain nonfinancial methodology evidence on a long financial-heavy page',()=>{
@@ -40,4 +40,10 @@ test('research transport keeps source facts and navigation while removing duplic
  const input={packet:{sources:[{id:'a',url:'https://brand.example/',technicalSignals,excerpts:[{text:'Revenue 100. Delivery 2 days.',offset:0},{text:'Delivery 2 days. Subscription 20%.',offset:13}]},{id:'b',url:'https://brand.example/shop',technicalSignals,excerpts:[{text:'[Plan](https://brand.example/subscribe) $24.95 ![Logo](https://brand.example/logo.png)',offset:0}]}]},searchEvidence:[{query:'pricing',results:[]}]},original=structuredClone(input),out=compactResearchInput(input);
  assert.deepEqual(input,original);assert.equal(out.packet.sources.length,2);assert.equal(Object.keys(out.packet.sharedTechnicalSignals).length,1);assert.equal(Object.values(out.packet.sharedNavigation)[0].url,'https://brand.example/subscribe');
  assert.equal(out.packet.sources[0].excerpts.map(e=>e.text).join(''),'Revenue 100. Delivery 2 days. Subscription 20%.');assert.match(out.packet.sources[1].excerpts[0].text,/Plan \$24\.95 Logo/);assert.deepEqual(out.searchEvidence,input.searchEvidence);
+});
+
+test('expanded discovery keeps all read sources and topic excerpts while limiting duplicate unread snippets and model context',()=>{
+ const text='Generic navigation text. '.repeat(50)+'Customer subscription price $24.95, delivery 2 days, return policy 30 days. '+ 'Generic text. '.repeat(60);
+ const input={packet:{sources:Array.from({length:24},(_,i)=>({id:'ev'+i,url:'https://brand.example/'+i,excerpts:Array.from({length:7},(_,j)=>({id:'p'+j,text,offset:j*2000}))}))},searchEvidence:Array.from({length:26},(_,i)=>({query:'area '+i,results:Array.from({length:6},(_,j)=>({url:'https://news.example/'+i+'/'+j,title:'Source',content:'Read snippet '.repeat(100)}))}))},before=structuredClone(input),out=boundedResearchContext(input);
+ assert.deepEqual(input,before);assert.deepEqual(out.packet.sources.map(s=>s.id),input.packet.sources.map(s=>s.id));assert.ok(out.packet.sources.every(s=>s.excerpts.length===7&&s.excerpts.every(e=>e.text.includes('$24.95'))));assert.ok(out.packet.sources.every(s=>s.excerpts.reduce((n,e)=>n+e.text.length,0)<=2400));assert.ok(out.searchEvidence.flatMap(s=>s.results).reduce((n,r)=>n+JSON.stringify(r).length,0)<=18000);
 });
