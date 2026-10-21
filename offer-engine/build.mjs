@@ -26,3 +26,7 @@ await writeFile(path.join(here,'public/index.html'),buildPipelinePreview(pipelin
 // Deterministic synthetic example: no paid model, customer data or persistence.
 process.chdir(here);
 await writeTemplateExample();
+
+// Only the explicitly provisioned synthetic QA session opts into a live
+// recovery check. Ordinary preview/production builds never call providers.
+if(process.env.OFFER_REGRESSION_SESSION)await import('./scripts/recovery-regression.mjs');
