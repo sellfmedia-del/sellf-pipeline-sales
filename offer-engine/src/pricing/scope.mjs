@@ -1,5 +1,6 @@
 import {operations,byId} from './catalog.mjs';
 import {assertSchema} from '../bhs/schema.mjs';
+import {isDeepStrictEqual} from 'node:util';
 const str=maxLength=>({type:'string',minLength:1,maxLength});
 const nullable=s=>({anyOf:[s,{type:'null'}]});
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -57,6 +58,9 @@ export function validateScope(value,brief,audit){
  // Stored BHS scope includes derived metadata. Recompute it from the original
  // scope fields on every boundary; never trust a stored target or fallback flag.
  const {target:storedTarget,warnings:storedWarnings,fallback:storedFallback,...raw}=value||{};
+ const expected=fallbackScope(brief),{target:expectedTarget,warnings:expectedWarnings,fallback:expectedFallback,...expectedRaw}=expected;
+ // Recognize only the exact server-derived fallback, never a caller's flag.
+ if(isDeepStrictEqual(raw,expectedRaw))return expected;
  assertSchema(raw,scopeSchema,'scope');
  const plan=structuredClone(raw),ids=new Set(),findings=new Set(audit.findings.map(f=>f.id)),warnings=[];
  for(const service of plan.services){
@@ -90,8 +94,8 @@ export function normalizeGeneratedScope(value,brief,audit){
 // cover a clearly labelled initial planning scope, not a fabricated full audit.
 export function fallbackScope(brief){
  const aliases={meta:/\bmeta\b|facebook|instagram reklam/,google_ads:/google ads|google reklam/,b2b:/\bb2b\b/,onsite_seo:/on.?site seo/,offsite_seo:/off.?site seo/,technical_seo:/teknik seo/,social:/sosyal medya yonet/,design:/tasarim/,moderation:/moderasyon/,tiktok:/tiktok/,amazon_ppc:/amazon ppc/,ugc:/\bugc\b|barter/};
- const text=normalize(brief.services),services=Object.entries(aliases).filter(([,re])=>re.test(text)).slice(0,3).map(([serviceId])=>({serviceId,phase:'start',priority:1,reason:'Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.',briefQuote:brief.services,findingIds:[]}));
- if(!services.length)services.push({serviceId:'media_planning',phase:'start',priority:1,reason:'Geçici başlangıç alternatifi: hedefler, medya ve bütçenin planlanması. Tam operasyon kapsamı ayrıca gözden geçirilmeli.',briefQuote:null,findingIds:[]});
+ const text=normalize(brief.services),services=Object.entries(aliases).filter(([,re])=>re.test(text)).slice(0,3).map(([serviceId])=>({serviceId,phase:'start',priority:1,reason:'Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.',briefQuote:brief.services.slice(0,1200),findingIds:[]}));
+ if(!services.length)services.push({serviceId:'media_planning',phase:'start',priority:1,reason:'Geçici başlangıç alternatifi: hedefler, medya ve bütçenin planlanması. Tam operasyon kapsamı ayrıca gözden geçirilmeli.',briefQuote:briefParts(brief).find(v=>typeof v==='string'&&v.trim())?.slice(0,1200)||null,findingIds:[]});
  const part=briefParts(brief).find(concern);
- return {summary:'Kapsam değerlendirmesi tamamlanamadı; fiyatlı başlangıç alternatifleri kontrol için hazırlandı.',services,budget:{posture:part?'limited':'unspecified',quote:part||null,targetQuote:null,targetScope:'unspecified'},target:null,exclusions:['Doğrulanmamış özel işler ve reklam harcaması bu fiyatlara dahil değildir.'],warnings:['Başlangıç kapsamı kontrol edilmeli; yeni model çağrısı otomatik başlatılmadı.'],fallback:true};
+ return {summary:'Kapsam değerlendirmesi tamamlanamadı; fiyatlı başlangıç alternatifleri kontrol için hazırlandı.',services,budget:{posture:part?'limited':'unspecified',quote:part?.slice(0,1200)||null,targetQuote:null,targetScope:'unspecified'},target:null,exclusions:['Doğrulanmamış özel işler ve reklam harcaması bu fiyatlara dahil değildir.'],warnings:['Başlangıç kapsamı kontrol edilmeli; yeni model çağrısı otomatik başlatılmadı.'],fallback:true};
 }

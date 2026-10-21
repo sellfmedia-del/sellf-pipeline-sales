@@ -26,15 +26,15 @@ test('discovery searches start together and source limitations do not start a se
  const planning=runBoundedStage({phase:'source_plan',brief,ledger,providers});await new Promise(r=>setImmediate(r));assert.equal(started,2);release();await planning;
  packet.unavailable=[{url:plan.entities[1].website,reason:'HTTP_403'}];
  await runBoundedStage({phase:'evidence',brief,ledger,providers,collect:async()=>packet});assert.equal(started,14);
- const synthesis=await runBoundedStage({phase:'synthesis',brief,ledger,providers});assert.deepEqual(synthesis.report,report);assert.deepEqual(generated,['source_plan','synthesis']);
+ const synthesis=await runBoundedStage({phase:'synthesis',brief,ledger,providers});assert.deepEqual(synthesis.report.originalReport,report);assert.deepEqual(generated,['source_plan','synthesis']);
 });
-test('handoff preserves complete model JSON without semantic approval, recomputes only weighted arithmetic, and rejects unsafe URLs',()=>{
+test('handoff preserves original model JSON, recomputes only weighted arithmetic, and excludes unsafe URLs from offers',()=>{
  const {report}=context();report.competitors[0].scaleReason='Kamuya açık ciro verisi bu kaynakta yer almamaktadır.';
  report.dimensions.forEach(d=>d.score=60);const before=structuredClone(report),result=directAuditResult(brief,{report});
- assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,60);assert.deepEqual(result.data.report,before);assert.deepEqual(report,before);
- assert.equal(result.data.quality.scope,'json-format-only');assert.equal(result.data.quality.semanticBenchmark,'not_requested');assertResult('audit',result);
+ assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,60);assert.deepEqual(result.data.report.originalReport,before);assert.deepEqual(report,before);
+ assert.equal(result.data.quality.scope,'offer-transfer-only');assert.equal(result.data.quality.semanticBenchmark,'not_requested');assertResult('audit',result);
  assert.ok(result.data.rawReport.includes('## 9. Kaynaklar'));assert.ok(result.data.rawReport.includes('Ön BHS: 60/100'));
- report.sources[0].url='javascript:alert(1)';assert.throws(()=>directAuditResult(brief,{report}),/bağlantı/);
+ report.sources[0].url='javascript:alert(1)';const partial=directAuditResult(brief,{report});assert.equal(partial.status,'ready');assert.ok(!partial.data.sources.some(s=>s.url.startsWith('javascript:')));assert.equal(partial.data.findings[0].verification,'unverified');
 });
 test('same card reuses the completed paid report without invoking a model again',async()=>{
  const {ledger,rows}=cachedLedger(),stored={report:context().report,model:'stored-pro'};

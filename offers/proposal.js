@@ -29,7 +29,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};
   for(const key of ['urgent','important','low']){
    const items=findings.filter(f=>priority[f.priority]===key),list=$('#so-actions-'+key);list.replaceChildren();
-   items.forEach(f=>{const li=add('li',(f.kind==='inference'?'Çıkarım: ':'')+f.statement,list);li.title=f.impact;if(f.impact){const detail=add('details','',li);add('summary','İş etkisi ve dayanak',detail);add('p',f.impact,detail);add('small',(f.sourceIds||[]).join(' · '),detail);}});
+   items.forEach(f=>{const li=add('li',(f.verification==='unverified'?'Doğrulanacak: ':f.kind==='inference'?'Çıkarım: ':'')+f.statement,list);li.title=f.impact;if(f.impact){const detail=add('details','',li);add('summary','İş etkisi ve dayanak',detail);add('p',f.impact,detail);add('small',(f.sourceIds||[]).join(' · '),detail);}});
    if(!items.length)add('li','Bu öncelikte doğrulanmış bulgu yok.',list);
    $('#so-count-'+key).textContent=({urgent:'Acil',important:'Önemli',low:'Düşük öncelikli'})[key]+' · '+items.length;
   }
@@ -43,7 +43,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const labels=[names[id],d.score==null?'Veri eksik':d.score+'/100',d.dataStatus==='full'?'Kaynaklı değerlendirme':'İç veriyle doğrula'];
    labels.forEach((label,i)=>{if(i)add('span','→',flow);add('div',label,flow);});
    $('#so-takeaway').textContent=d.rationale;
-   let highlights=$('#so-dimension-highlights');if(!highlights){highlights=document.createElement('ul');highlights.className='so-dimension-highlights';highlights.id='so-dimension-highlights';$('#so-takeaway').after(highlights);}highlights.replaceChildren();for(const item of (d.highlights||[]))add('li',item.text,highlights);
+   let highlights=$('#so-dimension-highlights');if(!highlights){highlights=document.createElement('ul');highlights.className='so-dimension-highlights';highlights.id='so-dimension-highlights';$('#so-takeaway').after(highlights);}highlights.replaceChildren();for(const item of (d.highlights||[]))add('li',(item.verification==='unverified'?'Doğrulanacak: ':'')+item.text,highlights);
    if(d.score!=null){const bar=add('div','',flow,'so-score');bar.style.gridColumn='1 / -1';const fill=add('span','',bar);fill.style.width=Math.max(0,Math.min(100,d.score))+'%';}
   }
   root.querySelectorAll('[data-dim]').forEach(b=>b.addEventListener('click',()=>dimension(b.dataset.dim)));dimension('financial');
@@ -54,7 +54,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const scroll=add('div','',details,'so-benchmark-scroll'),table=add('table','',scroll);add('caption','Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.',table);
    const ids=[...new Set(data.bhs.benchmarks.flatMap(b=>b.entries.map(e=>e.entityId)))],peerNames=new Map((data.bhs.competitors||[]).map(p=>[p.id,p.name]));
    const head=add('tr','',add('thead','',table));add('th','Metrik',head);ids.forEach(id=>add('th',peerNames.get(id)||data.brand.name,head));const body=add('tbody','',table);
-   for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',benchmarkNames[row.metric]||row.metric,tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?'Veri bulunamadı':[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
+   for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',benchmarkNames[row.metric]||row.metric,tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?'Veri bulunamadı':(e.verification==='unverified'?'Doğrulanacak: ':'')+[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
   }
   const full=add('details','',$('#so-analysis'));add('summary','Seçili bulguların kaynakları',full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}

@@ -1,8 +1,7 @@
 import {researchTopics} from './research-topics.mjs';
-import {BudgetError} from '../budget/ledger.mjs';
 
 // Stable fields come from the approved methodology, never from model-selected
-// headings. A missing field is a format failure, not an invitation to invent it.
+// headings. Missing evidence stays missing; it must not discard the paid report.
 export const methodologyAreas=Object.entries(researchTopics).flatMap(([dimension,topics])=>topics.map((topic,i)=>({key:dimension+'_'+(i+1),dimension,topic})));
 const entry={type:'object',additionalProperties:false,required:['status','observation','sourceIds'],properties:{status:{type:'string',enum:['observed','partial','unavailable']},observation:{type:'string',minLength:1,maxLength:1000},sourceIds:{type:'array',maxItems:24,items:{type:'string',maxLength:80}}}};
 export const methodologyAreasSchema={type:'object',additionalProperties:false,required:methodologyAreas.map(a=>a.key),properties:Object.fromEntries(methodologyAreas.map(a=>[a.key,{...structuredClone(entry),description:a.topic}]))};
@@ -12,15 +11,12 @@ export const methodologyAreasGrammar={type:'object',additionalProperties:false,r
 
 export function normalizeMethodologyAreas(areas,sourceIds){
  const allowed=sourceIds?new Set(sourceIds):null;
- if(!areas||Array.isArray(areas)||typeof areas!=='object'||Object.keys(areas).length!==methodologyAreas.length)throw new BudgetError('incomplete_methodology','BHS metodolojisinin zorunlu alanları eksik. Eksik rapor tamamlanmış olarak sunulmadı.');
  return methodologyAreas.map(({key,dimension,topic})=>{
-  const a=areas[key];
-  if(!a||Object.keys(a).sort().join(',')!=='observation,sourceIds,status'||!['observed','partial','unavailable'].includes(a.status)||typeof a.observation!=='string'||!a.observation.trim()||a.observation.length>1000||!Array.isArray(a.sourceIds)||a.sourceIds.some(id=>typeof id!=='string'||allowed&&!allowed.has(id))||new Set(a.sourceIds).size!==a.sourceIds.length||a.status==='observed'&&!a.sourceIds.length)throw new BudgetError('incomplete_methodology','BHS alanının biçimi veya kaynak referansı eksik. Yeni ücretli deneme otomatik başlatılmadı.');
-  // A partial area without a citation is unavailable evidence, never a sourced
-  // finding. Preserve the original observation and paid report; do not rerun the
-  // model merely to repair its status enum. Observed claims still need a source.
-  const status=a.status==='partial'&&!a.sourceIds.length?'unavailable':a.status;
-  return {dimension,topic,status,observation:a.observation,sourceIds:[...a.sourceIds]};
+  const a=(Array.isArray(areas)?areas.find(a=>a?.dimension===dimension&&a?.topic===topic):areas?.[key])||{};
+  const refs=[...new Set((Array.isArray(a.sourceIds)?a.sourceIds:[]).filter(id=>typeof id==='string'&&(!allowed||allowed.has(id))))];
+  const observation=typeof a.observation==='string'?a.observation.trim():'';
+  const status=observation&&refs.length&&['observed','partial'].includes(a.status)?a.status:'unavailable';
+  return {dimension,topic,status,observation:observation||'Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.',sourceIds:refs};
  });
 }
 

@@ -44,12 +44,12 @@ test('assembly preserves two exact monthly totals, original logo and unknown BHS
  assert.equal(r.data.bhs.rawReport,undefined);assert.equal(r.data.bhs.meetingQuestions,undefined);assert.ok(Array.isArray(r.data.bhs.benchmarks));
  assert.deepEqual(f,before);
 });
-test('manual plans pass through unchanged; operation plans do not add a full Growth audit; stale/unsupported copy cannot assemble',async()=>{
+test('manual plans pass through unchanged; invalid model copy uses safe text while changed briefs still cannot assemble',async()=>{
  const f=await fixture(),manualSteps=[{time:'Müşteri onayından sonra',title:'Özel başlangıç adımı'}];
  const r=await proposalEngine.run({brief:f.brief,copy,planMode:'manual',manualSteps},f);
  assert.deepEqual(r.data.plans.growth_operations.steps,manualSteps);assert.deepEqual(r.data.plans.operations_bundle.steps,manualSteps);
  const ops=await proposalEngine.run({brief:f.brief,copy,planMode:'operations'},f);assert.equal(ops.data.plans.growth_operations.mode,'operations');
- for(const bad of [{...copy,findingIds:['missing']},{...copy,subtitle:'Aylık 3 milyon TL garanti.'},{...copy,monthlyAmount:1}])await assert.rejects(()=>proposalEngine.run({brief:f.brief,copy:bad},f));
+ for(const bad of [{...copy,findingIds:['missing']},{...copy,subtitle:'Aylık 3 milyon TL garanti.'},{...copy,monthlyAmount:1}]){const safe=await proposalEngine.run({brief:f.brief,copy:bad},f);assert.equal(safe.data.copy.subtitle,'Görüşme kapsamı ve ön araştırmaya dayalı işbirliği teklifimiz.');assert.deepEqual(safe.data.copy.findingIds,[]);assert.deepEqual(safe.data.alternatives,r.data.alternatives);}
  await assert.rejects(()=>proposalEngine.run({brief:{...f.brief,goals:'Farklı hedef'},copy},f),/brief/);
  const envelope=JSON.stringify(compositionEnvelope(f.brief,f.audit.data,f.pricing.data));assert.ok(!envelope.includes('monthlyAmount'));assert.ok(!envelope.includes('base64'));assert.ok(!envelope.includes('costSnapshot'));
 });

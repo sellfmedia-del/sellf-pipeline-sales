@@ -1,11 +1,11 @@
 import {readFileSync} from 'node:fs';
 import {briefHash,dimensions} from './brief.mjs';
-import {assertSchema,reportSchema} from './schema.mjs';
+import {reportSchema} from './schema.mjs';
+import {offerReport} from './offer-report.mjs';
 import {renderGroundedReport} from './grounded-report.mjs';
 import {evidenceHash} from './evidence.mjs';
-import {publicUrl} from './verify.mjs';
 import {researchTopics} from './research-topics.mjs';
-import {methodologyAreas,methodologyAreasSchema,normalizeMethodologyAreas} from './methodology-areas.mjs';
+import {methodologyAreas,methodologyAreasSchema} from './methodology-areas.mjs';
 
 export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
@@ -17,12 +17,7 @@ directReportSchema.required.push('researchCoverage');
 directReportSchema.properties.findings.description='Each distinct supported research area needs its own factual finding. Do not collapse an entire dimension to one generic finding. Include specific product/pricing/channel/competitor examples. Separate observations from inference. Never pad findings from brief goals or missing evidence.';
 export const completeDirectReportSchema=structuredClone(directReportSchema);
 completeDirectReportSchema.properties.researchCoverage=methodologyAreasSchema;
-export function normalizeCompleteDirectReport(value){const report=structuredClone(value);report.researchCoverage=normalizeMethodologyAreas(report.researchCoverage,report.sources?.map(s=>s.id));return report;}
-const transportSchema=JSON.parse(JSON.stringify(directReportSchema));
-// Completed paid reports from the previous version remain readable and reusable.
-transportSchema.required=transportSchema.required.filter(k=>k!=='researchCoverage');
-function transportLimits(node){if(node.type==='string')node.maxLength=20000;for(const value of Object.values(node.properties||{}))transportLimits(value);if(node.items)transportLimits(node.items);for(const value of node.anyOf||[])transportLimits(value);}
-transportLimits(transportSchema);
+export const normalizeCompleteDirectReport=offerReport;
 export function directResearchInstruction(){return `Sellf Ön BHS raporunu aşağıdaki onaylı metodolojinin tamamını uygulayarak Türkçe hazırla. Brief marka, hedef pazar, iş modeli ve görüşme bağlamıdır. Rakipleri bu bağlama göre seç; farklı ölçeği veya farklı ürün grubunu aynıymış gibi sunma.
 ${approvedMethodology}
 ARAŞTIRMA ALANLARI: ${JSON.stringify(researchTopics)}
@@ -35,18 +30,18 @@ reportExcerpt statement ile aynı olsun. Kaynak URL ve başlıklarını JSON iç
 
 // This is a format/transport adapter, not a second content reviewer.
 export function directAuditResult(brief,synthesis){
- const report=structuredClone(synthesis.report);
+ const report=offerReport(synthesis.report);
+ for(const reason of synthesis.outputIssues||[])report.transfer.issues.push({path:'modelOutput',reason});
+ report.transfer.contentComplete=report.transfer.issues.length===0;
  if(JSON.stringify(report).length>1500000)throw Error('BHS JSON boyutu aktarım sınırını aşıyor.');
- assertSchema(report,transportSchema);
- for(const source of report.sources)if(!publicUrl(source.url))throw Error('BHS kaynak bağlantısının biçimi geçersiz.');
  const byId=new Map(report.dimensions.map(d=>[d.id,d]));
  if(byId.size!==6||dimensions.some(d=>!byId.has(d.id)))throw Error('BHS JSONunda altı boyut gerekli.');
  const total=dimensions.every(d=>byId.get(d.id).score!==null)?Math.round(dimensions.reduce((sum,d)=>sum+byId.get(d.id).score*d.weight,0)*100)/100:null;
  const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
- return {status:'ready',data:{...report,report,schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
-  quality:{checksPassed:true,issues:[],scope:'json-format-only',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
+ return {status:'ready',data:{...report,report,...(synthesis.originalModelText?{originalModelText:synthesis.originalModelText}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
+  quality:{checksPassed:true,contentComplete:report.transfer.contentComplete,issues:report.transfer.issues,scope:'offer-transfer-only',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
   researchMethod:'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,
   usage:synthesis.usage||null}};
 }

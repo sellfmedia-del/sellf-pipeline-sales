@@ -3,6 +3,7 @@ import {failureReason} from '../bhs/provider.mjs';
 import {providerSchema} from '../bhs/schema.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {resolveTarget} from '../network.mjs';
+import {readPartialOutput} from '../bhs/partial-output.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
 export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget}={}){
@@ -89,10 +90,12 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
-    if(candidate?.finishReason!=='STOP')throw new BudgetError('incomplete','Model çıktısı tamamlanmadı; eksik rapor teklif için kullanılmadı.');
+    const offerContent=['synthesis','methodology_areas','scope'].includes(stage);
+    if(candidate?.finishReason!=='STOP'&&!(offerContent&&candidate?.finishReason==='MAX_TOKENS'))throw new BudgetError('incomplete','Model çıktısı tamamlanmadı; eksik rapor teklif için kullanılmadı.');
     const text=(candidate.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
-    let data;try{data=JSON.parse(text);}catch{throw new BudgetError('invalid_report','Model raporu beklenen JSON biçiminde değil.');}
-    return {data,usage,model,reservedKurus:amount,accountedKurus:quoteModel(model,usage.promptTokenCount,output,now()),tariffVersion:tariff.version};
+    let parsed;try{parsed={data:JSON.parse(text)};}catch{if(!offerContent)throw new BudgetError('invalid_report','Model raporu beklenen JSON biçiminde değil.');parsed=readPartialOutput(text);}
+    if(candidate.finishReason==='MAX_TOKENS')parsed={...parsed,originalText:text,issues:[...(parsed.issues||[]),'model_output_limit']};
+    return {...parsed,usage,model,reservedKurus:amount,accountedKurus:quoteModel(model,usage.promptTokenCount,output,now()),tariffVersion:tariff.version};
    },{settle:value=>value.accountedKurus});
   }
  };

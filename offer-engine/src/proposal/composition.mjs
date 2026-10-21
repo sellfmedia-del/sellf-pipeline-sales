@@ -10,6 +10,11 @@ export function validateCopy(value,audit){
  if(!Array.isArray(value.findingIds)||value.findingIds.length>3||new Set(value.findingIds).size!==value.findingIds.length||value.findingIds.some(id=>!ids.has(id)))throw Error('Teklif bulguları kaynakla uyuşmuyor.');
  return structuredClone(value);
 }
+// Model copy is optional presentation. A failed sentence must not invalidate
+// research, catalogue prices, or the authenticated proposal/save proofs.
+export function offerCopy(value,audit){
+ try{return validateCopy(value,audit);}catch{return {headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Görüşme kapsamı ve ön araştırmaya dayalı işbirliği teklifimiz.',findingIds:[]};}
+}
 export function normalizePlan(input={}){
  const mode=input.planMode||'growth';if(!['growth','operations','manual'].includes(mode))throw Error('Başlangıç planı modu geçersiz.');
  let manualSteps=[];

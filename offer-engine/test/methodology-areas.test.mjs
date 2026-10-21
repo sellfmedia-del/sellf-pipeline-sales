@@ -13,10 +13,10 @@ test('every approved methodology subarea has a fixed required field, independent
  assert.deepEqual(completeDirectReportSchema.properties.researchCoverage,methodologyAreasSchema);
  const input=context().report;input.researchCoverage=areas();const out=normalizeCompleteDirectReport(input);assert.equal(out.researchCoverage.length,24);assert.equal(out.findings.length,input.findings.length);assert.equal(Array.isArray(input.researchCoverage),false);
 });
-test('missing methodology fields and invented source IDs cannot become a completed research report',()=>{
- const incomplete=areas();delete incomplete.digital_5;assert.throws(()=>normalizeMethodologyAreas(incomplete),/zorunlu alanları eksik/);
- const invented=areas();invented.financial_1={status:'observed',observation:'A claim',sourceIds:['invented']};assert.throws(()=>normalizeMethodologyAreas(invented,['real']),/kaynak referansı/);
- const unsourced=areas();unsourced.funnel_3={status:'observed',observation:'A claim',sourceIds:[]};assert.throws(()=>normalizeMethodologyAreas(unsourced),/kaynak referansı/);
+test('missing fields and invented source IDs remain unavailable evidence without blocking the offer',()=>{
+ const incomplete=areas();delete incomplete.digital_5;assert.equal(normalizeMethodologyAreas(incomplete).length,24);
+ const invented=areas();invented.financial_1={status:'observed',observation:'A claim',sourceIds:['invented']};assert.equal(normalizeMethodologyAreas(invented,['real'])[0].status,'unavailable');
+ const unsourced=areas();unsourced.funnel_3={status:'observed',observation:'A claim',sourceIds:[]};assert.equal(normalizeMethodologyAreas(unsourced).find(a=>a.dimension==='funnel'&&a.observation==='A claim').status,'unavailable');
 });
 test('an unavailable research area mislabeled partial is normalized without inventing evidence or mutating the paid result',()=>{
  const input=areas();input.funnel_1={status:'partial',observation:'Ad Library veya organik erişim verisine araç engeli sebebiyle ulaşılamadı.',sourceIds:[]};

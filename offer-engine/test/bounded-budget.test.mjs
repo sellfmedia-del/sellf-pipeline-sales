@@ -25,6 +25,18 @@ function store(){
 const time=Date.parse('2026-10-20T12:00:00Z');
 const fx=rate=>new Response(`<Tarih_Date Tarih="20.10.2026"><Currency CurrencyCode="USD"><ForexSelling>${rate}</ForexSelling></Currency></Tarih_Date>`);
 const json=x=>new Response(JSON.stringify(x),{headers:{'Content-Type':'application/json'}});
+test('truncated BHS output is retained, cost-settled and reused without a second paid call',async()=>{
+ const db=store(),ledger=createLedger(db.call);let paid=0;
+ const raw='{"summary":"Mevcut araştırma.","findings":[{"statement":"Somut bulgu."}],"sources":[{"url":"https://ex';
+ const provider=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async url=>{
+  if(url.includes('tcmb'))return fx(40);if(url.endsWith(':countTokens'))return json({totalTokens:1000});paid++;
+  return json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:raw}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,totalTokenCount:1100}});
+ }});
+ const schema={type:'object',properties:{}},options={model:'gemini-3.1-pro-preview',maxOutputTokens:4096};
+ const result=await provider.generate('synthesis',{},schema,options),cost=await ledger.status();assert.equal(result.originalText,raw);assert.equal(result.data.summary,'Mevcut araştırma.');assert.equal(result.data.findings.length,1);assert.equal(result.data.sources,undefined);
+ assert.ok(result.issues.includes('model_output_limit'));assert.equal(result.accountedKurus,quoteModel(result.model,1000,100,time));
+ assert.deepEqual(await provider.generate('synthesis',{},schema,options),result);assert.equal(paid,1);assert.deepEqual(await ledger.status(),cost);
+});
 test('targeted one-credit queries preserve the hard ceiling and cannot reuse a two-credit request as if it were cheap',async()=>{
  const db=store(),ledger=createLedger(db.call);let searches=0;
  const providers=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async(url,init)=>{if(url.includes('tcmb'))return fx(40);searches++;const body=JSON.parse(init.body);assert.equal(body.auto_parameters,false);if(body.search_depth==='basic'){assert.equal(body.chunks_per_source,undefined);assert.equal(body.include_usage,true);}return json({results:[],usage:{credits:body.search_depth==='basic'?1:2}});}});

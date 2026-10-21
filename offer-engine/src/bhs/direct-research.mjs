@@ -3,8 +3,8 @@ import {createEvidenceCollector,evidenceHash,mergeExtractedEvidence,assertEviden
 import {briefHash} from './brief.mjs';
 import {approvedMethodology} from './direct-report.mjs';
 import {hash,BudgetError} from '../budget/ledger.mjs';
-import {scopeSchema,scopeEnvelope,validateScope,normalizeGeneratedScope} from '../pricing/scope.mjs';
-import {copySchema,validateCopy} from '../proposal/composition.mjs';
+import {scopeSchema,scopeEnvelope,validateScope,normalizeGeneratedScope,fallbackScope} from '../pricing/scope.mjs';
+import {copySchema,offerCopy} from '../proposal/composition.mjs';
 import {directAuditResult,directResearchInstruction,directMethodologyVersion,directReportSchema,completeDirectReportSchema,normalizeCompleteDirectReport} from './direct-report.mjs';
 import {prepareResearchInput,compactResearchInput,boundedResearchContext} from './research-input.mjs';
 import {methodologyAreasGrammar,areaResearchInput,reportWithAreas} from './methodology-areas.mjs';
@@ -83,14 +83,15 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
     directAuditResult(brief,synthesis);return synthesis;
    }
    const generated=await providers.generate('synthesis',{instruction:directResearchInstruction()+'\nresearchCoverage bir nesnedir: outputContract içindeki sabit 24 anahtarın HEPSİNİ doldur. Kendi konu adını seçme, alan atlama veya birleştirme. Gözlem, rakip kıyası ve iş etkisini farklı alanlarda somut örneklerle ver; salt genel övgü yazma. Şirket basın açıklamasını bağımsız doğrulama gibi sunma.\nTaşıma notu: technicalSignals.ref alanlarını packet.sharedTechnicalSignals sözlüğünden, navigation ref alanlarını packet.sharedNavigation sözlüğünden çöz. Aynı metadata yalnız bir kez gönderilir; bu kanıt eksikliği değildir. Kaynak metinlerinde Markdown görsel adresleri çıkarılmış, bağlantı etiketleri korunmuştur.',brief,...packed},researchVersion==='v5'?completeDirectReportSchema:directReportSchema,{model:'gemini-3.1-pro-preview',maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,thinkingLevel:'MEDIUM',jsonMode:true});
-   const synthesis={report:researchVersion==='v5'?normalizeCompleteDirectReport(generated.data):generated.data,analysisPacket:packet,fullPacketHash:evidenceHash(packet),usage:generated.usage,model:generated.model,methodologyVersion:directMethodologyVersion};
+   const synthesis={report:normalizeCompleteDirectReport(generated.data),...(generated.originalText?{originalModelText:generated.originalText}:{}),outputIssues:generated.issues||[],analysisPacket:packet,fullPacketHash:evidenceHash(packet),usage:generated.usage,model:generated.model,methodologyVersion:directMethodologyVersion};
    directAuditResult(brief,synthesis);return synthesis;
   }
   if(phase==='scope'){
-   const {report}=await previous('synthesis'),guide=scopeEnvelope(brief,report);
+   const report=normalizeCompleteDirectReport((await previous('synthesis')).report),guide=scopeEnvelope(brief,report);
    guide.audit.researchCoverage=report.researchCoverage||[];
    const generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Fiyat veya yeni araştırma üretme. BHS içeriğini yeniden denetleme veya değiştirme.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},{type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false},{maxOutputTokens:3072,thinkingLevel:'LOW',jsonMode:true});
-   return {scopePlan:validateScope(normalizeGeneratedScope(generated.data.scope,brief,report),brief,report),proposalCopy:validateCopy(generated.data.copy,report),usage:generated.usage};
+   let scopePlan;try{scopePlan=validateScope(normalizeGeneratedScope(generated.data?.scope,brief,report),brief,report);}catch{scopePlan=fallbackScope(brief);}
+   return {scopePlan,proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(generated.originalText?{originalModelText:generated.originalText}:{})};
   }
   throw new BudgetError('invalid_phase','Araştırma aşaması geçersiz.');
  });

@@ -1,13 +1,13 @@
 import {snapshotBrief,briefHash} from '../bhs/brief.mjs';
 import {assertResult} from '../contracts.mjs';
-import {validateCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
+import {offerCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
 import {selectProposalAudit} from '../proposal/audit-selection.mjs';
 import {digest} from '../pricing/proof.mjs';
 export const proposalEngine=Object.freeze({id:'proposal',version:'0.5.0',async run(input,dependencies={}){
  const brief=snapshotBrief(input.brief),{audit,pricing,logo}=dependencies;
  for(const [name,result]of Object.entries({audit,pricing,logo}))assertResult(name,result);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief)||pricing.data.briefHash!==briefHash(brief))throw Error('Teklif girdileri aynı doğrulanmış brief için olmalı.');
- const plan=normalizePlan(input),copy=validateCopy(input.copy,audit.data),candidate=logo.data.candidates[0];
+ const plan=normalizePlan(input),copy=offerCopy(input.copy,audit.data),candidate=logo.data.candidates[0];
  const background=input.logoBackground||candidate.placement?.background||'#ffffff';
  if(!['#ffffff','#171717','#626262'].includes(background))throw Error('Logo zemini geçersiz.');
  const alternatives=pricing.data.alternatives.map(a=>({id:a.id,name:a.name,billingPeriod:'monthly',monthlyAmount:a.monthlyAmount,services:[...(a.id==='growth_operations'?[{id:'growth',name:'Growth danışmanlığı ve strateji',description:'Tam BHS, onaylanan strateji ve uygulama planıyla Growth danışmanlığı.'}]:[]),...a.services.map(s=>({id:s.serviceId,name:s.name,description:s.deliverables||s.reason}))]}));
