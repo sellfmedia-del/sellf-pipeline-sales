@@ -252,5 +252,6 @@ end $function$
 drop trigger if exists pipeline_preserve_space_creator on public.spaces;
 drop function if exists public.pipeline_preserve_space_creator();
 drop function if exists public.pipeline_offer_team_user(uuid);
+revoke select(id,is_anonymous,raw_app_meta_data,deleted_at) on auth.users from service_role;
 commit;
 

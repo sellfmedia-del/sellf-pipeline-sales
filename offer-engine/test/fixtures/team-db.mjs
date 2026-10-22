@@ -11,7 +11,7 @@ export async function teamDatabase(){
  create schema auth;create table auth.users(id uuid primary key,is_anonymous boolean default false,raw_app_meta_data jsonb default '{}',deleted_at timestamptz);
  create table public.spaces(id text primary key,user_id uuid,name text,color text,created_at bigint);
  create table public.leads(id text primary key,space_id text,col_id text,name text,company text,value text,notes text,doc_url text,last_contact bigint,contacts jsonb,timeline jsonb);
- grant usage on schema public,auth to service_role;grant select on auth.users to service_role;grant all on public.spaces,public.leads to service_role;`);
+ grant usage on schema public,auth to service_role;grant all on public.spaces,public.leads to service_role;`);
  for(const id of users)await db.query('insert into auth.users(id) values($1)',[id]);
  await db.query("insert into spaces values('space-1',$1,'Sales','#123456',123)",[users[0]]);
  await db.query("insert into leads values('lead-1','space-1','column-1','Person','Brand','123','Original meeting notes','https://example.invalid/document',123,'[{\"name\":\"Contact\"}]','[{\"type\":\"Meeting\"}]')");
@@ -50,5 +50,5 @@ export async function teamDatabase(){
   }catch(error){return new Response(JSON.stringify({message:error.message,code:error.code||'TEST_DB'}),{status:422});}
  }
  const gateway=createProductionGateway({env:n=>({SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server-fixture',SUPABASE_ANON_KEY:'public-fixture'})[n],fetchImpl});
- return {db,rpc,fetchImpl,gateway,apply:async()=>db.exec(await readFile(new URL('../../../supabase/migrations/20261022095034_shared_sales_team_offers.sql',import.meta.url),'utf8'))};
+ return {db,rpc,fetchImpl,gateway,apply:async()=>{for(const name of ['20261022095034_shared_sales_team_offers.sql','20261022100843_offer_worker_registered_user_lookup.sql'])await db.exec(await readFile(new URL('../../../supabase/migrations/'+name,import.meta.url),'utf8'));}};
 }

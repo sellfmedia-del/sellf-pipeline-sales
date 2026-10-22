@@ -20,6 +20,7 @@ test('PostgreSQL: shared team reads/publishes/updates/reuses offers, preserves e
   await db.query('update spaces set user_id=$1',[users[1]]);
   await assert.rejects(()=>rpc('publish_pipeline_offer_link',{p_owner:users[1],p_offer:saved.id,p_slug:'brand-teklifi',p_expected_envelope:null,p_token_hash:'a'.repeat(64),p_password_hash:'b'.repeat(64),p_envelope:'fixture'}),/Offer not owned/);
   const before=await snapshot(db);await apply();assert.deepEqual(await snapshot(db),before,'migration must not change any existing row');
+  await assert.rejects(()=>db.transaction(async tx=>{await tx.exec('set local role service_role');await tx.query('select * from auth.users');}),'worker must not get full Auth table access');
   for(const user of [0,1,2]){
    const result=await api(user,{action:'list',leadId:'lead-1'});assert.equal(result.code,200,JSON.stringify(result.data));assert.equal(result.data.offers[0].id,saved.id);
    assert.equal((await api(user,{action:'detail',offerId:saved.id})).data.offer.id,saved.id);
