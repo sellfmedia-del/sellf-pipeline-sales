@@ -51,7 +51,7 @@
         const requestId=crypto.randomUUID(),timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(Error('Test kayıt bağlantısı zaman aşımına uğradı.'));},65000);
         function receive(event){if(event.source!==parent||event.data?.type!=='offer-store-result'||event.data.requestId!==requestId)return;clearTimeout(timer);window.removeEventListener('message',receive);if(event.data.error)reject(Error(event.data.error));else resolve(event.data.result);}
         window.addEventListener('message',receive);parent.postMessage({type:'offer-store-request',requestId,payload},'*');
-      }):async()=>{throw Error('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.');};
+      }):async payload=>{if(payload?.action==='list')return {offers:[]};throw Error('Bu önizleme örnek kart kullanır. Veritabanı ve kart değeri değiştirilmedi.');};
     }
     const rows = persistedFixture?.rows || {
       spaces: [{ id: 'demo-space', name: 'Örnek Markalar', color: '#378ADD', created_at: 1792200000000 }],
