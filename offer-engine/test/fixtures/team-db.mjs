@@ -8,7 +8,7 @@ const schema=name=>readFile(new URL('../../schema/'+name,import.meta.url),'utf8'
 export async function teamDatabase(){
  const db=new PGlite();
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;
- create schema auth;create table auth.users(id uuid primary key,is_anonymous boolean default false,raw_app_meta_data jsonb default '{}',deleted_at timestamptz);
+ create schema auth;create table auth.users(id uuid primary key,is_anonymous boolean default false,raw_app_meta_data jsonb default '{}',deleted_at timestamptz,email text,encrypted_password text);
  create table public.spaces(id text primary key,user_id uuid,name text,color text,created_at bigint);
  create table public.leads(id text primary key,space_id text,col_id text,name text,company text,value text,notes text,doc_url text,last_contact bigint,contacts jsonb,timeline jsonb);
  grant usage on schema public,auth to service_role;grant all on public.spaces,public.leads to service_role;`);
