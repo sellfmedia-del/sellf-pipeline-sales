@@ -1,4 +1,5 @@
-// Production-only offer storage. Existing CRM ownership is checked explicitly.
+// Shared sales-team offers. Every real registered user has the same rights.
+// owner_id records authorship; it is never a team-access predicate.
 // No bootstrap, bulk save/delete, Auth modification, or Travis operations.
 const tables={leads:'leads',versions:'pipeline_offer_versions',requests:'pipeline_offer_requests'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -13,16 +14,16 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
   const raw=await response.text();return raw.trim()?JSON.parse(raw):null;
  }
  async function user(jwt){
-  if(!text(jwt,5000))throw Error('Test oturumu gerekli.');
+  if(!text(jwt,5000))throw Error('Pipeline oturumu gerekli.');
   const value=await db('/auth/v1/user',{admin:false,jwt});
   if(value?.is_anonymous===true||value?.app_metadata?.pipeline_offer_preview===true||!uuid.test(value?.id))throw Error('Geçerli Pipeline oturumu gerekli.');
   return value;
  }
- async function ownedLead(owner,id){
+ async function teamLead(id){
   if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(id))throw Error('Kart bilgisi geçersiz.');
   const leads=await db('/rest/v1/leads?id=eq.'+encodeURIComponent(id)+'&select=id,space_id&limit=1');
   const lead=leads?.[0];if(!lead)throw Error('Kart yetkisi doğrulanamadı.');
-  const spaces=await db('/rest/v1/spaces?id=eq.'+encodeURIComponent(lead.space_id)+'&user_id=eq.'+owner+'&select=id&limit=1');
+  const spaces=await db('/rest/v1/spaces?id=eq.'+encodeURIComponent(lead.space_id)+'&select=id&limit=1');
   if(spaces?.length!==1)throw Error('Kart yetkisi doğrulanamadı.');return lead;
  }
  return async req=>{
@@ -39,11 +40,11 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
    const body=JSON.parse(raw),{action}=body;
    if(action==='health')return reply({ready:true,mode:'pipeline-production'});
    if(action==='authorize'){
-    const who=await user(body.jwt);if(body.leadId)await ownedLead(who.id,body.leadId);
+    const who=await user(body.jwt);if(body.leadId)await teamLead(body.leadId);
     return reply({ownerId:who.id});
    }
    if(action==='budget'){
-    const who=await user(body.jwt);await ownedLead(who.id,body.leadId);
+    const who=await user(body.jwt);await teamLead(body.leadId);
     if(!['begin','status','get','reserve','complete','uncertain'].includes(body.op)||!text(body.leadId,100)||
        body.step!==undefined&&!/^[A-Za-z0-9:_-]{1,160}$/.test(body.step)||
        body.hash!==undefined&&!/^[a-f0-9]{64}$/.test(body.hash)||
@@ -56,37 +57,37 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
     const who=await user(body.jwt),jwt=body.jwt;
     if(action==='save'||action==='save_variant'){
      if(!text(body.args?.p_lead_id)||!text(body.args?.p_space_id)||!text(body.args?.p_request_id,80))throw Error('Test kartı bilgileri geçersiz.');
-     await ownedLead(who.id,body.args.p_lead_id);
+     await teamLead(body.args.p_lead_id);
      if(action==='save_variant'&&!uuid.test(body.sourceOfferId))throw Error('Kaynak teklif geçersiz.');
      const {p_lead_id,p_space_id,p_request_id,p_document,p_pricing}=body.args;
      return reply(await db('/rest/v1/rpc/'+(action==='save_variant'?'save_pipeline_offer_variant':'save_pipeline_offer_production'),{method:'POST',body:{p_lead_id,p_space_id,p_request_id,p_document,p_pricing,p_owner:who.id,...(action==='save_variant'?{p_source_offer:body.sourceOfferId}:{})}}));
     }
     if(action==='catalog'){
-     await ownedLead(who.id,body.leadId);
-     return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at&owner_id=eq.'+who.id+'&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1000'));
+     await teamLead(body.leadId);
+     return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1000'));
     }
     if(action==='list'){
-     await ownedLead(who.id,body.leadId);
-     return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at,customer_document,operator_link_envelope&owner_id=eq.'+who.id+'&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1',{}));
+     await teamLead(body.leadId);
+     return reply(await db('/rest/v1/'+tables.versions+'?select=id,version,state,monthly_amount,created_at,customer_document,operator_link_envelope&lead_id=eq.'+encodeURIComponent(body.leadId)+'&order=version.desc&limit=1',{}));
     }
     if(action==='outbox')throw Error('Bu işlem canlı teklif servisinde kapalı.');
     if(!uuid.test(body.id))throw Error('Test teklifi geçersiz.');
-    const fields=['detail','prices'].includes(action)?'id,lead_id,space_id,version,state,monthly_amount,created_at,customer_document,pricing_snapshot,operator_link_envelope':'id,lead_id,version,state,customer_document,operator_link_envelope';
-    const rows=await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select='+fields,{});
-    const row=rows?.[0];if(!row)throw Error('Teklif bulunamadı.');await ownedLead(who.id,row.lead_id);
+    const fields=['detail','prices'].includes(action)?'id,lead_id,space_id,version,state,monthly_amount,created_at,customer_document,pricing_snapshot,operator_link_envelope':'id,lead_id,space_id,version,state,customer_document,operator_link_envelope';
+    const rows=await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&select='+fields,{});
+    const row=rows?.[0];if(!row)throw Error('Teklif bulunamadı.');await teamLead(row.lead_id);
     if(action==='detail')return reply(row);
     if(action==='price_request'){
      if(!uuid.test(body.requestId))throw Error('İstek kaydı geçersiz.');
      const changes=await db('/rest/v1/pipeline_offer_price_history?offer_id=eq.'+row.id+'&owner_id=eq.'+who.id+'&request_id=eq.'+body.requestId+'&select=after_prices,below_minimum_confirmed&limit=1');return reply(changes?.[0]||null);
     }
-    if(action==='price_history')return reply(await db('/rest/v1/pipeline_offer_price_history?offer_id=eq.'+row.id+'&owner_id=eq.'+who.id+'&select=id,currency,before_prices,after_prices,below_minimum_confirmed,created_at&order=created_at.desc&limit=1000'));
+    if(action==='price_history')return reply(await db('/rest/v1/pipeline_offer_price_history?offer_id=eq.'+row.id+'&select=id,currency,before_prices,after_prices,below_minimum_confirmed,created_at&order=created_at.desc&limit=1000'));
     if(action==='prices'){
      if(!uuid.test(body.requestId)||!body.expectedDocument||!body.amounts)throw Error('Fiyat güncelleme bilgileri geçersiz.');
      return reply(await db('/rest/v1/rpc/update_pipeline_offer_prices',{method:'POST',body:{p_owner:who.id,p_offer:row.id,p_request:body.requestId,p_expected:body.expectedDocument,p_amounts:body.amounts,p_confirm:body.confirmedBelowMinimum===true}}));
     }
     if(action==='publication')return reply(row);
     if(!/^[a-f0-9]{64}$/.test(body.tokenHash)||!/^[a-f0-9]{64}$/.test(body.passwordHash)||!text(body.operatorLinkEnvelope,5000)||body.slug!==undefined&&!validSlug(body.slug))throw Error('Test bağlantısı geçersiz.');
-    if(body.slug===undefined)return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&owner_id=eq.'+who.id+'&select=id,version',{method:'PATCH',prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope}}));
+    if(body.slug===undefined)return reply(await db('/rest/v1/'+tables.versions+'?id=eq.'+body.id+'&select=id,version',{method:'PATCH',prefer:'return=representation',body:{state:'published',public_token_hash:body.tokenHash,password_hash:body.passwordHash,operator_link_envelope:body.operatorLinkEnvelope}}));
     const collision=await db('/rest/v1/'+tables.versions+'?select=id&state=eq.published&customer_document->publication->>slug=eq.'+body.slug+'&id=neq.'+row.id+'&limit=1');
     if(collision?.length)return reply({error:'Marka bağlantısı kullanımda.',code:'slug_unavailable'},422);
     return reply(await db('/rest/v1/rpc/publish_pipeline_offer_link',{method:'POST',body:{p_owner:who.id,p_offer:row.id,p_slug:body.slug,p_expected_envelope:body.expectedEnvelope||null,p_token_hash:body.tokenHash,p_password_hash:body.passwordHash,p_envelope:body.operatorLinkEnvelope}}));

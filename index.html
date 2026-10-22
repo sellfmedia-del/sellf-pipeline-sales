@@ -418,7 +418,7 @@ async function save(){
   if (!user) return;
 
   const spsToUpsert = Object.values(db.spaces).map(s => ({
-    id: s.id, user_id: user.id, name: s.name, color: s.color, created_at: s.createdAt
+    id: s.id, user_id: s.userId || user.id, name: s.name, color: s.color, created_at: s.createdAt
   }));
   if(spsToUpsert.length > 0) {
     const { error } = await supabaseClient.from('spaces').upsert(spsToUpsert);
@@ -466,7 +466,7 @@ async function load(){
     const { data: cls } = await supabaseClient.from('columns').select('*').in('space_id', spaceIds);
     const { data: lds } = await supabaseClient.from('leads').select('*').in('space_id', spaceIds);
 
-    sps.forEach(s => db.spaces[s.id] = {id: s.id, name: s.name, color: s.color, createdAt: s.created_at});
+    sps.forEach(s => db.spaces[s.id] = {id: s.id, name: s.name, color: s.color, createdAt: s.created_at, userId: s.user_id});
     sps.forEach(s => { db.columns[s.id] = []; db.leads[s.id] = []; });
     if(cls) cls.forEach(c => db.columns[c.space_id].push({id: c.id, title: c.title, dot: c.dot}));
     if(lds) lds.forEach(l => db.leads[l.space_id].push({
