@@ -28,8 +28,8 @@ if(production){
 }
 // This reviewer sandbox has synthetic page-local state. Never publish its
 // fixtures or adapter to production, including after a reused local build dir.
-for(const name of ['variants-review.html','variants-review.js','variants-review-data.json'])await rm(path.join(here,'public/offers',name),{force:true});
-if(!production){const {buildVariantsReview}=await import('./src/preview/variants-build.mjs');await buildVariantsReview(path.join(here,'public'));}
+for(const name of ['variants-review.html','variants-review.js','variants-review-data.json','team-review.html','team-review.js'])await rm(path.join(here,'public/offers',name),{force:true});
+if(!production){const {buildVariantsReview}=await import('./src/preview/variants-build.mjs');await buildVariantsReview(path.join(here,'public'));const {buildTeamReview}=await import('./src/preview/team-build.mjs');await buildTeamReview(path.join(here,'public'));}
 
 
 // Deterministic synthetic example: no paid model, customer data or persistence.
