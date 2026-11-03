@@ -3,7 +3,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/logo-upload.js": {
-      "maxDuration": 90
+      "maxDuration": 300
     },
     "api/pricing.js": {
       "maxDuration": 60

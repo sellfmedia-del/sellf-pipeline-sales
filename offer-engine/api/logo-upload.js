@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import {createLogoEngine} from '../src/engines/logo-engine.mjs';
 import {budgetFor} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {createLogoRecovery} from '../src/budget/logo-recovery.mjs';
 import {logoRegionSchema,logoRegionInstruction} from '../src/logo-region.mjs';
 let active=0;
 
@@ -19,11 +20,12 @@ export default async function handler(req,res){
   try{
     await authorizeProduction(req);
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
-    let ledger;
+    let ledger,generateLogo;
     const generate=async(stage,source,input,schema)=>{
       ledger||=await budgetFor(req,res,body.context.leadId);await ledger.begin();
       const image=await sharp(source).resize({width:1280,height:1280,fit:'inside',withoutEnlargement:true}).webp({quality:90}).toBuffer();
-      return createBoundedProviders({ledger}).generate(stage,input,schema,{maxOutputTokens:1024,jsonMode:true,image:{mimeType:'image/webp',data:image.toString('base64')}});
+      generateLogo||=createLogoRecovery(createBoundedProviders({ledger}));
+      return generateLogo(stage,input,schema,{maxOutputTokens:1024,jsonMode:true,image:{mimeType:'image/webp',data:image.toString('base64')}});
     };
     const locate=body?.context?.leadId?async source=>{
       const result=await generate('logo-region',source,{instruction:logoRegionInstruction,brandName:String(body.brandName||'').slice(0,200)},logoRegionSchema);
