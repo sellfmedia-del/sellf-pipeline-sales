@@ -4,6 +4,7 @@ import {providerSchema} from '../bhs/schema.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {resolveTarget} from '../network.mjs';
 import {readPartialOutput} from '../bhs/partial-output.mjs';
+import {startLogoDiagnostic} from './logo-diagnostic.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
 export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget}={}){
@@ -22,8 +23,11 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   if(!fxInFlight)fxInFlight=readCurrency().finally(()=>{fxInFlight=null;});
   return fxInFlight;
  }
- async function readJson(url,body,key,timeout){
+ async function readJson(url,body,key,timeout,diagnostic){
+  const trace=diagnostic?startLogoDiagnostic(diagnostic):null;
+  try{
   const response=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json',...key},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout),redirect:'error'});
+  trace?.response(response.status);
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','Model yanıtı boyut sınırını aşıyor.');
   let value;try{value=JSON.parse(raw);}catch{throw new BudgetError('provider_format','Servis yanıtı okunamadı.');}
   if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','Araştırma servisi isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);
@@ -35,7 +39,8 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    // A transport failure, quota response or other provider is never refunded.
    error.definitelyNotBilled=url.startsWith(base)&&response.status===400;
    throw error;}
-  return value;
+  trace?.finish();return value;
+  }catch(error){trace?.finish(error);throw error;}
  }
  return {configured:()=>Boolean(geminiKey&&tavilyKey&&ledger),
   async extract(urls){
@@ -78,7 +83,8 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    await checkCurrency();
    // Exact request is tokenized before generation. Additional input allowance
    // covers control/schema overhead; no tools, media, history or autonomous loop.
-   const count=await readJson(base+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey},20000);
+   const diagnostic=['logo-region','logo-backdrop'].includes(stage)?{stage,model}:null;
+   const count=await readJson(base+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey},20000,diagnostic?{...diagnostic,operation:'countTokens'}:null);
    if(!Number.isSafeInteger(count.totalTokens)||count.totalTokens<1)throw new BudgetError('token_count','Girdi maliyeti doğrulanamadı; model başlatılmadı.');
    const upper=Math.ceil(count.totalTokens*1.2)+4096;
    if(minOutputTokens<maxOutputTokens||reserveForFollowingKurus){
@@ -94,7 +100,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    // approved research or switch models to manufacture a lower displayed cost.
    if(costDecision.tier==='quality_exception')console.info(JSON.stringify({event:'bhs_cost_exception',stage,model,...costDecision,reason:'required_context_and_full_output_envelope'}));
    return ledger.once(step,body,amount,async()=>{
-    const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},240000);
+    const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},240000,diagnostic?{...diagnostic,operation:'generateContent'}:null);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
