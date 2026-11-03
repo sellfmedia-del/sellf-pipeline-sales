@@ -11,7 +11,11 @@ export function assertResult(stage,result){
   }
   if(stage==='audit'&&(!Array.isArray(result.data.findings)||!Array.isArray(result.data.services)))throw new Error('Audit bulguları ve hizmet kapsamı eksik.');
   if(stage==='audit'&&result.data.schemaVersion==='bhs-v1'&&result.status==='ready'&&(result.data.quality?.checksPassed!==true||result.data.quality?.semanticBenchmark!=='passed'))throw new Error('BHS kaynak ve içerik kontrolleri tamamlanmadı.');
-  if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
+  if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only','read-source-and-quote-filter'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
+  if(stage==='audit'&&result.data.quality?.scope==='read-source-and-quote-filter'){
+    const sources=result.data.sources||[],ids=new Set(sources.map(s=>s.id));
+    if(sources.some(s=>s.verification?.status!=='quote_matched')||result.data.findings.some(f=>f.kind==='brief'||!f.sourceIds?.length||f.sourceIds.some(id=>!ids.has(id))))throw Error('Okunmuş kaynak doğrulaması eksik.');
+  }
   if(stage==='pricing'){
     const p=result.data;
     assertQuote(p);

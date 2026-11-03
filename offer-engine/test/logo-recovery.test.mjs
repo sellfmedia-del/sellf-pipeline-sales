@@ -4,7 +4,7 @@ import {createLedger} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
 import {createLogoRecovery} from '../src/budget/logo-recovery.mjs';
 const time=Date.parse('2026-11-03T12:00:00Z');
-function fixture({balance=500,failFallback=false,blockPrimary=false}={}){
+function fixture({balance=500,failFallback=false,blockPrimary=false,timeout=false,status=503}={}){
  let charged=balance;const steps=new Map(),calls=[];
  const ledger=createLedger(async(op,a={})=>{
   if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
@@ -24,7 +24,8 @@ function fixture({balance=500,failFallback=false,blockPrimary=false}={}){
   if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="03.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
   if(url.endsWith(':countTokens'))return Response.json({totalTokens:100});
   calls.push({url,body:JSON.parse(init.body)});
-  if(url.includes('3.8-flash')){if(blockPrimary)await new Promise(r=>release=r);return Response.json({error:{message:'Service unavailable'}},{status:503});}
+  if(timeout&&(url.includes('3.8-flash')||failFallback))throw new DOMException('The operation was aborted due to timeout','TimeoutError');
+  if(url.includes('3.8-flash')){if(blockPrimary)await new Promise(r=>release=r);return Response.json({error:{message:'Service unavailable'}},{status});}
   if(failFallback)return Response.json({error:{message:'Service unavailable'}},{status:503});
   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"found":true}'}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:20,totalTokenCount:120}});
  }});
@@ -45,7 +46,7 @@ test('concurrent workers cannot start a duplicate fallback or bypass the origina
  f.release();await first;assert.equal(f.calls.length,2);
 });
 test('fallback is refused at the hard budget limit',async()=>{
- const f=fixture({balance:4920});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,1);assert.ok((await f.status()).chargedKurus<=5000);
+ const f=fixture({balance:4920});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,0);assert.equal((await f.status()).chargedKurus,4920);
 });
 test('both models unavailable stops without unbounded retries or refunds',async()=>{
  const f=fixture({failFallback:true});await assert.rejects(f.run(),e=>e.code==='logo_temporarily_unavailable');
@@ -58,9 +59,22 @@ test('known legacy provider failures and abandoned workers recover without rewri
   const previous=structuredClone(f.steps.get(key));await f.run();assert.deepEqual(f.steps.get(key),previous);assert.equal(f.calls.length,2);
  }
 });
-test('permissions, quota, transport ambiguity and content errors do not cause fallback calls',async()=>{
- for(const error of [Object.assign(Error(),{providerStatus:403}),Object.assign(Error(),{providerStatus:429}),Object.assign(Error(),{code:'budget_uncertain'}),Object.assign(Error(),{name:'TimeoutError'}),Object.assign(Error(),{code:'invalid_report'})]){
+test('permissions, quota, unclassified errors and accounting failures do not cause fallback calls',async()=>{
+ for(const error of [Object.assign(Error(),{providerStatus:403}),Object.assign(Error(),{providerStatus:429}),Object.assign(Error(),{code:'budget_uncertain'}),Object.assign(Error(),{name:'TimeoutError'}),Object.assign(Error(),{code:'provider_accounting'})]){
   let calls=0;const recover=createLogoRecovery({generate:async()=>{calls++;throw error;}},{wait:async()=>assert.fail()});
   await assert.rejects(recover('logo-region',{},{}),e=>e===error);assert.equal(calls,1);
+ }
+});
+
+test('logo generation timeouts use one alternate and keep both reservations bounded across reloads',async()=>{
+ const f=fixture({timeout:true});assert.equal((await f.run()).model,'gemini-4-argon');assert.equal(f.calls.length,2);
+ assert.equal([...f.steps.values()].find(s=>s.state==='uncertain').value.code,'model_timeout');
+ const before=await f.status();await f.run();assert.equal(f.calls.length,2);assert.deepEqual(await f.status(),before);
+});
+test('both logo timeouts and HTTP 500/502/504 are bounded and never create a third call',async()=>{
+ for(const options of [{timeout:true,failFallback:true},{status:500},{status:502},{status:504}]){
+  const f=fixture(options);
+  if(options.failFallback)await assert.rejects(f.run(),e=>e.code==='logo_temporarily_unavailable');else assert.equal((await f.run()).model,'gemini-4-argon');
+  assert.equal(f.calls.length,2);try{await f.run();}catch{}assert.equal(f.calls.length,2);assert.ok((await f.status()).chargedKurus<=5000);
  }
 });

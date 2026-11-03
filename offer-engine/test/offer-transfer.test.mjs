@@ -14,15 +14,15 @@ import {brief as rawBrief} from './fixtures/bhs.mjs';
 import {fallbackScope,validateScope} from '../src/pricing/scope.mjs';
 const brief=snapshotBrief({...rawBrief,services:'Meta ve Google Ads'});
 
-test('both actual One More failures survive transfer and keep original evidence and unverified observations',()=>{
+test('historical One More reports without their read packet cannot leak unverified claims into offers',()=>{
  for(const file of ['one-more-recorded-report.json','one-more-fresh-report.json']){
   const raw=JSON.parse(readFileSync(new URL('./fixtures/'+file,import.meta.url))),before=structuredClone(raw);
   const report=normalizeCompleteDirectReport(raw),audit=directAuditResult(brief,{report}),selected=selectProposalAudit(audit.data,brief);
   assertResult('audit',audit);assert.equal(audit.status,'ready');assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.researchCoverage.length,24);
-  assert.deepEqual(audit.data.originalReport,raw);assert.deepEqual(raw,before);assert.equal(audit.data.quality.contentComplete,false);
+  assert.deepEqual(audit.data.findings,[]);assert.deepEqual(raw,before);assert.equal(audit.data.quality.contentComplete,false);
   const failingArea=file.includes('fresh')?'Sitede gelişmiş performans':'Ad Library';
-  const area=selected.dimensions.flatMap(d=>d.highlights).find(h=>h.text.includes(failingArea));assert.ok(area);assert.equal(area.verification,'unverified');assert.deepEqual(area.sourceIds,[]);
-  assert.equal(audit.data.findings.length,raw.findings.length);assert.equal(audit.data.benchmarks.length,raw.benchmarks.length);
+  const area=selected.dimensions.flatMap(d=>d.highlights).find(h=>h.text.includes(failingArea));assert.equal(area,undefined);
+  assert.equal(audit.data.findings.length,0);assert.equal(audit.data.benchmarks.length,raw.benchmarks.length);
   assert.ok(audit.data.sources.every(s=>!s.url.includes('...')));
  }
 });
@@ -32,7 +32,7 @@ test('missing and malformed report shapes produce an honest consumable offer wit
   {...context().report,findings:[null,{id:'x',statement:'Doğrulanmamış bulgu',sourceIds:['unknown']}],sources:[{id:'unknown',url:'javascript:alert(1)'}],dimensions:[{id:'digital',score:101,strengths:null,gaps:{}}]}];
  for(const raw of cases){
   const before=structuredClone(raw),audit={stage:'audit',...directAuditResult(brief,{report:raw})};assertResult('audit',audit);
-  assert.deepEqual(raw,before);assert.deepEqual(audit.data.originalReport,raw??{});assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.scoring.total,null);
+  assert.deepEqual(raw,before);assert.deepEqual(audit.data.sources,[]);assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.scoring.total,null);
   assert.ok(audit.data.dimensions.every(d=>d.score===null));assert.ok(audit.data.findings.every(f=>f.sourceIds.length===0));
   const scope={summary:'Briefte konuşulan kapsam.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:'meta',phase:'start',priority:1,reason:'Briefte konuşulan kanal.',briefQuote:brief.services,findingIds:[]}],exclusions:[]};
   const pricing={stage:'pricing',...await pricingEngine.run({brief,scope},{audit})};assertResult('pricing',pricing);
@@ -68,4 +68,11 @@ test('well formed paid content and long research remain unchanged through repeat
  const raw=context().report;raw.summary='Ayrıntılı araştırma. '.repeat(1800);raw.researchCoverage={};
  const result=normalizeCompleteDirectReport(raw),again=normalizeCompleteDirectReport(result);
  assert.equal(result.summary,raw.summary);assert.deepEqual(result.findings,raw.findings);assert.deepEqual(result.benchmarks,raw.benchmarks);assert.deepEqual(again,result);assert.deepEqual(result.originalReport,raw);
+});
+
+test('an unavailable scope model preserves every explicitly requested supported service and reaches deterministic pricing',async()=>{
+ const b=snapshotBrief({...brief,services:'Meta, Google Ads, UGC, tasarım, sosyal medya yönetimi'}),plan=fallbackScope(b);
+ assert.equal(plan.services.length,5);assert.deepEqual(validateScope(plan,b,{findings:[]}),plan);
+ const audit={stage:'audit',...directAuditResult(b,{report:context().report,analysisPacket:context().packet})};
+ const result=await pricingEngine.run({brief:b,scope:plan},{audit});assertResult('pricing',result);assert.equal(result.data.alternatives.length,2);
 });
