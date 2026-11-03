@@ -267,6 +267,10 @@
       if(!pausedAudit||pausedAudit.stopped)return;
       const current=pausedAudit;pausedAudit=null;runAudit(current);
     });
+    function showAuditCost(cost){
+      const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+'Bu BHS denemesi: '+money(cost.attemptChargedKurus)+' TL · Kart toplamı (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
+    }
     async function runAudit(resume=null){
       const notice=dialog.querySelector('.ob-review-notice');
       if(typeof window.PipelineAuditRequest!=='function'){
@@ -276,13 +280,14 @@
       const current=resume||{kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
       dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('#ob-review-title').textContent='Araştırma hazırlanıyor';
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
+      if(!resume)showAuditCost({attemptChargedKurus:0});
       let action=resume?'status':'start';
       try{
         for(;;){
           notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,...(variant?{sourceOfferId:variant.sourceOfferId,researchRunId:researchRuns.new}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
-          if(response.cost){current.bounded=true;dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+'Kontrollü maliyet tahmini: '+(response.cost.chargedKurus/100).toFixed(2)+' / 50 TL · Normal hedef: 20–30 TL';}
+          if(response.cost){current.bounded=true;showAuditCost(response.cost);}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
           if(response.phase==='complete'){action='status';continue;}
@@ -296,6 +301,7 @@
         }
       }catch(error){
         if(current.stopped)return;
+        if(error.cost)showAuditCost(error.cost);
         const transport=error.code==='audit_transport',canResume=transport&&(error.canResume||current.bounded)&&current.ticket;
         dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');

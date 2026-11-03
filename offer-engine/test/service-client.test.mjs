@@ -27,3 +27,10 @@ test('structured provider failures stop immediately; only transient HTTP failure
   await assert.rejects(()=>transient.PipelineAuditRequest({action}),error=>error.code==='audit_transport');assert.equal(attempts,action==='status'?3:1);
  }
 });
+
+test('audit failures expose current attempt and total reserves without retrying the paid call',async()=>{
+ const cost={chargedKurus:3495,capKurus:5000,attemptChargedKurus:100};let calls=0;
+ const api=client(async()=>{calls++;return new Response(JSON.stringify({code:'budget_limit',error:'Stopped',cost}),{status:422});});
+ await assert.rejects(api.PipelineAuditRequest({action:'advance',ticket:'signed-job'}),error=>{assert.deepEqual(error.cost,cost);assert.equal(error.code,'budget_limit');return true;});
+ assert.equal(calls,1);
+});
