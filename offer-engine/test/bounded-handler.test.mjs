@@ -65,3 +65,22 @@ test('exhausted DNS checks cannot reach the budget or providers and produce a pr
   assert.equal(res.code,503);assert.equal(res.body.code,'website_network_busy');assert.ok(res.body.error.includes('Ücretli BHS başlatılmadı'));
  }finally{if(before===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=before;}
 });
+
+test('new attempts reset only the display baseline, preserve cached research and resume the signed baseline after failures',async()=>{
+ const prior=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  let charged=3395,runs=0;const cached={state:'complete',value:{plan:'retained source plan'}};
+  const ledger={begin:async()=>{},get:async key=>key===stageKey(brief,'source_plan','v5')?cached:null,status:async()=>({chargedKurus:charged,capKurus:5000})};
+  const dependencies={getSecret:()=>secret,getLedger:async()=>ledger,getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{},runStage:async({phase})=>{assert.equal(phase,'evidence');runs++;charged+=100;throw Object.assign(Error('Stopped'),{code:'budget_limit'});}};
+  const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}};
+  let res=response();await createBoundedAuditHandler(dependencies)(request(start),res);
+  assert.equal(res.body.cost.attemptChargedKurus,0);assert.equal(res.body.cost.chargedKurus,3395);assert.equal(res.body.phase,'evidence');assert.equal(runs,0);
+  const cookie=res.headers['Set-Cookie'][0].split(';')[0],ticket=res.body.ticket;
+  res=response();await createBoundedAuditHandler(dependencies)(request({...start,action:'advance',ticket},cookie),res);
+  assert.equal(res.code,422);assert.equal(res.body.code,'budget_limit');assert.equal(res.body.cost.attemptChargedKurus,100);assert.equal(res.body.cost.chargedKurus,3495);assert.equal(res.body.cost.capKurus,5000);
+  res=response();await createBoundedAuditHandler(dependencies)(request({...start,action:'status',ticket},cookie),res);
+  assert.equal(res.body.cost.attemptChargedKurus,100);assert.equal(runs,1);
+  res=response();await createBoundedAuditHandler(dependencies)(request(start,cookie),res);
+  assert.equal(res.body.cost.attemptChargedKurus,0);assert.equal(res.body.cost.chargedKurus,3495);assert.equal(res.body.phase,'evidence');assert.equal(runs,1);assert.equal(cached.value.plan,'retained source plan');
+ }finally{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;}
+});

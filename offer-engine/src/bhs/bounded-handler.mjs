@@ -18,7 +18,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
-  let phase='unknown',action='unknown';
+  let phase='unknown',action='unknown',readCost;
   const log=(event,extra={})=>{try{(event==='bhs_error'?logger.error:logger.info)?.call(logger,JSON.stringify({event,requestId,phase,action,...extra}));}catch{}};
   try{
    if(Number(req.headers['content-length'])>100000)throw new BudgetError('invalid_brief','Brief boyut sınırını aşıyor.');
@@ -45,7 +45,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
    }
-   const ticket=codec.encode(job,session,host),cost=()=>ledger.status();
+   // Display baseline only: never reset the durable ledger or its reservations.
+   if(action==='start')job.attemptStartKurus=(await ledger.status()).chargedKurus;
+   const ticket=codec.encode(job,session,host),cost=async()=>{
+    const total=await ledger.status();
+    return {...total,...(Number.isSafeInteger(job.attemptStartKurus)?{attemptChargedKurus:Math.max(0,total.chargedKurus-job.attemptStartKurus)}:{})};
+   };readCost=cost;
    if(action==='cancel')return res.status(200).json({status:'cancelled',cost:await cost()});
    if(action==='preflight'){
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
@@ -83,7 +88,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}:{})});
    if(error.budgetDiagnostic)log('bhs_budget_preflight',error.budgetDiagnostic);
    if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
-   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.'});
+   let cost;try{if(readCost)cost=await readCost();}catch{/* Preserve the original failure if cost status is unavailable. */}
+   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.',...(cost?{cost}:{})});
   }
  };
 }
