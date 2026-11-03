@@ -3,6 +3,7 @@
   function mount(container,{getWebsite,getContext,getBrandName,onChange}){
     let selected=null,verifiedData=null,disposed=false,epoch=0,saved=false;
     container.innerHTML=`<div class="ol-header"><strong>Marka logosu</strong><span>Ekran görüntüsünden hazırlanır</span></div>
+      <label class="ol-background-label">Görsel işleme<select class="ol-processing"><option value="clean">Arka planı temizle</option><option value="original">Filtrelemeden koy · AI kullanılmaz</option></select></label>
       <label class="ol-upload-label" for="ob-logo-screenshot">Logo ekran görüntüsü yükle</label>
       <input id="ob-logo-screenshot" class="ol-file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="ol-upload-hint ol-upload-status">
       <p id="ol-upload-hint" class="ol-status">Logoyu ve çevresinde biraz boşluğu içeren ekran görüntüsünü yükle. PNG, JPG veya WebP · en fazla 2 MB. Arka planı önceden temizlemen gerekmez.</p>
@@ -14,47 +15,55 @@
         <div class="ol-placement"><span>Sellf</span><div class="ol-logo-zone"><img alt="Teklif üst bölümündeki logo yerleşimi"></div></div><p class="ol-placement-label">Teklif üst bölümündeki yerleşim örneği · Zemin yalnızca logo alanına uygulanır.</p>
       </div>`;
     const status=container.querySelector('#ol-upload-status'),input=container.querySelector('.ol-file'),result=container.querySelector('.ol-result'),background=container.querySelector('.ol-background');
+    const processing=container.querySelector('.ol-processing');
     const normalize=()=>window.PipelineOfferBriefModel.webUrl(getWebsite());
     function apply(){
       if(!selected)return;
       const color=background.value==='auto'?(selected.placement?.background||'#ffffff'):background.value;
       container.querySelector('.ol-logo-zone').style.background=color;
-      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:saved?'saved':'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:saved,generated:false});
+      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:saved?'saved':verifiedData?.processing==='original'?'upload-original':'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:saved,generated:false});
     }
     background.addEventListener('change',apply);
-    input.addEventListener('change',async()=>{
-      const request=++epoch,file=input.files?.[0];
+    async function loadFile(){
+      const request=++epoch,file=input.files?.[0],original=processing.value==='original';
       selected=null;saved=false;result.hidden=true;onChange(null);
       if(!file){status.textContent='Ekran görüntüsü bekleniyor.';return;}
       const error=window.PipelineOfferBriefModel.validateLogo(file);
       if(error){status.textContent=error;return;}
-      status.textContent='Ekran görüntüsünün arka planı temizleniyor…';onChange({status:'loading',sourceType:'upload'});
+      status.textContent=original?'Görsel değiştirilmeden hazırlanıyor…':'Ekran görüntüsünün arka planı temizleniyor…';onChange({status:'loading',sourceType:'upload'});
       try{
         if(typeof window.PipelineLogoRequest!=='function')throw new Error('Logo işleme servisi bu önizlemede bağlı değil.');
         const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Görsel okunamadı.'));reader.onabort=()=>reject(new Error('Görsel okuma durduruldu.'));reader.readAsDataURL(file);});
         if(disposed||request!==epoch)return;
-        const data=await window.PipelineLogoRequest({mode:'upload',image,context:getContext?.(),brandName:getBrandName?.()});
+        const data=await window.PipelineLogoRequest({mode:'upload',...(original?{processing:'original'}:{}),image,context:getContext?.(),brandName:getBrandName?.()});
         if(disposed||request!==epoch)return;
         const candidate=data.candidates?.[0];
-        if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
+        if(original){if(data.generated!==false||data.processing!=='original'||!data.logoProof||candidate?.image!==image||candidate?.source!==image||candidate?.quality?.method!=='original')throw new Error('Orijinal görsel doğrulanamadı.');}
+        else if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
         selected=candidate;verifiedData=data;
         container.querySelector('.ol-original img').src=candidate.source;
         container.querySelector('.ol-checker img').src=candidate.image;
         container.querySelector('.ol-placement img').src=candidate.image;
         background.value='auto';
-        container.querySelector('.ol-quality').textContent='Şeffaf PNG hazır · '+candidate.quality.width+' × '+candidate.quality.height+' px. Teklif taslağı için hazırlandı.';
-        result.hidden=false;status.textContent='Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
+        container.querySelector('.ol-comparison figure:last-child figcaption').textContent=original?'Teklifte kullanılacak orijinal görsel':'Şeffaf logo';
+        container.querySelector('.ol-checker img').alt=original?'İşlenmemiş orijinal görsel':'Arka planı kaldırılan marka logosu';
+        container.querySelector('.ol-quality').textContent=(original?'Orijinal görsel hazır':'Şeffaf PNG hazır')+' · '+candidate.quality.width+' × '+candidate.quality.height+' px. Teklif taslağı için hazırlandı.';
+        result.hidden=false;status.textContent=original?'Görsel filtrelenmedi; kırpılmadan, arka planıyla birlikte teklife yerleştirilecek. Yerleşimi teklif üzerinde kontrol et.':'Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
       }catch(error){
         if(disposed||request!==epoch)return;
         status.textContent=error.message||'Görsel işlenemedi.';onChange({status:'error',sourceType:'upload'});
       }
-    });
+    }
+    input.addEventListener('change',loadFile);
+    processing.addEventListener('change',loadFile);
     return {useSaved(data){
       const candidate=data?.candidates?.[0];if(!candidate||!data.logoProof)return;
       ++epoch;selected=candidate;verifiedData=data;saved=true;
       for(const selector of ['.ol-original img','.ol-checker img','.ol-placement img'])container.querySelector(selector).src=candidate.image;
       background.value=candidate.placement?.background||'#ffffff';result.hidden=false;
-      container.querySelector('.ol-quality').textContent='Kaydedilen teklifin onaylı şeffaf logosu.';
+      processing.value=data.processing==='original'?'original':'clean';
+      container.querySelector('.ol-comparison figure:last-child figcaption').textContent=data.processing==='original'?'Teklifte kullanılacak orijinal görsel':'Şeffaf logo';
+      container.querySelector('.ol-quality').textContent=data.processing==='original'?'Kaydedilen teklifin onaylı orijinal görseli.':'Kaydedilen teklifin onaylı şeffaf logosu.';
       status.textContent='Mevcut logo kullanılıyor. Gerekirse yeni ekran görüntüsü yükleyebilirsin.';apply();
     },invalidate(){if(selected)apply();},destroy(){disposed=true;++epoch;}};
   }
