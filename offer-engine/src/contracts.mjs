@@ -1,10 +1,12 @@
 import {assertQuote} from './pricing/currency.mjs';
+export const originalLogoImage=value=>typeof value==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
 export function assertResult(stage,result){
   if(!['ready','review'].includes(result?.status)||!result.data||typeof result.data!=='object')throw new Error('Motor geçerli bir sonuç döndürmedi: '+stage);
   if(stage==='logo'){
     const logo=result.data.candidates?.[0],q=logo?.quality;
-    if(result.data.generated!==false||!logo?.image?.startsWith('data:image/png;base64,')||q?.transparency!==true||q?.matteStable!==true||q?.touchesEdge!==false||q?.changedSolid!==0)throw new Error('Şeffaflaştırılmamış veya bozulmuş logo kullanılamaz.');
+    const original=result.data.processing==='original'&&['upload-original','saved-original'].includes(result.data.sourceType)&&q?.method==='original'&&originalLogoImage(logo?.image)&&(logo.source===undefined||logo.source===logo.image);
+    if(result.data.generated!==false||(!original&&(!logo?.image?.startsWith('data:image/png;base64,')||q?.transparency!==true||q?.matteStable!==true||q?.touchesEdge!==false||q?.changedSolid!==0)))throw new Error('Şeffaflaştırılmamış veya bozulmuş logo kullanılamaz.');
     if(result.status==='ready'&&result.data.reviewed!==true)throw new Error('Logo görsel kontrolü tamamlanmadı.');
   }
   if(stage==='audit'&&(!Array.isArray(result.data.findings)||!Array.isArray(result.data.services)))throw new Error('Audit bulguları ve hizmet kapsamı eksik.');
@@ -27,7 +29,7 @@ export function assertResult(stage,result){
     if(!Array.isArray(p.sections))throw new Error('Teklif bölümleri eksik.');
     if(p.schemaVersion==='proposal-v1'){
       assertQuote(p,{requireReady:true});
-      if(p.alternatives?.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!p.logo?.image?.startsWith('data:image/png;base64,')||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Teklif kapsamı veya logo eksik.');
+      if(p.alternatives?.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!(p.logo?.image?.startsWith('data:image/png;base64,')||p.logo?.processing==='original'&&originalLogoImage(p.logo.image))||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Teklif kapsamı veya logo eksik.');
       for(const a of p.alternatives)if(a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0||!p.plans?.[a.id]?.steps?.length||a.services.some(s=>['cost','monthlyAmount','minimumAmount','idealAmount'].some(key=>key in s)))throw Error('Müşteri teklifi toplamları veya hizmet alanları geçersiz.');
     }
   }

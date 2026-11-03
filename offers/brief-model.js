@@ -40,7 +40,9 @@
     const uploadValid=draft.logo?.sourceType==='upload'&&draft.logo.reviewed===true&&draft.logo.quality?.transparency===true&&draft.logo.quality?.matteStable===true&&draft.logo.quality?.touchesEdge===false&&draft.logo.quality?.changedSolid===0;
     const pendingReview=!requireLogoReview&&draft.logo?.sourceType==='upload'&&draft.logo?.status==='review'&&draft.logo?.quality?.transparency===true&&draft.logo?.quality?.matteStable===true&&draft.logo?.quality?.touchesEdge===false&&draft.logo?.quality?.changedSolid===0;
     const savedValid=draft.logo?.sourceType==='saved'&&draft.logo?.verifiedData?.logoProof&&draft.logo?.reviewed===true;
-    const processedLogo=(pendingReview||uploadValid&&draft.logo?.status==='ready'||savedValid)&&draft.logo?.sourceWebsite===webUrl(draft.website)&&draft.logo?.generated===false&&draft.logo?.image?.startsWith('data:image/png;base64,');
+    const originalValid=draft.logo?.sourceType==='upload-original'&&draft.logo?.status==='review'&&draft.logo?.verifiedData?.logoProof&&draft.logo?.verifiedData?.processing==='original'&&draft.logo?.quality?.method==='original'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(draft.logo?.image||'')&&(!requireLogoReview||draft.logo.reviewed===true);
+    const originalImage=(originalValid||savedValid&&draft.logo?.verifiedData?.processing==='original')&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(draft.logo?.image||'');
+    const processedLogo=(pendingReview||uploadValid&&draft.logo?.status==='ready'||savedValid||originalValid)&&draft.logo?.sourceWebsite===webUrl(draft.website)&&draft.logo?.generated===false&&(originalImage||draft.logo?.image?.startsWith('data:image/png;base64,'));
     if (!processedLogo) errors.logoUrl = draft.logo?.status==='loading'?'Logo hazırlanıyor. Tamamlanmasını bekle.':draft.logo?.status==='review'?'Şeffaf logoyu ekran görüntüsüyle karşılaştırıp kontrolü tamamla.':'Logo ekran görüntüsünü yükleyip şeffaf sonucu kontrol et.';
     if (!text(draft.goals).trim()) errors.goals = 'Markanın hedeflerini belirt.';
     if (!text(draft.needs).trim()) errors.needs = 'İhtiyaçları ve öncelikleri belirt.';

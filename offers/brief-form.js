@@ -226,7 +226,7 @@
       try{
         let action='start';const requestId=crypto.randomUUID();
         for(;;){
-          notice.textContent='Gemini marka anlatımını hazırlıyor; doğrulanmış BHS, sabit aylık bedeller ve şeffaf logo şablona yerleştiriliyor…';
+          notice.textContent='Gemini marka anlatımını hazırlıyor; doğrulanmış BHS, sabit aylık bedeller ve logo şablona yerleştiriliyor…';
           const response=await window.PipelineProposalRequest({...payload,action,requestId,...(current.ticket?{ticket:current.ticket}:{})});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelineProposalRequest({...payload,action:'cancel',ticket:current.ticket}).catch(()=>{});return;}
@@ -330,7 +330,7 @@
       details.replaceChildren();
       const values = [
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
-        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? 'Şeffaf PNG hazır · Görsel onay teklif taslağında yapılacak' : 'Hazırlanmadı'],
+        ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? (draft.logo.verifiedData?.processing==='original'?'Orijinal görsel hazır · Görsel onay teklif taslağında yapılacak':'Şeffaf PNG hazır · Görsel onay teklif taslağında yapılacak') : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
         ['Teklif para birimi', draft.currency==='USD'?'USD · ABD doları':'TL · Türk lirası'],
         ['Aylık bütçe, TL', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],

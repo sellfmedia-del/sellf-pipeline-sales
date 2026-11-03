@@ -2,6 +2,7 @@ import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {createOfferWorkflow} from '../src/offer-workflow.mjs';
 import sharp from 'sharp';
+import {prepareOriginalLogo} from '../src/original-upload.mjs';
 import {createLogoEngine} from '../src/engines/logo-engine.mjs';
 import {budgetFor} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
@@ -20,6 +21,12 @@ export default async function handler(req,res){
   try{
     await authorizeProduction(req);
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
+    if(body?.processing!==undefined&&!['original','clean'].includes(body.processing))throw Error('Logo işleme seçimi geçersiz.');
+    if(body?.processing==='original'){
+      const data=await prepareOriginalLogo(body.image);
+      const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
+      return res.status(200).json({...data,logoProof:logoProof(secret,req.headers.host,data)});
+    }
     let ledger,generateLogo;
     const generate=async(stage,source,input,schema)=>{
       ledger||=await budgetFor(req,res,body.context.leadId);await ledger.begin();
