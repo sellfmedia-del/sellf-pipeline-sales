@@ -41,7 +41,9 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    error.definitelyNotBilled=url.startsWith(base)&&response.status===400;
    throw error;}
   trace?.finish();return value;
-  }catch(error){trace?.finish(error);throw error;}
+  }catch(error){trace?.finish(error);
+   if(url.startsWith(base)&&error.name==='TimeoutError'){const timeoutError=new BudgetError('model_timeout','AI yanıtı bekleme süresini aştı. Mevcut maliyet kaydı korundu.');timeoutError.providerOperation=url.endsWith(':countTokens')?'countTokens':'generateContent';throw timeoutError;}
+   throw error;}
  }
  return {configured:()=>Boolean(geminiKey&&tavilyKey&&ledger),
   async extract(urls){
@@ -95,7 +97,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    }
    if(recoveryAttempt&&cached&&cached.state!=='complete'){
     const error=new BudgetError(cached.state==='uncertain'?'budget_uncertain':'budget_pending','Önceki model işleminin kaydı korunuyor.');
-    error.modelRecoverable=cached.state==='uncertain'&&transientModelStatus(cached.value?.providerStatus);
+    error.modelRecoverable=cached.state==='uncertain'&&(transientModelStatus(cached.value?.providerStatus)||['model_timeout',23,'23'].includes(cached.value?.code));
     throw error;
    }
    if(cached?.state==='complete'){if(cached.value?.rejected)throw new BudgetError('provider_rejected','Bu model isteği daha önce reddedildi; aynı istek yeniden başlatılmadı.');return cached.value;}
@@ -120,7 +122,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(costDecision.tier==='quality_exception')console.info(JSON.stringify({event:'bhs_cost_exception',stage,model,...costDecision,reason:'required_context_and_full_output_envelope'}));
    return ledger.once(step,body,amount,async()=>{
     if(remaining()<1000)throw new BudgetError('model_deadline','Model çağrısı için yeterli güvenli süre kalmadı.');
-    const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},Math.max(1,Math.min(isLogo?45000:240000,remaining())),diagnostic?{...diagnostic,operation:'generateContent'}:null);
+    const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},Math.max(1,Math.min(isLogo?45000:recoveryAttempt&&!modelFallback?110000:240000,remaining())),diagnostic?{...diagnostic,operation:'generateContent'}:null);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
