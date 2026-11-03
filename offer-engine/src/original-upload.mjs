@@ -11,5 +11,5 @@ export async function prepareOriginalLogo(image){
  const reader=sharp(bytes,{limitInputPixels:16000000}),meta=await reader.metadata();
  if(meta.format!==match[1]||(meta.pages||1)!==1||!meta.width||!meta.height)throw Error('Geçerli, tek kare PNG, JPG veya WebP görseli seç.');
  await reader.stats();
- return {generated:false,sourceType:'upload-original',processing:'original',candidates:[{id:'original-logo',source:image,image,placement:{background:'#ffffff',area:'logo-only'},quality:{method:'original',width:meta.width,height:meta.height,status:'review',requiresReview:true,sourceKind:'original-upload'}}]};
+ return {generated:false,sourceType:'upload-original',processing:'original',candidates:[{id:'original-logo',image,placement:{background:'#ffffff',area:'logo-only'},quality:{method:'original',width:meta.width,height:meta.height,status:'review',requiresReview:true,sourceKind:'original-upload'}}]};
 }

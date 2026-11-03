@@ -5,7 +5,7 @@ export function assertResult(stage,result){
   if(!['ready','review'].includes(result?.status)||!result.data||typeof result.data!=='object')throw new Error('Motor geçerli bir sonuç döndürmedi: '+stage);
   if(stage==='logo'){
     const logo=result.data.candidates?.[0],q=logo?.quality;
-    const original=result.data.processing==='original'&&['upload-original','saved-original'].includes(result.data.sourceType)&&q?.method==='original'&&originalLogoImage(logo?.image)&&logo.source===logo.image;
+    const original=result.data.processing==='original'&&['upload-original','saved-original'].includes(result.data.sourceType)&&q?.method==='original'&&originalLogoImage(logo?.image)&&(logo.source===undefined||logo.source===logo.image);
     if(result.data.generated!==false||(!original&&(!logo?.image?.startsWith('data:image/png;base64,')||q?.transparency!==true||q?.matteStable!==true||q?.touchesEdge!==false||q?.changedSolid!==0)))throw new Error('Şeffaflaştırılmamış veya bozulmuş logo kullanılamaz.');
     if(result.status==='ready'&&result.data.reviewed!==true)throw new Error('Logo görsel kontrolü tamamlanmadı.');
   }

@@ -15,7 +15,7 @@ export function savedLogo(document,secret,host){
  if(document?.logo?.reviewed!==true||!(original||document.logo.image?.startsWith('data:image/png;base64,')))return null;
  // This image was already accepted by the signed proposal/save boundary and
  // visually approved. Re-attest the saved bytes; do not process or invent pixels.
- const data={generated:false,reviewed:true,sourceType:original?'saved-original':'saved',...(original?{processing:'original'}:{}),candidates:[{id:'saved',image:document.logo.image,source:document.logo.image,placement:{background:document.logo.background,area:'logo-only'},quality:original?{method:'original'}:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}]};
+ const data={generated:false,reviewed:true,sourceType:original?'saved-original':'saved',...(original?{processing:'original'}:{}),candidates:[{id:'saved',image:document.logo.image,...(original?{}:{source:document.logo.image}),placement:{background:document.logo.background,area:'logo-only'},quality:original?{method:'original'}:{transparency:true,matteStable:true,touchesEdge:false,changedSolid:0}}]};
  return {...data,logoProof:logoProof(secret,host,data)};
 }
 export async function loadSavedSynthesis(row,ledger){

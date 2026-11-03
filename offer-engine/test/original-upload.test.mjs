@@ -13,6 +13,7 @@ import {context} from './fixtures/evidence.mjs';
 import {brief as base} from './fixtures/bhs.mjs';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import {randomBytes} from 'node:crypto';
 const secret='original-upload-test-secret',host='original.preview.example';
 const copy={headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Onaylı teklif.',findingIds:['f0']};
 async function fixture(){
@@ -31,7 +32,7 @@ async function image(format='png'){
 test('original PNG/JPEG/WebP retain every uploaded byte and carry no fabricated transparency claims',async()=>{
  for(const format of ['png','jpeg','webp']){
   const input=await image(format),data=await prepareOriginalLogo(input);
-  assert.equal(data.candidates[0].source,input);assert.equal(data.candidates[0].image,input);
+  assert.equal(data.candidates[0].source,undefined);assert.equal(data.candidates[0].image,input);
   assert.equal(data.processing,'original');assert.equal(data.candidates[0].quality.transparency,undefined);
   assertResult('logo',{status:'review',data});
   assert.throws(()=>assertResult('logo',{status:'ready',data}),/kontrol/);
@@ -84,4 +85,13 @@ test('browser original selection sends explicit mode, accepts JPEG and invalidat
  const draft={brandName:'Example',segment:'kobi',website:'https://example.com/',currency:'TRY',goals:'Growth',needs:'Support',services:'SEO',budget:'',logo:value};
  assert.equal(window.PipelineOfferBriefModel.validate(draft).logoUrl,undefined);
  assert.ok(window.PipelineOfferBriefModel.validate(draft,{requireLogoReview:true}).logoUrl);
+});
+
+test('large valid original images are not duplicated in upload or saved-logo responses',async()=>{
+ const bytes=await sharp(randomBytes(800*700*3),{raw:{width:800,height:700,channels:3}}).png().toBuffer();
+ assert.ok(bytes.length<2*1024*1024&&bytes.length>1500000);
+ const input='data:image/png;base64,'+bytes.toString('base64'),data=await prepareOriginalLogo(input);
+ assert.ok(JSON.stringify(data).length<3800000);
+ const saved=savedLogo({logo:{reviewed:true,processing:'original',image:input,background:'#ffffff'}},secret,host);
+ assert.ok(JSON.stringify(saved).length<3800000);assert.equal(saved.candidates[0].image,input);
 });

@@ -21,7 +21,7 @@
       if(!selected)return;
       const color=background.value==='auto'?(selected.placement?.background||'#ffffff'):background.value;
       container.querySelector('.ol-logo-zone').style.background=color;
-      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source,sourceType:saved?'saved':verifiedData?.processing==='original'?'upload-original':'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:saved,generated:false});
+      onChange({verifiedData,logoProof:verifiedData?.logoProof,status:'review',image:selected.image,source:selected.source||selected.image,sourceType:saved?'saved':verifiedData?.processing==='original'?'upload-original':'upload',sourceWebsite:normalize(),candidateId:selected.id,quality:selected.quality,placement:{background:color,area:'logo-only'},reviewed:saved,generated:false});
     }
     background.addEventListener('change',apply);
     async function loadFile(){
@@ -38,10 +38,10 @@
         const data=await window.PipelineLogoRequest({mode:'upload',...(original?{processing:'original'}:{}),image,context:getContext?.(),brandName:getBrandName?.()});
         if(disposed||request!==epoch)return;
         const candidate=data.candidates?.[0];
-        if(original){if(data.generated!==false||data.processing!=='original'||!data.logoProof||candidate?.image!==image||candidate?.source!==image||candidate?.quality?.method!=='original')throw new Error('Orijinal görsel doğrulanamadı.');}
+        if(original){if(data.generated!==false||data.processing!=='original'||!data.logoProof||candidate?.image!==image||candidate?.source!==undefined&&candidate.source!==image||candidate?.quality?.method!=='original')throw new Error('Orijinal görsel doğrulanamadı.');}
         else if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
         selected=candidate;verifiedData=data;
-        container.querySelector('.ol-original img').src=candidate.source;
+        container.querySelector('.ol-original img').src=candidate.source||candidate.image;
         container.querySelector('.ol-checker img').src=candidate.image;
         container.querySelector('.ol-placement img').src=candidate.image;
         background.value='auto';
