@@ -21,7 +21,7 @@ test('no retry on success, validation, quota, auth, budget or ambiguous transpor
   let calls=0;await assert.rejects(recoverModelStage(async()=>{calls++;throw Object.assign(Error(),{providerStatus});},'scope',{}, {wait:async()=>assert.fail()}));assert.equal(calls,1);
  }
 });
-function fixture({balance=500,failFallback=false,html=false}={}){
+function fixture({balance=500,failFallback=false,html=false,timeout=false,countTimeout=false}={}){
  let charged=balance;const steps=new Map(),calls=[];let clock=Date.parse('2026-11-03T12:00:00Z');
  const ledger=createLedger(async(op,a={})=>{
   if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
@@ -38,8 +38,9 @@ function fixture({balance=500,failFallback=false,html=false}={}){
  });
  const provider=createBoundedProviders({ledger,geminiKey:'test',now:()=>clock,fetchImpl:async(url,init)=>{
   if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="03.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
-  if(url.endsWith(':countTokens'))return Response.json({totalTokens:100});
+  if(url.endsWith(':countTokens')){if(countTimeout&&url.includes('3.1-pro-preview'))throw new DOMException('The operation was aborted due to timeout','TimeoutError');return Response.json({totalTokens:100});}
   calls.push({url,body:JSON.parse(init.body)});
+  if(timeout&&(url.includes('3.1-pro-preview')||failFallback))throw new DOMException('The operation was aborted due to timeout','TimeoutError');
   if(url.includes('3.1-pro-preview')||failFallback)return html?new Response('Service unavailable',{status:503}):Response.json({error:{message:'Unavailable'}},{status:503});
   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"summary":"same report"}'}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:20,totalTokenCount:120}});
  }});
@@ -58,4 +59,28 @@ test('fallback cannot exceed the shared cap or refund an uncertain primary',asyn
 test('two unavailable models stop after exactly two calls across workers and reloads',async()=>{
  const f=fixture({failFallback:true});await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');const cost=await f.cost();
  await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');assert.equal(f.calls.length,2);assert.deepEqual(await f.cost(),cost);
+});
+
+test('generation timeout selects one alternate, preserves original reservation and never repeats it on reload',async()=>{
+ const f=fixture({timeout:true}),result=await f.run();
+ assert.equal(result.model,'gemini-4-argon');assert.equal(f.calls.length,2);assert.deepEqual(f.calls[0].body,f.calls[1].body);
+ const uncertain=[...f.steps.values()].find(s=>s.state==='uncertain');assert.equal(uncertain.value.code,'model_timeout');assert.ok(uncertain.charge_kurus>0);
+ const cost=await f.cost();assert.ok(cost.chargedKurus<=5000);
+ // Historical timeout records used DOMException.code 23. Recover only the
+ // separate alternate; never release or replay the ambiguous primary.
+ uncertain.value.code=23;f.advance();assert.deepEqual(await f.run(),result);assert.equal(f.calls.length,2);assert.deepEqual(await f.cost(),cost);
+});
+test('countTokens timeout falls back before reserving paid primary generation',async()=>{
+ const f=fixture({countTimeout:true});assert.equal((await f.run()).model,'gemini-4-argon');assert.equal(f.calls.length,1);
+ assert.equal([...f.steps.values()].filter(s=>s.state==='uncertain').length,0);
+});
+test('timeout on both models stops after two calls and remains stopped after reload',async()=>{
+ const f=fixture({timeout:true,failFallback:true});
+ await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');const cost=await f.cost();
+ f.advance();await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');
+ assert.equal(f.calls.length,2);assert.deepEqual(await f.cost(),cost);assert.ok(cost.chargedKurus<=5000);
+});
+test('timeout recovery still refuses a fallback exceeding the shared 50 TRY cap',async()=>{
+ const f=fixture({timeout:true,balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');
+ assert.equal(f.calls.length,1);assert.ok((await f.cost()).chargedKurus<=5000);
 });
