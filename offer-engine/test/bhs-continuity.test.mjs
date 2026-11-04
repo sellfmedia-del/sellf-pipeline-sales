@@ -4,7 +4,7 @@ import {createLedger,hash} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
-import {snapshotBrief} from '../src/bhs/brief.mjs';
+import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {createPricingHandler} from '../api/pricing.js';
 import {createProposalHandler} from '../api/proposal.js';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
@@ -14,6 +14,7 @@ import {context} from './fixtures/evidence.mjs';
 import {brief as rawBrief} from './fixtures/bhs.mjs';
 import {offerFixture,response} from './fixtures/offer.mjs';
 import {fallbackScope} from '../src/pricing/scope.mjs';
+import {researchCacheKey} from '../src/bhs/reuse.mjs';
 const host='continuity.preview.example',secret='isolated-continuity-secret',time=Date.parse('2026-11-04T12:00:00Z');
 function memory(initial=500){
  let charged=initial;const rows=new Map();
@@ -34,6 +35,23 @@ function memory(initial=500){
 function client(handler){
  let cookie;return async body=>{const res=response();await handler({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];return {...res,cookie};};
 }
+test('a cached empty handoff restores completed same-brand research at an unchanged 46.21 TRY without providers or overwritten records',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const db=memory(4621),brief=snapshotBrief({...rawBrief,services:'Meta ve Google Ads'}),hash=briefHash(brief),c=context();
+  db.rows.set(stageKey(brief,'source_plan','v5'),{state:'uncertain',charge_kurus:0,value:{code:'budget_limit'}});
+  const empty=continuationAudit(brief,{reason:'budget_limit'}),key='audit:continuation:v1:source_plan:'+hash;
+  db.rows.set(key,{state:'complete',value:empty});
+  const saved={step_key:'audit:synthesis:'+hash,created_at:new Date(time).toISOString(),value:{data:{findings:[]},originalModelData:c.report,originalModelStep:'model:synthesis:original',analysisPacket:c.packet,researchContext:{brief,briefHash:hash}}};
+  db.rows.set(researchCacheKey(brief,time),{state:'complete',value:saved});
+  const before=structuredClone([...db.rows]);
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no provider'),validateWebsite:async()=>{},runStage:()=>assert.fail('no research rerun'),now:()=>time,logger:{}}),call=client(handler);
+  const start={action:'start',requestId:'restore_saved_research_20261104',brief,context:{leadId:'lead',spaceId:'space'}};
+  const done=await call(start);assert.equal(done.code,200);assert.equal(done.data.result.data.researchContinuity.status,'partial');assert.equal(done.data.result.data.researchContinuity.restoredFromSavedResearch,true);assert.ok(done.data.result.data.findings.length>0);assert.ok(done.data.result.data.sources.every(s=>s.verification.status==='quote_matched'));assert.equal(done.data.cost.chargedKurus,4621);assert.equal(done.data.cost.attemptChargedKurus,0);
+  assert.deepEqual([...db.rows],before,'old handoff and research remain immutable');assert.equal((await call(start)).data.result.data.findings.length,done.data.result.data.findings.length);
+  const price=response();await createPricingHandler({getSecret:()=>secret,now:()=>time})({method:'POST',headers:{host,origin:'https://'+host,cookie:done.cookie},body:{action:'start',brief,audit:done.data.result,pricingProof:done.data.pricingProof}},price);assert.equal(price.code,200);assert.equal(db.cost(),4621);
+ }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
 test('an optional claim ceiling serialises reservations while completed data remains reusable above it',async()=>{
  const db=memory(2900);let calls=0,release;const gate=new Promise(resolve=>{release=resolve;});
  const one=db.ledger.once('search:one',{},100,async()=>{calls++;await gate;return {ok:true};},{limitKurus:3000});
