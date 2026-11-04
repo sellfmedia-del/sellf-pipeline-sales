@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node offer-engine/scripts/bhs-model-comparison.mjs --run",
+  "buildCommand": "npm run build && node offer-engine/scripts/bhs-model-comparison.mjs --quality-pass",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {

@@ -18,3 +18,10 @@ test('comparison refuses uncounted or oversized inputs and hashes identical cont
  assert.equal(budget.committed,0);assert.equal(fingerprint({packet:['one','two']}),fingerprint({packet:['one','two']}));
  assert.notEqual(fingerprint({packet:['one']}),fingerprint({packet:['two']}));
 });
+test('a quality pass retains every previous uncertain reservation and the same total cap',()=>{
+ const first=createAllowance(100),entry=first.reserve(candidates[0],18,512,'health');
+ const next=createAllowance(100,first.entries);assert.equal(next.committed,entry.reservedKurus);
+ assert.throws(()=>next.reserve(candidates[0],10000,16384,'quality'),/comparison_budget_limit/);
+ assert.equal(next.committed,first.committed);assert.notEqual(next.entries,first.entries);
+ assert.throws(()=>createAllowance(1,first.entries),/comparison_budget_limit/);
+});

@@ -13,8 +13,11 @@ export const candidates=[
  {id:'gemini-3.1-pro-preview',input:2,output:12},
  {id:'gemini-4-argon',input:2,output:10}
 ];
-export function createAllowance(capKurus=5000){
- let committed=0;const entries=[];
+export function createAllowance(capKurus=5000,previousEntries=[]){
+ const entries=structuredClone(previousEntries);
+ if(entries.some(e=>!candidates.some(m=>m.id===e.model)||!Number.isSafeInteger(e.committedKurus)||e.committedKurus<0||e.committedKurus>e.reservedKurus))throw Error('invalid_prior_receipts');
+ let committed=entries.reduce((sum,e)=>sum+e.committedKurus,0);
+ if(committed>capKurus)throw Error('comparison_budget_limit');
  return {get committed(){return committed;},get entries(){return entries;},capKurus,
   reserve(model,inputTokens,outputTokens,label){
    if(!Number.isSafeInteger(inputTokens)||inputTokens<1||inputTokens>190000||!Number.isSafeInteger(outputTokens)||outputTokens<1||outputTokens>16384)throw Error('invalid_token_envelope');

@@ -1,0 +1,435 @@
+{
+  "startedAt": "2026-11-04T14:58:23.811Z",
+  "updatedAt": "2026-11-04T14:59:48.303Z",
+  "commit": "3e62ea39efa0eb988edc12c7229873f8ab19b2c0",
+  "productionRoutingChanged": false,
+  "databaseWrites": 0,
+  "automaticRetries": 0,
+  "concurrency": 1,
+  "healthRounds": 3,
+  "quality": "Same frozen public evidence, full BHS prompt and contract; no automatic model judge. One report per reachable model. Semantic comparison requires human review.",
+  "limitation": "Small sample in one time window; not a long-term error-rate estimate or proof of equal quality. Collection is fixed across models and excludes the variable source-planning stage.",
+  "brief": {
+    "brandName": "Huel",
+    "segment": "corporate",
+    "website": "https://huel.com/",
+    "goals": "ABD e-ticaretinde ölçülebilir müşteri edinimi ve tekrar satın alma fırsatlarını anlamak.",
+    "needs": "Kamuya açık ürün, abonelik, konumlandırma ve satın alma yolculuğu kanıtlarını incelemek.",
+    "services": "Growth danışmanlığı; Meta ve Google Ads operasyonları.",
+    "meetingNotes": "Bağımsız model karşılaştırması; gerçek müşteri görüşmesi değildir. Rakiplerin ülke ve para birimi farklarını açık tut; AB kanıtını ABD performansı gibi genelleme.",
+    "budget": null
+  },
+  "results": [
+    {
+      "model": "gemini-3.6-flash",
+      "legacy": false,
+      "health": [
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 409,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 200,
+          "operation": "generateContent",
+          "providerCode": null,
+          "message": null,
+          "latencyMs": 1439,
+          "finishReason": "STOP",
+          "responseModel": "gemini-3.6-flash",
+          "usage": {
+            "promptTokenCount": 18,
+            "candidatesTokenCount": 5,
+            "totalTokenCount": 23,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 18
+              }
+            ],
+            "serviceTier": "standard"
+          },
+          "usageVerified": true,
+          "usable": true,
+          "accepted": true
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 375,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        }
+      ],
+      "quality": {
+        "status": "not_run_unreachable",
+        "reason": "Fewer than two accepted samples out of three; avoid costly full retry."
+      }
+    },
+    {
+      "model": "gemini-3.8-flash",
+      "legacy": false,
+      "health": [
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 5110,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 470,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 7700,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        }
+      ],
+      "quality": {
+        "status": "not_run_unreachable",
+        "reason": "Fewer than two accepted samples out of three; avoid costly full retry."
+      }
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "legacy": true,
+      "health": [
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 977,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 480,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 471,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        }
+      ],
+      "quality": {
+        "status": "not_run_unreachable",
+        "reason": "Fewer than two accepted samples out of three; avoid costly full retry."
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "legacy": false,
+      "health": [
+        {
+          "status": 200,
+          "operation": "generateContent",
+          "providerCode": null,
+          "message": null,
+          "latencyMs": 3596,
+          "finishReason": "STOP",
+          "responseModel": "gemini-3.1-pro-preview",
+          "usage": {
+            "promptTokenCount": 18,
+            "candidatesTokenCount": 9,
+            "totalTokenCount": 184,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 18
+              }
+            ],
+            "thoughtsTokenCount": 157,
+            "serviceTier": "standard"
+          },
+          "usageVerified": true,
+          "usable": true,
+          "accepted": true
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 3490,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 431,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        }
+      ],
+      "quality": {
+        "status": "not_run_unreachable",
+        "reason": "Fewer than two accepted samples out of three; avoid costly full retry."
+      }
+    },
+    {
+      "model": "gemini-4-argon",
+      "legacy": false,
+      "health": [
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 2475,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        },
+        {
+          "accepted": false,
+          "error": "The operation was aborted due to timeout"
+        },
+        {
+          "status": 503,
+          "operation": "generateContent",
+          "providerCode": "UNAVAILABLE",
+          "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+          "latencyMs": 428,
+          "finishReason": null,
+          "responseModel": null,
+          "usage": null,
+          "usageVerified": false,
+          "usable": false,
+          "accepted": false
+        }
+      ],
+      "quality": {
+        "status": "not_run_unreachable",
+        "reason": "Fewer than two accepted samples out of three; avoid costly full retry."
+      }
+    }
+  ],
+  "budget": {
+    "capKurus": 5000,
+    "committedCeilingKurus": 925,
+    "verifiedUsageEnvelopeKurus": 16,
+    "unverifiedReservationsKurus": 909,
+    "basis": "60 TRY/USD plus 20%; conservative envelope, not provider invoice",
+    "entries": [
+      {
+        "model": "gemini-3.6-flash",
+        "label": "health-0",
+        "reservedKurus": 37,
+        "committedKurus": 37,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.8-flash",
+        "label": "health-0",
+        "reservedKurus": 37,
+        "committedKurus": 37,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "label": "health-0",
+        "reservedKurus": 74,
+        "committedKurus": 74,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "label": "health-0",
+        "reservedKurus": 104,
+        "committedKurus": 15,
+        "usageVerified": true,
+        "inputUpper": 4118,
+        "outputUpper": 512,
+        "tokens": {
+          "input": 18,
+          "output": 166
+        }
+      },
+      {
+        "model": "gemini-4-argon",
+        "label": "health-0",
+        "reservedKurus": 98,
+        "committedKurus": 98,
+        "usageVerified": false,
+        "inputUpper": 4234,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.6-flash",
+        "label": "health-1",
+        "reservedKurus": 37,
+        "committedKurus": 1,
+        "usageVerified": true,
+        "inputUpper": 4118,
+        "outputUpper": 512,
+        "tokens": {
+          "input": 18,
+          "output": 5
+        }
+      },
+      {
+        "model": "gemini-3.8-flash",
+        "label": "health-1",
+        "reservedKurus": 37,
+        "committedKurus": 37,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "label": "health-1",
+        "reservedKurus": 74,
+        "committedKurus": 74,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "label": "health-1",
+        "reservedKurus": 104,
+        "committedKurus": 104,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-4-argon",
+        "label": "health-1",
+        "reservedKurus": 98,
+        "committedKurus": 98,
+        "usageVerified": false,
+        "inputUpper": 4234,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.6-flash",
+        "label": "health-2",
+        "reservedKurus": 37,
+        "committedKurus": 37,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.8-flash",
+        "label": "health-2",
+        "reservedKurus": 37,
+        "committedKurus": 37,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "label": "health-2",
+        "reservedKurus": 74,
+        "committedKurus": 74,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "label": "health-2",
+        "reservedKurus": 104,
+        "committedKurus": 104,
+        "usageVerified": false,
+        "inputUpper": 4118,
+        "outputUpper": 512
+      },
+      {
+        "model": "gemini-4-argon",
+        "label": "health-2",
+        "reservedKurus": 98,
+        "committedKurus": 98,
+        "usageVerified": false,
+        "inputUpper": 4234,
+        "outputUpper": 512
+      }
+    ]
+  }
+}
