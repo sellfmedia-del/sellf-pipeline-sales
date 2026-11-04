@@ -33,7 +33,7 @@ function memory(initial=500){
 function client(handler){
  let cookie;return async body=>{const res=response();await handler({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];return {...res,cookie};};
 }
-test('parallel paid reservations stop at the 30 TRY target while completed data remains reusable above it',async()=>{
+test('an optional claim ceiling serialises reservations while completed data remains reusable above it',async()=>{
  const db=memory(2900);let calls=0,release;const gate=new Promise(resolve=>{release=resolve;});
  const one=db.ledger.once('search:one',{},100,async()=>{calls++;await gate;return {ok:true};},{limitKurus:3000});
  const two=db.ledger.once('search:two',{},100,async()=>{calls++;return {};},{limitKurus:3000});

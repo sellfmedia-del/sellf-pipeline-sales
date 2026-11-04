@@ -14,7 +14,7 @@
   if(payload.action==='start')return {ticket:'synthetic-only',phase:'source_plan',nextAction:'advance',cost:cost()};
   if(payload.action==='continue')return {phase:'complete',result:structuredClone(continuity.audit),pricingProof:'synthetic-only',cost:cost()};
   if(payload.action==='recover'){recovered=true;return {ticket:'synthetic-only',phase:'source_plan',nextAction:'advance',cost:cost()};}
-  if(!recovered)throw Object.assign(Error(scenario==='budget'?'Bu aşama için otomatik 30 TL maliyet hedefinde yeterli tutar yok.':'Birincil ve yedek Gemini modeli bu örnekte tamamlanamadı.'),{code:scenario==='budget'?'budget_limit':'model_temporarily_unavailable',cost:cost(),recoveryAvailable:true,continuationAvailable:true,ticket:'synthetic-only',...(scenario==='budget'?{budgetDetail:{requiredKurus:960,availableKurus:768,followingReserveKurus:0,remainingKurus:2768,limitKurus:3000}}:{})});
+  if(!recovered)throw Object.assign(Error(scenario==='budget'?'Bu aşamanın tam çıktı rezervi için kartın kalan sınırı yeterli değil.':'Birincil ve yedek Gemini modeli bu örnekte tamamlanamadı.'),{code:scenario==='budget'?'budget_limit':'model_temporarily_unavailable',cost:cost(),recoveryAvailable:true,continuationAvailable:true,ticket:'synthetic-only',...(scenario==='budget'?{budgetDetail:{requiredKurus:2960,availableKurus:2768,followingReserveKurus:0,remainingKurus:2768,limitKurus:5000}}:{})});
   const completed=cost();completed.chargedKurus=2400;completed.attemptChargedKurus=168;completed.breakdown.verifiedUsageKurus+=168;
   return {phase:'complete',result:structuredClone(data.audit),pricingProof:'synthetic-only',cost:completed};
  };

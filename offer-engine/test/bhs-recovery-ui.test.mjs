@@ -15,7 +15,7 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
    await page.locator('#review-'+kind).click();await page.locator('.ob-recovery:not([hidden])').waitFor();
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start','advance']);
    assert.ok((await page.locator('.ob-footer>p').textContent()).includes('22,32 / 50,00'));
-   if(kind==='budget'){const text=await page.locator('.ob-review-notice').textContent();for(const value of ['9,60','7,68','0,00','27,68','30 TL'])assert.ok(text.includes(value));}
+   if(kind==='budget'){const text=await page.locator('.ob-review-notice').textContent();for(const value of ['29,60','27,68','0,00'])assert.ok(text.includes(value));}
    await page.locator('.ob-cost-detail summary').click();assert.ok((await page.locator('.ob-cost-copy').textContent()).includes('kesinleşmiş harcama olarak gösterilmez'));
    if(process.env.BHS_TEST_SCREENSHOTS==='1'&&kind==='budget')await page.screenshot({path:'/tmp/bhs-recovery-'+width+'.png'});
    // Two synchronous clicks still authorise a single recovery batch.

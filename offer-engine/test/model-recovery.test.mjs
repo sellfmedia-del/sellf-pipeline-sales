@@ -56,7 +56,8 @@ test('full provider fallback preserves payload, separate cost reservations and r
 });
 test('503 with a non-JSON body also selects the fallback',async()=>{const f=fixture({html:true});assert.equal((await f.run()).model,'gemini-4-argon');assert.equal(f.calls.length,2);});
 test('fallback cannot exceed the shared cap or refund an uncertain primary',async()=>{
- const f=fixture({balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,0);assert.equal((await f.cost()).chargedKurus,4800);
+ const f=fixture({balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,1);assert.ok((await f.cost()).chargedKurus>4800&&(await f.cost()).chargedKurus<=5000);
+ const before=await f.cost();await assert.rejects(f.run());assert.equal(f.calls.length,1);assert.deepEqual(await f.cost(),before);
 });
 test('two unavailable models stop after exactly two calls across workers and reloads',async()=>{
  const f=fixture({failFallback:true});await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');const cost=await f.cost();
@@ -84,11 +85,12 @@ test('timeout on both models stops after two calls and remains stopped after rel
 });
 test('timeout recovery still refuses a fallback exceeding the shared 50 TRY cap',async()=>{
  const f=fixture({timeout:true,balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');
- assert.equal(f.calls.length,0);assert.equal((await f.cost()).chargedKurus,4800);
+ assert.equal(f.calls.length,1);assert.ok((await f.cost()).chargedKurus>4800&&(await f.cost()).chargedKurus<=5000);
+ const before=await f.cost();await assert.rejects(f.run());assert.equal(f.calls.length,1);assert.deepEqual(await f.cost(),before);
 });
 
-test('explicit quality recovery can fit the same-contract alternate above the normal target within the hard cap',async()=>{
- const f=fixture({balance:3395,stage:'synthesis',count:30469,manualRecoveryRound:1});
+test('automatic quality completion can fit the same-contract alternate above the soft target within the hard cap',async()=>{
+ const f=fixture({balance:3395,stage:'synthesis',count:30469});
  const result=await f.run({maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,jsonMode:true,thinkingLevel:'MEDIUM'});
  assert.equal(result.model,'gemini-4-argon');assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.includes('gemini-4-argon'));
  assert.ok(f.calls[0].body.generationConfig.maxOutputTokens>=12288);assert.equal(f.calls[0].body.generationConfig.thinkingConfig.thinkingLevel,'MEDIUM');
