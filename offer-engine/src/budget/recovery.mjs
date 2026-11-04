@@ -3,7 +3,7 @@ import {hash} from './ledger.mjs';
 // One explicit additional batch per brief/phase, shared by workers and reloads.
 // The existing ledger atomically claims the marker; no budget is reset/refunded.
 export const recoveryKey=(brief,phase)=>'audit:recovery:'+phase+':'+hash(brief);
-export const recoverableAuditCodes=new Set(['model_temporarily_unavailable','model_deadline','budget_limit','budget_uncertain']);
+export const recoverableAuditCodes=new Set(['model_temporarily_unavailable','model_content_invalid','model_deadline','budget_limit','budget_uncertain']);
 // The atomic zero-cost reservation itself records the explicit intent. If the
 // worker dies before completing that tiny marker, a status resume must still
 // recover the SAME batch instead of consuming a new marker or staying stuck.

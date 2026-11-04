@@ -15,7 +15,7 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
    await page.locator('#review-'+kind).click();await page.locator('.ob-recovery:not([hidden])').waitFor();
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start','advance']);
    assert.ok((await page.locator('.ob-footer>p').textContent()).includes('22,32 / 50,00'));
-   if(kind==='budget'){const text=await page.locator('.ob-review-notice').textContent();for(const value of ['5,05','2,68','25,00','27,68'])assert.ok(text.includes(value));}
+   if(kind==='budget'){const text=await page.locator('.ob-review-notice').textContent();for(const value of ['9,60','7,68','0,00','27,68','30 TL'])assert.ok(text.includes(value));}
    await page.locator('.ob-cost-detail summary').click();assert.ok((await page.locator('.ob-cost-copy').textContent()).includes('kesinleşmiş harcama olarak gösterilmez'));
    if(process.env.BHS_TEST_SCREENSHOTS==='1'&&kind==='budget')await page.screenshot({path:'/tmp/bhs-recovery-'+width+'.png'});
    // Two synchronous clicks still authorise a single recovery batch.
@@ -26,6 +26,39 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
    await page.locator('.ob-price').click();assert.equal(await page.locator('.ob-pricing article').count(),2);
    assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
    await page.locator('.ob-edit').click();assert.equal(await page.locator('#ob-goals').inputValue(),'Ölçülebilir büyüme.');
+   await page.locator('.ob-close').click();
+  }
+  assert.deepEqual(errors,[]);await page.close();
+ }}finally{await browser.close();}
+});
+test('desktop/mobile continue without completed research or extra paid retries, and explicitly change a failed English draft to Turkish',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
+ try{for(const width of [1280,390]){
+  const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
+  await page.goto('https://preview.vercel.app/offers/recovery-review.html');
+  for(const kind of ['continuity','english']){
+   await page.locator('#review-'+kind).click();await page.locator('.ob-continuation:not([hidden])').waitFor();
+   await page.locator('.ob-continue').evaluate(button=>{button.click();button.click();});
+   await page.locator('.ob-price:not([hidden])').waitFor();assert.match(await page.locator('#ob-review-title').textContent(),/BHS tamamlanamadı/);
+   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),['start','advance','continue']);
+   assert.ok((await page.locator('.ob-footer>p').textContent()).includes('22,32 / 50,00'));
+   await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();assert.equal(await page.locator('.ob-pricing article').count(),2);
+   await page.locator('.ob-compose').click();
+   if(kind==='english'){
+    await page.locator('.ob-turkish:not([hidden])').waitFor();await page.locator('.ob-compose:not([disabled])').waitFor();
+    assert.equal(await page.locator('#ob-language').inputValue(),'en');
+    await page.locator('.ob-turkish').evaluate(button=>{button.click();button.click();});
+   }
+   try{await page.locator('.ob-proposal:not([hidden])').waitFor({timeout:8000});}catch(error){throw Error(JSON.stringify({width,kind,errors,notice:await page.locator('.ob-review-notice').textContent(),composeCalls:await page.evaluate(()=>reviewComposeCalls.length)}));}
+   assert.match(await page.locator('.so-bhs-brief').textContent(),/tamamlanamadı/);
+   assert.equal(await page.locator('.ob-scope-approved').isChecked(),false);assert.equal(await page.locator('.ob-publish').isVisible(),false);
+   const calls=await page.evaluate(()=>reviewComposeCalls.map(c=>({language:c.brief.language,audit:c.audit,pricing:c.pricing})));
+   assert.deepEqual(calls.map(c=>c.language),kind==='english'?['en','tr']:['tr']);
+   if(calls.length===2){assert.deepEqual(calls[0].audit,calls[1].audit);assert.deepEqual(calls[0].pricing,calls[1].pricing);}
+   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),['start','advance','continue']);
+   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+   if(process.env.BHS_TEST_SCREENSHOTS==='1'&&kind==='english')await page.screenshot({path:'/tmp/bhs-continuity-'+width+'.png'});
    await page.locator('.ob-close').click();
   }
   assert.deepEqual(errors,[]);await page.close();

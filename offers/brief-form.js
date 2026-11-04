@@ -45,16 +45,17 @@
           </fieldset>
         </form>
         <section class="ob-review" aria-labelledby="ob-review-title" hidden>
-          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Deneme, sonraki aşamalara ayrılan tutarı da kullanabilir; toplam 50 TL sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
+          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Bu ek deneme otomatik araştırmanın 30 TL hedefini aşabilir; toplam 50 TL üst sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-continuation" hidden><p>Ön BHS tamamlanamadı. Mevcut doğrulanmış bulgular korunur; teklif, görüşme bilgileriyle kontrol için hazırlanır. Bu seçenek ek ücretli model çağrısı yapmaz ve tamamlanmış BHS yerine geçmez.</p><button type="button" class="ob-continue">Mevcut bilgilerle teklife devam et</button></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
-      <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-resume" hidden>Araştırmaya devam et</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
+      <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-turkish" hidden>Türkçe taslakla devam et</button><button type="button" class="ob-resume" hidden>Araştırmaya devam et</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector('form');
     let reviewing = false;
     let task = null;
     let pausedAudit = null;
     let recoverableAudit = null;
+    let continuableAudit = null;
     const source = draft.source;
     dialog.querySelector('.ob-subtitle').textContent = source.company + ' · ' + source.contact;
     fields.forEach(name => { form.elements[name].value = draft[name]; });
@@ -113,13 +114,13 @@
       dialog.querySelector('.ob-edit').hidden = !value;
       dialog.querySelector('.ob-price').hidden = true;
       dialog.querySelector('.ob-pricing').hidden = true;
-      for(const cls of ['ob-proposal-controls','ob-proposal','ob-approval','ob-compose','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;
+      for(const cls of ['ob-turkish','ob-proposal-controls','ob-proposal','ob-approval','ob-compose','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;
       dialog.querySelectorAll('.ob-steps li').forEach((step,i)=>{if(i===(value?1:0))step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');});
       dialog.querySelector('.ob-body').scrollTop = 0;
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
     }
     function stopTask(){
-      pausedAudit=null;recoverableAudit=null;dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('.ob-recovery').hidden=true;
+      pausedAudit=null;recoverableAudit=null;continuableAudit=null;dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('.ob-recovery').hidden=true;dialog.querySelector('.ob-continuation').hidden=true;
       if(!task)return;
       task.stopped=true;
       if(task.ticket){
@@ -159,6 +160,7 @@
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
+      if(data.researchContinuity){dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'BHS tamamlanamadı · Teklif hazırlığına devam':'Kısmi BHS ile teklif hazırlığı';dialog.querySelector('.ob-review-notice').textContent=data.researchContinuity.notice;}
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
     }
     const formatMoney=(value,currency='TRY')=>new Intl.NumberFormat('tr-TR',{style:'currency',currency,maximumFractionDigits:2}).format(value);
@@ -189,7 +191,7 @@
       data.scope.exclusions.forEach(item=>add('p',item));data.notices.forEach(item=>add('p',item));
       add('p','Maliyet tablosu: '+data.costVersion+' · Kartın tahmini değeri henüz değiştirilmedi.');
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Fiyat alternatifleri hazır':'Fiyat alternatifleri hazır · Kapsam kontrolü gerekli';
-      dialog.querySelector('.ob-review-notice').textContent='İki alternatifin toplam aylık hizmet bedelleri hesaplandı. Sıradaki aşama, logo ve BHS ile teklif taslağının oluşturulması.';
+      dialog.querySelector('.ob-review-notice').textContent='İki alternatifin toplam aylık hizmet bedelleri hesaplandı. Sıradaki aşama teklif taslağının oluşturulması. '+(draft.audit?.data.researchContinuity?.notice||'');
       dialog.querySelector('.ob-price').hidden=true;
       dialog.querySelector('.ob-steps li[aria-current]')?.removeAttribute('aria-current');dialog.querySelectorAll('.ob-steps li')[2].setAttribute('aria-current','step');
       dialog.querySelector('.ob-body').scrollTop=0;
@@ -223,12 +225,12 @@
       const planMode=dialog.querySelector('.ob-plan-mode').value;
       const manualSteps=dialog.querySelector('.ob-manual-steps').value.split('\n').filter(x=>x.trim()).map(line=>{const i=line.indexOf('|');return {time:i<0?'':line.slice(0,i).trim(),title:i<0?line:line.slice(i+1).trim()};});
       if(planMode==='manual'&&(!manualSteps.length||manualSteps.some(s=>!s.title||!s.time))){notice.textContent='Her manuel adımı zaman | adım biçiminde gir.';return;}
-      const payload={context:{leadId:source.leadId,spaceId:source.spaceId},brief:Object.fromEntries(fields.map(key=>[key,draft[key]])),audit:draft.audit,pricing:draft.pricing,proposalProof:draft.proposalProof,logo:draft.logo.verifiedData,logoBackground:draft.logo.placement.background,planMode,manualSteps};
-      const current={kind:'proposal',payload,stopped:false,ticket:null};task=current;button.disabled=true;
+      const payload={context:{leadId:source.leadId,spaceId:source.spaceId},brief:Object.fromEntries(fields.map(key=>[key,draft[key]])),audit:draft.audit,pricing:draft.pricing,proposalProof:draft.proposalProof,logo:draft.logo.verifiedData,logoBackground:draft.logo.placement?.background||draft.logo.verifiedData?.candidates?.[0]?.placement?.background||'#ffffff',planMode,manualSteps};
+      const current={kind:'proposal',payload,stopped:false,ticket:null};task=current;button.disabled=true;dialog.querySelector('.ob-turkish').hidden=true;
       try{
         let action='start';const requestId=crypto.randomUUID();
         for(;;){
-          notice.textContent='Gemini marka anlatımını hazırlıyor; doğrulanmış BHS, sabit aylık bedeller ve logo şablona yerleştiriliyor…';
+          notice.textContent=draft.language==='en'?'İngilizce teklif hazırlanıyor; mevcut BHS, fiyatlar ve logo korunuyor…':'Görüşme kapsamı, mevcut BHS, aylık bedeller ve logo teklif şablonuna yerleştiriliyor…';
           const response=await window.PipelineProposalRequest({...payload,action,requestId,...(current.ticket?{ticket:current.ticket}:{})});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelineProposalRequest({...payload,action:'cancel',ticket:current.ticket}).catch(()=>{});return;}
@@ -239,12 +241,12 @@
             dialog.querySelector('.ob-pricing').hidden=true;dialog.querySelector('.ob-research-report').hidden=true;
             dialog.querySelector('.ob-approval').hidden=false;dialog.querySelector('.ob-save').hidden=false;dialog.querySelector('.ob-publish').hidden=true;button.hidden=true;
             dialog.querySelectorAll('.ob-approval input').forEach(x=>x.checked=false);
-            dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent='Logo, kapsam ve planı bu teklif üzerinde kontrol et. '+(variant?'Yeni teklif ayrı kaydedilir; mevcut teklif ve kart değeri korunur.':'Kaydetme, kart değerini önerilen aylık bedele günceller.');
+            dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent=(draft.audit?.data.researchContinuity?.notice||'')+' Logo, kapsam ve planı bu teklif üzerinde kontrol et. '+(variant?'Yeni teklif ayrı kaydedilir; mevcut teklif ve kart değeri korunur.':'Kaydetme, kart değerini önerilen aylık bedele günceller.');
             task=null;dialog.querySelector('.ob-body').scrollTop=0;return;
           }
           action='status';await new Promise(resolve=>setTimeout(resolve,2500));if(current.stopped)return;
         }
-      }catch(error){if(error.cost)showAuditCost(error.cost);if(!current.stopped)notice.textContent=error.message||'Teklif oluşturulamadı.';}
+      }catch(error){if(error.cost)showAuditCost(error.cost);if(!current.stopped){notice.textContent=error.message||'Teklif oluşturulamadı.';if(draft.language==='en'&&['model_temporarily_unavailable','model_content_invalid','translation_unavailable','budget_limit','budget_uncertain','quota','provider_error','model_deadline'].includes(error.code)){dialog.querySelector('.ob-turkish').hidden=false;notice.textContent+=' BHS ve fiyatları koruyarak Türkçe taslakla devam edebilirsin; yeniden araştırma yapılmaz.';}}}
       finally{if(task===current)task=null;button.disabled=false;}
     });
     async function saveOrPublish(action){
@@ -263,6 +265,7 @@
       }catch(error){status.textContent=error.message||'İşlem tamamlanamadı; kart değeri değiştirilmedi.';}
       finally{button.disabled=false;}
     }
+    dialog.querySelector('.ob-turkish').addEventListener('click',()=>{if(task)return;draft.language='tr';form.elements.language.value='tr';dialog.querySelector('.ob-turkish').hidden=true;invalidateProposal();dialog.querySelector('.ob-compose').click();});
     dialog.querySelector('.ob-save').addEventListener('click',()=>saveOrPublish('save'));
     dialog.querySelector('.ob-publish').addEventListener('click',()=>saveOrPublish('publish'));
 
@@ -273,6 +276,10 @@
     dialog.querySelector('.ob-retry').addEventListener('click',()=>{
       if(!recoverableAudit||recoverableAudit.stopped||task)return;
       const current=recoverableAudit;recoverableAudit=null;runAudit(current,'recover');
+    });
+    dialog.querySelector('.ob-continue').addEventListener('click',()=>{
+      if(!continuableAudit||continuableAudit.stopped||task)return;
+      const current=continuableAudit;continuableAudit=null;runAudit(current,'continue');
     });
     function showAuditCost(cost){
       const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -286,7 +293,7 @@
         dialog.querySelector('#ob-review-title').textContent='BHS araştırma bağlantısı gerekli';
         notice.textContent='Bu önizlemede araştırma servisi bağlı değil. Teklif veya araştırma sonucu oluşturulmadı.';return;
       }
-      recoverableAudit=null;dialog.querySelector('.ob-recovery').hidden=true;
+      recoverableAudit=null;continuableAudit=null;dialog.querySelector('.ob-recovery').hidden=true;dialog.querySelector('.ob-continuation').hidden=true;
       const current=resume||{kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
       dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('#ob-review-title').textContent='Araştırma hazırlanıyor';
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
@@ -294,7 +301,7 @@
       let action=initialAction||(resume?'status':'start');
       try{
         for(;;){
-          notice.textContent=action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
+          notice.textContent=action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,...(variant?{sourceOfferId:variant.sourceOfferId,researchRunId:researchRuns.new}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
@@ -317,7 +324,8 @@
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
         if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
         if(error.recoveryAvailable&&error.ticket){current.ticket=error.ticket;recoverableAudit=current;dialog.querySelector('.ob-recovery').hidden=false;}
-        if(error.budgetDetail){const money=value=>(Math.max(0,value)/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});const d=error.budgetDetail;notice.textContent+=' Bu adım için gerekli üst tutar: '+money(d.requiredKurus)+' TL; kullanılabilir: '+money(d.availableKurus)+' TL. Sonraki aşamalara ayrılan: '+money(d.followingReserveKurus)+' TL. Kartın kalan toplam sınırı: '+money(d.remainingKurus)+' TL.';}
+        if(error.continuationAvailable&&error.ticket){current.ticket=error.ticket;continuableAudit=current;dialog.querySelector('.ob-continuation').hidden=false;}
+        if(error.budgetDetail){const money=value=>(Math.max(0,value)/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});const d=error.budgetDetail;notice.textContent+=' Bu adım için gerekli üst tutar: '+money(d.requiredKurus)+' TL; kullanılabilir: '+money(d.availableKurus)+' TL. Sonraki aşamalara ayrılan: '+money(d.followingReserveKurus)+' TL.'+(d.limitKurus===3000?' Otomatik maliyet hedefi: 30 TL.':'')+' Kartın kalan toplam sınırı: '+money(d.remainingKurus)+' TL.';}
         if(error.code&&!transport)notice.textContent+=' Hata kodu: '+error.code+'.';
         if(error.requestId)notice.textContent+=' Kontrol kodu: '+error.requestId;
       }finally{if(task===current)task=null;if(dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}

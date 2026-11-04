@@ -33,7 +33,20 @@ export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=proc
 }
 export function createLedger(call){
  const observed=new Map();
+ let claims=Promise.resolve();
  const remember=(key,row)=>{if(row&&Number.isSafeInteger(row.charge_kurus)&&row.charge_kurus>=0)observed.set(key,row);return row;};
+ async function reserve(args,limitKurus){
+  if(limitKurus===undefined)return call('reserve',args);
+  if(!Number.isSafeInteger(limitKurus)||limitKurus<0||limitKurus>tariff.capKurus)throw new BudgetError('budget_limit','Maliyet üst sınırı geçersiz.');
+  // A phase has one durable coordinator. Serialise only its short claims,
+  // keeping network/search execution parallel; the database still enforces 50.
+  const previous=claims;let release;claims=new Promise(resolve=>{release=resolve;});await previous;
+  try{
+   const existing=remember(args.step,await call('get',{step:args.step}));
+   if(!existing&&(await call('status')).chargedKurus+args.amount>limitKurus)throw new BudgetError('budget_limit','Otomatik araştırmanın 30 TL maliyet hedefine ulaşıldı. Kayıtlar ve rezervler korundu; yeni ücretli çağrı yapılmadı.');
+   return await call('reserve',args);
+  }finally{release();}
+ }
  return {begin:()=>call('begin'),status:()=>call('status'),get:async key=>remember(key,await call('get',{step:key})),
   // A request may not have read every historical receipt. Never present the
   // unclassified remainder as verified spend or silently drop old reservations.
@@ -47,9 +60,9 @@ export function createLedger(call){
    if(historicalCommittedKurus<0)return;
    return {verifiedUsageKurus,knownReservationKurus,historicalCommittedKurus,infraReserveKurus:tariff.infraKurus};
   },
-  async once(key,input,amount,run,{settle}={}){
+  async once(key,input,amount,run,{settle,limitKurus}={}){
    if(!Number.isSafeInteger(amount)||amount<0||amount>4500)throw new BudgetError('budget_limit','İşlem teklif bütçesini aşıyor.');
-   const inputHash=hash(input),token=randomUUID(),reservation=await call('reserve',{step:key,hash:inputHash,amount,token});
+   const inputHash=hash(input),token=randomUUID(),reservation=await reserve({step:key,hash:inputHash,amount,token},limitKurus);
    remember(key,reservation.step);
    if(reservation.blocked)throw new BudgetError('budget_limit','Teklifin toplam 50 TL maliyet sınırına ulaşıldı. Yeni ücretli işlem başlatılmadı.');
    if(!reservation.claimed){
@@ -61,7 +74,7 @@ export function createLedger(call){
     remember(key,await call('complete',{step:key,hash:inputHash,token,value,amount:actual}));return value;}
    catch(error){
     if(amount>0&&error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
-    const diagnostic={code:error.code||'stage_failed',...(key.startsWith('model:')&&Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{}),...(['countTokens','generateContent'].includes(error.providerOperation)?{providerOperation:error.providerOperation}:{}),...(error.modelAttempts?{modelAttempts:error.modelAttempts}:{})};
+    const diagnostic={code:error.code||'stage_failed',...([0,1].includes(error.recoveryRound)?{recoveryRound:error.recoveryRound}:{}),...(key.startsWith('model:')&&Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{}),...(['countTokens','generateContent'].includes(error.providerOperation)?{providerOperation:error.providerOperation}:{}),...(error.modelAttempts?{modelAttempts:error.modelAttempts}:{})};
     try{remember(key,await call('uncertain',{step:key,hash:inputHash,token,value:diagnostic}));}catch{/* Reservation remains charged. */}throw error;}
   }
  };

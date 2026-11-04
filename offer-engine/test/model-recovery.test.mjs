@@ -21,7 +21,7 @@ test('no retry on success, validation, quota, auth, budget or ambiguous transpor
   let calls=0;await assert.rejects(recoverModelStage(async()=>{calls++;throw Object.assign(Error(),{providerStatus});},'scope',{}, {wait:async()=>assert.fail()}));assert.equal(calls,1);
  }
 });
-function fixture({balance=500,failFallback=false,html=false,timeout=false,countTimeout=false,stage='source_plan',count=100,primaryInvalid=false,invalidJson=false}={}){
+function fixture({balance=500,failFallback=false,html=false,timeout=false,countTimeout=false,stage='source_plan',count=100,primaryInvalid=false,invalidJson=false,manualRecoveryRound=0}={}){
  let charged=balance;const steps=new Map(),calls=[];let clock=Date.parse('2026-11-03T12:00:00Z');
  const ledger=createLedger(async(op,a={})=>{
   if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
@@ -36,7 +36,7 @@ function fixture({balance=500,failFallback=false,html=false,timeout=false,countT
   if(op==='complete')charged-=prior.charge_kurus-a.amount;
   steps.set(a.step,{...prior,state:op,value:a.value,charge_kurus:op==='complete'?a.amount:prior.charge_kurus});return steps.get(a.step);
  });
- const provider=createBoundedProviders({ledger,geminiKey:'test',now:()=>clock,fetchImpl:async(url,init)=>{
+ const provider=createBoundedProviders({ledger,geminiKey:'test',manualRecoveryRound,now:()=>clock,fetchImpl:async(url,init)=>{
   if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="03.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
   if(url.endsWith(':countTokens')){if(countTimeout&&url.includes('3.1-pro-preview'))throw new DOMException('The operation was aborted due to timeout','TimeoutError');return Response.json({totalTokens:count});}
   calls.push({url,body:JSON.parse(init.body)});
@@ -87,8 +87,8 @@ test('timeout recovery still refuses a fallback exceeding the shared 50 TRY cap'
  assert.equal(f.calls.length,0);assert.equal((await f.cost()).chargedKurus,4800);
 });
 
-test('incident-sized synthesis fits the cheaper same-contract alternate before any paid primary call',async()=>{
- const f=fixture({balance:3395,stage:'synthesis',count:30469});
+test('explicit quality recovery can fit the same-contract alternate above the normal target within the hard cap',async()=>{
+ const f=fixture({balance:3395,stage:'synthesis',count:30469,manualRecoveryRound:1});
  const result=await f.run({maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,jsonMode:true,thinkingLevel:'MEDIUM'});
  assert.equal(result.model,'gemini-4-argon');assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.includes('gemini-4-argon'));
  assert.ok(f.calls[0].body.generationConfig.maxOutputTokens>=12288);assert.equal(f.calls[0].body.generationConfig.thinkingConfig.thinkingLevel,'MEDIUM');

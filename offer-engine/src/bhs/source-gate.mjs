@@ -1,11 +1,16 @@
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
+import {supportedNumbers,numericEvidence} from './numeric-evidence.mjs';
 
 const readSegments=source=>{const chunks=[];for(const e of [...(source.excerpts||[])].sort((a,b)=>(a.offset??Infinity)-(b.offset??Infinity))){const last=chunks.at(-1);if(last&&Number.isInteger(last.offset)&&Number.isInteger(e.offset)&&last.offset+last.text.length===e.offset)last.text+=e.text;else chunks.push({...e});}return chunks.map(e=>e.text);};
 const unsafeReasons=new Set(['invalid_source','unresolved_source','unverified','unread_source_or_unmatched_quote','unsupported_finding','unsupported_benchmark','unsupported_coverage','unsupported_summary_number']);
 const missing='Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.';
-const numbers=value=>normalized(value).match(/[-+−]?\d+(?:[.,]\d+)*/g)||[];
-const supportedNumbers=(value,evidence)=>{const known=new Set(numbers(evidence).map(n=>n.replace('−','-')));return numbers(value).every(n=>known.has(n.replace('−','-')));};
+function completedForecast(finding,evidence){
+ if(finding.kind!=='observation'||!/(?:çıkarmış|ulaşmış|artmış|gerçekleşmiş|tamamlanmış|başarmış|elde etmiş|satmış|çıkarıldı|ulaştı|arttı|gerçekleşti|tamamlandı|başardı|elde etti)/iu.test(finding.statement))return false;
+ const claimed=new Set(numericEvidence(finding.statement,{locale:'tr',claims:true}).map(n=>n.number));
+ for(const future of evidence.matchAll(/(?:\bwill\b|['’]ll\b|\bplans? to\b|\bexpected to\b)[^.!?\n]{0,250}/giu))if(numericEvidence(future[0]).some(n=>claimed.has(n.number)))return true;
+ return false;
+}
 // Deterministic provenance gate: never fetch model-invented URLs or treat a
 // syntactically valid citation as proof that its quote was actually read.
 // Quote matches do not prove semantic entailment; inference stays labelled.
@@ -27,7 +32,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
  const findings=(raw.findings||[]).filter(f=>{
   // Meeting context remains in the brief; never promote it into research facts.
   if(f.kind==='brief')return false;
-  const ok=supported(f.sourceIds)&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
+  const ok=supported(f.sourceIds)&&!completedForecast(f,quotes(f.sourceIds))&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
   if(!ok)issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});return ok;
  });
  const findingIds=new Set(findings.map(f=>f.id));
@@ -37,7 +42,14 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
   const kept=(d.findingIds||[]).filter(id=>findingIds.has(id)),peers=(d.comparisonCompetitorIds||[]).filter(id=>peerIds.has(id));
   const numeric=supportedNumbers([d.rationale,...(d.strengths||[]),...(d.gaps||[])].join(' '),findings.filter(f=>kept.includes(f.id)).map(f=>quotes(f.sourceIds)).join(' '));
   const changed=!numeric||kept.length!==(d.findingIds||[]).length||peers.length!==(d.comparisonCompetitorIds||[]).length;
-  if(!kept.length||changed){issues.push({path:'dimensions.'+d.id,reason:'unsupported_dimension_claims'});return {...d,score:null,dataStatus:'insufficient',findingIds:kept,comparisonCompetitorIds:peers,rationale:kept.length?'Yalnız doğrulanmış kaynaklara bağlı bulgular korundu; tam değerlendirme görüşmede doğrulanacak.':missing,strengths:[],gaps:[missing]};}
+  if(!kept.length||changed){
+   issues.push({path:'dimensions.'+d.id,reason:'unsupported_dimension_claims'});
+   const evidence=findings.filter(f=>kept.includes(f.id)),text=evidence.map(f=>quotes(f.sourceIds)).join('\n');
+   return {...d,score:null,dataStatus:kept.length?'partial':'insufficient',findingIds:kept,comparisonCompetitorIds:peers,
+    rationale:kept.length?evidence.map(f=>f.statement).join(' ').slice(0,3000):missing,
+    strengths:kept.length?(d.strengths||[]).filter(value=>supportedNumbers(value,text)):[],
+    gaps:kept.length?[...(d.gaps||[]).filter(value=>supportedNumbers(value,text)),'Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak.']:[missing]};
+  }
   return {...d,score:peers.length&&d.dataStatus!=='insufficient'?d.score:null};
  });
  const benchmarks=(raw.benchmarks||[]).map(b=>({...b,entries:(b.entries||[]).map(e=>{
