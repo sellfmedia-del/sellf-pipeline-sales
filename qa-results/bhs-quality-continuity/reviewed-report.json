@@ -1,0 +1,959 @@
+{
+  "brief": {
+    "brandName": "Huel",
+    "website": "https://huel.com/",
+    "segment": "corporate",
+    "goals": "ABD e-ticaretinde ölçülebilir müşteri edinimi ve tekrar satın alma fırsatları.",
+    "needs": "Kamuya açık ürün, abonelik, konumlandırma ve müşteri yolculuğu kanıtlarını incelemek.",
+    "services": "Growth danışmanlığı, Meta ve Google Ads operasyonları.",
+    "meetingNotes": "Bağımsız kamuya açık marka testi; gerçek müşteri görüşmesi değildir. Ülke, para birimi, dönem ve rakip ölçeği farklılıklarını açıkça belirt.",
+    "currency": "TRY",
+    "language": "tr",
+    "budget": null
+  },
+  "report": {
+    "summary": "Görüşmede doğrulanacak hipotez: Huel, FY2022'de %40 YoY büyüme ile 170 milyon dolar ciro bildirmiş olup, agresif bir büyüme trendi sergilemektedir. Meta platformlarında (Facebook, Instagram, vs.) 193 aktif reklam ile oldukça yoğun bir reklam operasyonu yürütmektedir. Trustpilot üzerindeki bazı yorumlarda, müşteri hizmetleri süreçlerinin yavaşlığı ve kargo teslimat gecikmeleri ile ilgili şikayetler görülmektedir. Görüşmede doğrulanacak hipotez: Web sitesinde %2.00 - %2.50 dönüşüm oranı ve $75-100 AOV (ortalama sipariş değeri) ile güçlü bir e-ticaret metrik profili sergilemektedir.",
+    "sources": [
+      {
+        "id": "src-multiples",
+        "url": "https://multiples.vc/private-comps/huel",
+        "title": "Huel Acquisition, Valuation, Funding & Investors | Multiples",
+        "quote": "For the fiscal year ending July 31, 2022, Huel reported revenue of $170 million, representing a 40% year-over-year increase",
+        "publishedAt": null,
+        "period": "FY2022",
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      },
+      {
+        "id": "src-tavily-huel",
+        "url": "https://tavily.com/knowledge/company/xgpEW9L0kkhE",
+        "title": "Huel",
+        "quote": "- Now: 675 · +313 yearly (86.5%) · +32 quarterly · +2 monthly",
+        "publishedAt": null,
+        "period": null,
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      },
+      {
+        "id": "src-gomarble",
+        "url": "https://www.gomarble.ai/library/brands/huel",
+        "title": "Huel Ads — Hooks, Emotions & 2026 Data | GoMarble",
+        "quote": "Huel runs 193 active ads out of 219 total creatives across Facebook, Instagram, Messenger, Audience_network, Threads.",
+        "publishedAt": null,
+        "period": "2026",
+        "scope": "Kısmi sayfa kesiti",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "html"
+        }
+      },
+      {
+        "id": "src-grips",
+        "url": "https://gripsintelligence.com/insights/retailers/huel.com",
+        "title": "huel.com eCommerce Revenue | Grips",
+        "quote": "huel.com achieved a conversion rate of 2.00-2.50% in September 2026, with an average order value (AOV) between $75-100.",
+        "publishedAt": null,
+        "period": "September 2026",
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      },
+      {
+        "id": "src-trustpilot",
+        "url": "https://ca.trustpilot.com/review/huel.com?page=6",
+        "title": "Huel is rated \"Great\" with 4.2 / 5 on Trustpilot",
+        "quote": "reviewers were not happy with customer support or occasional shipping delays, mentioning that resolving tracking issues or getting timely responses",
+        "publishedAt": null,
+        "period": "2026",
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "review",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      },
+      {
+        "id": "src-esjoy",
+        "url": "https://esjoy.es/en/pages/comparacion-de-jimmy-joy-huel",
+        "title": "Comparison of Jimmy Joy & Huel - Esjoy",
+        "quote": "Price : On average, Jimmy Joy is about 74% cheaper than Huel.",
+        "publishedAt": null,
+        "period": null,
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      },
+      {
+        "id": "src-innerbody",
+        "url": "https://www.innerbody.com/huel-vs-soylent",
+        "title": "Huel vs Soylent | Which is the better meal replacement? [2026]",
+        "quote": "Soylent’s subscription costs are a little inconsistent from one product category to the next, but you’ll typically be able to save between 10% and 23%. Huel provides 20% savings",
+        "publishedAt": null,
+        "period": null,
+        "scope": "Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.",
+        "sourceType": "secondary",
+        "verification": {
+          "status": "quote_matched",
+          "method": "search-snippet"
+        }
+      }
+    ],
+    "findings": [
+      {
+        "id": "f-fin-1",
+        "dimension": "financial",
+        "kind": "inference",
+        "statement": "Görüşmede doğrulanacak hipotez: Huel, FY2022'de %40 YoY büyüme ile 170 milyon dolar ciro bildirmiş olup, agresif bir büyüme trendi sergilemektedir.",
+        "reportExcerpt": "Huel %40 büyüme ile $170M ciroya ulaşmıştır.",
+        "sourceIds": [
+          "src-multiples"
+        ],
+        "impact": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "goalConnection": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "priority": "high"
+      },
+      {
+        "id": "f-dig-1",
+        "dimension": "digital",
+        "kind": "observation",
+        "statement": "Meta platformlarında (Facebook, Instagram, vs.) 193 aktif reklam ile oldukça yoğun bir reklam operasyonu yürütmektedir.",
+        "reportExcerpt": "Huel Meta'da 193 aktif reklamla faaliyet göstermektedir.",
+        "sourceIds": [
+          "src-gomarble"
+        ],
+        "impact": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "goalConnection": "Meta Ads operasyonları hizmetini doğrudan ilgilendiren büyük bir reklam varlığı söz konusudur.",
+        "priority": "high"
+      },
+      {
+        "id": "f-per-1",
+        "dimension": "perception",
+        "kind": "observation",
+        "statement": "Trustpilot üzerindeki bazı yorumlarda, müşteri hizmetleri süreçlerinin yavaşlığı ve kargo teslimat gecikmeleri ile ilgili şikayetler görülmektedir.",
+        "reportExcerpt": "Trustpilot'ta müşteri hizmetleri ve kargo gecikmesi şikayetleri mevcuttur.",
+        "sourceIds": [
+          "src-trustpilot"
+        ],
+        "impact": "Kötüleşen müşteri hizmetleri algısı, Life-Time Value (LTV) ve abone elde tutma oranlarını düşürebilir.",
+        "goalConnection": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "priority": "high"
+      },
+      {
+        "id": "f-fun-1",
+        "dimension": "funnel",
+        "kind": "inference",
+        "statement": "Görüşmede doğrulanacak hipotez: Web sitesinde %2.00 - %2.50 dönüşüm oranı ve $75-100 AOV (ortalama sipariş değeri) ile güçlü bir e-ticaret metrik profili sergilemektedir.",
+        "reportExcerpt": "Huel.com e-ticarette %2 - %2.5 dönüşüm ve $75-100 AOV yakalamıştır.",
+        "sourceIds": [
+          "src-grips"
+        ],
+        "impact": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "goalConnection": "Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.",
+        "priority": "high"
+      }
+    ],
+    "dimensions": [
+      {
+        "id": "financial",
+        "score": null,
+        "rationale": "Huel, FY2022'de %40 YoY büyüme ile 170 milyon dolar ciro bildirmiş olup, agresif bir büyüme trendi sergilemektedir. Web sitesinde %2.00 - %2.50 dönüşüm oranı ve $75-100 AOV (ortalama sipariş değeri) ile güçlü bir e-ticaret metrik profili sergilemektedir.",
+        "dataStatus": "partial",
+        "findingIds": [
+          "f-fin-1",
+          "f-fun-1"
+        ],
+        "comparisonCompetitorIds": [],
+        "strengths": [
+          "Yüksek büyüme oranı (%40 YoY)."
+        ],
+        "gaps": [
+          "2022 sonrası en güncel gelir ve kârlılık verileri net değil.",
+          "Artan fiyatların (forum şikayetlerinde belirtilen) müşteri edinim maliyetine etkisi dışarıdan tam ölçülemiyor.",
+          "Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak."
+        ],
+        "onboardingQuestions": [
+          "Geçtiğimiz 12 ay içinde ABD pazarındaki gelir büyüme ve kârlılık oranlarınız beklentilerinizle ne ölçüde uyuşuyor?",
+          "Yeni yapılan fiyat artışlarının ardından abonelik iptallerinde bir artış gözlemlediniz mi?"
+        ]
+      },
+      {
+        "id": "operations",
+        "score": null,
+        "rationale": "Trustpilot üzerindeki bazı yorumlarda, müşteri hizmetleri süreçlerinin yavaşlığı ve kargo teslimat gecikmeleri ile ilgili şikayetler görülmektedir.",
+        "dataStatus": "partial",
+        "findingIds": [
+          "f-per-1"
+        ],
+        "comparisonCompetitorIds": [],
+        "strengths": [],
+        "gaps": [
+          "Müşteri hizmetleri bilet çözümlenme süreleri (SLA) ve kargo operasyon iç verileri dışarıdan net görülemiyor.",
+          "Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak."
+        ],
+        "onboardingQuestions": [
+          "Operasyonel olarak ABD pazarında kargo ve müşteri destek tarafındaki yığılmaları aşmak için mevcut sistem altyapısı (CRM) 2x hacmi kaldırabilecek durumda mı?",
+          "Müşteri hizmetleri geri dönüş süreleri tekrar satın almayı engelliyor mu, bu konuda iç analizleriniz neler gösteriyor?"
+        ]
+      },
+      {
+        "id": "funnel",
+        "score": null,
+        "rationale": "Meta platformlarında (Facebook, Instagram, vs.) 193 aktif reklam ile oldukça yoğun bir reklam operasyonu yürütmektedir. Web sitesinde %2.00 - %2.50 dönüşüm oranı ve $75-100 AOV (ortalama sipariş değeri) ile güçlü bir e-ticaret metrik profili sergilemektedir.",
+        "dataStatus": "partial",
+        "findingIds": [
+          "f-dig-1",
+          "f-fun-1"
+        ],
+        "comparisonCompetitorIds": [],
+        "strengths": [],
+        "gaps": [
+          "Düşen abonelik (churn) oranları ve LTV metrikleri dışarıdan okunamıyor.",
+          "Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak."
+        ],
+        "onboardingQuestions": [
+          "Abonelik başlatıp ilk 3 ay içinde iptal eden kullanıcıların churn oranı nedir?",
+          "Funnel'a giren soğuk (cold) kitle ile retargeting kitleleri arasındaki dönüşüm maliyeti farkları nasıl?"
+        ]
+      },
+      {
+        "id": "digital",
+        "score": null,
+        "rationale": "Meta platformlarında (Facebook, Instagram, vs.) 193 aktif reklam ile oldukça yoğun bir reklam operasyonu yürütmektedir.",
+        "dataStatus": "partial",
+        "findingIds": [
+          "f-dig-1"
+        ],
+        "comparisonCompetitorIds": [],
+        "strengths": [],
+        "gaps": [
+          "Google Ads ve Analytics etiketlerinin yapılandırma kalitesi yalnızca sinyal düzeyindedir, veri doğruluğu iç kontrole muhtaçtır.",
+          "Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak."
+        ],
+        "onboardingQuestions": [
+          "Kullanıcı edinimi için Meta dışındaki arama (Search) ve programmatic kanallarının bütçe dağılımı nasıldır?",
+          "Piksel ve GA4 (Sunucu taraflı - Server-side) entegrasyonlarınız mevcut ölçeğe uygun şekilde hatasız çalışıyor mu?"
+        ]
+      },
+      {
+        "id": "perception",
+        "score": null,
+        "rationale": "Trustpilot üzerindeki bazı yorumlarda, müşteri hizmetleri süreçlerinin yavaşlığı ve kargo teslimat gecikmeleri ile ilgili şikayetler görülmektedir.",
+        "dataStatus": "partial",
+        "findingIds": [
+          "f-per-1"
+        ],
+        "comparisonCompetitorIds": [],
+        "strengths": [],
+        "gaps": [
+          "Şikayetlerin yüzde kaçının doğrudan LTV kaybına yol açtığı bilinmiyor.",
+          "Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak."
+        ],
+        "onboardingQuestions": [
+          "Topluluk forumlarında ve şikayet platformlarındaki eleştiriler için proaktif bir marka itibar yönetimi stratejiniz bulunuyor mu?"
+        ]
+      },
+      {
+        "id": "competition",
+        "score": null,
+        "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "dataStatus": "insufficient",
+        "findingIds": [],
+        "comparisonCompetitorIds": [],
+        "strengths": [],
+        "gaps": [
+          "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+        ],
+        "onboardingQuestions": [
+          "Soylent ve Jimmy Joy gibi alt fiyat segmentindeki rakiplerin baskısına karşı pazar payınızı artırmak için nasıl bir değer teklifi vurgulamayı düşünüyorsunuz?"
+        ]
+      }
+    ],
+    "benchmarks": [
+      {
+        "metric": "webTraffic",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "domainAuthority",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "socialAudience",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "reviews",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "adActivity",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "contentMaturity",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          }
+        ]
+      },
+      {
+        "metric": "revenueOrGrowth",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": "170M",
+            "unit": "USD",
+            "period": "FY2022",
+            "sourceIds": [
+              "src-multiples"
+            ]
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      },
+      {
+        "metric": "differentiator",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          }
+        ]
+      },
+      {
+        "metric": "preBhsScore",
+        "entries": [
+          {
+            "entityId": "brand-huel",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": [],
+            "verification": "unverified"
+          },
+          {
+            "entityId": "comp-soylent",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-jimmyjoy",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          },
+          {
+            "entityId": "comp-ample",
+            "value": null,
+            "unit": null,
+            "period": null,
+            "sourceIds": []
+          }
+        ]
+      }
+    ],
+    "researchCoverage": [
+      {
+        "dimension": "financial",
+        "topic": "Ciro/büyüme, yatırım/ortaklık ve dönem",
+        "status": "observed",
+        "observation": "Şirketin $170M (2022) geliri ve %40 büyümesi tespit edildi.",
+        "sourceIds": [
+          "src-multiples"
+        ]
+      },
+      {
+        "dimension": "financial",
+        "topic": "Ürün/fiyat segmentleri ve pazaryeri hacmi",
+        "status": "observed",
+        "observation": "Huel ve rakip fiyat segmentleri, abonelik teklifleri pazar araştırma metinlerinde (Jimmy Joy %74 daha ucuz, Soylent %10-23 indirim veriyor) görüldü.",
+        "sourceIds": [
+          "src-esjoy",
+          "src-innerbody"
+        ]
+      },
+      {
+        "dimension": "financial",
+        "topic": "İşe alım büyüme/daralma sinyali",
+        "status": "observed",
+        "observation": "İşe alım ve ekip büyümesi (%86.5) saptandı.",
+        "sourceIds": [
+          "src-tavily-huel"
+        ]
+      },
+      {
+        "dimension": "financial",
+        "topic": "Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "operations",
+        "topic": "Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+        "status": "observed",
+        "observation": "Ekip boyutu (675 kişi) tespit edildi.",
+        "sourceIds": [
+          "src-tavily-huel"
+        ]
+      },
+      {
+        "dimension": "operations",
+        "topic": "Platform, CRM/otomasyon araç sinyalleri",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "operations",
+        "topic": "Müşteri hizmetleri, kargo ve iade deneyimi",
+        "status": "observed",
+        "observation": "Trustpilot üzerinden müşteri hizmetleri tecrübesi şikayetleri okundu.",
+        "sourceIds": [
+          "src-trustpilot"
+        ]
+      },
+      {
+        "dimension": "operations",
+        "topic": "2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+        "status": "partial",
+        "observation": "Şikayet bazlı ölçeklenebilirlik çıkarımı.",
+        "sourceIds": [
+          "src-trustpilot"
+        ]
+      },
+      {
+        "dimension": "funnel",
+        "topic": "Awareness: içerik, reklam ve organik erişim",
+        "status": "observed",
+        "observation": "Aktif reklam sayısı bulundu.",
+        "sourceIds": [
+          "src-gomarble"
+        ]
+      },
+      {
+        "dimension": "funnel",
+        "topic": "Interest: landing page ve lead magnet",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "funnel",
+        "topic": "Consideration: SEO içerik ve ölçüm etiketi sinyali",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "funnel",
+        "topic": "Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+        "status": "observed",
+        "observation": "Dönüşüm oranları ve AOV verilerine (Grips üzerinden) ulaşıldı.",
+        "sourceIds": [
+          "src-grips"
+        ]
+      },
+      {
+        "dimension": "funnel",
+        "topic": "Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "digital",
+        "topic": "PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "digital",
+        "topic": "Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "digital",
+        "topic": "SEO trafik, authority, anahtar kelime ve backlink",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "digital",
+        "topic": "Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "digital",
+        "topic": "Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+        "status": "observed",
+        "observation": "Meta üzerinde 193 aktif kreatif gözlemlendi.",
+        "sourceIds": [
+          "src-gomarble"
+        ]
+      },
+      {
+        "dimension": "perception",
+        "topic": "Yorum hacmi, puan, dönem ve coğrafya",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "perception",
+        "topic": "Tekrarlanan şikayet temaları ve marka yanıtları",
+        "status": "observed",
+        "observation": "Kargo süreci ve geciken müşteri hizmeti şikayet temaları tespit edildi.",
+        "sourceIds": [
+          "src-trustpilot"
+        ]
+      },
+      {
+        "dimension": "perception",
+        "topic": "Marka arama/trend, UGC ve sosyal bahsetme tonu",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      },
+      {
+        "dimension": "competition",
+        "topic": "Rakip bazında trafik ve sosyal etkileşim kıyası",
+        "status": "partial",
+        "observation": "Rakip marka büyüklüklerine dair piyasa araştırmalarından izlenimler.",
+        "sourceIds": [
+          "src-esjoy"
+        ]
+      },
+      {
+        "dimension": "competition",
+        "topic": "Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+        "status": "observed",
+        "observation": "Jimmy Joy vs Huel fiyat kıyaslaması bulundu.",
+        "sourceIds": [
+          "src-esjoy"
+        ]
+      },
+      {
+        "dimension": "competition",
+        "topic": "Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+        "status": "unavailable",
+        "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+        "sourceIds": []
+      }
+    ],
+    "quality": {
+      "checksPassed": true,
+      "contentComplete": false,
+      "issues": [
+        {
+          "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+          "reason": "unavailable_or_unverified"
+        },
+        {
+          "path": "findings.f-comp-1",
+          "reason": "unsupported_finding"
+        },
+        {
+          "path": "findings.f-fin-1",
+          "reason": "unmeasured_impact_qualified"
+        },
+        {
+          "path": "findings.f-dig-1",
+          "reason": "unmeasured_impact_qualified"
+        },
+        {
+          "path": "findings.f-per-1",
+          "reason": "unmeasured_impact_qualified"
+        },
+        {
+          "path": "findings.f-fun-1",
+          "reason": "unmeasured_impact_qualified"
+        },
+        {
+          "path": "dimensions.competition",
+          "reason": "unsupported_dimension_claims"
+        },
+        {
+          "path": "modelOutput",
+          "reason": "source_projection_incomplete"
+        }
+      ],
+      "scope": "read-source-and-quote-filter",
+      "semanticBenchmark": "not_requested",
+      "customerApproval": "pending",
+      "methodologyCoverage": {
+        "expected": 24,
+        "present": 24
+      }
+    },
+    "scoring": {
+      "total": null,
+      "weights": [
+        {
+          "id": "financial",
+          "weight": 0.25
+        },
+        {
+          "id": "operations",
+          "weight": 0.2
+        },
+        {
+          "id": "funnel",
+          "weight": 0.2
+        },
+        {
+          "id": "digital",
+          "weight": 0.15
+        },
+        {
+          "id": "perception",
+          "weight": 0.1
+        },
+        {
+          "id": "competition",
+          "weight": 0.1
+        }
+      ],
+      "note": "Veri bulunamadı — onboarding’de tamamlanacak."
+    }
+  }
+}

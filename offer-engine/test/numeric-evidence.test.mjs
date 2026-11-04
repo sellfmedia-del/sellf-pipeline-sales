@@ -35,3 +35,25 @@ test('normalising number words does not promote an announced future quantity to 
  c.report.findings[0].statement='Marka ürün çeşidini 10 ürüne çıkarmayı planlıyor.';
  assert.ok(groundOfferReport(c.report,c).findings.some(f=>f.id==='f0'));
 });
+test('a cheaper percentage cannot be copied as the inverse more-expensive percentage',()=>{
+ const c=context(),quote='On average, Jimmy Joy is about 74% cheaper than Huel.';
+ c.packet.sources[0].excerpts=[{offset:0,text:quote}];c.report.sources[0].quote=quote;
+ c.report.findings[0].statement="Huel, Jimmy Joy'a göre %74 daha yüksek fiyatlıdır.";
+ assert.ok(!groundOfferReport(c.report,c).findings.some(f=>f.id==='f0'));
+ c.report.findings[0].statement="Jimmy Joy, Huel'e göre %74 daha ucuzdur.";
+ assert.ok(groundOfferReport(c.report,c).findings.some(f=>f.id==='f0'));
+});
+test('reported revenue cannot certify current budget capacity or unsupported sector health',()=>{
+ const c=context(),quote='The company reported 170 million dollars revenue and 40% growth in 2022.';
+ c.packet.sources[0].excerpts=[{offset:0,text:quote}];c.report.sources[0].quote=quote;
+ c.report.findings[0].statement='Şirket 2022 yılında 170 milyon dolar ciro ve %40 büyüme bildirdi.';
+ c.report.findings[0].impact='Markanın gelir sağlığı çok güçlü olup, bütçe ayırabilecek kapasitededir.';
+ c.report.findings[0].goalConnection='Pazarlama yatırım gücüne işaret eder.';
+ c.report.dimensions[0].strengths=['Yüksek büyüme (%40).','Kategorisi için sağlıklı seviyelerde.'];
+ const safe=groundOfferReport(c.report,c),f=safe.findings.find(f=>f.id==='f0');assert.ok(f);assert.match(f.impact,/hipotezdir/);assert.match(f.goalConnection,/hipotezdir/);
+ assert.deepEqual(safe.dimensions[0].strengths,['Yüksek büyüme (%40).']);
+ assert.ok(safe.transfer.issues.some(i=>i.reason==='unmeasured_impact_qualified'));
+ c.report.findings[0].statement='Şirket agresif bir büyüme trendi sergilemektedir.';
+ const inference=groundOfferReport(c.report,c).findings.find(f=>f.id==='f0');assert.equal(inference.kind,'inference');assert.match(inference.statement,/doğrulanacak hipotez/);
+ const repeated=groundOfferReport(groundOfferReport(c.report,c),c).findings.find(f=>f.id==='f0');assert.equal((repeated.statement.match(/Görüşmede doğrulanacak hipotez/g)||[]).length,1);
+});
