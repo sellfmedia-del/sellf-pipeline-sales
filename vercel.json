@@ -1,5 +1,5 @@
 {
-  "buildCommand": "LOGO_TEST_CHROMIUM=$(node -e 'require(\"@sparticuz/chromium\").executablePath().then(console.log)') npm test && npm run build && node offer-engine/scripts/bhs-recovery-smoke.mjs --run",
+  "buildCommand": "npm run build && node offer-engine/scripts/bhs-provider-diagnostic.mjs --run",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {
