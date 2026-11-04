@@ -53,7 +53,7 @@ export function createReuseHandler({getStore=runtimeStore,getLedger=budgetFor,ge
    const result={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy},stage:'audit',engineVersion:'saved-bhs-new-scope-v1',inputHash:briefHash(brief),runId:digest({sourceOfferId:row.id,brief}),cost:await ledger.status()};
    let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
    if(!session){session=randomBytes(32).toString('base64url');res.setHeader('Set-Cookie','__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200');}
-   const pricingProof=createPricingProof(getSecret()).encode({kind:'audit_ready',createdAt:now(),briefHash:briefHash(brief),auditHash:digest(result),budgetLeadId:row.lead_id,...(saved.origin?.researchRunId?{budgetResearchRunId:saved.origin.researchRunId}:{}),sourceOfferId:row.id,auditOrigin:saved.origin},session,host);
+   const pricingProof=createPricingProof(getSecret()).encode({kind:'audit_ready',createdAt:now(),briefHash:briefHash(brief),auditHash:digest(result),budgetLeadId:row.lead_id,budgetResearchRunId:b.researchRunId,sourceOfferId:row.id,auditOrigin:saved.origin},session,host);
    return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
   }catch(error){return res.status(422).json({error:error.message||'Mevcut BHS aktarılamadı.',code:error.code||'saved_audit_unavailable'});}
  };
