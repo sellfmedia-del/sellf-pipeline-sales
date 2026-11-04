@@ -17,7 +17,10 @@ const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||pr
 // It contains no provider key, session cookie, signed ticket or proposal proof.
 let checkpoint;try{checkpoint=JSON.parse(await readFile('qa-results/bhs-quality-continuity/checkpoint.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
 if(checkpoint&&(checkpoint.kind!=='public-brand-provider-checkpoint'||checkpoint.capKurus!==5000||!Number.isSafeInteger(checkpoint.charged)||checkpoint.charged<500||checkpoint.charged>5000))throw Error('Invalid isolated QA checkpoint');
-const host='bhs-acceptance.example',rows=new Map(checkpoint?.rows||[]);let charged=checkpoint?.charged||500,cookie,generations=0;
+const recoverOnce=Boolean(checkpoint&&process.argv.includes('--recover-once'));
+// Clone the isolated test's free UI choice only; every paid receipt and failed
+// coordinator stays intact. The real signed recovery action is still required.
+const host='bhs-acceptance.example',rows=new Map((checkpoint?.rows||[]).filter(([key,row])=>!(recoverOnce&&key.startsWith('audit:continuation:')&&row.charge_kurus===0)));let charged=checkpoint?.charged||500,cookie,generations=0;
 const ledger=createLedger(async(op,a={})=>{
  if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
  if(op==='get')return rows.get(a.step)||null;
@@ -37,7 +40,13 @@ async function call(handler,body){const res=response();await handler({method:'PO
 const summary={passed:false,fullBhsGenerated:false,kind:'public-brand-provider-acceptance',databaseWrites:0,budgetReset:false,checkpointReused:Boolean(checkpoint),mailSends:0,capKurus:5000,source:'actual provider responses; no injected outage',manualSemanticReview:'not_completed'};
 try{
  const start=await call(auditHandler,{action:'start',requestId:'isolated_quality_acceptance_20261104',brief,context:{leadId:'isolated-quality',spaceId:'isolated-space'}});
- if(start.code!==200)throw Object.assign(Error('Start failed'),{code:start.data.code});let ticket=start.data.ticket,finished;
+ let ticket=start.data.ticket,finished;
+ if(start.code!==200){
+  if(!recoverOnce||!start.data.recoveryAvailable)throw Object.assign(Error('Start failed'),{code:start.data.code});
+  const recovered=await call(auditHandler,{action:'recover',brief,ticket});
+  if(recovered.code!==202)throw Object.assign(Error('Recovery failed'),{code:recovered.data.code});
+  ticket=recovered.data.ticket;summary.explicitSignedRecovery=true;
+ }
  for(let phase=0;phase<4;phase++){
   let res=await call(auditHandler,{action:'advance',brief,ticket});ticket=res.data.ticket||ticket;
   if(res.code>=400){
@@ -54,7 +63,7 @@ try{
  const audit=finished.result,data=audit.data;
  summary.research=data.researchContinuity?.status||(data.quality.contentComplete?'complete':'partial');
  summary.sourceCount=data.sources.length;summary.findingCount=data.findings.length;summary.coverage=data.researchCoverage.length;summary.qualityIssues=data.quality.issues.length;
- summary.availableAreas=data.researchCoverage.filter(x=>x.status==='available').length;
+ summary.availableAreas=data.researchCoverage.filter(x=>x.status!=='unavailable').length;
  summary.fullBhsGenerated=!data.researchContinuity&&data.sources.length>=4&&data.findings.length>=4&&data.dimensions.length===6&&Boolean(data.rawReport);
  if(summary.coverage!==24||data.sources.some(s=>s.verification?.status!=='quote_matched'))throw Error('Source/coverage contract failed');
  await writeFile('offer-engine/public/bhs-quality-audit.json',JSON.stringify({brief,audit},null,2));

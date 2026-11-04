@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && node offer-engine/scripts/bhs-quality-acceptance.mjs --run --report-only",
+  "buildCommand": "npm run build && node offer-engine/scripts/bhs-quality-acceptance.mjs --run --report-only --recover-once",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {

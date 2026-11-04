@@ -1,0 +1,2079 @@
+{
+  "kind": "public-brand-provider-checkpoint",
+  "capKurus": 5000,
+  "charged": 1775,
+  "rows": [
+    [
+      "audit:source_plan:source_plan-v4:8632a0ff5a5ed135ea35b9a03588a06df9ab905a78c166b0f3bad93b703ed483",
+      {
+        "state": "uncertain",
+        "input_hash": "64e0f2528b2708f4001e06e20285cbc922cc25f2ba060f8d7823db01c1704aa6",
+        "claim_token": "1fca126e-f278-4af7-a06e-e8270c3e2e2f",
+        "charge_kurus": 0,
+        "created_at": "2026-11-04T16:54:50.894Z",
+        "value": {
+          "code": "model_temporarily_unavailable",
+          "recoveryRound": 0,
+          "modelAttempts": [
+            {
+              "model": "gemini-3.1-pro-preview",
+              "code": "provider_error",
+              "httpStatus": 503,
+              "operation": "generateContent",
+              "reason": "request_rejected"
+            },
+            {
+              "model": "gemini-4-argon",
+              "code": "provider_error",
+              "httpStatus": 503,
+              "operation": "generateContent",
+              "reason": "request_rejected"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "search:3b938b60cd7d7fc39bcf1068186a6d83588bd09ed1631d664288e0cff6d1719c",
+      {
+        "state": "complete",
+        "input_hash": "09ce407082758267e1d0d130c8405f4944bc6c0e0cc96e0561f03611dc76f822",
+        "claim_token": "27094a1f-ae69-4696-850d-58720a8a4946",
+        "charge_kurus": 83,
+        "created_at": "2026-11-04T16:54:54.643Z",
+        "value": {
+          "query": "site:huel.com \"Huel\" products pricing about shop subscription ürün fiyat",
+          "results": [
+            {
+              "url": "https://discuss.huel.com/t/message-from-julian-we-re-introducing-some-price-updates-please-read/22261",
+              "title": "Message from Julian - we’re introducing some price updates - please read - Huel Updates - Huel",
+              "content": "When calculating bulk discounts for our products, we do this by reducing a monetary figure rather than percentage. The new prices per RTD box as a sub are as follows:\n\n1 box - £36.50  \n2 boxes - £34.50 (£2 less)  \n3 boxes - £33.50 (£1 less)  \n4 boxes - £32.50 (£1 less)\n\nAnd so on, reducing by £1 per box up to 8 boxes. Hope this helps clarify things.\n\nI am also a little shocked to see how much the cost has risen. I have always set aside monthly budgets in my shopping to accommodate Huel but it looks like i’ll be cutting back with this. I expect price increases that’s the way of everything but with rising fuel, energy and cost of living this is just another hike that my unchanged wage bill can’t suffer :frowning:\n\n:frowning: [...] Genuinely sorry to hear this, both. Please do note this is only the second time we have increased our prices in over six years as a company, whereas other companies prefer to adjust annually.\n\nWe also have a range of discount codes such as Refer-A-Friend amongst others to make it cheaper for you, but we still do believe that £1.51 (the new price for a v3.0 meal as a sub) is affordable given all the amazing benefits.\n\nyou’re now competing with meal prepping on a cost point.\n\nI can completely understand how cost-effective meal planning can be, but it’s worth noting the other incredible benefits that Huel has over meal prepping… the convenience, the nutrition, avoiding food waste, plus much more! [...] Looking further into the prices (of Ready to Drink bottles, as that is the only one I order),  \nWhat causes the steep increase in the price per bottle/box when going from 1 → 2 boxex?  \nWith 1 Box, I only pay 1,80 more per box, but with 2 boxes I suddenly pay 4,25 more per box and then 3 boxes tones it down a little again to 4.03 more per box. (In es"
+            },
+            {
+              "url": "https://discourse.huel.com/t/change-in-subscription-cost/5091",
+              "title": "Change in subscription cost? - Site Feedback - Huel",
+              "content": "# Change in subscription cost?\n\nHello Huel Fam,\n\nI’ve been enjoying this product for a little while now and I normally get my subscription for $60 per round. Now my subscription is currently being set at $118.80 for “Original x2” and “Original x2” by default. I personally don’t consume Huel as quickly as others so this amount seems excessive for my taste. Did the Huel subscription service terms change recently that I am not aware of? I would like to go back to my original subscription quantity and price.\n\nHi there Elliott! I’m sorry you’ve experienced this. We recently transitioned to a new subscription database, although price should not have changed! I’m going to go ahead and send you an email right now so we can sort this out.\n\n### Related topics"
+            },
+            {
+              "url": "https://huel.com",
+              "title": "Huel UK",
+              "content": "Lite Ready-to-drink\n\n  The 190-calorie meal shake\n\n  25g protein\n\n  190 kcal per bottle\n\n  From £39\n\n  / £3.25 per bottle\n\n  View product\n\n### FREE t-shirt worth £20\n\nFor new customers\n\nShop now\n\nShop now\n\n### 30-day taste guarantee\n\nMoney back within 30 days if you don’t like the taste.\n\nShop now\n\nShop now\n\n## Join the Huel community\n\nSign up to save £10 on your first order over £60 and be the first to hear about new products, exclusive offers, and more.\n\nThis site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply. You can unsubscribe at any time. Huel Privacy Policy."
+            },
+            {
+              "url": "https://huel.com/pages/how-to-eat-well-on-a-budget-when-produce-prices-rise",
+              "title": "How to Eat Well When Food Prices Keep Rising | Huel US",
+              "content": "### Advocating for better access and affordability\n\nIndividual strategies matter, but so does the broader picture. Sharing practical knowledge in neighborhood groups or at community meetings, supporting local food initiatives, organizing produce swaps, and engaging with local leaders about food access are all meaningful steps. Closing the gap between who can and can't eat well isn't just a personal challenge — it's a community one.\n\n## Discover Huel products\n\nFind your favorite Huel products\n\nShop Huel\n\n Black Edition Ready-to-drinkBlack Edition Ready-to-drink\n\n  Black Edition Ready-to-drink\n\n  High-protein meal shakes\n\n  35g protein\n\n  400 cal per bottle\n\n  From $58\n\n  / $4.83 per bottle\n\n  View product\n Hot & Savory CupsHot & Savory Cups\n\n  Hot & Savory Cups\n\n  On-the-go instant meals [...] Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more [...] Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%"
+            },
+            {
+              "url": "https://huel.com/collections/other-huel-products",
+              "title": "Huel All Products | Huel US",
+              "content": "Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more [...] Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25%\n Give 25%, Get 25%\n HSA/FSA Eligible: Learn more\n Free shipping $65+\n Subscribe and save 25% [...] View product\n\nComplete Protein ScoopComplete Protein Scoop\n\nComplete Protein Scoop\n\n$0.50\n\nView product\n\nHuel Men's T-ShirtHuel Men's T-Shirt\n\nHuel Men's T-Shirt\n\n$25\n\nView product\n\nHuel Women's T-ShirtHuel Women's T-Shirt\n\nHuel Women's T-Shirt\n\n$25\n\nView product\n\nHuel Tote BagHuel Tote Bag\n\nHuel Tote Bag\n\n$8\n\nView product\n\nCrafted to deliver complete nutrition without compromise, our products include everything from tasty meals to protein bars and energy drinks. Each one is designed by expert nutritionists to give your body the essential nutrients, vitamins, and minerals it needs to thrive. This is next-level nutrition.\n\n"
+            },
+            {
+              "url": "https://discuss.huel.com/t/discount-structure/25229",
+              "title": "Discount structure - Uncategorized - Huel",
+              "content": "On the USA site the 16 bags still cost $462.40.\n\nThe price increase is from August 15th according to the email.\n\nOk. Didn’t know that. Will check again later.\n\n### New \"discount\" system\n\nHi @Charlotte\\_Huel, I’m currently paying $23.30 for H&S on my subscription. The “discount increase” webpage shows the subscription price for H&S as $26.60. Is that true? If so, it’s a price increase regardless of new discount. My current...\n\nYou were right, unfortunately.  \n\nScreenshot_20230817_001333_Chrome\n\nScreenshot\\_20230817\\_001333\\_Chrome1080×1493 128 KB\n\nScreenshot_20230817_001333_Chrome\n\nAre you talking about the price of a product or the way discounts are offered/applied to it. Best I can tell is that the price hasn’t changed but the discounting system has."
+            }
+          ],
+          "fx": {
+            "usdTry": 50.026,
+            "publishedAt": "2026-11-04",
+            "conversionAllowance": 0.03
+          },
+          "credits": 2,
+          "accountedKurus": 83
+        }
+      }
+    ],
+    [
+      "search:946c22f95fc70e64a3ec9e96b00b35a078688e6530e1ceb681660c541b86a579",
+      {
+        "state": "complete",
+        "input_hash": "1b15a9afbd4739281477aa03d1107d232f670b0d2a1bb72822a0a20a15bf4e91",
+        "claim_token": "1b29277e-8a4f-48f9-8b1b-7d73d49d1b12",
+        "charge_kurus": 83,
+        "created_at": "2026-11-04T16:54:54.648Z",
+        "value": {
+          "query": "\"Huel\" direct competitors alternatives same product target market rakip",
+          "results": [
+            {
+              "url": "https://jimmyjoy.com/pages/jimmy-joy-and-huel-comparison",
+              "title": "Jimmy Joy and Huel comparison (2026 update)",
+              "content": "Same protein target (40 g), reached differently: Plenny Shake Pro uses soy protein isolate, oats, soy flour and flaxseed; Huel Black Edition uses pea and rice protein with tapioca starch.\n Huel Black Edition is lower-carb by design - that's its whole positioning. For a low-carb/keto-leaning buyer it fits; for a traditional oat-based complete meal, Plenny Shake Pro fits.\n Both contain probiotics (Heyndrickxia coagulans, former Bacillus coagulans), so this isn’t a differentiator here - but inulin (prebiotic) still is: Plenny Shake Pro pairs the probiotic with prebiotic fibre for a symbiotic effect."
+            },
+            {
+              "url": "https://www.fooddive.com/news/with-50m-meals-sold-worldwide-huel-shakes-up-the-meal-replacement-market/558787",
+              "title": "With 50M meals sold worldwide, Huel shakes up the meal replacement market",
+              "content": "Still, the products are fundamentally similar,McMaster said.In the United Kingdom, the company offers a wider range of drink flavors,a power bar and granola cereal. Though Huel plans to eventually bring the bars stateside,they are focused on powdered complete nutrition beverages for the time being. Part of the reason, explained McMaster, is to help re-educate consumers about what food can be.Huel considers its beverages to be food, plain and simple.\n\nKeep up with the story. Subscribe to the Food Dive free daily newsletter [...] While meal replacement competitor Soylent dove headfirst into the snack sector with Soylent Bridge and Soylent Squared snack bars, Huel has found a narrower focus on its four global product lines allows the company to engage more deeply with its consumer base and adjust products according to feedback. This approach, McMaster said, not only helps ensure the company operates profitably, but it also helps develop a better product that resonates with consumers. [...] Hearn said Huel doesn’t see itself competing directly with meal replacement drinks. Huel is in competition with the convenient and ready-to-go meals on supermarket shelves as well as fast food, he said. To stand out,Hearn said,“we’ve got an aesthetic and a product that people like.” It also helps, he said, that “we just focus on doing our own thing.”\n\n  \n\n“Huel is a very simple, easy way to do that while also still benefitting your nutrition and saving you money in your wallet as well. I think all of those factors combined at the right moment and are what people are looking for.”\n\nImage 19\n\nJames McMaster\n\nCEO, Huel"
+            },
+            {
+              "url": "https://wholesupp.com/blogs/news/best-alternatives-to-huel",
+              "title": "Best Alternatives to Huel (2026) | UK & Ireland – Whole Supp",
+              "content": "## Why do customers consider Huel in the first place?\n\nHuel earned its place in the meal replacement category fairly. The range covers powders, ready-to-drink bottles, bars, and hot and savoury options, and few competitors match that variety.\n\nThe brand is nutritionally complete across its range and stocked widely in UK supermarkets. For many shoppers, Huel was their first introduction to meal replacement shakes. These are real strengths if a wide product range matters more to you than ingredient sourcing.\n\n### What is in Huel Powder (gluten-free, vanilla)? [...] ### Is Whole Supp available in Ireland?\n\nYes. Whole Supp is an Irish brand based in Dublin and ships across Ireland and the UK. Body Fuel is also stocked in WHSmith Travel stores across Ireland.\n\n### Does Whole Supp contain guar gum?\n\nNo. Whole Supp uses a trace amount of xanthan gum, 0.4%, to keep the texture smooth, and no guar gum.\n\n## References\n\n Huel UK's published Huel Powder formula page (not linked per our policy of not linking to competitor sites; figures correct as of September 2026)\n Danone acquires Huel, BBC News\n Informed Sport certification programme\n\n##### Related product\n\nA bag of Whole Supp Superfood Meal Shake in caramel sea salt flavor with a white metal shaker bottle. Get 21% off every order and a free shaker when you subscribe.\n\n###### Superfood Meal Shake\n\n£33.99 [...] Danone acquired Huel in 2026 in a deal worth around £860 million, cleared by the Competition and Markets Authority in August. The deal shows how large the meal replacement category has become.\n\nHuel does not suit everyone. People searching for alternatives most often mention stomach discomfort or taste, and some simply prefer an independent brand.\n\nWhole Supp is a superfood-based Huel alternative sold across the UK and Irel"
+            },
+            {
+              "url": "https://discuss.huel.com/t/alternatives-to-huel-in-canada/10922",
+              "title": "Alternatives to Huel in Canada - Uncategorized - Huel",
+              "content": "BIOLENT\n\nBiolent is another Canadian meal replacement manufacturer. Unlike the other 2, they offer a wider array of powder meal replacements: Biolent Original, Biolent Flex (double the protein) and Biolent Keto. However, all three options only come in a single flavour: Vanilla .\n\nAll Biolent shakes are vegan . The ingredients are a mix of imported and local ingredients. Each shake offers 500kcal and the macronutrient distribution depends on the product. Biolent Original is 53C/15P/32F ; whereas Biolent Flex is 36C/31P/33F ; and Biolent Keto 16C/23P/61F .\n\nPrices vary depending the product, Original costing 2.86CAD/400kcal ; Flex costing 3.14CAD/400kcal ; and Keto 3CAD/400kcal . Shipping is free within Canada for order above 90CAD. [...] From US to CAN:\n\n| rand | Type | C$/400kcal | Shipping\\\\ | Features |\n ---  --- \n| Canada |  |  |  |  |\n| Biolent | P | 2.86 | Free | V,K\\,S\\ |\n| Hol Food | P | 2.69 | Free | – |\n| Tudo | P | 3.5 | Free | V,GF |\n| Vitalhouse | P | 5.21 | Free | V, GF, S,SF, NG |\n| Europe |  |  |  |  |\n| Ambronite | P | 7.94 | Free | V, NG, SF |\n| Jake O | P,B | 5.34 | Free\\\\\\ | V,S\\ |\n| Jimmyjoy | P,B,D | 1.82 | 111+ | V,S\\ |\n| Pulve | P | 2.97 | Free\\\\\\\\ | V,NG,SF |\n| Queal | P,B | 2.13 | 71 | V\\,S\\ |\n| Shake2day | P,B | 2.70 | Varies | V\\,S\\ |\n| Vitaminfood | P | 2.64 | 20 | V |\n| USA |  |  |  |  |\n| Superbodyfuel | P | 3.27 | Free | S\\,K\\ |\n| Sated | P,D\\ | 3.92 | Varies | K |\n\nLabels :\n\n\\\\\\\\\\ Means that one of the product is but not all are. [...] Each Tudo meal will give you 500kcal with a energy split of 39C/28P/33F . It is a vegan meal replacement, thus the protein will come from brown rice protein. The main fat sources are high oleic sunflower oil powder and flaxseed. Brown rice milk powder is the main source of carbohydrates, but it also include"
+            },
+            {
+              "url": "https://www.ringly.io/discover/brands-like-huel",
+              "title": "12 Brands Like Huel: The Best Meal Replacements 2026",
+              "content": "## 3. Ample\n\nAmple product\n\nAmple product\n\nAmple leans into real-food ingredients and transparent sourcing, with a higher protein count and both plant and grass-fed dairy versions. It comes in single-serve bottles you fill and shake, plus larger canisters.\n\nRedditors who care more about ingredient quality than price tend to land here. Best for someone who wants a genuinely filling, premium meal and does not mind paying for it.\n\n## 4. Rootana\n\nRootana product\n\nRootana product\n\nRootana is the clean-label pick, and it is a direct answer to the most common Huel complaint. It is built on whole oats, pea protein, and flaxseed, carries 27 essential vitamins and minerals, and uses no artificial sweeteners at all. [...] 12 Brands Like Huel: The Best Meal Replacements 2026\n\nMost people leave Huel for one of a few reasons: the taste, the chalky texture, the sucralose, or the gassy fiber hit. The best alternatives fix the specific thing that bugged you. For clean whole-food nutrition, look at Ka'Chava, Ample, and Rootana. For cheaper grab-and-go, Soylent and Jimmy Joy. Here are 12 brands like Huel, and who each one is actually for. [...] ## 12. Vite Ramen\n\nVite Ramen product\n\nVite Ramen product\n\nVite Ramen is the outlier, and a welcome one. Instead of a shake, it is a bowl of real ramen fortified to cover a full spread of vitamins and minerals per serving, so a hot lunch actually counts as complete nutrition.\n\nBest for anyone who is tired of drinking their meals and wants something warm to chew. It has a small but devoted following for exactly that reason.\n\n## How to choose a Huel alternative\n\nStart with the reason you are leaving Huel, then match it."
+            },
+            {
+              "url": "https://www.reddit.com/r/Huel/comments/1ocr4er/huel_alternatives",
+              "title": "Huel alternatives : r/Huel",
+              "content": "If you are looking for similar macros I haven't been able to find anything though. There's kachava, and Goode health that have worse macros.Read more"
+            }
+          ],
+          "fx": {
+            "usdTry": 50.026,
+            "publishedAt": "2026-11-04",
+            "conversionAllowance": 0.03
+          },
+          "credits": 2,
+          "accountedKurus": 83
+        }
+      }
+    ],
+    [
+      "model:source_plan:0491a2b88a6b238dd4dbbe2ba821669fcc0852967df45cb938aa4a73b6d39bdf",
+      {
+        "state": "uncertain",
+        "input_hash": "d2af6c62d94dea9655be23c7eca2e82aba86310cbf2f60cc5d713fdf13b4b931",
+        "claim_token": "3a45a25e-6aef-4e00-8ee5-4bf6270bbbe5",
+        "charge_kurus": 584,
+        "created_at": "2026-11-04T16:54:57.683Z",
+        "value": {
+          "code": "provider_error",
+          "providerStatus": 503,
+          "providerOperation": "generateContent"
+        }
+      }
+    ],
+    [
+      "model:source_plan:211ea00e04153997ad6df2c3213e300d44d69085c20f5a9dbef29dc2fd725cfe",
+      {
+        "state": "uncertain",
+        "input_hash": "d2af6c62d94dea9655be23c7eca2e82aba86310cbf2f60cc5d713fdf13b4b931",
+        "claim_token": "91cd9168-4297-4810-b401-2c4f3ab3ea09",
+        "charge_kurus": 525,
+        "created_at": "2026-11-04T16:55:27.627Z",
+        "value": {
+          "code": "provider_error",
+          "providerStatus": 503,
+          "providerOperation": "generateContent"
+        }
+      }
+    ],
+    [
+      "audit:continuation:v1:source_plan:8632a0ff5a5ed135ea35b9a03588a06df9ab905a78c166b0f3bad93b703ed483",
+      {
+        "state": "complete",
+        "input_hash": "2e4140eda9bb23a2f4e65a762d576071b7174f38c7dcd42f937c882e9366c2d2",
+        "claim_token": "021d8590-09f8-4480-afee-e56943be61b3",
+        "charge_kurus": 0,
+        "created_at": "2026-11-04T16:55:28.536Z",
+        "value": {
+          "status": "ready",
+          "data": {
+            "summary": "Ön BHS tamamlanamadı. Bu teklif araştırma bulgusu veya BHS skoru içermez; görüşmede belirtilen hedef ve hizmet kapsamıyla hazırlanır.",
+            "sources": [],
+            "findings": [],
+            "competitors": [],
+            "dimensions": [
+              {
+                "id": "financial",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              },
+              {
+                "id": "operations",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              },
+              {
+                "id": "funnel",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              },
+              {
+                "id": "digital",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              },
+              {
+                "id": "perception",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              },
+              {
+                "id": "competition",
+                "score": null,
+                "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "dataStatus": "insufficient",
+                "findingIds": [],
+                "comparisonCompetitorIds": [],
+                "strengths": [],
+                "gaps": [
+                  "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                ],
+                "onboardingQuestions": []
+              }
+            ],
+            "benchmarks": [],
+            "researchCoverage": [
+              {
+                "dimension": "financial",
+                "topic": "Ciro/büyüme, yatırım/ortaklık ve dönem",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "financial",
+                "topic": "Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "financial",
+                "topic": "İşe alım büyüme/daralma sinyali",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "financial",
+                "topic": "Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "operations",
+                "topic": "Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "operations",
+                "topic": "Platform, CRM/otomasyon araç sinyalleri",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "operations",
+                "topic": "Müşteri hizmetleri, kargo ve iade deneyimi",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "operations",
+                "topic": "2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "funnel",
+                "topic": "Awareness: içerik, reklam ve organik erişim",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "funnel",
+                "topic": "Interest: landing page ve lead magnet",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "funnel",
+                "topic": "Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "funnel",
+                "topic": "Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "funnel",
+                "topic": "Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "digital",
+                "topic": "PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "digital",
+                "topic": "Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "digital",
+                "topic": "SEO trafik, authority, anahtar kelime ve backlink",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "digital",
+                "topic": "Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "digital",
+                "topic": "Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "perception",
+                "topic": "Yorum hacmi, puan, dönem ve coğrafya",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "perception",
+                "topic": "Tekrarlanan şikayet temaları ve marka yanıtları",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "perception",
+                "topic": "Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "competition",
+                "topic": "Rakip bazında trafik ve sosyal etkileşim kıyası",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "competition",
+                "topic": "Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              },
+              {
+                "dimension": "competition",
+                "topic": "Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                "status": "unavailable",
+                "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                "sourceIds": []
+              }
+            ],
+            "criticalOpportunityFindingId": null,
+            "criticalRiskFindingId": null,
+            "meetingQuestions": [],
+            "serviceRecommendations": [],
+            "originalReport": {
+              "summary": "Kaynak doğrulaması yeterli değil. Kamuya açık veriler görüşmede tamamlanacak; doğrulanmamış iddia kullanılmadı.",
+              "sources": [],
+              "findings": [],
+              "competitors": [],
+              "dimensions": [
+                {
+                  "id": "financial",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "operations",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "funnel",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "digital",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "perception",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "competition",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                }
+              ],
+              "benchmarks": [],
+              "researchCoverage": [
+                {
+                  "dimension": "financial",
+                  "topic": "Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "İşe alım büyüme/daralma sinyali",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Platform, CRM/otomasyon araç sinyalleri",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Awareness: içerik, reklam ve organik erişim",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Interest: landing page ve lead magnet",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "SEO trafik, authority, anahtar kelime ve backlink",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Yorum hacmi, puan, dönem ve coğrafya",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                }
+              ],
+              "criticalOpportunityFindingId": null,
+              "criticalRiskFindingId": null,
+              "meetingQuestions": [],
+              "serviceRecommendations": []
+            },
+            "transfer": {
+              "issues": [
+                {
+                  "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "dimensions.financial",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.operations",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.funnel",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.digital",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.perception",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.competition",
+                  "reason": "missing"
+                },
+                {
+                  "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "summary",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.financial",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.operations",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.funnel",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.digital",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.perception",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.competition",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "research",
+                  "reason": "explicit_incomplete_handoff"
+                }
+              ],
+              "contentComplete": false
+            },
+            "report": {
+              "summary": "Ön BHS tamamlanamadı. Bu teklif araştırma bulgusu veya BHS skoru içermez; görüşmede belirtilen hedef ve hizmet kapsamıyla hazırlanır.",
+              "sources": [],
+              "findings": [],
+              "competitors": [],
+              "dimensions": [
+                {
+                  "id": "financial",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "operations",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "funnel",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "digital",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "perception",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                },
+                {
+                  "id": "competition",
+                  "score": null,
+                  "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "dataStatus": "insufficient",
+                  "findingIds": [],
+                  "comparisonCompetitorIds": [],
+                  "strengths": [],
+                  "gaps": [
+                    "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                  ],
+                  "onboardingQuestions": []
+                }
+              ],
+              "benchmarks": [],
+              "researchCoverage": [
+                {
+                  "dimension": "financial",
+                  "topic": "Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "İşe alım büyüme/daralma sinyali",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "financial",
+                  "topic": "Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Platform, CRM/otomasyon araç sinyalleri",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "operations",
+                  "topic": "2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Awareness: içerik, reklam ve organik erişim",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Interest: landing page ve lead magnet",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "funnel",
+                  "topic": "Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "SEO trafik, authority, anahtar kelime ve backlink",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "digital",
+                  "topic": "Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Yorum hacmi, puan, dönem ve coğrafya",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "perception",
+                  "topic": "Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                },
+                {
+                  "dimension": "competition",
+                  "topic": "Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "status": "unavailable",
+                  "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                  "sourceIds": []
+                }
+              ],
+              "criticalOpportunityFindingId": null,
+              "criticalRiskFindingId": null,
+              "meetingQuestions": [],
+              "serviceRecommendations": [],
+              "originalReport": {
+                "summary": "Kaynak doğrulaması yeterli değil. Kamuya açık veriler görüşmede tamamlanacak; doğrulanmamış iddia kullanılmadı.",
+                "sources": [],
+                "findings": [],
+                "competitors": [],
+                "dimensions": [
+                  {
+                    "id": "financial",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  },
+                  {
+                    "id": "operations",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  },
+                  {
+                    "id": "funnel",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  },
+                  {
+                    "id": "digital",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  },
+                  {
+                    "id": "perception",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  },
+                  {
+                    "id": "competition",
+                    "score": null,
+                    "rationale": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "dataStatus": "insufficient",
+                    "findingIds": [],
+                    "comparisonCompetitorIds": [],
+                    "strengths": [],
+                    "gaps": [
+                      "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak."
+                    ],
+                    "onboardingQuestions": []
+                  }
+                ],
+                "benchmarks": [],
+                "researchCoverage": [
+                  {
+                    "dimension": "financial",
+                    "topic": "Ciro/büyüme, yatırım/ortaklık ve dönem",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "financial",
+                    "topic": "Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "financial",
+                    "topic": "İşe alım büyüme/daralma sinyali",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "financial",
+                    "topic": "Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "operations",
+                    "topic": "Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "operations",
+                    "topic": "Platform, CRM/otomasyon araç sinyalleri",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "operations",
+                    "topic": "Müşteri hizmetleri, kargo ve iade deneyimi",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "operations",
+                    "topic": "2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "funnel",
+                    "topic": "Awareness: içerik, reklam ve organik erişim",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "funnel",
+                    "topic": "Interest: landing page ve lead magnet",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "funnel",
+                    "topic": "Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "funnel",
+                    "topic": "Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "funnel",
+                    "topic": "Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "digital",
+                    "topic": "PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "digital",
+                    "topic": "Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "digital",
+                    "topic": "SEO trafik, authority, anahtar kelime ve backlink",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "digital",
+                    "topic": "Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "digital",
+                    "topic": "Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "perception",
+                    "topic": "Yorum hacmi, puan, dönem ve coğrafya",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "perception",
+                    "topic": "Tekrarlanan şikayet temaları ve marka yanıtları",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "perception",
+                    "topic": "Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "competition",
+                    "topic": "Rakip bazında trafik ve sosyal etkileşim kıyası",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "competition",
+                    "topic": "Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  },
+                  {
+                    "dimension": "competition",
+                    "topic": "Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                    "status": "unavailable",
+                    "observation": "Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.",
+                    "sourceIds": []
+                  }
+                ],
+                "criticalOpportunityFindingId": null,
+                "criticalRiskFindingId": null,
+                "meetingQuestions": [],
+                "serviceRecommendations": []
+              },
+              "transfer": {
+                "issues": [
+                  {
+                    "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "dimensions.financial",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.operations",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.funnel",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.digital",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.perception",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.competition",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                    "reason": "unavailable_or_unverified"
+                  },
+                  {
+                    "path": "summary",
+                    "reason": "missing"
+                  },
+                  {
+                    "path": "dimensions.financial",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "dimensions.operations",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "dimensions.funnel",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "dimensions.digital",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "dimensions.perception",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "dimensions.competition",
+                    "reason": "unsupported_dimension_claims"
+                  },
+                  {
+                    "path": "research",
+                    "reason": "explicit_incomplete_handoff"
+                  }
+                ],
+                "contentComplete": false
+              }
+            },
+            "schemaVersion": "bhs-v2-direct",
+            "methodologyVersion": "research-unavailable",
+            "briefHash": "8632a0ff5a5ed135ea35b9a03588a06df9ab905a78c166b0f3bad93b703ed483",
+            "rawReport": "Ön BHS tamamlanamadı. Bu teklif araştırma bulgusu veya BHS skoru içermez; görüşmede belirtilen hedef ve hizmet kapsamıyla hazırlanır.\n\n# Ön BHS analizi\n\n## 1. Marka genel bakış\n\nKaynak doğrulaması yeterli değil. Kamuya açık veriler görüşmede tamamlanacak; doğrulanmamış iddia kullanılmadı.\n\n## 2. Boyut analizleri\n\n### Finansal Sağlık Sinyalleri\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nCiro/büyüme, yatırım/ortaklık ve dönem · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nÜrün/fiyat segmentleri ve pazaryeri hacmi · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nİşe alım büyüme/daralma sinyali · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nGelir/ürün/kanal konsantrasyonu ve rakip kıyası · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n### Operasyonel Verimlilik Sinyalleri\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nEkip, departmanlar, açık roller ve kişi bağımlılığı · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nPlatform, CRM/otomasyon araç sinyalleri · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nMüşteri hizmetleri, kargo ve iade deneyimi · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n2x ölçeklenebilirlik hipotezi ve rakip kıyası · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n### Funnel Bütünlüğü\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nAwareness: içerik, reklam ve organik erişim · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nInterest: landing page ve lead magnet · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nConsideration: SEO içerik ve ölçüm etiketi sinyali · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nIntent/conversion: ürün, CTA, satın alma/randevu ve ödeme · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nLoyalty/advocacy: e-posta, abonelik, UGC ve topluluk · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n### Dijital Varlık Sağlığı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nPlatform, analitik/piksel etiketleri ve çalışırlık sınırı · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nSEO trafik, authority, anahtar kelime ve backlink · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nSosyal kanal, takipçi/etkileşim, yayın frekansı ve bio · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nMeta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n### Marka Algısı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nYorum hacmi, puan, dönem ve coğrafya · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nTekrarlanan şikayet temaları ve marka yanıtları · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nMarka arama/trend, UGC ve sosyal bahsetme tonu · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n### Rekabetçi Pozisyon\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nPuan: Yeterli veri yok\n\nGüçlü yönler: \n\nAçıklar: Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nRakip bazında trafik ve sosyal etkileşim kıyası · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nÜrün/fiyat pozisyonu ve somut farklılaştırıcı · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\nRakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi · Veri bulunamadı\n\nBu araştırmada veri bulunamadı; görüşmede doğrulanacak.\n\nKaynaklar: \n\n## 3. Toplam değerlendirme\n\nFinansal Sağlık Sinyalleri: Yanıt Bekliyor/100 · Ağırlık 0.25\nOperasyonel Verimlilik Sinyalleri: Yanıt Bekliyor/100 · Ağırlık 0.2\nFunnel Bütünlüğü: Yanıt Bekliyor/100 · Ağırlık 0.2\nDijital Varlık Sağlığı: Yanıt Bekliyor/100 · Ağırlık 0.15\nMarka Algısı: Yanıt Bekliyor/100 · Ağırlık 0.1\nRekabetçi Pozisyon: Yanıt Bekliyor/100 · Ağırlık 0.1\nÖn BHS: Yanıt Bekliyor/100\nVeri bulunamadı — onboarding’de tamamlanacak.\n\n## 4. Onboarding soruları\n\n## 5. Kritik fırsat\n\nEk kanıt gerekli.\n\n## 6. Risk hipotezi\n\nEk kanıt gerekli.\n\n## 7. Toplantı soruları\n\n## 8. Rakip karşılaştırması\n\n## 9. Kaynaklar\n\n## Hizmet hipotezleri",
+            "scoring": {
+              "total": null,
+              "weights": [
+                {
+                  "id": "financial",
+                  "weight": 0.25
+                },
+                {
+                  "id": "operations",
+                  "weight": 0.2
+                },
+                {
+                  "id": "funnel",
+                  "weight": 0.2
+                },
+                {
+                  "id": "digital",
+                  "weight": 0.15
+                },
+                {
+                  "id": "perception",
+                  "weight": 0.1
+                },
+                {
+                  "id": "competition",
+                  "weight": 0.1
+                }
+              ],
+              "note": "Veri bulunamadı — onboarding’de tamamlanacak."
+            },
+            "services": [],
+            "quality": {
+              "checksPassed": true,
+              "contentComplete": false,
+              "issues": [
+                {
+                  "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "dimensions.financial",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.operations",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.funnel",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.digital",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.perception",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.competition",
+                  "reason": "missing"
+                },
+                {
+                  "path": "researchCoverage.financial.Ciro/büyüme, yatırım/ortaklık ve dönem",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Ürün/fiyat segmentleri ve pazaryeri hacmi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.İşe alım büyüme/daralma sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.financial.Gelir/ürün/kanal konsantrasyonu ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Ekip, departmanlar, açık roller ve kişi bağımlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Platform, CRM/otomasyon araç sinyalleri",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.Müşteri hizmetleri, kargo ve iade deneyimi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.operations.2x ölçeklenebilirlik hipotezi ve rakip kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Awareness: içerik, reklam ve organik erişim",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Interest: landing page ve lead magnet",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Consideration: SEO içerik ve ölçüm etiketi sinyali",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Intent/conversion: ürün, CTA, satın alma/randevu ve ödeme",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.funnel.Loyalty/advocacy: e-posta, abonelik, UGC ve topluluk",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.PageSpeed/Core Web Vitals, mobil, SSL ve teknik hatalar",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Platform, analitik/piksel etiketleri ve çalışırlık sınırı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.SEO trafik, authority, anahtar kelime ve backlink",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Sosyal kanal, takipçi/etkileşim, yayın frekansı ve bio",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.digital.Meta Ad Library reklam aktivitesi ve yaratıcı/mesaj tutarlılığı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Yorum hacmi, puan, dönem ve coğrafya",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Tekrarlanan şikayet temaları ve marka yanıtları",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.perception.Marka arama/trend, UGC ve sosyal bahsetme tonu",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakip bazında trafik ve sosyal etkileşim kıyası",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Ürün/fiyat pozisyonu ve somut farklılaştırıcı",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "researchCoverage.competition.Rakiplerin güçlü kanalları ve kaynaklı fırsat hipotezi",
+                  "reason": "unavailable_or_unverified"
+                },
+                {
+                  "path": "summary",
+                  "reason": "missing"
+                },
+                {
+                  "path": "dimensions.financial",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.operations",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.funnel",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.digital",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.perception",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "dimensions.competition",
+                  "reason": "unsupported_dimension_claims"
+                },
+                {
+                  "path": "research",
+                  "reason": "explicit_incomplete_handoff"
+                }
+              ],
+              "scope": "read-source-and-quote-filter",
+              "semanticBenchmark": "not_requested",
+              "customerApproval": "pending",
+              "methodologyCoverage": {
+                "expected": 24,
+                "present": 24
+              }
+            },
+            "researchMethod": "tavily-gemini-direct",
+            "usage": null,
+            "researchContinuity": {
+              "status": "unavailable",
+              "reason": "model_temporarily_unavailable",
+              "additionalPaidCalls": 0,
+              "notice": "Ön BHS tamamlanamadı. Bu teklif araştırma bulgusu veya BHS skoru içermez; görüşmede belirtilen hedef ve hizmet kapsamıyla hazırlanır."
+            },
+            "scopePlan": {
+              "summary": "Kapsam değerlendirmesi tamamlanamadı; fiyatlı başlangıç alternatifleri kontrol için hazırlandı.",
+              "services": [
+                {
+                  "serviceId": "meta",
+                  "phase": "start",
+                  "priority": 1,
+                  "reason": "Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.",
+                  "briefQuote": "Growth danışmanlığı, Meta ve Google Ads operasyonları.",
+                  "findingIds": []
+                },
+                {
+                  "serviceId": "google_ads",
+                  "phase": "start",
+                  "priority": 1,
+                  "reason": "Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.",
+                  "briefQuote": "Growth danışmanlığı, Meta ve Google Ads operasyonları.",
+                  "findingIds": []
+                }
+              ],
+              "budget": {
+                "posture": "unspecified",
+                "quote": null,
+                "targetQuote": null,
+                "targetScope": "unspecified"
+              },
+              "target": null,
+              "exclusions": [
+                "Doğrulanmamış özel işler ve reklam harcaması bu fiyatlara dahil değildir."
+              ],
+              "warnings": [
+                "Başlangıç kapsamı kontrol edilmeli; yeni model çağrısı otomatik başlatılmadı."
+              ],
+              "fallback": true
+            },
+            "proposalCopy": {
+              "headline": "Net hedefler.",
+              "accent": "Birlikte büyüme.",
+              "subtitle": "Görüşmede belirtilen hedef ve hizmet kapsamına dayalı işbirliği teklifimiz.",
+              "findingIds": []
+            }
+          }
+        }
+      }
+    ]
+  ]
+}
