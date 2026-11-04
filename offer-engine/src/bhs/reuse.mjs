@@ -28,7 +28,7 @@ export async function saveReusableResearch(brief,ledger,value,now=Date.now()){
 // for the current brief. A changed brief retains explicit context uncertainty.
 export function reusableResearch(brief,rows,now=Date.now()){
  for(const row of rows||[]){
-  const age=now-Date.parse(row.created_at),value=row.value,report=value?.data||value?.report,context=value?.researchContext;
+  const age=now-Date.parse(row.created_at),value=row.value,report=value?.originalModelData||value?.data||value?.report,context=value?.researchContext;
   if(!Number.isFinite(age)||age<0||age>7*86400000||!report||!Array.isArray(report.findings)||!report.findings.length)continue;
   const name=fold(brief.brandName),host=site(brief.website);let compatible=false;
   if(context?.brief)compatible=fold(context.brief.brandName)===name&&site(context.brief.website)===host;
@@ -39,7 +39,7 @@ export function reusableResearch(brief,rows,now=Date.now()){
    compatible=headline&&entity&&(report.sources||[]).some(s=>site(s.url)===host);
   }
   if(!compatible)continue;
-  return {...value,report,reuse:{sourceStep:row.step_key,researchedAt:row.created_at,originalBriefHash:context?.briefHash||null,exactBrief:context?.briefHash===briefHash(brief),contextNeedsConfirmation:context?.briefHash!==briefHash(brief),incrementalResearchCalls:0}};
+  return {...value,report,reuse:{sourceStep:row.step_key,researchedAt:row.created_at,originalBriefHash:context?.briefHash||null,exactBrief:context?.briefHash===briefHash(brief),contextNeedsConfirmation:context?.briefHash!==briefHash(brief),incrementalResearchCalls:0,...(value.originalModelStep?{originalModelStep:value.originalModelStep}:{})}};
  }
  return null;
 }

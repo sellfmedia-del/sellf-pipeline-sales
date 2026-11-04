@@ -11,7 +11,10 @@ export async function buildRecoveryReview(output,{production=false}={}){
  const html=await readFile(output+'/offers/recovery-review.html','utf8');
  await writeFile(output+'/offers/recovery-review.html',html.replace('<p class="review-note">Form açılınca', '<button class="btn" id="review-continuity">AI kesintisinde teklife devam</button><button class="btn" id="review-english">İngilizce çeviri kesintisi</button><p class="review-note">Form açılınca'));
  const {offerFixture}=await import('../../test/fixtures/offer.mjs');
- const {continuationAudit}=await import('../bhs/continuity.mjs');
+ const {continuationAudit,restoreContinuation}=await import('../bhs/continuity.mjs');
+ const {researchCacheKey}=await import('../bhs/reuse.mjs');
+ const {briefHash}=await import('../bhs/brief.mjs');
+ const {context}=await import('../../test/fixtures/evidence.mjs');
  const {pricingEngine}=await import('../engines/pricing-engine.mjs');
  const {proposalEngine}=await import('../engines/proposal-engine.mjs');
  const {addQuote}=await import('../pricing/currency.mjs');
@@ -21,5 +24,12 @@ export async function buildRecoveryReview(output,{production=false}={}){
  const logo={...f.logo,data:sample.logo};
  const proposal=await proposalEngine.run({brief:f.brief,copy:audit.data.proposalCopy},{audit,pricing,logo});
  proposal.data.brand={name:'Örnek Marka',website:'https://brand.example/'};
- await writeFile(output+'/offers/recovery-review-continuity.json',JSON.stringify({audit,pricing,proposal}));
+ const c=context(),now=Date.now(),saved={step_key:'audit:synthesis:'+briefHash(f.brief),created_at:new Date(now).toISOString(),value:{data:c.report,analysisPacket:c.packet,researchContext:{brief:f.brief,briefHash:briefHash(f.brief)}}};
+ const restoredAudit={stage:'audit',...await restoreContinuation(f.brief,audit,{get:async key=>key===researchCacheKey(f.brief,now)?{state:'complete',value:saved}:null},now)};
+ const restoredPricing=addQuote(await pricingEngine.run({brief:f.brief,scope:restoredAudit.data.scopePlan},{audit:restoredAudit}),{currency:'TRY'});
+ const restoredProposal=await proposalEngine.run({brief:f.brief,copy:restoredAudit.data.proposalCopy},{audit:restoredAudit,pricing:restoredPricing,logo});
+ restoredProposal.data.brand={name:'Örnek Marka',website:'https://brand.example/'};
+ await writeFile(output+'/offers/recovery-review-continuity.json',JSON.stringify({audit,pricing,proposal,restored:{audit:restoredAudit,pricing:restoredPricing,proposal:restoredProposal}}));
+ const finalHtml=await readFile(output+'/offers/recovery-review.html','utf8');
+ await writeFile(output+'/offers/recovery-review.html',finalHtml.replace('<button class="btn" id="review-continuity">','<button class="btn btn-primary" id="review-restored">Kayıtlı BHS’yi ek ücret olmadan geri getir</button><button class="btn" id="review-continuity">'));
 }

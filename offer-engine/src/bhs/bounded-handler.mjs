@@ -10,7 +10,7 @@ import {offerGeminiKey} from '../config.mjs';
 import {temporaryDnsError} from '../network-dns.mjs';
 import {runtimeStore,bearer} from '../runtime.mjs';
 import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recovery.mjs';
-import {canContinue,abandonedStage,continuationAudit} from './continuity.mjs';
+import {canContinue,abandonedStage,continuationAudit,restoreContinuation} from './continuity.mjs';
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 
@@ -73,7 +73,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
    if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){
     const chosen=await ledger.get('audit:continuation:v1:'+pendingPhases[stoppedIndex]+':'+hash);
-    if(chosen?.state==='complete')return await finish(chosen.value);
+    if(chosen?.state==='complete')return await finish(await restoreContinuation(brief,chosen.value,ledger,now()));
    }
    if(action==='continue'){
     const index=rows.findIndex(step=>step?.state!=='complete');
@@ -83,7 +83,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
      const reason=abandonedStage(stopped,now())?'stage_abandoned':stopped.value.code;
      const completeSynthesis=rows[pendingPhases.indexOf('synthesis')];
      const audit=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:completeSynthesis?.state==='complete'?completeSynthesis.value:undefined,reason}));
-     log('bhs_explicit_continuation',{reason,additionalPaidCalls:0});return await finish(audit);
+     log('bhs_explicit_continuation',{reason,additionalPaidCalls:0});return await finish(await restoreContinuation(brief,audit,ledger,now()));
     }
    }
    for(const [index,name] of pendingPhases.entries()){
