@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm test && npm run build",
+  "buildCommand": "npm run build && node offer-engine/scripts/bhs-quality-acceptance.mjs --run",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {
@@ -56,3 +56,4 @@
   ],
   "installCommand": "npm ci"
 }
+
