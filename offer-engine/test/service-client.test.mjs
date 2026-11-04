@@ -34,3 +34,12 @@ test('audit failures expose current attempt and total reserves without retrying 
  await assert.rejects(api.PipelineAuditRequest({action:'advance',ticket:'signed-job'}),error=>{assert.deepEqual(error.cost,cost);assert.equal(error.code,'budget_limit');return true;});
  assert.equal(calls,1);
 });
+
+test('explicit recovery metadata is preserved, but a paid recovery request is never retried after transport loss',async()=>{
+ const budgetDetail={requiredKurus:505,availableKurus:268,followingReserveKurus:2500,remainingKurus:2768};let calls=0;
+ const api=client(async()=>{calls++;return new Response(JSON.stringify({code:'budget_limit',error:'Stopped',budgetDetail,recoveryAvailable:true,ticket:'server-signed-ticket'}),{status:422});});
+ await assert.rejects(api.PipelineAuditRequest({action:'advance'}),error=>{assert.equal(error.recoveryAvailable,true);assert.equal(error.ticket,'server-signed-ticket');assert.deepEqual(error.budgetDetail,budgetDetail);return true;});
+ assert.equal(calls,1);
+ let retries=0;const lost=client(async()=>{retries++;throw TypeError('transport');});
+ await assert.rejects(lost.PipelineAuditRequest({action:'recover',ticket:'server-signed-ticket'}),e=>e.code==='audit_transport'&&!e.canResume);assert.equal(retries,1);
+});

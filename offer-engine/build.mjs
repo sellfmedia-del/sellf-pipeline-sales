@@ -42,3 +42,5 @@ if(process.env.OFFER_REGRESSION_SESSION)await import('./scripts/recovery-regress
 
 const {buildLanguageReview}=await import('./src/preview/language-build.mjs');
 await buildLanguageReview(path.join(here,'public'),{production});
+const {buildRecoveryReview}=await import('./src/preview/recovery-build.mjs');
+await buildRecoveryReview(path.join(here,'public'),{production});
