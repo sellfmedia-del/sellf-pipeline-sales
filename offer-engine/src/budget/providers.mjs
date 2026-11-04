@@ -58,7 +58,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const result=await readJson('https://api.tavily.com/extract',input,{Authorization:'Bearer '+tavilyKey},30000);
     if(result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>2))throw new BudgetError('provider_accounting','Kaynak okuma tüketimi ayrılan sınırla eşleşmiyor.');
     return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url)),fx:fxSnapshot,creditsUpper:2,accountedKurus:consumedSearch(2,fxSnapshot.usdTry)};
-   },{settle:value=>value.accountedKurus,limitKurus:manualRecoveryRound?tariff.capKurus:tariff.normalTargetKurus});
+   },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
   async search(query,{depth='advanced',maxResults=6}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
@@ -71,7 +71,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');
     const credits=depth==='basic'?1:2;
     return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
-   },{settle:value=>value.accountedKurus,limitKurus:manualRecoveryRound?tariff.capKurus:tariff.normalTargetKurus});
+   },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
   async generate(stage,input,schema,{model='gemini-3.8-flash',maxOutputTokens=4096,minOutputTokens=maxOutputTokens,reserveForFollowingKurus=0,thinkingLevel='LOW',jsonMode=false,image,logoFallback=false,recoveryAttempt=false,modelFallback=false,recoveryDeadline,validateData}={}){
    if(recoveryStages.has(stage)&&!recoveryAttempt)return recoverModelStage(next=>this.generate(stage,input,schema,next),stage,{model,maxOutputTokens,minOutputTokens,reserveForFollowingKurus,thinkingLevel,jsonMode,image,validateData,recoveryAttempt:true,recoveryDeadline:now()+250000});
@@ -118,14 +118,14 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(!Number.isSafeInteger(count.totalTokens)||count.totalTokens<1)throw new BudgetError('token_count','Girdi maliyeti doğrulanamadı; model başlatılmadı.');
    const upper=Math.ceil(count.totalTokens*1.2)+4096;
    // Keep the logo hold, but never reserve half the card again at source-plan.
-   // Automatic research/translation stays within the normal 30 TRY envelope.
-   // Only the existing signed, explicit recovery may use the 50 TRY ceiling.
+   // The normal 20–30 TRY target is soft: complete the approved research
+   // within the atomic 50 TRY ceiling, retaining uncertain reservations.
    const following=Math.max(reserveForFollowingKurus,isLogo?2500:0);
    {
-    const status=await ledger.status(),automatic=recoveryStages.has(stage)&&!manualRecoveryRound;
-    const limit=automatic?Math.min(status.capKurus,tariff.normalTargetKurus):status.capKurus,available=limit-status.chargedKurus-following;
+    const status=await ledger.status();
+    const limit=Math.min(status.capKurus,tariff.capKurus),available=limit-status.chargedKurus-following;
     while(maxOutputTokens>minOutputTokens&&quoteModel(model,upper,maxOutputTokens,now())>available)maxOutputTokens=Math.max(minOutputTokens,maxOutputTokens-1024);
-    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit',automatic?'Otomatik araştırmanın 30 TL maliyet hedefi bu çağrı için yeterli değil. Mevcut sonuçlar ve rezervler korundu; yeni ücretli model çağrısı yapılmadı.':following?'Bu aşama için kullanılabilir tutar, sonraki aşamalara ayrılan rezerv nedeniyle yetersiz. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.':'Kartın kalan toplam sınırı bu model çağrısına yeterli değil. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:Math.max(0,available),followingReserveKurus:following,limitKurus:limit,normalTargetKurus:tariff.normalTargetKurus,remainingKurus:Math.max(0,status.capKurus-status.chargedKurus)};throw error;}
+    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit',following?'Bu aşama için kullanılabilir tutar, sonraki aşamalara ayrılan rezerv nedeniyle yetersiz. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.':'Kartın kalan toplam sınırı bu model çağrısına yeterli değil. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:Math.max(0,available),followingReserveKurus:following,limitKurus:limit,normalTargetKurus:tariff.normalTargetKurus,remainingKurus:Math.max(0,status.capKurus-status.chargedKurus)};throw error;}
     body.generationConfig.maxOutputTokens=maxOutputTokens;
    }
    const amount=quoteModel(model,upper,maxOutputTokens,now());
@@ -150,7 +150,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     let parsed;try{parsed={data:JSON.parse(text)};}catch{if(!offerContent)return rejectedOutput('invalid_report');parsed=readPartialOutput(text);}
     if(candidate.finishReason==='MAX_TOKENS')parsed={...parsed,originalText:text,issues:[...(parsed.issues||[]),'model_output_limit']};
     return {...parsed,usage,model,reservedKurus:amount,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:tariff.version,accountingVersion:'verified-usage-fx-v2'};
-   },{settle:value=>value.accountedKurus,...(recoveryStages.has(stage)?{limitKurus:manualRecoveryRound?tariff.capKurus:tariff.normalTargetKurus}:{})});
+   },{settle:value=>value.accountedKurus,...(recoveryStages.has(stage)?{limitKurus:tariff.capKurus}:{})});
    return validated(generated);
   }
  };

@@ -9,7 +9,7 @@ const root=path.resolve(here,'..');
 await mkdir(path.join(here,'public'),{recursive:true});
 // Provider acceptance files are generated only by an explicit QA command after
 // this build. Do not carry stale diagnostics across branch/build-cache restores.
-for(const name of ['bhs-quality-acceptance.json','bhs-quality-audit.json','bhs-recovery-acceptance.json','model-comparison'])await rm(path.join(here,'public',name),{force:true,recursive:true});
+for(const name of ['bhs-quality-acceptance.json','bhs-quality-audit.json','bhs-quality-checkpoint.json','bhs-recovery-acceptance.json','model-comparison'])await rm(path.join(here,'public',name),{force:true,recursive:true});
 await mkdir(path.join(here,'public/examples'),{recursive:true});
 const examples={
   white:'<rect width="760" height="210" fill="#191919"/><text x="44" y="132" fill="white" font-family="Arial,sans-serif" font-size="68" font-weight="bold">ORNEK MARKA</text>',
