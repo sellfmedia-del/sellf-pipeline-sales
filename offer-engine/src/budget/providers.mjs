@@ -136,7 +136,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(costDecision.tier==='quality_exception')console.info(JSON.stringify({event:'bhs_cost_exception',stage,model,...costDecision,reason:'required_context_and_full_output_envelope'}));
    const generated=await ledger.once(step,body,amount,async()=>{
     if(remaining()<1000)throw new BudgetError('model_deadline','Model çağrısı için yeterli güvenli süre kalmadı.');
-    const primaryTimeout=stage==='synthesis'?180000:110000;
+    const primaryTimeout=stage==='synthesis'?240000:110000;
     const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},Math.max(1,Math.min(isLogo?45000:recoveryAttempt&&!modelFallback?primaryTimeout:240000,remaining())),diagnostic?{...diagnostic,operation:'generateContent'}:null);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
