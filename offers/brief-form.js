@@ -3,7 +3,7 @@
   'use strict';
   let active = null;
   const labels = { kobi: 'KOBİ', corporate: 'Kurumsal', key_account: 'Key Account' };
-  const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'currency', 'meetingNotes'];
+  const fields = ['brandName', 'segment', 'website', 'goals', 'needs', 'services', 'budget', 'currency', 'language', 'meetingNotes'];
 
   function open(context, returnFocus, variant=null) {
     const model = window.PipelineOfferBriefModel;
@@ -11,7 +11,7 @@
     if (active) return;
     const draft = model.createDraft(context);
     const researchRuns=variant?{reuse:crypto.randomUUID(),new:crypto.randomUUID()}:null;
-    if(variant?.info){for(const key of ['segment','currency'])if(variant.info[key])draft[key]=variant.info[key];draft.brandName=variant.info.brand?.name||draft.brandName;draft.website=variant.info.brand?.website||'';}
+    if(variant?.info){for(const key of ['segment','currency','language'])if(variant.info[key])draft[key]=variant.info[key];draft.brandName=variant.info.brand?.name||draft.brandName;draft.website=variant.info.brand?.website||'';}
     const dialog = document.createElement('dialog');
     dialog.id = 'offer-brief-dialog';
     dialog.setAttribute('aria-labelledby', 'offer-brief-title');
@@ -36,6 +36,7 @@
             <div class="ob-field ob-wide"><label for="ob-goals">Hedefler <span>*</span></label><textarea id="ob-goals" name="goals" placeholder="Marka hangi iş sonucuna ulaşmak istiyor?" maxlength="10000" required></textarea><p class="ob-error" id="error-goals"></p></div>
             <div class="ob-field ob-wide"><label for="ob-needs">İhtiyaçlar ve öncelikler <span>*</span></label><textarea id="ob-needs" name="needs" placeholder="Mevcut darboğazlar, öncelikler ve bilinen kısıtlar" maxlength="10000" required></textarea><p class="ob-error" id="error-needs"></p></div>
             <div class="ob-field ob-wide"><label for="ob-services">Konuşulan hizmetler <span>*</span></label><textarea id="ob-services" name="services" placeholder="Görüşmede konuşulan hizmetleri ve kapsamı belirt." maxlength="10000" required></textarea><p class="ob-error" id="error-services"></p></div>
+            <div class="ob-field"><label for="ob-language">Teklif dili</label><select id="ob-language" name="language"><option value="tr">Türkçe</option><option value="en">English · İngilizce</option></select><p class="ob-hint">Müşteriye sunulan teklif seçilen dilde hazırlanır. Dil ve para birimi birbirinden bağımsızdır.</p><p class="ob-error" id="error-language"></p></div>
             <div class="ob-field"><label for="ob-currency">Teklif para birimi</label><select id="ob-currency" name="currency"><option value="TRY">TL · Türk lirası</option><option value="USD">USD · ABD doları</option></select><p class="ob-hint">Dolar teklifi güncel TCMB satış kuruyla hesaplanır. Bütçe ve iç maliyetler TL olarak kalır.</p><p class="ob-error" id="error-currency"></p></div>
             <div class="ob-field"><label for="ob-budget">Aylık bütçe, TL <small>(varsa)</small></label><input id="ob-budget" name="budget" type="number" inputmode="decimal" min="0" step="any" placeholder="Bilinmiyorsa boş bırak"><p class="ob-hint">Görüşmede belirtilen bütçedir; teklif fiyatı değildir.</p><p class="ob-error" id="error-budget"></p></div>
           </div></fieldset>
@@ -230,6 +231,7 @@
           const response=await window.PipelineProposalRequest({...payload,action,requestId,...(current.ticket?{ticket:current.ticket}:{})});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelineProposalRequest({...payload,action:'cancel',ticket:current.ticket}).catch(()=>{});return;}
+          if(response.cost)showAuditCost(response.cost);
           if(response.phase==='complete'){
             draft.proposal=response.result;draft.saveProof=response.saveProof;draft.saved=null;
             const box=dialog.querySelector('.ob-proposal');box.hidden=false;window.PipelineProposal.mount(box,response.result.data);
@@ -241,7 +243,7 @@
           }
           action='status';await new Promise(resolve=>setTimeout(resolve,2500));if(current.stopped)return;
         }
-      }catch(error){if(!current.stopped)notice.textContent=error.message||'Teklif oluşturulamadı.';}
+      }catch(error){if(error.cost)showAuditCost(error.cost);if(!current.stopped)notice.textContent=error.message||'Teklif oluşturulamadı.';}
       finally{if(task===current)task=null;button.disabled=false;}
     });
     async function saveOrPublish(action){
@@ -269,7 +271,7 @@
     });
     function showAuditCost(cost){
       const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+'Bu BHS denemesi: '+money(cost.attemptChargedKurus)+' TL · Kart toplamı (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
+      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi: '+money(cost.attemptChargedKurus)+' TL · ':'')+'Kart toplamı (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
     }
     async function runAudit(resume=null){
       const notice=dialog.querySelector('.ob-review-notice');
@@ -338,6 +340,7 @@
         ['Marka', draft.brandName], ['Segment', labels[draft.segment]],
         ['Web sitesi', model.webUrl(draft.website)], ['Logo', draft.logo ? (draft.logo.verifiedData?.processing==='original'?'Orijinal görsel hazır · Görsel onay teklif taslağında yapılacak':'Şeffaf PNG hazır · Görsel onay teklif taslağında yapılacak') : 'Hazırlanmadı'],
         ['Hedefler', draft.goals], ['İhtiyaçlar', draft.needs], ['Konuşulan hizmetler', draft.services],
+        ['Teklif dili', draft.language==='en'?'İngilizce':'Türkçe'],
         ['Teklif para birimi', draft.currency==='USD'?'USD · ABD doları':'TL · Türk lirası'],
         ['Aylık bütçe, TL', draft.budget === '' ? 'Belirtilmedi' : new Intl.NumberFormat('tr-TR', {style:'currency', currency:'TRY'}).format(Number(draft.budget))],
         ['Toplantı notları', draft.meetingNotes || 'Belirtilmedi']
