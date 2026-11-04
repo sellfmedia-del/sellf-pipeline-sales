@@ -30,8 +30,8 @@
   "committedCeilingKurus": 3492,
   "uncertainReservationsKurus": 1914,
   "costNote": "Conservative usage/reservation envelope, not a provider invoice; includes a virtual 500-kurus infrastructure allowance.",
-  "reviewedSourceCommit": "2f4aebc80c2b26edea182973da8df577b1b1d7c4",
-  "reviewedSourceTree": "642cf07141613cd2a48c7831ced18dda5562ff35",
+  "reviewedSourceCommit": "51fa441c826ed44f2c10abd053a6f8336658037e",
+  "reviewedSourceTree": "9f2fa262d90bb777b19a6d03aba670f96af9333d",
   "reviewedFindings": 4,
   "verifiedSources": 7,
   "methodologyAreasPresent": 24,
@@ -43,5 +43,13 @@
     "Rejected reciprocal percentage conversion without changing its base",
     "Qualified financial-capacity and sector-health conclusions as hypotheses"
   ],
-  "acceptanceScope": "Source-bound filtered research and signed offer flow; 12 research areas remain unavailable. This is not complete semantic or hosted database E2E certification."
+  "acceptanceScope": "Source-bound filtered research and signed offer flow; 12 research areas remain unavailable. This is not complete semantic or hosted database E2E certification.",
+  "cachedSignedFlowReplay": {
+    "passed": true,
+    "signedPricing": true,
+    "signedProposal": true,
+    "additionalProviderCalls": 0,
+    "databaseWrites": 0
+  },
+  "localTestTotal": 350
 }

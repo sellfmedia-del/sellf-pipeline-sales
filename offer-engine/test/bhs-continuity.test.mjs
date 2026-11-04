@@ -13,6 +13,7 @@ import {continuationAudit,canContinue} from '../src/bhs/continuity.mjs';
 import {context} from './fixtures/evidence.mjs';
 import {brief as rawBrief} from './fixtures/bhs.mjs';
 import {offerFixture,response} from './fixtures/offer.mjs';
+import {fallbackScope} from '../src/pricing/scope.mjs';
 const host='continuity.preview.example',secret='isolated-continuity-secret',time=Date.parse('2026-11-04T12:00:00Z');
 function memory(initial=500){
  let charged=initial;const rows=new Map();
@@ -98,6 +99,19 @@ test('partial continuation rechecks the original evidence and does not promote u
  const c=context(),brief=snapshotBrief(rawBrief);c.report.findings[0].statement='Revenue 999999';
  const audit=continuationAudit(brief,{synthesis:{report:c.report,analysisPacket:c.packet},reason:'quota'});
  assert.equal(audit.data.researchContinuity.status,'partial');assert.ok(audit.data.findings.length>0);assert.ok(!audit.data.findings.some(f=>f.statement.includes('999999')));assert.ok(audit.data.sources.every(s=>s.verification.status==='quote_matched'));assert.equal(audit.data.scopePlan.fallback,true);
+});
+test('reopening paid research revalidates a scope referencing removed findings and still signs pricing without new research',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const db=memory(),brief=snapshotBrief({...rawBrief,services:'Meta ve Google Ads'}),c=context();
+  const stale=fallbackScope(brief);stale.services[0].findingIds=['removed-finding'];
+  for(const phase of ['source_plan','evidence','synthesis','scope'])db.rows.set(stageKey(brief,phase,'v5'),{state:'complete',value:phase==='synthesis'?{report:c.report,analysisPacket:c.packet}:phase==='scope'?{scopePlan:stale,proposalCopy:{headline:'Stale claim'}}:{}});
+  const call=client(createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no new research'),validateWebsite:async()=>{},runStage:()=>assert.fail('no stage replay'),logger:{}}));
+  const done=await call({action:'start',requestId:'cached_revalidation_20261104',brief,context:{leadId:'lead',spaceId:'space'}});
+  assert.equal(done.code,200);assert.equal(done.data.result.data.scopePlan.fallback,true);assert.ok(done.data.result.data.scopePlan.services.every(s=>!s.findingIds.length));assert.deepEqual(done.data.result.data.scopePlan.services.map(s=>s.serviceId),['meta','google_ads']);assert.notEqual(done.data.result.data.proposalCopy.headline,'Stale claim');
+  const priced=response();await createPricingHandler({getSecret:()=>secret})({method:'POST',headers:{host,origin:'https://'+host,cookie:done.cookie},body:{action:'start',brief,audit:done.data.result,pricingProof:done.data.pricingProof}},priced);
+  assert.equal(priced.code,200);assert.equal(priced.data.result.data.alternatives.length,2);assert.equal(db.cost(),500);
+ }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 test('exhausted/stale research can hand off, while active, paid, foreign and unfinished records cannot',()=>{
  for(const code of ['budget_limit','quota','model_content_invalid','stage_failed'])assert.equal(canContinue({state:'uncertain',charge_kurus:0,value:{code}},time),true);
