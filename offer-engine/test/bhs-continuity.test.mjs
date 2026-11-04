@@ -41,6 +41,18 @@ test('an optional claim ceiling serialises reservations while completed data rem
  await db.ledger.once('manual:extra',{},100,async()=>({ok:true}));
  assert.deepEqual(await db.ledger.once('search:one',{},100,async()=>assert.fail(),{limitKurus:3000}),{ok:true});assert.equal(db.cost(),3100);
 });
+test('automatic search and extraction can complete above the soft target but never start paid work beyond the shared hard cap',async()=>{
+ const db=memory(3100);let paid=0;
+ const providers=createBoundedProviders({ledger:db.ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,validateUrl:async value=>({url:new URL(value)}),fetchImpl:async url=>{
+  if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="04.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
+  paid++;return Response.json({results:[],usage:{credits:2}});
+ }});
+ await Promise.all([providers.search('public research'),providers.extract(['https://example.com/'])]);
+ assert.equal(paid,2);assert.ok(db.cost()>3100&&db.cost()<5000);
+ await db.ledger.once('isolated:remaining',{},5000-db.cost(),async()=>({}));
+ const stopped=await Promise.allSettled([providers.search('different public research'),providers.extract(['https://example.org/'])]);
+ assert.ok(stopped.every(r=>r.status==='rejected'&&r.reason.code==='budget_limit'));assert.equal(paid,2);assert.equal(db.cost(),5000);
+});
 test('invalid content is never labelled a provider capacity outage',async()=>{
  await assert.rejects(recoverModelStage(async()=>{throw Object.assign(Error(),{code:'model_output_invalid'});},'source_plan',{model:'gemini-3.1-pro-preview'},{wait:async()=>{}}),e=>e.code==='model_content_invalid'&&e.modelAttempts.length===2);
 });
