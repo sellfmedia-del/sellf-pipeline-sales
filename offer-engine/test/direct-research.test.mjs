@@ -29,12 +29,12 @@ test('discovery searches start together and source limitations do not start a se
  const synthesis=await runBoundedStage({phase:'synthesis',brief,ledger,providers});assert.deepEqual(synthesis.report.originalReport,report);assert.deepEqual(generated,['source_plan','synthesis']);
 });
 test('handoff preserves original model JSON, recomputes only weighted arithmetic, and excludes unsafe URLs from offers',()=>{
- const {report}=context();report.competitors[0].scaleReason='Kamuya açık ciro verisi bu kaynakta yer almamaktadır.';
- report.dimensions.forEach(d=>d.score=60);const before=structuredClone(report),result=directAuditResult(brief,{report});
- assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,60);assert.deepEqual(result.data.report.originalReport,before);assert.deepEqual(report,before);
- assert.equal(result.data.quality.scope,'offer-transfer-only');assert.equal(result.data.quality.semanticBenchmark,'not_requested');assertResult('audit',result);
+ const {report,packet}=context();report.competitors[0].scaleReason='Kamuya açık ciro verisi bu kaynakta yer almamaktadır.';
+ report.dimensions.forEach(d=>{d.score=60;d.dataStatus='partial';});const before=structuredClone(report),result=directAuditResult(brief,{report,analysisPacket:packet});
+ assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,60);assert.equal(result.data.findings.length,report.findings.length);assert.deepEqual(report,before);
+ assert.equal(result.data.quality.scope,'read-source-and-quote-filter');assert.equal(result.data.quality.semanticBenchmark,'not_requested');assertResult('audit',result);
  assert.ok(result.data.rawReport.includes('## 9. Kaynaklar'));assert.ok(result.data.rawReport.includes('Ön BHS: 60/100'));
- report.sources[0].url='javascript:alert(1)';const partial=directAuditResult(brief,{report});assert.equal(partial.status,'ready');assert.ok(!partial.data.sources.some(s=>s.url.startsWith('javascript:')));assert.equal(partial.data.findings[0].verification,'unverified');
+ report.sources[0].url='javascript:alert(1)';const partial=directAuditResult(brief,{report,analysisPacket:packet});assert.equal(partial.status,'ready');assert.ok(!partial.data.sources.some(s=>s.url.startsWith('javascript:')));assert.equal(partial.data.findings.length,0);assert.equal(partial.data.scoring.total,null);
 });
 test('same card reuses the completed paid report without invoking a model again',async()=>{
  const {ledger,rows}=cachedLedger(),stored={report:context().report,model:'stored-pro'};

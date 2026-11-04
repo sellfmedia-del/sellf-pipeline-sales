@@ -6,7 +6,18 @@ export const researchIdentity=brief=>({brand:fold(brief.brandName),host:site(bri
 export const researchCacheKey=(brief,now=Date.now())=>'research:saved:'+Math.floor(now/(7*86400000))+':'+hash(researchIdentity(brief));
 export async function readReusableResearch(brief,ledger,now=Date.now()){
  const rows=await Promise.all([now,now-7*86400000].map(async at=>(await ledger.get(researchCacheKey(brief,at)))?.value));
- return reusableResearch(brief,rows.filter(Boolean),now);
+ const result=reusableResearch(brief,rows.filter(Boolean),now);
+ if(!result||result.analysisPacket)return result;
+ const originalHash=result.reuse.originalBriefHash||result.reuse.sourceStep.match(/[a-f0-9]{64}$/)?.[0];
+ if(!/^[a-f0-9]{64}$/.test(originalHash||''))return result;
+ // Read the original evidence on the same authenticated card. Never fetch a
+ // new URL, reset a budget or manufacture proof for a legacy report.
+ const historic=await Promise.all(['audit:synthesis:synthesis-v5:','audit:synthesis:synthesis-v4:','audit:synthesis:report-v3:','audit:evidence:evidence-v4:','audit:evidence:'].map(prefix=>ledger.get(prefix+originalHash)));
+ for(const row of historic)if(row?.state==='complete'){
+  const packet=row.value?.analysisPacket||row.value?.packet;
+  if(packet)return {...result,analysisPacket:packet,searchEvidence:row.value.searchEvidence||[]};
+ }
+ return result;
 }
 export async function saveReusableResearch(brief,ledger,value,now=Date.now()){
  const row={step_key:value.ledgerStep||'audit:synthesis:'+briefHash(brief),created_at:new Date(now).toISOString(),value};

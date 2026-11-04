@@ -5,7 +5,7 @@ export function compositionEnvelope(brief,audit,pricing){
 }
 export function validateCopy(value,audit){
  if(!value||Object.keys(value).sort().join(',')!=='accent,findingIds,headline,subtitle')throw Error('Teklif anlatımı biçimi geçersiz.');
- for(const [key,max]of [['headline',70],['accent',70],['subtitle',240]])if(typeof value[key]!=='string'||!value[key].trim()||value[key].length>max||/[<>]|₺|\d[\d., ]*\s*(?:%|hafta|ay|gün)|\b(?:TL|TRY|USD|EUR|garanti|kesin sonuç)\b/i.test(value[key]))throw Error('Teklif anlatımı doğrulanamadı.');
+ for(const [key,max]of [['headline',70],['accent',70],['subtitle',240]])if(typeof value[key]!=='string'||!value[key].trim()||value[key].length>max||/[<>₺\d]|\b(?:TL|TRY|USD|EUR|garanti|kesin sonuç)\b/i.test(value[key]))throw Error('Teklif anlatımı doğrulanamadı.');
  const ids=new Set(audit.findings.map(f=>f.id));
  if(!Array.isArray(value.findingIds)||value.findingIds.length>3||new Set(value.findingIds).size!==value.findingIds.length||value.findingIds.some(id=>!ids.has(id)))throw Error('Teklif bulguları kaynakla uyuşmuyor.');
  return structuredClone(value);

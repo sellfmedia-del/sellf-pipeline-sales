@@ -32,6 +32,6 @@ test('the reported 42.77 TRY card resumes a paid report under a changed brief wi
  const providers={search:()=>assert.fail('no new search'),extract:()=>assert.fail('no new extraction'),generate:async stage=>{calls++;assert.equal(stage,'scope');const error=Error('No scope budget');error.code='budget_limit';throw error;}};
  for(const phase of ['source_plan','evidence','synthesis','scope'])await runBoundedStage({phase,brief,ledger,providers,researchVersion:'v5'});
  const synthesis=rows.get(stageKey(brief,'synthesis','v5')).value,audit={stage:'audit',...directAuditResult(brief,synthesis)},scope=rows.get(stageKey(brief,'scope','v5')).value;
- assert.equal(calls,1);assert.equal(cost.chargedKurus,4277);assert.deepEqual(audit.data.originalReport,raw);assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.briefHash,briefHash(brief));
+ assert.equal(calls,1);assert.equal(cost.chargedKurus,4277);assert.deepEqual(audit.data.findings,[]);assert.deepEqual(rows.get(researchCacheKey(brief)).value.value.report||rows.get(researchCacheKey(brief)).value.value.data,raw);assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.briefHash,briefHash(brief));
  const pricing=await pricingEngine.run({brief,scope:scope.scopePlan},{audit});assert.equal(pricing.data.alternatives.length,2);assert.ok(selectProposalAudit(audit.data).findings.every(f=>f.verification==='unverified'));
 });

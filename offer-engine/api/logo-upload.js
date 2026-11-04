@@ -18,6 +18,7 @@ export default async function handler(req,res){
   if(req.headers.origin&&req.headers.origin!=='https://'+req.headers.host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   if(active>=4)return res.status(429).json({error:'Bir görsel işleniyor. Kısa süre sonra tekrar dene.'});
   active++;
+  let originalFallback;
   try{
     await authorizeProduction(req);
     const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
@@ -27,6 +28,9 @@ export default async function handler(req,res){
       const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
       return res.status(200).json({...data,logoProof:logoProof(secret,req.headers.host,data)});
     }
+    // Keep a validated, unchanged upload available if both cleanup models fail.
+    // It still requires visual approval in the proposal; never label it transparent.
+    originalFallback=await prepareOriginalLogo(body?.image);
     let ledger,generateLogo;
     const generate=async(stage,source,input,schema)=>{
       ledger||=await budgetFor(req,res,body.context.leadId);await ledger.begin();
@@ -46,6 +50,12 @@ export default async function handler(req,res){
     const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
     return res.status(200).json({...result.data,...(secret?{logoProof:logoProof(secret,req.headers.host,result.data)}:{})});
   }catch(error){
+    const secret=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY;
+    if(originalFallback&&secret){
+      const data={...originalFallback,fallbackReason:'cleanup_unavailable'};
+      console.warn(JSON.stringify({event:'logo_original_fallback',code:error.code||'logo_extraction'}));
+      return res.status(200).json({...data,logoProof:logoProof(secret,req.headers.host,data)});
+    }
     console.warn(JSON.stringify({event:'logo_upload_error',code:error.code||'logo_extraction',message:String(error.message).slice(0,250),...(error.logoQuality?{quality:error.logoQuality}:{})}));
     const message=String(error.message);
     return res.status(422).json({code:error.code||'logo_extraction',error:error.code||/PNG|Görsel|Logo|Bu görselde/.test(message)?message.slice(0,250):'Görsel okunamadı. Geçerli bir PNG, JPG veya WebP ekran görüntüsü seç.'});

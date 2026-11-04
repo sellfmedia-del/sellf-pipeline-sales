@@ -95,3 +95,30 @@ test('large valid original images are not duplicated in upload or saved-logo res
  const saved=savedLogo({logo:{reviewed:true,processing:'original',image:input,background:'#ffffff'}},secret,host);
  assert.ok(JSON.stringify(saved).length<3800000);assert.equal(saved.candidates[0].image,input);
 });
+
+test('cleanup failure preserves the signed original and still requires explicit visual review',async()=>{
+ const oldEnv=process.env.VERCEL_ENV,oldKey=process.env.OFFER_GEMINI_API_KEY;
+ process.env.VERCEL_ENV='preview';process.env.OFFER_GEMINI_API_KEY=secret;
+ try{
+  const input=await image('jpeg'),res={setHeader(){},status(code){this.code=code;return this;},json(data){this.data=data;return this;}};
+  // No preview session: the cleanup budget is unavailable, without any paid call.
+  await handler({method:'POST',headers:{host,origin:'https://'+host},body:{image:input,context:{leadId:'lead'}}},res);
+  assert.equal(res.code,200);assert.equal(res.data.processing,'original');assert.equal(res.data.fallbackReason,'cleanup_unavailable');assert.equal(res.data.candidates[0].image,input);
+  const {logoProof:token,...data}=res.data;assert.equal(logoProof(secret,host,data,token),true);
+  assertResult('logo',{status:'review',data});assert.throws(()=>assertResult('logo',{status:'ready',data}));
+  const invalid={setHeader(){},status(code){this.code=code;return this;},json(data){this.data=data;return this;}};
+  await handler({method:'POST',headers:{host,origin:'https://'+host},body:{image:'data:image/png;base64,AAAA'}},invalid);assert.equal(invalid.code,422);
+ }finally{if(oldEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=oldEnv;if(oldKey===undefined)delete process.env.OFFER_GEMINI_API_KEY;else process.env.OFFER_GEMINI_API_KEY=oldKey;}
+});
+
+test('browser accepts a signed cleanup fallback as original, explains the change and never auto-approves it',async()=>{
+ const code=await readFile(new URL('../../offers/logo-control.js',import.meta.url),'utf8'),modelCode=await readFile(new URL('../../offers/brief-model.js',import.meta.url),'utf8');
+ const nodes=new Map(),container={innerHTML:'',querySelector(selector){if(!nodes.has(selector))nodes.set(selector,{value:'auto',hidden:false,style:{},listeners:{},addEventListener(event,fn){this.listeners[event]=fn;}});return nodes.get(selector);}};
+ const input=await image('jpeg'),data={...await prepareOriginalLogo(input),fallbackReason:'cleanup_unavailable',logoProof:'signed-test-receipt'};let value;
+ const window={PipelineLogoRequest:async()=>data};const sandbox=vm.createContext({window,URL,FileReader:class{readAsDataURL(file){this.result=file.data;this.onload();}}});
+ vm.runInContext(modelCode,sandbox);vm.runInContext(code,sandbox);
+ window.PipelineLogoControl.mount(container,{getWebsite:()=> 'https://example.com/',getContext:()=>({leadId:'lead'}),getBrandName:()=> 'Example',onChange:x=>value=x});
+ nodes.get('.ol-processing').value='clean';nodes.get('.ol-file').files=[{type:'image/jpeg',size:500,data:input}];await nodes.get('.ol-file').listeners.change();
+ assert.equal(value.sourceType,'upload-original');assert.equal(value.image,input);assert.equal(value.reviewed,false);assert.equal(nodes.get('.ol-processing').value,'original');
+ assert.match(nodes.get('#ol-upload-status').textContent,/orijinal görsel korundu/);assert.equal(nodes.get('.ol-result').hidden,false);
+});

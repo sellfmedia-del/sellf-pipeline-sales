@@ -25,7 +25,7 @@
     }
     background.addEventListener('change',apply);
     async function loadFile(){
-      const request=++epoch,file=input.files?.[0],original=processing.value==='original';
+      const request=++epoch,file=input.files?.[0];let original=processing.value==='original';
       selected=null;saved=false;result.hidden=true;onChange(null);
       if(!file){status.textContent='Ekran görüntüsü bekleniyor.';return;}
       const error=window.PipelineOfferBriefModel.validateLogo(file);
@@ -38,6 +38,7 @@
         const data=await window.PipelineLogoRequest({mode:'upload',...(original?{processing:'original'}:{}),image,context:getContext?.(),brandName:getBrandName?.()});
         if(disposed||request!==epoch)return;
         const candidate=data.candidates?.[0];
+        if(data.processing==='original'&&data.fallbackReason==='cleanup_unavailable'){original=true;processing.value='original';}
         if(original){if(data.generated!==false||data.processing!=='original'||!data.logoProof||candidate?.image!==image||candidate?.source!==undefined&&candidate.source!==image||candidate?.quality?.method!=='original')throw new Error('Orijinal görsel doğrulanamadı.');}
         else if(data.generated!==false||!candidate?.image?.startsWith('data:image/png;base64,')||!candidate?.source?.startsWith('data:image/png;base64,')||candidate.quality?.transparency!==true||candidate.quality?.matteStable!==true||candidate.quality?.touchesEdge)throw new Error('Görsel güvenle şeffaflaştırılamadı. Sonuç teklife eklenmedi.');
         selected=candidate;verifiedData=data;
@@ -48,7 +49,7 @@
         container.querySelector('.ol-comparison figure:last-child figcaption').textContent=original?'Teklifte kullanılacak orijinal görsel':'Şeffaf logo';
         container.querySelector('.ol-checker img').alt=original?'İşlenmemiş orijinal görsel':'Arka planı kaldırılan marka logosu';
         container.querySelector('.ol-quality').textContent=(original?'Orijinal görsel hazır':'Şeffaf PNG hazır')+' · '+candidate.quality.width+' × '+candidate.quality.height+' px. Teklif taslağı için hazırlandı.';
-        result.hidden=false;status.textContent=original?'Görsel filtrelenmedi; kırpılmadan, arka planıyla birlikte teklife yerleştirilecek. Yerleşimi teklif üzerinde kontrol et.':'Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
+        result.hidden=false;status.textContent=data.fallbackReason==='cleanup_unavailable'?'Arka plan temizliği tamamlanamadı. Yüklediğin orijinal görsel korundu; teklif üzerinde görünümünü kontrol edip onaylaman gerekiyor.':original?'Görsel filtrelenmedi; kırpılmadan, arka planıyla birlikte teklife yerleştirilecek. Yerleşimi teklif üzerinde kontrol et.':'Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
       }catch(error){
         if(disposed||request!==epoch)return;
         status.textContent=error.message||'Görsel işlenemedi.';onChange({status:'error',sourceType:'upload'});
