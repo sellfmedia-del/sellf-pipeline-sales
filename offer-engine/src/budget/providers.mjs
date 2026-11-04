@@ -4,11 +4,12 @@ import {providerSchema} from '../bhs/schema.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {resolveTarget} from '../network.mjs';
 import {readPartialOutput} from '../bhs/partial-output.mjs';
-import {recoverModelStage,recoveryStages,transientModelStatus} from './model-recovery.mjs';
+import {recoverModelStage,recoveryStages,transientModelStatus,recoverableModelFailure} from './model-recovery.mjs';
 import {startLogoDiagnostic} from './logo-diagnostic.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
-export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget}={}){
+export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget,manualRecoveryRound=0}={}){
+ if(![0,1].includes(manualRecoveryRound))throw new BudgetError('invalid_recovery','Kurtarma kaydı geçersiz.');
  let fxChecked=0,fxInFlight,fxSnapshot;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
  async function readCurrency(){
@@ -88,7 +89,14 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    const isLogo=['logo-region','logo-backdrop'].includes(stage);
    if(logoFallback&&(!isLogo||model!=='gemini-4-argon'))throw new BudgetError('model_budget','Geçersiz logo kurtarma isteği.');
    if(modelFallback&&(!recoveryAttempt||!recoveryStages.has(stage)))throw new BudgetError('model_budget','Geçersiz model kurtarma isteği.');
-   const step='model:'+stage+':'+hash({body,minOutputTokens,reserveForFollowingKurus,...(logoFallback?{logoFallback:model}:{}),...(modelFallback?{modelFallback:model}:{})}),cached=await ledger.get(step);
+   const identity={body,minOutputTokens,reserveForFollowingKurus,...(logoFallback?{logoFallback:model}:{}),...(modelFallback?{modelFallback:model}:{})};
+   const originalStep='model:'+stage+':'+hash(identity);
+   // A successful original must stay reusable even during explicit recovery.
+   // Old uncertain receipts stay immutable; only the signed recovery batch may
+   // reserve a different step, and it still uses the SAME card's atomic cap.
+   const original=manualRecoveryRound?await ledger.get(originalStep):null;
+   if(original?.state==='complete'&&!original.value?.rejected){try{return validated(original.value);}catch(error){if(!recoverableModelFailure(error))throw error;}}
+   const step=manualRecoveryRound?'model:'+stage+':'+hash({...identity,manualRecoveryRound}):originalStep,cached=await ledger.get(step);
    if(isLogo&&cached&&cached.state!=='complete'){
     const error=new BudgetError(cached.state==='uncertain'?'budget_uncertain':'budget_pending','Logo işleminin önceki kaydı henüz tamamlanmadı.');
     // Never replay the original ambiguous call or release its reservation. A
@@ -109,11 +117,14 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    const count=await readJson(base+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey},Math.max(1,Math.min(20000,remaining())),diagnostic?{...diagnostic,operation:'countTokens'}:null);
    if(!Number.isSafeInteger(count.totalTokens)||count.totalTokens<1)throw new BudgetError('token_count','Girdi maliyeti doğrulanamadı; model başlatılmadı.');
    const upper=Math.ceil(count.totalTokens*1.2)+4096;
-   const following=Math.max(reserveForFollowingKurus,isLogo||stage==='source_plan'?2500:0);
+   // The 25 TRY planning hold is not a charge. Only an explicit recovery may
+   // use it, without shrinking the model, reasoning, sources or output contract.
+   // Stage-specific downstream holds (e.g. synthesis -> scope) remain enforced.
+   const following=Math.max(reserveForFollowingKurus,isLogo||stage==='source_plan'&&!manualRecoveryRound?2500:0);
    {
     const status=await ledger.status(),available=status.capKurus-status.chargedKurus-following;
     while(maxOutputTokens>minOutputTokens&&quoteModel(model,upper,maxOutputTokens,now())>available)maxOutputTokens=Math.max(minOutputTokens,maxOutputTokens-1024);
-    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit','Bu kartın kalan maliyeti, ayrıntılı BHS için yeterli değil. Önceki sonuçlar ve harcamalar korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:available};throw error;}
+    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit',following?'Bu aşama için kullanılabilir tutar, sonraki aşamalara ayrılan rezerv nedeniyle yetersiz. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.':'Kartın kalan toplam sınırı bu model çağrısına yeterli değil. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:Math.max(0,available),followingReserveKurus:following,remainingKurus:Math.max(0,status.capKurus-status.chargedKurus)};throw error;}
     body.generationConfig.maxOutputTokens=maxOutputTokens;
    }
    const amount=quoteModel(model,upper,maxOutputTokens,now());

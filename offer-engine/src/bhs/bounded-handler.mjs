@@ -9,6 +9,7 @@ import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {temporaryDnsError} from '../network-dns.mjs';
 import {runtimeStore,bearer} from '../runtime.mjs';
+import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recovery.mjs';
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
@@ -18,7 +19,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
-  let phase='unknown',action='unknown',readCost;
+  let phase='unknown',action='unknown',readCost,recoveryTicket,activeLedger,activeBrief,activeResearchVersion;
   const log=(event,extra={})=>{try{(event==='bhs_error'?logger.error:logger.info)?.call(logger,JSON.stringify({event,requestId,phase,action,...extra}));}catch{}};
   try{
    if(Number(req.headers['content-length'])>100000)throw new BudgetError('invalid_brief','Brief boyut sınırını aşıyor.');
@@ -38,9 +39,9 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
    const key=name=>stageKey(brief,name,researchVersion);
-   const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[])),providers=getProviders({ledger});
+   const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
     phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
@@ -49,23 +50,36 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    if(action==='start')job.attemptStartKurus=(await ledger.status()).chargedKurus;
    const ticket=codec.encode(job,session,host),cost=async()=>{
     const total=await ledger.status();
-    return {...total,...(Number.isSafeInteger(job.attemptStartKurus)?{attemptChargedKurus:Math.max(0,total.chargedKurus-job.attemptStartKurus)}:{})};
-   };readCost=cost;
+    const breakdown=ledger.describe?.(total);
+    return {...total,...(breakdown?{breakdown}:{}),...(Number.isSafeInteger(job.attemptStartKurus)?{attemptChargedKurus:Math.max(0,total.chargedKurus-job.attemptStartKurus)}:{})};
+   };readCost=cost;recoveryTicket=ticket;
    if(action==='cancel')return res.status(200).json({status:'cancelled',cost:await cost()});
    if(action==='preflight'){
+    const providers=getProviders({ledger});
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
-   if(!['start','status','advance'].includes(action))throw Error();
+   if(!['start','status','advance','recover'].includes(action))throw Error();
    const pendingPhases=phases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    for(const [index,name] of pendingPhases.entries()){
     const step=rows[index];
     if(step?.state==='complete')continue;
     phase=name;log('bhs_phase',{tariffVersion:tariff.version});
+    if(action==='recover'){
+     if(step?.state!=='uncertain'||step.charge_kurus!==0||!recoverableAuditCodes.has(step.value?.code))throw new BudgetError('recovery_unavailable','Yalnızca durmuş bir araştırma aşaması yeniden denenebilir.');
+     const marker=recoveryKey(brief,phase),prior=await ledger.get(marker);
+     if(prior)throw new BudgetError('recovery_exhausted','Bu aşamanın ek denemesi zaten kullanıldı. Kayıtlar ve maliyet sınırı korundu.');
+     if((await cost()).chargedKurus>=tariff.capKurus)throw new BudgetError('budget_limit','Kartın toplam maliyet sınırına ulaşıldı; yeniden deneme başlatılmadı.');
+     await ledger.once(marker,{briefHash:hash,phase,round:1},0,async()=>({round:1,approvedAt:now()}));
+     log('bhs_manual_recovery',{round:1});
+     return res.status(202).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+    }
     if(step?.state==='uncertain'&&step.charge_kurus!==0)throw new BudgetError('budget_uncertain','Önceki aşama tamamlanamadı; kayıt ve ayrılmış maliyet korunuyor. Yeni ücretli çağrı başlatılmadı.');
     if(step?.state==='reserved')return res.status(200).json({phase,status:'in_progress',ticket,cost:await cost()});
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+    const manualRecoveryRound=recoveryRound(await ledger.get(recoveryKey(brief,phase)),{briefHash:hash,phase});
+    const providers=getProviders({ledger,manualRecoveryRound});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
     await runStage({phase,brief,ledger,providers,researchVersion,...(job.sourceOfferId?{freshResearch:true}:{})});
@@ -87,9 +101,14 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    }
    const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}:{})});
    if(error.budgetDiagnostic)log('bhs_budget_preflight',error.budgetDiagnostic);
+   if(error.modelAttempts)log('bhs_model_attempts',{attempts:error.modelAttempts});
    if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
    let cost;try{if(readCost)cost=await readCost();}catch{/* Preserve the original failure if cost status is unavailable. */}
-   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.',...(cost?{cost}:{})});
+   let recoveryAvailable=false;
+   if(action==='advance'&&recoveryTicket&&recoverableAuditCodes.has(code)&&cost?.chargedKurus<cost?.capKurus){
+    try{const failed=await activeLedger.get(stageKey(activeBrief,phase,activeResearchVersion));recoveryAvailable=failed?.state==='uncertain'&&failed.charge_kurus===0&&recoverableAuditCodes.has(failed.value?.code)&&!await activeLedger.get(recoveryKey(activeBrief,phase));}catch{}
+   }
+   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.',...(cost?{cost}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),...(recoveryAvailable?{recoveryAvailable:true,ticket:recoveryTicket}:{})});
   }
  };
 }
