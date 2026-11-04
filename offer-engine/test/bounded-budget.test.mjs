@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLedger,quoteModel,quoteSearch,tariff,consumedModel,consumedSearch} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {validateGroundedOutput} from '../src/bhs/source-gate.mjs';
 
 // Two worker instances share the same durable-store contract. The SQL lock is
 // independently checked against Postgres; this fixture tests caller behaviour.
@@ -25,6 +26,18 @@ function store(){
 const time=Date.parse('2026-10-20T12:00:00Z');
 const fx=rate=>new Response(`<Tarih_Date Tarih="20.10.2026"><Currency CurrencyCode="USD"><ForexSelling>${rate}</ForexSelling></Currency></Tarih_Date>`);
 const json=x=>new Response(JSON.stringify(x),{headers:{'Content-Type':'application/json'}});
+test('empty synthesis settles verified usage once, never silently buys an alternate, and remains rejected on resume',async()=>{
+ const db=store(),ledger=createLedger(db.call);let paid=0;
+ const provider=createBoundedProviders({ledger,geminiKey:'test',tavilyKey:'test',now:()=>time,fetchImpl:async url=>{
+  if(url.includes('tcmb'))return fx(40);if(url.endsWith(':countTokens'))return json({totalTokens:1000});paid++;
+  return json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{}'}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100,totalTokenCount:1100}});
+ }});
+ const options={model:'gemini-3.1-pro-preview',maxOutputTokens:4096,jsonMode:true,validateData:data=>validateGroundedOutput(data,{packet:{sources:[]}})};
+ await assert.rejects(provider.generate('synthesis',{}, {type:'object',properties:{}},options),e=>e.code==='research_empty');
+ const cost=await ledger.status();assert.equal(cost.chargedKurus,500+consumedModel(options.model,1000,100,40,time));
+ await assert.rejects(provider.generate('synthesis',{}, {type:'object',properties:{}},options),e=>e.code==='research_empty');
+ assert.equal(paid,1);assert.deepEqual(await ledger.status(),cost);assert.equal([...db.steps.values()].filter(row=>row.state==='complete').length,1);
+});
 test('truncated BHS output is retained, cost-settled and reused without a second paid call',async()=>{
  const db=store(),ledger=createLedger(db.call);let paid=0;
  const raw='{"summary":"Mevcut araştırma.","findings":[{"statement":"Somut bulgu."}],"sources":[{"url":"https://ex';

@@ -138,8 +138,10 @@
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
       paragraph(data.summary);
+      if(data.researchReuse?.researchedAt)paragraph('Araştırma tarihi: '+data.researchReuse.researchedAt+' · Saklanan araştırma; yeni tarama yapılmadı.');
       if(data.researchReuse)paragraph('Mevcut marka araştırması korundu; teklif kapsamı güncel brief üzerinden seçilecek. '+(data.researchReuse.contextNeedsConfirmation?'Bulguların güncel hedef pazar ve görüşme bağlamına uygunluğunu kapsam onayında kontrol et.':''));
       if(data.schemaVersion!=='bhs-v2-direct'&&data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
+      if(data.researchContinuity?.status!=='unavailable'){
       heading('Ön BHS boyutları');
       const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
       data.dimensions.forEach(d=>{
@@ -158,6 +160,7 @@
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
+      }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       if(data.researchContinuity){dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'BHS tamamlanamadı · Teklif hazırlığına devam':'Kısmi BHS ile teklif hazırlığı';dialog.querySelector('.ob-review-notice').textContent=data.researchContinuity.notice;}

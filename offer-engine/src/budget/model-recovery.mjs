@@ -22,7 +22,7 @@ export async function recoverModelStage(generate,stage,options,{wait=ms=>new Pro
    // Only a server-produced, source-filtered projection may survive an
    // exhausted alternate. Never return the rejected model document itself.
    const safe=[error.safeResult,failure.safeResult].filter(result=>result?.data?.findings?.length||result?.data?.researchCoverage?.some(area=>area.status!=='unavailable'&&area.sourceIds?.length)).sort((a,b)=>(b.data.findings?.length||0)-(a.data.findings?.length||0));
-   if(safe.length&&(recoverableModelFailure(failure)||['budget_limit','budget_uncertain'].includes(failure.code))){
+   if(safe.length&&(recoverableModelFailure(failure)||['budget_limit','budget_uncertain','research_empty'].includes(failure.code))){
     console.info(JSON.stringify({event:'model_grounded_partial',stage}));return safe[0];
    }
    if(recoverableModelFailure(failure)){

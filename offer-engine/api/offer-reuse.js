@@ -1,3 +1,5 @@
+import {readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
+import {hasGroundedResearch} from '../src/bhs/research-content.mjs';
 import {randomBytes} from 'node:crypto';
 import {offersEnabled,runtimeStore,bearer} from '../src/runtime.mjs';
 import {budgetFor} from '../src/budget/ledger.mjs';
@@ -19,11 +21,19 @@ export function savedLogo(document,secret,host){
  return {...data,logoProof:logoProof(secret,host,data)};
 }
 export async function loadSavedSynthesis(row,ledger){
+ const snapshot=row.pricing_snapshot?.researchSnapshot;
+ if(snapshot){
+  const saved=readResearchSnapshot(snapshot),origin={...(row.pricing_snapshot?.auditOrigin||{}),briefHash:saved.sourceContext.briefHash};
+  return {origin,synthesis:{report:saved.report,analysisPacket:saved.analysisPacket,methodologyVersion:saved.methodologyVersion,researchContext:{brief:saved.sourceContext,briefHash:origin.briefHash},reuse:{sourceOfferId:row.id,researchedAt:saved.researchedAt,originalBriefHash:origin.briefHash,exactBrief:false,contextNeedsConfirmation:true,incrementalResearchCalls:0,historicalCapture:true}}};
+ }
  const origin=row.pricing_snapshot?.auditOrigin||{briefHash:row.customer_document?.provenance?.briefHash};
  if(!/^[a-f0-9]{64}$/.test(origin.briefHash||''))throw Error('Kaydedilen BHS dayanağı bulunamadı.');
- for(const version of ['synthesis-v5:','synthesis-v4:','report-v3:']){
-  const step=await ledger.get('audit:synthesis:'+version+origin.briefHash);
-  if(step?.state==='complete'&&step.value?.report)return {origin,synthesis:{...structuredClone(step.value),reuse:{sourceOfferId:row.id,researchedAt:step.created_at||row.created_at,originalBriefHash:origin.briefHash,exactBrief:false,contextNeedsConfirmation:true,incrementalResearchCalls:0}}};
+ const rows=await Promise.allSettled(['synthesis-v5:','synthesis-v4:','report-v3:'].map(async version=>ledger.get('audit:synthesis:'+version+origin.briefHash)));
+ for(const result of rows){
+  const step=result.status==='fulfilled'?result.value:null;
+  if(step?.state!=='complete'||!step.value?.report)continue;
+  const synthesis={...structuredClone(step.value),reuse:{sourceOfferId:row.id,researchedAt:step.created_at||row.created_at,originalBriefHash:origin.briefHash,exactBrief:false,contextNeedsConfirmation:true,incrementalResearchCalls:0}};
+  if(hasGroundedResearch(directAuditResult(synthesis.researchContext?.brief||{},synthesis).data))return {origin,synthesis};
  }
  throw Error('Bu teklifin saklanan BHS raporuna ulaşılamadı. Yeni ücretli analiz otomatik başlatılmadı.');
 }
@@ -42,11 +52,11 @@ export function createReuseHandler({getStore=runtimeStore,getLedger=budgetFor,ge
    if(b.action==='info')return res.status(200).json({brand:row.customer_document.brand,segment:row.pricing_snapshot.segment||row.pricing_snapshot.offerBrief?.segment,currency:row.customer_document.quote?.currency||'TRY',language:row.customer_document.language||'tr',logo:savedLogo(row.customer_document,getSecret(),host)});
    if(b.action!=='prepare'||!uuid.test(b.researchRunId||''))throw Error('Teklif işlemi geçersiz.');
    const brief=snapshotBrief(b.brief),origin=row.pricing_snapshot?.auditOrigin;
-   const sourceLedger=await getLedger(req,res,row.lead_id,origin?.researchRunId?{researchRunId:origin.researchRunId}:{});
+   const sourceLedger=row.pricing_snapshot?.researchSnapshot?null:await getLedger(req,res,row.lead_id,origin?.researchRunId?{researchRunId:origin.researchRunId}:{});
    const saved=await loadSavedSynthesis(row,sourceLedger);
    const ledger=await getLedger(req,res,row.lead_id,{researchRunId:b.researchRunId});await ledger.begin();
    // Only commercial scope/copy can call a model. The synthesis comes from the
-   // selected owner's saved research, including its original date and market.
+   // selected authorised offer's saved research, including its original date and market.
    const key=stageKey(brief,'synthesis','v5'),scopeLedger={...ledger,get:name=>name===key?Promise.resolve({state:'complete',value:saved.synthesis}):ledger.get(name)};
    const scope=await runStage({phase:'scope',brief,ledger:scopeLedger,providers:getProviders({ledger}),researchVersion:'v5'});
    const audit=directAuditResult(brief,saved.synthesis);

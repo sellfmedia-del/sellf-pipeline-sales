@@ -1,8 +1,9 @@
+import {hasGroundedResearch} from './research-content.mjs';
 import {offersEnabled} from '../runtime.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
-import {budgetFor,tariff,BudgetError} from '../budget/ledger.mjs';
+import {budgetFor,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
 import {createBoundedProviders} from '../budget/providers.mjs';
 import {phases,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
@@ -18,7 +19,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
-  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',tariffVersion:tariff.version,qualityBenchmark:'not_requested',contentReview:false});
+  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
@@ -121,7 +122,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     break;
    }
    const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
-   const audit=await auditEngine.run({brief,synthesis});
+   let audit=await auditEngine.run({brief,synthesis});
+   if(!hasGroundedResearch(audit.data))return await finish(await restoreContinuation(brief,continuationAudit(brief,{reason:'research_empty'}),ledger,now()));
    // Re-grounding an older paid report can remove a finding used by its saved
    // scope. Revalidate before signing; never replay research or sign stale IDs.
    let scopePlan,proposalCopy=scope.proposalCopy;

@@ -1,3 +1,4 @@
+import {continuationAudit} from '../src/bhs/continuity.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -33,5 +34,7 @@ test('the reported 42.77 TRY card resumes a paid report under a changed brief wi
  for(const phase of ['source_plan','evidence','synthesis','scope'])await runBoundedStage({phase,brief,ledger,providers,researchVersion:'v5'});
  const synthesis=rows.get(stageKey(brief,'synthesis','v5')).value,audit={stage:'audit',...directAuditResult(brief,synthesis)},scope=rows.get(stageKey(brief,'scope','v5')).value;
  assert.equal(calls,1);assert.equal(cost.chargedKurus,4277);assert.deepEqual(audit.data.findings,[]);assert.deepEqual(rows.get(researchCacheKey(brief)).value.value.report||rows.get(researchCacheKey(brief)).value.value.data,raw);assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.briefHash,briefHash(brief));
- const pricing=await pricingEngine.run({brief,scope:scope.scopePlan},{audit});assert.equal(pricing.data.alternatives.length,2);assert.ok(selectProposalAudit(audit.data).findings.every(f=>f.verification==='unverified'));
+ assert.equal(audit.status,'review');
+ const handoff=continuationAudit(brief,{reason:'research_empty'});
+ const pricing=await pricingEngine.run({brief,scope:scope.scopePlan},{audit:handoff});assert.equal(pricing.data.alternatives.length,2);assert.ok(selectProposalAudit(audit.data).findings.every(f=>f.verification==='unverified'));
 });
