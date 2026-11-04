@@ -107,8 +107,8 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
     form.querySelector('.so-mailto-reopen')?.remove();
     const link=add('a',t('E-posta taslağını yeniden aç'),form,'so-mailto-reopen');link.href=href;
     // Keep the native mailto launch synchronous with the user's click.
-    link.click();status.textContent='Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.';
-   }catch(error){status.textContent=error.message||'E-posta taslağı hazırlanamadı.';}
+    link.click();status.textContent=t('Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.');
+   }catch(error){status.textContent=error.message||t('E-posta taslağı hazırlanamadı.');}
   });
   return {select};
  }

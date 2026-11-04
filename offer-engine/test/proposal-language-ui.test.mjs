@@ -22,6 +22,20 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    await page.locator('#so-request-open').click();assert.equal(await page.locator('[name=name]').getAttribute('placeholder'),en?'Full name':'Ad Soyad');
    if(en){const content=await page.locator('#sellf-two-option-offer').textContent();for(const tr of ['hizmet bedeli','veri yok','İşbirliği','Gelişim alanı','kaynak ·','için özel'])assert.ok(!content.includes(tr),tr);}
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+   // Exercise the published-proposal form without opening or sending email.
+   await page.evaluate(({language,currency})=>{
+    PipelineProposal.mount(document.querySelector('#offer'),docs[language][currency],{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'offer1'});
+    document.querySelector('#sellf-two-option-offer').addEventListener('click',event=>{if(event.target.closest('a[href^="mailto:"]'))event.preventDefault();});
+   },{language,currency});
+   await page.locator('#so-request-open').click();
+   await page.locator('[name=name]').fill('Jane Smith');await page.locator('[name=email]').fill('jane@example.com');
+   await page.locator('#so-request-form').evaluate(form=>form.requestSubmit());
+   assert.equal(await page.locator('.so-request-status').textContent(),en?'Complete sending from the draft in your email application.':'Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.');
+   assert.match(await page.locator('.so-mailto-reopen').getAttribute('href'),/^mailto:yigit@sellfmedia.com,businessdevelopment@sellfmedia.com\?/);
+   await page.evaluate(()=>{HTMLAnchorElement.prototype.click=function(){throw Error();};});
+   await page.locator('#so-request-form').evaluate(form=>form.requestSubmit());
+   assert.equal(await page.locator('.so-request-status').textContent(),en?'The email draft could not be prepared.':'E-posta taslağı hazırlanamadı.');
+   await page.evaluate(()=>{delete HTMLAnchorElement.prototype.click;});
   }
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
