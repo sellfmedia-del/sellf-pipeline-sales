@@ -40,7 +40,7 @@ export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,
     if(approval.sourceOfferId){result.data.offerBrief=brief;result.data.auditOrigin=approval.auditOrigin;result.data.sourceOfferId=approval.sourceOfferId;}
     assertResult('pricing',result);
     const envelope={...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()};
-    return res.status(200).json({phase:'complete',result:envelope,proposalProof:codec.encode({kind:'pricing_ready',createdAt:now(),briefHash:hash,auditHash:approval.auditHash,pricingHash:digest(envelope),...(approval.budgetLeadId?{budgetLeadId:approval.budgetLeadId}:{}),...(approval.sourceOfferId?{sourceOfferId:approval.sourceOfferId}:{})},session,host)});
+    return res.status(200).json({phase:'complete',result:envelope,proposalProof:codec.encode({kind:'pricing_ready',createdAt:now(),briefHash:hash,auditHash:approval.auditHash,pricingHash:digest(envelope),...(approval.budgetLeadId?{budgetLeadId:approval.budgetLeadId}:{}),...(approval.budgetResearchRunId?{budgetResearchRunId:approval.budgetResearchRunId}:{}),...(approval.sourceOfferId?{sourceOfferId:approval.sourceOfferId}:{})},session,host)});
    }
    // Validate explicit inputs before any possibly billable model call.
    await engine.run({brief,...options},{audit:body.audit});

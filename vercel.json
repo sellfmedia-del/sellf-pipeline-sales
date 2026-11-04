@@ -17,7 +17,7 @@
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     },
     "api/proposal.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/offer.js": {
       "maxDuration": 60

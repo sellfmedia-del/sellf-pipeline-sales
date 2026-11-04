@@ -30,6 +30,7 @@ export function assertResult(stage,result){
   }
   if(stage==='proposal'){
     const p=result.data;
+    if(p.language!==undefined&&!['tr','en'].includes(p.language))throw Error('Teklif dili geçersiz.');
     if(!Array.isArray(p.sections))throw new Error('Teklif bölümleri eksik.');
     if(p.schemaVersion==='proposal-v1'){
       assertQuote(p,{requireReady:true});

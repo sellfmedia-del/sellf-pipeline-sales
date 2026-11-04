@@ -9,95 +9,103 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   if(data.quote.currency!=='USD'||data.quote.status!=='ready'||!quoted||!Number.isFinite(quoted.monthlyAmount)||quoted.monthlyAmount<0)throw Error('Dolar teklifi için doğrulanmış kur ve tutar gerekli.');
   return quoted.monthlyAmount;
  }
- const currencyLabel=data=>data.quote?.currency==='USD'?'USD':'TL';
+ const currencyLabel=data=>data.quote?.currency==='USD'?'USD':data.language==='en'?'TRY':'TL';
  const contractRecipients=Object.freeze(['yigit@sellfmedia.com','businessdevelopment@sellfmedia.com']);
+ const englishText={"Sellf logosu":"Sellf logo","Müşteri logosunun yerleşim alanı":"Client logo","Marka logosu":"Brand logo","Marka özel teklifi":"A proposal for your brand","BÜYÜME, MÜHENDİSLİK İŞİDİR.":"GROWTH IS ENGINEERING.","STRATEJİ · OPERASYON · VERİMLİLİK":"STRATEGY · OPERATIONS · EFFICIENCY","Ön BHS · Öncelik haritası":"Preliminary BHS · Priority map","BHS boyutu":"BHS dimension","Finansal değerlendirme ilişkisi":"Financial assessment","Önerilen eylemler":"Recommended actions","Acil":"Urgent","Önemli":"Important","Düşük öncelikli":"Lower priority","Önce doğrula":"Validate first","İlk çalışma odağı":"Initial focus","Sonraki aşama":"Next phase","Puan: Yeterli veri yok":"Score: Insufficient data","İç verilerle derinleştirilecek":"To be refined with internal data","İşbirliği alternatifleri":"Partnership options","Bir model seçin, kapsamını inceleyin.":"Choose an option and explore its scope.","Teklif alternatifleri":"Proposal options","01 / ENTEGRE":"01 / INTEGRATED","02 / UYGULAMA":"02 / EXECUTION","Önerilen":"Recommended","Growth + Operasyon":"Growth + Operations","Operasyon Paketi":"Operations Package","TL / ay":"TRY / month","Strateji ve uygulama, aynı yapıda.":"Strategy and execution, together.","Growth ekibi ve operasyonların birlikte yönetimi.":"Growth consulting and operations, managed together.","SEÇİLİ KAPSAM":"SELECTED SCOPE","Toplam aylık hizmet bedelidir. KDV, reklam harcaması ve üçüncü taraf bedelleri dahil değildir.":"Total monthly service fee. VAT, advertising spend and third-party fees are excluded.","Başlangıç planı":"Getting started","Growth + Operasyon ile ilerleyelim.":"Let’s proceed with Growth + Operations.","Kapsam ve başlangıç planını sözleşmeye taşıyalım.":"Let’s take the agreed scope and starting plan into a contract.","Sözleşme talep et":"Request a contract","Sözleşme talebi":"Contract request","Yetkili adı":"Contact name","Ad Soyad":"Full name","İş e-postası":"Work email","isim@marka.com":"name@brand.com","E-postayı aç ↗":"Open email ↗","Finansal":"Financial","Operasyon":"Operations","Dijital":"Digital","Algı":"Perception","Rekabet":"Competition","Daralt −":"Collapse −","Analizi aç ↗":"Expand analysis ↗","Doğrulanacak: ":"To be verified: ","Çıkarım: ":"Inference: ","İş etkisi ve dayanak":"Business impact and evidence","Bu öncelikte doğrulanmış bulgu yok.":"No verified findings at this priority.","Ön BHS: ":"Preliminary BHS: ","Yeterli veri yok":"Insufficient data"," kaynak · ":" sources · "," rakip · Dışsal ön analiz":" competitors · Preliminary external assessment","Bu boyutta yeterli veri yok.":"Insufficient data for this dimension.","Veri eksik":"Insufficient data","Kaynaklı değerlendirme":"Source-based assessment","İç veriyle doğrula":"Validate with internal data","Aylık web trafiği":"Monthly website traffic","Sosyal kitle":"Social audience","Yorumlar":"Reviews","Reklam aktivitesi":"Advertising activity","İçerik olgunluğu":"Content maturity","Ciro / büyüme":"Revenue / growth","Farklılaştırıcı":"Differentiator","Tahmini Ön BHS":"Estimated preliminary BHS","Rakip karşılaştırmasını incele":"Explore the competitor comparison","Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.":"Metrics that could not be verified for the same period and geography are left blank.","Metrik":"Metric","Veri bulunamadı":"Data unavailable","Seçili bulguların kaynakları":"Sources for selected findings","Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.":"Growth consulting and selected operations, managed together.","Seçili hizmetler için uygulama, ölçüm ve takip.":"Execution, measurement and monitoring for the selected services.","Çalışma odağı: ":"Working focus: "," ile ilerleyelim.":" — let’s proceed."," / ay":" / month","Teklif kuru: 1 USD = ":"Proposal exchange rate: 1 USD = "," TL · TCMB dolar satış kuru, ":" TRY · CBRT USD selling rate, ",". Bu teklifin USD tutarları sabittir.":". USD amounts in this proposal are fixed.",": ayrıca fiyatlandırılacak; bu toplama dahil değildir.":": priced separately; excluded from this total.",": sonraki aşamaya ayrıldı.":": deferred to a later phase.","Kapsam sınırları":"Scope exclusions","E-posta taslağı müşteri bağlantısı oluşturulduktan sonra açılabilir.":"The email draft is available after the customer link is published.","E-posta taslağını yeniden aç":"Reopen email draft","Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.":"Complete sending from the draft in your email application.","E-posta taslağı hazırlanamadı.":"The email draft could not be prepared.","Sözleşme talebi · ":"Contract request · ","Marka: ":"Brand: ","Teklif: ":"Proposal: ","Alternatif: ":"Option: ","Aylık hizmet bedeli: ":"Monthly service fee: ","Teklif bağlantısı: ":"Proposal link: ","Yetkili: ":"Contact: ","E-posta: ":"Email: "," için özel olarak hazırlanmıştır.":" — prepared exclusively for your brand."," logosu":" logo","Geçerli yayınlanmış teklif bağlantısı gerekli.":"A valid published proposal link is required.","Geçerli işbirliği alternatifini seç.":"Choose a valid partnership option.","Yetkili adı ve geçerli iş e-postası gerekli.":"A contact name and valid work email are required."};
  function buildMailto(data,{offerUrl,offerId,alternativeId,name,email}){
+  const english=data.language==='en',t=value=>english?(englishText[value]??value):value,money=n=>new Intl.NumberFormat(english?'en-GB':'tr-TR',{maximumFractionDigits:2}).format(n);
   const url=new URL(offerUrl),alternative=data.alternatives.find(a=>a.id===alternativeId);
   const tokenLink=url.pathname==='/offers/customer.html'&&/^#[A-Za-z0-9_-]{43}$/.test(url.hash),slugLink=!url.hash&&url.pathname.length<=121&&/^\/[a-z0-9]+(?:-[a-z0-9]+)*-teklifi(?:-v\d+-[a-f0-9]{8})?$/.test(url.pathname);
-  if(url.protocol!=='https:'||url.username||url.password||url.search||!(tokenLink||slugLink))throw Error('Geçerli yayınlanmış teklif bağlantısı gerekli.');
-  if(!alternative||!Number.isFinite(alternative.monthlyAmount))throw Error('Geçerli işbirliği alternatifini seç.');
-  if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error('Yetkili adı ve geçerli iş e-postası gerekli.');
+  if(url.protocol!=='https:'||url.username||url.password||url.search||!(tokenLink||slugLink))throw Error(t('Geçerli yayınlanmış teklif bağlantısı gerekli.'));
+  if(!alternative||!Number.isFinite(alternative.monthlyAmount))throw Error(t('Geçerli işbirliği alternatifini seç.'));
+  if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error(t('Yetkili adı ve geçerli iş e-postası gerekli.'));
   const line=value=>String(value??'').replace(/[\r\n]/g,' ');
-  const subject='Sözleşme talebi · '+line(data.brand.name).slice(0,150);
-  const body=['Marka: '+line(data.brand.name),'Teklif: '+line(offerId)+' · v'+line(data.version),'Alternatif: '+line(alternative.name),'Aylık hizmet bedeli: '+money(quoteAmount(data,alternative))+' '+currencyLabel(data)+' / ay','Teklif bağlantısı: '+url.href,'Yetkili: '+name.trim(),'E-posta: '+email.trim()].join('\r\n');
+  const subject=t('Sözleşme talebi · ')+line(data.brand.name).slice(0,150);
+  const body=[t('Marka: ')+line(data.brand.name),t('Teklif: ')+line(offerId)+' · v'+line(data.version),t('Alternatif: ')+line(alternative.name),t('Aylık hizmet bedeli: ')+money(quoteAmount(data,alternative))+' '+currencyLabel(data)+t(' / ay'),t('Teklif bağlantısı: ')+url.href,t('Yetkili: ')+name.trim(),t('E-posta: ')+email.trim()].join('\r\n');
   return 'mailto:'+contractRecipients.join(',')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
  }
  function mount(container,data,{offerUrl,offerId}={}){
+  const english=data.language==='en',t=value=>english?(englishText[value]??value):value,money=n=>new Intl.NumberFormat(english?'en-GB':'tr-TR',{maximumFractionDigits:2}).format(n);
   container.innerHTML='<div id="sellf-two-option-offer">'+template+'</div>';
   const root=container.firstElementChild,$=s=>root.querySelector(s),add=(tag,text,parent,cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;parent.append(n);return n;};
-  $('.so-date').textContent=new Date(data.createdAt).toLocaleDateString('tr-TR')+(data.version?' · v'+data.version:'');
-  const own=$('.so-own img');own.alt='Sellf logosu';
-  const client=$('.so-client');client.replaceChildren();client.style.background=data.logo.background;const img=document.createElement('img');img.alt=data.brand.name+' logosu';img.src=data.logo.image;client.append(img);
+  root.lang=english?'en':'tr';
+  if(english){
+   const walker=document.createTreeWalker(root,4);let node;while((node=walker.nextNode())){const text=node.textContent.trim();if(englishText[text])node.textContent=node.textContent.replace(text,englishText[text]);}
+   root.querySelectorAll('[aria-label],[placeholder],[alt]').forEach(el=>{for(const attr of ['aria-label','placeholder','alt'])if(el.hasAttribute(attr))el.setAttribute(attr,t(el.getAttribute(attr)));});
+  }
+  $('.so-date').textContent=new Date(data.createdAt).toLocaleDateString(english?'en-GB':'tr-TR')+(data.version?' · v'+data.version:'');
+  const own=$('.so-own img');own.alt=t('Sellf logosu');
+  const client=$('.so-client');client.replaceChildren();client.style.background=data.logo.background;const img=document.createElement('img');img.alt=data.brand.name+t(' logosu');img.src=data.logo.image;client.append(img);
   const h=$('h1');h.replaceChildren();h.append(document.createTextNode(data.copy.headline),document.createElement('br'));add('span',data.copy.accent,h);
   $('.so-sub').textContent=data.copy.subtitle;
   if(data.bhs.summary){const summary=document.createElement('p');summary.className='so-bhs-brief so-feenote';summary.textContent=data.bhs.summary;$('#so-analysis').prepend(summary);}
-  $('footer span').textContent=data.brand.name+' için özel olarak hazırlanmıştır.';
+  $('footer span').textContent=data.brand.name+t(' için özel olarak hazırlanmıştır.');
   $('.so-bhs-icon').textContent='◎';
   const findings=data.bhs.findings||[],priority={high:'urgent',medium:'important',low:'low'};
   for(const key of ['urgent','important','low']){
    const items=findings.filter(f=>priority[f.priority]===key),list=$('#so-actions-'+key);list.replaceChildren();
-   items.forEach(f=>{const li=add('li',(f.verification==='unverified'?'Doğrulanacak: ':f.kind==='inference'?'Çıkarım: ':'')+f.statement,list);li.title=f.impact;if(f.impact){const detail=add('details','',li);add('summary','İş etkisi ve dayanak',detail);add('p',f.impact,detail);add('small',(f.sourceIds||[]).join(' · '),detail);}});
-   if(!items.length)add('li','Bu öncelikte doğrulanmış bulgu yok.',list);
-   $('#so-count-'+key).textContent=({urgent:'Acil',important:'Önemli',low:'Düşük öncelikli'})[key]+' · '+items.length;
+   items.forEach(f=>{const li=add('li',(f.verification==='unverified'?t('Doğrulanacak: '):f.kind==='inference'?t('Çıkarım: '):'')+f.statement,list);li.title=f.impact;if(f.impact){const detail=add('details','',li);add('summary',t('İş etkisi ve dayanak'),detail);add('p',f.impact,detail);add('small',(f.sourceIds||[]).join(' · '),detail);}});
+   if(!items.length)add('li',t('Bu öncelikte doğrulanmış bulgu yok.'),list);
+   $('#so-count-'+key).textContent=({urgent:t('Acil'),important:t('Önemli'),low:t('Düşük öncelikli')})[key]+' · '+items.length;
   }
   const foot=$('.so-chart-foot');foot.replaceChildren();
-  add('span','Ön BHS: '+(data.bhs.scoring?.total==null?'Yeterli veri yok':data.bhs.scoring.total+'/100'),foot);
-  add('span',(data.bhs.sources||[]).length+' kaynak · '+(data.bhs.competitors||[]).length+' rakip · Dışsal ön analiz',foot);
+  add('span',t('Ön BHS: ')+(data.bhs.scoring?.total==null?t('Yeterli veri yok'):data.bhs.scoring.total+'/100'),foot);
+  add('span',(data.bhs.sources||[]).length+t(' kaynak · ')+(data.bhs.competitors||[]).length+t(' rakip · Dışsal ön analiz'),foot);
   function dimension(id){
    const d=(data.bhs.dimensions||[]).find(x=>x.id===id),flow=$('#so-flow');flow.replaceChildren();
    root.querySelectorAll('[data-dim]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.dim===id)));
-   if(!d){$('#so-takeaway').textContent='Bu boyutta yeterli veri yok.';return;}
-   const labels=[names[id],d.score==null?'Veri eksik':d.score+'/100',d.dataStatus==='full'?'Kaynaklı değerlendirme':'İç veriyle doğrula'];
+   if(!d){$('#so-takeaway').textContent=t('Bu boyutta yeterli veri yok.');return;}
+   const labels=[t(names[id]),d.score==null?t('Veri eksik'):d.score+'/100',d.dataStatus==='full'?t('Kaynaklı değerlendirme'):t('İç veriyle doğrula')];
    labels.forEach((label,i)=>{if(i)add('span','→',flow);add('div',label,flow);});
    $('#so-takeaway').textContent=d.rationale;
-   let highlights=$('#so-dimension-highlights');if(!highlights){highlights=document.createElement('ul');highlights.className='so-dimension-highlights';highlights.id='so-dimension-highlights';$('#so-takeaway').after(highlights);}highlights.replaceChildren();for(const item of (d.highlights||[]))add('li',(item.verification==='unverified'?'Doğrulanacak: ':'')+item.text,highlights);
+   let highlights=$('#so-dimension-highlights');if(!highlights){highlights=document.createElement('ul');highlights.className='so-dimension-highlights';highlights.id='so-dimension-highlights';$('#so-takeaway').after(highlights);}highlights.replaceChildren();for(const item of (d.highlights||[]))add('li',(item.verification==='unverified'?t('Doğrulanacak: '):'')+item.text,highlights);
    if(d.score!=null){const bar=add('div','',flow,'so-score');bar.style.gridColumn='1 / -1';const fill=add('span','',bar);fill.style.width=Math.max(0,Math.min(100,d.score))+'%';}
   }
   root.querySelectorAll('[data-dim]').forEach(b=>b.addEventListener('click',()=>dimension(b.dataset.dim)));dimension('financial');
-  $('.so-bhs-bar').addEventListener('click',function(){const p=$('#so-analysis');p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));this.querySelector('.so-link').textContent=p.hidden?'Analizi aç ↗':'Daralt −';});
-  const benchmarkNames={webTraffic:'Aylık web trafiği',domainAuthority:'Domain authority',socialAudience:'Sosyal kitle',reviews:'Yorumlar',adActivity:'Reklam aktivitesi',contentMaturity:'İçerik olgunluğu',revenueOrGrowth:'Ciro / büyüme',differentiator:'Farklılaştırıcı',preBhsScore:'Tahmini Ön BHS'};
+  $('.so-bhs-bar').addEventListener('click',function(){const p=$('#so-analysis');p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));this.querySelector('.so-link').textContent=p.hidden?t('Analizi aç ↗'):t('Daralt −');});
+  const benchmarkNames={webTraffic:t('Aylık web trafiği'),domainAuthority:'Domain authority',socialAudience:t('Sosyal kitle'),reviews:t('Yorumlar'),adActivity:t('Reklam aktivitesi'),contentMaturity:t('İçerik olgunluğu'),revenueOrGrowth:t('Ciro / büyüme'),differentiator:t('Farklılaştırıcı'),preBhsScore:t('Tahmini Ön BHS')};
   if((data.bhs.benchmarks||[]).length){
-   const details=add('details','',$('#so-analysis'),'so-benchmark');add('summary','Rakip karşılaştırmasını incele',details);
-   const scroll=add('div','',details,'so-benchmark-scroll'),table=add('table','',scroll);add('caption','Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.',table);
+   const details=add('details','',$('#so-analysis'),'so-benchmark');add('summary',t('Rakip karşılaştırmasını incele'),details);
+   const scroll=add('div','',details,'so-benchmark-scroll'),table=add('table','',scroll);add('caption',t('Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.'),table);
    const ids=[...new Set(data.bhs.benchmarks.flatMap(b=>b.entries.map(e=>e.entityId)))],peerNames=new Map((data.bhs.competitors||[]).map(p=>[p.id,p.name]));
-   const head=add('tr','',add('thead','',table));add('th','Metrik',head);ids.forEach(id=>add('th',peerNames.get(id)||data.brand.name,head));const body=add('tbody','',table);
-   for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',benchmarkNames[row.metric]||row.metric,tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?'Veri bulunamadı':(e.verification==='unverified'?'Doğrulanacak: ':'')+[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
+   const head=add('tr','',add('thead','',table));add('th',t('Metrik'),head);ids.forEach(id=>add('th',peerNames.get(id)||data.brand.name,head));const body=add('tbody','',table);
+   for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',t(benchmarkNames[row.metric]||row.metric),tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?t('Veri bulunamadı'):(e.verification==='unverified'?t('Doğrulanacak: '):'')+[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
   }
-  const full=add('details','',$('#so-analysis'));add('summary','Seçili bulguların kaynakları',full);
+  const full=add('details','',$('#so-analysis'));add('summary',t('Seçili bulguların kaynakları'),full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
   const options=$('.so-options');options.replaceChildren();let selected;
   const form=$('#so-request-form'),status=$('.so-request-status');
   function select(id){
    selected=data.alternatives.find(a=>a.id===id);status.textContent='';form.querySelector('.so-mailto-reopen')?.remove();
    options.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.alternative===id)));
-   $('#so-scope-title').textContent=selected.name;$('#so-scope-note').textContent=id==='growth_operations'?'Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.':'Seçili hizmetler için uygulama, ölçüm ve takip.';
+   $('#so-scope-title').textContent=selected.name;$('#so-scope-note').textContent=id==='growth_operations'?t('Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.'):t('Seçili hizmetler için uygulama, ölçüm ve takip.');
    const list=$('#so-service-list');list.replaceChildren();
    selected.services.forEach((s,i)=>{const box=add('div','',list,'so-service'),b=add('button','✓ '+s.name+' +',box);b.type='button';b.setAttribute('aria-expanded','false');const p=add('p',s.description,box);p.hidden=true;p.id='so-service-'+i;b.setAttribute('aria-controls',p.id);b.addEventListener('click',()=>{p.hidden=!p.hidden;b.setAttribute('aria-expanded',String(!p.hidden));});});
    const track=$('#so-track');track.replaceChildren();
    data.plans[id].steps.forEach(s=>{const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);});
-   let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent='Çalışma odağı: '+data.plans[id].focus;
-   $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+' ile ilerleyelim.';
-   $('#so-request-model').textContent=selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+' / ay';
+   let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent=t('Çalışma odağı: ')+data.plans[id].focus;
+   $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+t(' ile ilerleyelim.');
+   $('#so-request-model').textContent=selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+t(' / ay');
   }
   for(const [i,a]of data.alternatives.entries()){
    const b=add('button','',options,'so-option');b.type='button';b.dataset.alternative=a.id;
-   const meta=add('span','',b,'so-option-meta');add('span',i===0?'01 / ENTEGRE':'02 / UYGULAMA',meta);
-   if(a.id===data.recommendedAlternativeId)add('span','Önerilen',meta,'so-recommended');
-   add('span',a.name,b,'so-option-title');const amount=add('span',money(quoteAmount(data,a))+' ',b,'so-option-price');add('small',currencyLabel(data)+' / ay',amount);
+   const meta=add('span','',b,'so-option-meta');add('span',i===0?t('01 / ENTEGRE'):t('02 / UYGULAMA'),meta);
+   if(a.id===data.recommendedAlternativeId)add('span',t('Önerilen'),meta,'so-recommended');
+   add('span',a.name,b,'so-option-title');const amount=add('span',money(quoteAmount(data,a))+' ',b,'so-option-price');add('small',currencyLabel(data)+t(' / ay'),amount);
    b.addEventListener('click',()=>select(a.id));
   }
   select(data.recommendedAlternativeId);
-  if(data.quote?.status==='ready'){const fx=data.quote.exchangeRate;const note=add('p','Teklif kuru: 1 USD = '+new Intl.NumberFormat('tr-TR',{maximumFractionDigits:6}).format(fx.rate)+' TL · TCMB dolar satış kuru, '+fx.publishedAt+'. Bu teklifin USD tutarları sabittir.',$('.so-options').parentElement,'so-feenote so-exchange-rate');$('.so-options').after(note);}
-  const exclusions=[...(data.exclusions||[]),...(data.pending||[]).map(s=>s.name+': ayrıca fiyatlandırılacak; bu toplama dahil değildir.'),...(data.deferred||[]).map(s=>s.name+': sonraki aşamaya ayrıldı.')];
-  if(exclusions.length){const d=add('details','',$('.so-scope'));add('summary','Kapsam sınırları',d);const ul=add('ul','',d);exclusions.forEach(t=>add('li',t,ul));}
+  if(data.quote?.status==='ready'){const fx=data.quote.exchangeRate;const note=add('p',t('Teklif kuru: 1 USD = ')+new Intl.NumberFormat(english?'en-GB':'tr-TR',{maximumFractionDigits:6}).format(fx.rate)+t(' TL · TCMB dolar satış kuru, ')+fx.publishedAt+t('. Bu teklifin USD tutarları sabittir.'),$('.so-options').parentElement,'so-feenote so-exchange-rate');$('.so-options').after(note);}
+  const exclusions=[...(data.exclusions||[]),...(data.pending||[]).map(s=>s.name+t(': ayrıca fiyatlandırılacak; bu toplama dahil değildir.')),...(data.deferred||[]).map(s=>s.name+t(': sonraki aşamaya ayrıldı.'))];
+  if(exclusions.length){const d=add('details','',$('.so-scope'));add('summary',t('Kapsam sınırları'),d);const ul=add('ul','',d);exclusions.forEach(t=>add('li',t,ul));}
   $('#so-request-open').addEventListener('click',function(){form.hidden=!form.hidden;this.setAttribute('aria-expanded',String(!form.hidden));if(!form.hidden)form.elements.name.focus();});
   form.addEventListener('submit',e=>{
    e.preventDefault();if(!form.reportValidity())return;
-   if(!offerUrl){status.textContent='E-posta taslağı müşteri bağlantısı oluşturulduktan sonra açılabilir.';return;}
+   if(!offerUrl){status.textContent=t('E-posta taslağı müşteri bağlantısı oluşturulduktan sonra açılabilir.');return;}
    try{
     const href=buildMailto(data,{offerUrl,offerId,alternativeId:selected.id,name:form.elements.name.value.trim(),email:form.elements.email.value.trim()});
     form.querySelector('.so-mailto-reopen')?.remove();
-    const link=add('a','E-posta taslağını yeniden aç',form,'so-mailto-reopen');link.href=href;
+    const link=add('a',t('E-posta taslağını yeniden aç'),form,'so-mailto-reopen');link.href=href;
     // Keep the native mailto launch synchronous with the user's click.
     link.click();status.textContent='Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.';
    }catch(error){status.textContent=error.message||'E-posta taslağı hazırlanamadı.';}

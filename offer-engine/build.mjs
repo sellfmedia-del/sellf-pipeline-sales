@@ -39,3 +39,6 @@ await writeTemplateExample();
 // Only the explicitly provisioned synthetic QA session opts into a live
 // recovery check. Ordinary preview/production builds never call providers.
 if(process.env.OFFER_REGRESSION_SESSION)await import('./scripts/recovery-regression.mjs');
+
+const {buildLanguageReview}=await import('./src/preview/language-build.mjs');
+await buildLanguageReview(path.join(here,'public'),{production});

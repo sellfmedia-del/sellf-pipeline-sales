@@ -1,3 +1,6 @@
+import {proposalLanguage,localizeProposal} from '../src/proposal/language.mjs';
+import {budgetFor,BudgetError} from '../src/budget/ledger.mjs';
+import {createBoundedProviders} from '../src/budget/providers.mjs';
 import {quoteCurrency} from '../src/pricing/currency.mjs';
 import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {randomUUID} from 'node:crypto';
@@ -9,7 +12,7 @@ import {normalizePlan,compositionHash} from '../src/proposal/composition.mjs';
 import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {offerGeminiKey} from '../src/config.mjs';
-export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey,now=Date.now}={}){
+export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey,getLedger=budgetFor,getProviders=createBoundedProviders,now=Date.now}={}){
  const starts=new Map();
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
@@ -32,14 +35,22 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    const logo={stage:'logo',status:'review',data:logoData};assertResult('logo',logo);
    const context={leadId:body.context?.leadId,spaceId:body.context?.spaceId};
    if(Object.values(context).some(v=>typeof v!=='string'||!v||v.length>200))throw Error();
-   const plan=normalizePlan(body),inputHash=compositionHash(brief,body.audit,body.pricing,logo,{...plan,context,logoBackground:body.logoBackground});
+   const language=proposalLanguage(body.brief?.language),plan=normalizePlan(body),inputHash=compositionHash(brief,body.audit,body.pricing,logo,{...plan,context,logoBackground:body.logoBackground,language});
    const claims={...context,briefHash:hash,auditHash:approval.auditHash,pricingHash:approval.pricingHash,inputHash,...(approval.sourceOfferId?{sourceOfferId:approval.sourceOfferId}:{})};
    if(!getProvider){
     if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
-    const result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+    let result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+    let cost;
+    if(language==='en'){
+     const ledger=await getLedger(req,res,context.leadId,...(approval.budgetResearchRunId?[{researchRunId:approval.budgetResearchRunId}]:[]));
+     try{result={...result,data:await localizeProposal(result.data,language,{providers:getProviders({ledger})})};}
+     catch(error){try{cost=await ledger.status();}catch{}return res.status(422).json({code:error.code||'translation_unavailable',error:error instanceof BudgetError?error.message:'İngilizce teklif çevirisi tamamlanamadı. BHS ve fiyatlar korundu; Türkçe belge İngilizce olarak sunulmadı.',...(cost?{cost}:{})});}
+     cost=await ledger.status();
+    }
     const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
-    return res.status(200).json({phase:'complete',result:envelope,saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
+    return res.status(200).json({phase:'complete',result:envelope,...(cost?{cost}:{}),saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
    }
+   if(language!=='tr')throw Error('İngilizce teklif için bütçeli çeviri gerekli.');
    const provider=getProvider();
    if(!provider.configured())throw Error();
    if(body.action==='start'){
@@ -58,7 +69,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    const job=await provider.poll(interactionId(ticket.id));
    if(['queued','in_progress'].includes(job.status))return res.status(200).json({phase:'composition',ticket:body.ticket});
    if(job.status!=='completed')throw Error();
-   const result=await proposalEngine.run({brief,copy:JSON.parse(modelText(job)),planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+   let result=await proposalEngine.run({brief,copy:JSON.parse(modelText(job)),planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
    const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
    return res.status(200).json({phase:'complete',result:envelope,saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
   }catch{return res.status(422).json({error:'Teklif oluşturulamadı. Doğrulanmış brief, logo ve fiyat kaydını kontrol et. Yeni Gemini çağrısı otomatik başlatılmadı.'});}

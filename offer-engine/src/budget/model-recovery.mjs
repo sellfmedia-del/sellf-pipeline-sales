@@ -1,5 +1,5 @@
 import {BudgetError} from './ledger.mjs';
-export const recoveryStages=new Set(['source_plan','source_recovery','methodology_areas','synthesis','scope','semantic','provider_preflight']);
+export const recoveryStages=new Set(['source_plan','source_recovery','methodology_areas','synthesis','scope','semantic','provider_preflight','proposal_translation']);
 export const transientModelStatus=status=>[500,502,503,504].includes(status);
 export const recoverableModelFailure=error=>transientModelStatus(error.providerStatus)||['model_timeout','model_network','invalid_report','incomplete','provider_format','model_output_invalid'].includes(error.code)||error.modelRecoverable||error.modelBudgetFallback;
 

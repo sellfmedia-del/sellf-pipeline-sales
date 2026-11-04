@@ -26,13 +26,14 @@
     return {
       source,
       brandName: source.company, segment: '', website: '', logoUrl: '', logoFile: null, logo: null,
-      goals: '', needs: '', services: '', budget: '', currency: 'TRY',
+      goals: '', needs: '', services: '', budget: '', currency: 'TRY', language: 'tr',
       meetingNotes: [source.notes, ...timeline.map(t => [t.date, t.type, t.note].filter(Boolean).join(' · '))].filter(Boolean).join('\n\n')
     };
   }
 
   function validate(draft, { requireLogoReview = false } = {}) {
     const errors = {};
+    if (!['tr','en'].includes(draft.language??'tr')) errors.language = 'Türkçe veya İngilizce seç.';
     if (!['TRY','USD'].includes(draft.currency??'TRY')) errors.currency = 'TL veya USD seç.';
     if (!text(draft.brandName).trim()) errors.brandName = 'Marka adını gir.';
     if (!segments.includes(draft.segment)) errors.segment = 'Bir müşteri segmenti seç.';
