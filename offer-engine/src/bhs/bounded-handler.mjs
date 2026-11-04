@@ -11,6 +11,8 @@ import {temporaryDnsError} from '../network-dns.mjs';
 import {runtimeStore,bearer} from '../runtime.mjs';
 import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recovery.mjs';
 import {canContinue,abandonedStage,continuationAudit} from './continuity.mjs';
+import {validateScope,fallbackScope} from '../pricing/scope.mjs';
+import {offerCopy} from '../proposal/composition.mjs';
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
@@ -120,7 +122,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    }
    const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
    const audit=await auditEngine.run({brief,synthesis});
-   const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
+   // Re-grounding an older paid report can remove a finding used by its saved
+   // scope. Revalidate before signing; never replay research or sign stale IDs.
+   let scopePlan,proposalCopy=scope.proposalCopy;
+   try{scopePlan=validateScope(scope.scopePlan,brief,audit.data);}
+   catch{scopePlan=fallbackScope(brief);proposalCopy=offerCopy(null,audit.data);}
+   const final={...audit,data:{...audit.data,scopePlan,proposalCopy}};
    return await finish(final);
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){
