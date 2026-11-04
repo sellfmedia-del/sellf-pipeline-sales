@@ -32,7 +32,7 @@ test('a lost recovery-marker completion resumes the authorised batch while forei
  for(const state of ['reserved','uncertain','complete'])assert.equal(recoveryRound({state,charge_kurus:0,input_hash},claims),1);
  for(const row of [{state:'complete',charge_kurus:1,input_hash},{state:'complete',charge_kurus:0,input_hash:'other'},null])assert.equal(recoveryRound(row,claims),0);
 });
-test('incident balance can explicitly use the planning hold without cheaper models, shorter output, refunds or exceeding the cap',async()=>{
+test('incident balance starts within the normal target without an artificial planning hold or repeated paid recovery',async()=>{
  const db=recoveryStore(2232),bodies=[];
  const fetchImpl=async(url,init)=>{
   if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="04.11.2026"><Currency CurrencyCode="USD"><ForexSelling>50</ForexSelling></Currency></Tarih_Date>');
@@ -42,10 +42,11 @@ test('incident balance can explicitly use the planning hold without cheaper mode
  };
  const options={model:'gemini-3.1-pro-preview',maxOutputTokens:4096,thinkingLevel:'LOW',jsonMode:true};
  const original=createBoundedProviders({ledger:db.ledger(),geminiKey:'private',fetchImpl,now});
- await assert.rejects(original.generate('source_plan',{instruction:'full methodology'},{type:'object'},options),e=>{assert.equal(e.budgetDiagnostic.availableKurus,268);assert.equal(e.budgetDiagnostic.followingReserveKurus,2500);return e.code==='budget_limit';});
- assert.equal(bodies.length,0);assert.equal(db.cost(),2232);
+ const first=await original.generate('source_plan',{instruction:'full methodology'},{type:'object'},options);
+ assert.equal(bodies.length,1);assert.ok(db.cost()>2232&&db.cost()<=3000);
  const recover=()=>createBoundedProviders({ledger:db.ledger(),geminiKey:'private',fetchImpl,now,manualRecoveryRound:1});
  const result=await recover().generate('source_plan',{instruction:'full methodology'},{type:'object'},options);
+ assert.deepEqual(result,first);
  assert.equal(result.model,'gemini-3.1-pro-preview');assert.equal(bodies[0].body.generationConfig.maxOutputTokens,4096);assert.equal(bodies[0].body.generationConfig.thinkingConfig.thinkingLevel,'LOW');
  assert.ok(db.cost()>2232&&db.cost()<=5000);const cost=db.cost();
  assert.deepEqual(await recover().generate('source_plan',{instruction:'full methodology'},{type:'object'},options),result);assert.equal(bodies.length,1);assert.equal(db.cost(),cost);
@@ -79,7 +80,8 @@ test('signed explicit recovery claims a single extra phase batch; concurrent cli
   const accepted=await Promise.all([call({...start,action:'recover',ticket}),call({...start,action:'recover',ticket})]);
   assert.ok(accepted.some(r=>r.code===202));assert.equal(runs,1);assert.equal(db.cost(),2232);
   assert.equal(db.rows.get(recoveryKey(brief,'source_plan')).value.round,1);
-  const result=await call({...start,action:'advance',ticket});assert.equal(result.code,202);assert.equal(result.data.phase,'evidence');assert.equal(round,1);assert.equal(runs,2);
+  const approvedTicket=accepted.find(r=>r.code===202).data.ticket;
+  const result=await call({...start,action:'advance',ticket:approvedTicket});assert.equal(result.code,202);assert.equal(result.data.phase,'evidence');assert.equal(round,1);assert.equal(runs,2);
   const repeated=await call({...start,action:'status',ticket});assert.equal(repeated.data.phase,'evidence');assert.equal(runs,2);
   // A completed stage cannot be changed into a recovery target by the client.
   const illegal=await call({...start,action:'recover',ticket});assert.equal(illegal.code,422);assert.equal(db.rows.has(recoveryKey(brief,'evidence')),false);
@@ -94,7 +96,7 @@ test('an exhausted explicit batch stays exhausted after closing/reopening; arbit
   const call=async body=>{const res={headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(value){this.data=value;return this;}};await createBoundedAuditHandler(dependencies)({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];return res;};
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}};
   let ticket=(await call(start)).data.ticket;
-  await call({...start,action:'advance',ticket});await call({...start,action:'recover',ticket});
+  await call({...start,action:'advance',ticket});ticket=(await call({...start,action:'recover',ticket})).data.ticket;
   const failed=await call({...start,action:'advance',ticket});assert.equal(failed.code,422);assert.equal(failed.data.recoveryAvailable,undefined);
   ticket=(await call(start)).data.ticket;
   const blocked=await call({...start,action:'recover',ticket,manualRecoveryRound:999});assert.equal(blocked.data.code,'recovery_exhausted');assert.equal(runs,2);

@@ -21,7 +21,7 @@ test('no retry on success, validation, quota, auth, budget or ambiguous transpor
   let calls=0;await assert.rejects(recoverModelStage(async()=>{calls++;throw Object.assign(Error(),{providerStatus});},'scope',{}, {wait:async()=>assert.fail()}));assert.equal(calls,1);
  }
 });
-function fixture({balance=500,failFallback=false,html=false,timeout=false,countTimeout=false,stage='source_plan',count=100,primaryInvalid=false,invalidJson=false}={}){
+function fixture({balance=500,failFallback=false,html=false,timeout=false,countTimeout=false,stage='source_plan',count=100,primaryInvalid=false,invalidJson=false,manualRecoveryRound=0}={}){
  let charged=balance;const steps=new Map(),calls=[];let clock=Date.parse('2026-11-03T12:00:00Z');
  const ledger=createLedger(async(op,a={})=>{
   if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
@@ -36,7 +36,7 @@ function fixture({balance=500,failFallback=false,html=false,timeout=false,countT
   if(op==='complete')charged-=prior.charge_kurus-a.amount;
   steps.set(a.step,{...prior,state:op,value:a.value,charge_kurus:op==='complete'?a.amount:prior.charge_kurus});return steps.get(a.step);
  });
- const provider=createBoundedProviders({ledger,geminiKey:'test',now:()=>clock,fetchImpl:async(url,init)=>{
+ const provider=createBoundedProviders({ledger,geminiKey:'test',manualRecoveryRound,now:()=>clock,fetchImpl:async(url,init)=>{
   if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="03.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
   if(url.endsWith(':countTokens')){if(countTimeout&&url.includes('3.1-pro-preview'))throw new DOMException('The operation was aborted due to timeout','TimeoutError');return Response.json({totalTokens:count});}
   calls.push({url,body:JSON.parse(init.body)});
@@ -56,7 +56,8 @@ test('full provider fallback preserves payload, separate cost reservations and r
 });
 test('503 with a non-JSON body also selects the fallback',async()=>{const f=fixture({html:true});assert.equal((await f.run()).model,'gemini-4-argon');assert.equal(f.calls.length,2);});
 test('fallback cannot exceed the shared cap or refund an uncertain primary',async()=>{
- const f=fixture({balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,0);assert.equal((await f.cost()).chargedKurus,4800);
+ const f=fixture({balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');assert.equal(f.calls.length,1);assert.ok((await f.cost()).chargedKurus>4800&&(await f.cost()).chargedKurus<=5000);
+ const before=await f.cost();await assert.rejects(f.run());assert.equal(f.calls.length,1);assert.deepEqual(await f.cost(),before);
 });
 test('two unavailable models stop after exactly two calls across workers and reloads',async()=>{
  const f=fixture({failFallback:true});await assert.rejects(f.run(),e=>e.code==='model_temporarily_unavailable');const cost=await f.cost();
@@ -84,10 +85,11 @@ test('timeout on both models stops after two calls and remains stopped after rel
 });
 test('timeout recovery still refuses a fallback exceeding the shared 50 TRY cap',async()=>{
  const f=fixture({timeout:true,balance:4800});await assert.rejects(f.run(),e=>e.code==='budget_limit');
- assert.equal(f.calls.length,0);assert.equal((await f.cost()).chargedKurus,4800);
+ assert.equal(f.calls.length,1);assert.ok((await f.cost()).chargedKurus>4800&&(await f.cost()).chargedKurus<=5000);
+ const before=await f.cost();await assert.rejects(f.run());assert.equal(f.calls.length,1);assert.deepEqual(await f.cost(),before);
 });
 
-test('incident-sized synthesis fits the cheaper same-contract alternate before any paid primary call',async()=>{
+test('automatic quality completion can fit the same-contract alternate above the soft target within the hard cap',async()=>{
  const f=fixture({balance:3395,stage:'synthesis',count:30469});
  const result=await f.run({maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,jsonMode:true,thinkingLevel:'MEDIUM'});
  assert.equal(result.model,'gemini-4-argon');assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.includes('gemini-4-argon'));

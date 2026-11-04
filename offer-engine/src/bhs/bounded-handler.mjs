@@ -10,6 +10,9 @@ import {offerGeminiKey} from '../config.mjs';
 import {temporaryDnsError} from '../network-dns.mjs';
 import {runtimeStore,bearer} from '../runtime.mjs';
 import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recovery.mjs';
+import {canContinue,abandonedStage,continuationAudit} from './continuity.mjs';
+import {validateScope,fallbackScope} from '../pricing/scope.mjs';
+import {offerCopy} from '../proposal/composition.mjs';
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
@@ -59,9 +62,30 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
-   if(!['start','status','advance','recover'].includes(action))throw Error();
+   if(!['start','status','advance','recover','continue'].includes(action))throw Error();
    const pendingPhases=phases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
+   const finish=async final=>{
+    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
+    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
+    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
+   };
+   const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
+   if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){
+    const chosen=await ledger.get('audit:continuation:v1:'+pendingPhases[stoppedIndex]+':'+hash);
+    if(chosen?.state==='complete')return await finish(chosen.value);
+   }
+   if(action==='continue'){
+    const index=rows.findIndex(step=>step?.state!=='complete');
+    if(index>=0){
+     phase=pendingPhases[index];const stopped=rows[index];
+     if(!canContinue(stopped,now()))throw new BudgetError('continuation_unavailable','Yalnız durmuş bir araştırmadan mevcut bilgilerle devam edilebilir.');
+     const reason=abandonedStage(stopped,now())?'stage_abandoned':stopped.value.code;
+     const completeSynthesis=rows[pendingPhases.indexOf('synthesis')];
+     const audit=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:completeSynthesis?.state==='complete'?completeSynthesis.value:undefined,reason}));
+     log('bhs_explicit_continuation',{reason,additionalPaidCalls:0});return await finish(audit);
+    }
+   }
    for(const [index,name] of pendingPhases.entries()){
     const step=rows[index];
     if(step?.state==='complete')continue;
@@ -72,13 +96,21 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
      if(prior)throw new BudgetError('recovery_exhausted','Bu aşamanın ek denemesi zaten kullanıldı. Kayıtlar ve maliyet sınırı korundu.');
      if((await cost()).chargedKurus>=tariff.capKurus)throw new BudgetError('budget_limit','Kartın toplam maliyet sınırına ulaşıldı; yeniden deneme başlatılmadı.');
      await ledger.once(marker,{briefHash:hash,phase,round:1},0,async()=>({round:1,approvedAt:now()}));
+     job.recoveryApprovedFor=phase;
      log('bhs_manual_recovery',{round:1});
-     return res.status(202).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+     return res.status(202).json({phase,status:'in_progress',nextAction:'advance',ticket:codec.encode(job,session,host),cost:await cost()});
     }
     if(step?.state==='uncertain'&&step.charge_kurus!==0)throw new BudgetError('budget_uncertain','Önceki aşama tamamlanamadı; kayıt ve ayrılmış maliyet korunuyor. Yeni ücretli çağrı başlatılmadı.');
+    if(abandonedStage(step,now()))throw new BudgetError('stage_abandoned','Önceki araştırma işlemi tamamlanamadı. Kayıt ve ayrılmış tutar korunuyor; mevcut bilgilerle teklif hazırlamaya devam edebilirsin.');
     if(step?.state==='reserved')return res.status(200).json({phase,status:'in_progress',ticket,cost:await cost()});
-    if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     const manualRecoveryRound=recoveryRound(await ledger.get(recoveryKey(brief,phase)),{briefHash:hash,phase});
+    if(step?.state==='uncertain'&&step.charge_kurus===0&&canContinue(step,now())){
+     // Do not reconstruct and replay a failed paid request after code/prompt
+     // changes. Only a newly signed explicit recovery can run the next batch.
+     const failedRound=step.value?.recoveryRound??(manualRecoveryRound&&job.recoveryApprovedFor!==phase?1:0);
+     if(manualRecoveryRound<=failedRound)throw new BudgetError(step.value.code,'Bu aşama önceki denemede tamamlanamadı. Kayıtlar ve maliyetler korundu; yeniden deneme veya mevcut bilgilerle devam et seçeneklerini kullanabilirsin.');
+    }
+    if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     const providers=getProviders({ledger,manualRecoveryRound});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
@@ -90,10 +122,13 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    }
    const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
    const audit=await auditEngine.run({brief,synthesis});
-   const final={...audit,data:{...audit.data,scopePlan:scope.scopePlan,proposalCopy:scope.proposalCopy}};
-   const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
-   const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
-   log('bhs_response',{phase:'complete',status:result.status,cost:result.cost});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
+   // Re-grounding an older paid report can remove a finding used by its saved
+   // scope. Revalidate before signing; never replay research or sign stale IDs.
+   let scopePlan,proposalCopy=scope.proposalCopy;
+   try{scopePlan=validateScope(scope.scopePlan,brief,audit.data);}
+   catch{scopePlan=fallbackScope(brief);proposalCopy=offerCopy(null,audit.data);}
+   const final={...audit,data:{...audit.data,scopePlan,proposalCopy}};
+   return await finish(final);
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){
     log('bhs_error',{code:error.code,errorName:error.name,networkOperation:error.syscall||'dns_lookup',retryable:true});
@@ -104,11 +139,15 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    if(error.modelAttempts)log('bhs_model_attempts',{attempts:error.modelAttempts});
    if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
    let cost;try{if(readCost)cost=await readCost();}catch{/* Preserve the original failure if cost status is unavailable. */}
-   let recoveryAvailable=false;
-   if(action==='advance'&&recoveryTicket&&recoverableAuditCodes.has(code)&&cost?.chargedKurus<cost?.capKurus){
-    try{const failed=await activeLedger.get(stageKey(activeBrief,phase,activeResearchVersion));recoveryAvailable=failed?.state==='uncertain'&&failed.charge_kurus===0&&recoverableAuditCodes.has(failed.value?.code)&&!await activeLedger.get(recoveryKey(activeBrief,phase));}catch{}
+   let recoveryAvailable=false,continuationAvailable=false;
+   if(['start','advance','status'].includes(action)&&recoveryTicket&&activeLedger){
+    try{
+     const failed=await activeLedger.get(stageKey(activeBrief,phase,activeResearchVersion));
+     continuationAvailable=canContinue(failed,now());
+     recoveryAvailable=recoverableAuditCodes.has(code)&&cost?.chargedKurus<cost?.capKurus&&failed?.state==='uncertain'&&failed.charge_kurus===0&&recoverableAuditCodes.has(failed.value?.code)&&!await activeLedger.get(recoveryKey(activeBrief,phase));
+    }catch{}
    }
-   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.',...(cost?{cost}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),...(recoveryAvailable?{recoveryAvailable:true,ticket:recoveryTicket}:{})});
+   return res.status(code==='not_configured'?503:422).json({code,error:error instanceof BudgetError?error.message:'BHS verileri doğrulanamadı. Yeni araştırma otomatik başlatılmadı.',...(cost?{cost}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),...(recoveryAvailable||continuationAvailable?{ticket:recoveryTicket}:{}),...(recoveryAvailable?{recoveryAvailable:true}:{}),...(continuationAvailable?{continuationAvailable:true}:{})});
   }
  };
 }

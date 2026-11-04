@@ -14,6 +14,7 @@ export function presentationSlots(doc){
  for(const a of doc.alternatives){add(a,'name');for(const s of a.services){add(s,'name');add(s,'description');}}
  for(const p of Object.values(doc.plans)){add(p,'focus');for(const s of p.steps){add(s,'time');add(s,'title');}}
  add(doc.bhs,'summary');
+ add(doc.bhs.researchContinuity,'notice');
  for(const d of doc.bhs.dimensions||[]){add(d,'rationale');for(const h of d.highlights||[])add(h,'text');}
  for(const f of doc.bhs.findings||[]){add(f,'statement');add(f,'impact');}
  for(const b of doc.bhs.benchmarks||[])for(const e of b.entries||[]){if(typeof e.value==='string')add(e,'value');add(e,'unit');add(e,'period');}

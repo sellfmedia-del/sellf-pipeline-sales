@@ -21,11 +21,15 @@ export async function recoverModelStage(generate,stage,options,{wait=ms=>new Pro
    console.info(JSON.stringify({event:'bhs_model_failure',stage,...attempts[1]}));
    // Only a server-produced, source-filtered projection may survive an
    // exhausted alternate. Never return the rejected model document itself.
-   const safe=[error.safeResult,failure.safeResult].filter(Boolean).sort((a,b)=>(b.data.findings?.length||0)-(a.data.findings?.length||0));
+   const safe=[error.safeResult,failure.safeResult].filter(result=>result?.data?.findings?.length||result?.data?.researchCoverage?.some(area=>area.status!=='unavailable'&&area.sourceIds?.length)).sort((a,b)=>(b.data.findings?.length||0)-(a.data.findings?.length||0));
    if(safe.length&&(recoverableModelFailure(failure)||['budget_limit','budget_uncertain'].includes(failure.code))){
     console.info(JSON.stringify({event:'model_grounded_partial',stage}));return safe[0];
    }
-   if(recoverableModelFailure(failure)){const unavailable=new BudgetError('model_temporarily_unavailable','Bu aşamanın birincil ve yedek Gemini modelleri tamamlanamadı. Mevcut sonuçlar ve ayrılmış maliyetler korundu.');unavailable.modelAttempts=attempts;throw unavailable;}
+   if(recoverableModelFailure(failure)){
+    const contentCodes=new Set(['model_output_invalid','invalid_report','incomplete','provider_format']);
+    const content=attempts.some(a=>contentCodes.has(a.code));
+    const unavailable=new BudgetError(content?'model_content_invalid':'model_temporarily_unavailable',content?'Model yanıtı kaynak veya çıktı kontrollerini karşılamadı. Doğrulanmamış içerik kullanılmadı; mevcut sonuçlar ve maliyetler korundu.':'Birincil ve yedek AI çağrıları servis veya bağlantı hatası nedeniyle tamamlanamadı. Mevcut sonuçlar ve ayrılmış maliyetler korundu.');unavailable.modelAttempts=attempts;throw unavailable;
+   }
    failure.modelAttempts=attempts;
    throw failure;
   }

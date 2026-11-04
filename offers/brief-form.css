@@ -92,3 +92,7 @@
 #offer-brief-dialog .ob-recovery p, #offer-brief-dialog .ob-cost-detail { font-size: 12px; line-height: 1.6; }
 #offer-brief-dialog .ob-retry { margin-top: 8px; border: 1px solid var(--border2); border-radius: 7px; padding: 8px 12px; background: white; }
 #offer-brief-dialog .ob-cost-detail { margin-bottom: 16px; }
+
+#offer-brief-dialog .ob-continuation{margin:16px 0;padding:12px;border:1px solid var(--border,#e2e0d8);border-radius:7px}
+#offer-brief-dialog .ob-continuation p{margin:0 0 12px;font-size:12px;line-height:1.6}
+#offer-brief-dialog .ob-continue{max-width:100%;white-space:normal;border:1px solid var(--text,#1a1917);border-radius:7px;padding:8px 12px;background:var(--text,#1a1917);color:white}
