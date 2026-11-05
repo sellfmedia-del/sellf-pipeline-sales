@@ -113,7 +113,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     throw error;
    }
    if(cached?.state==='complete'){if(cached.value?.rejected)throw new BudgetError('provider_rejected','Bu model isteği daha önce reddedildi; aynı istek yeniden başlatılmadı.');return validated(cached.value);}
-   if(model==='gemini-2.5-pro'&&now()>=Date.parse('2026-12-01T00:00:00Z'))throw new BudgetError('not_configured','Seçili Pro modelinin destek süresi doldu; yeni ücretli çağrı yapılmadı.');
+   if(model.startsWith('gemini-2.5-')&&now()>=Date.parse('2026-12-01T00:00:00Z'))throw new BudgetError('not_configured','Seçili Pro modelinin destek süresi doldu; yeni ücretli çağrı yapılmadı.');
    await checkCurrency();if(gateway)await gateway.ready(model);
    // Exact request is tokenized before generation. Additional input allowance
    // covers control/schema overhead; no tools, media, history or autonomous loop.
@@ -162,4 +162,4 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
  };
 }
 
-export const createRuntimeProviders=options=>createBoundedProviders({...options,transport:process.env.OFFER_MODEL_TRANSPORT||'google',defaultModel:process.env.OFFER_SUPPORT_MODEL||'gemini-2.5-pro'});
+export const createRuntimeProviders=options=>createBoundedProviders({...options,transport:process.env.OFFER_MODEL_TRANSPORT||'google',defaultModel:process.env.OFFER_SUPPORT_MODEL||'gemini-2.5-flash'});
