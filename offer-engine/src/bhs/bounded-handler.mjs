@@ -47,7 +47,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   if(job.researchModel&&!['gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+   if(job.researchModel&&!['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
    const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;

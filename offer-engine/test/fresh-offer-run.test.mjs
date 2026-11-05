@@ -1,3 +1,4 @@
+import {createLogoRecovery} from '../src/budget/logo-recovery.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
@@ -49,8 +50,9 @@ test('a compact logo uses pixel checks without localisation; provider failure re
  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160"><rect width="400" height="160" fill="white"/><rect x="55" y="40" width="260" height="80" fill="#706551"/><rect x="85" y="60" width="25" height="40" fill="white"/></svg>';
  const image='data:image/png;base64,'+(await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64');
  let located=0,backdrop=0;
- const result=await prepareUploadedLogo(image,{localFirst:true,locate:async()=>{located++;throw Error('unnecessary localisation');},chooseBackdrop:async()=>{backdrop++;throw Object.assign(Error('provider down'),{code:'provider_error'});}});
- assert.equal(located,0);assert.equal(backdrop,1);
+ const recover=createLogoRecovery({generate:async()=>{backdrop++;throw Object.assign(Error('provider down'),{code:'provider_error',providerStatus:503});}},{wait:async()=>{}});
+ const result=await prepareUploadedLogo(image,{localFirst:true,locate:async()=>{located++;throw Error('unnecessary localisation');},chooseBackdrop:async()=>recover('logo-backdrop',{}, {}, {})});
+ assert.equal(located,0);assert.equal(backdrop,2);
  const q=result.candidates[0].quality;assert.equal(q.transparency,true);assert.equal(q.changedSolid,0);assert.equal(q.interiorReviewRequired,true);assert.equal(q.requiresReview,true);
  assert.notEqual(result.candidates[0].image,image);assert.equal(result.candidates[0].source,image);
 });

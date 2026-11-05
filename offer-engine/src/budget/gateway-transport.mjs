@@ -6,7 +6,7 @@ export function gatewayRequest(model,body,schema){
  const messages=[];
  if(body.systemInstruction)messages.push({role:'system',content:body.systemInstruction.parts.map(p=>p.text||'').join('\n')});
  for(const content of body.contents||[])messages.push({role:content.role==='model'?'assistant':'user',content:content.parts.map(p=>p.inlineData?{type:'image_url',image_url:{url:'data:'+p.inlineData.mimeType+';base64,'+p.inlineData.data}}:{type:'text',text:p.text||''})});
- return {model:'google/'+model,messages,stream:false,max_tokens:body.generationConfig.maxOutputTokens,reasoning:{effort:body.generationConfig.thinkingConfig.thinkingLevel.toLowerCase()},response_format:{type:'json_schema',json_schema:{name:'offer_stage',strict:false,schema:providerSchema(schema,{arrayBounds:false})}},providerOptions:{gateway:{only:['vertex']}}};
+ return {model:'google/'+model,messages,stream:false,max_tokens:body.generationConfig.maxOutputTokens,reasoning:body.generationConfig.thinkingConfig.thinkingBudget!==undefined?{max_tokens:body.generationConfig.thinkingConfig.thinkingBudget}:{effort:body.generationConfig.thinkingConfig.thinkingLevel.toLowerCase()},response_format:{type:'json_schema',json_schema:{name:'offer_stage',strict:false,schema:providerSchema(schema,{arrayBounds:false})}},providerOptions:{gateway:{only:['vertex']}}};
 }
 export function createGatewayTransport({token,fetchImpl=fetch}={}){
  const readyModels=new Map();let credit;

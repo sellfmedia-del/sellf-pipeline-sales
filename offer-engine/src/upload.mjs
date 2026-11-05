@@ -43,7 +43,7 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop,localFirs
     catch(error){
       // Provider failure must not discard a pixel-verified transparent result.
       // Preserve all uncertain interior ink and require a visible review.
-      if(!['model_timeout','model_network','provider_error','model_temporarily_unavailable','budget_limit','budget_uncertain','budget_pending','quota','model_content_invalid','model_output_invalid','provider_format','incomplete','invalid_report','not_configured','fx_unavailable','fx_limit','tariff_expired','model_deadline'].includes(error.code))throw error;
+      if(!['model_timeout','model_network','provider_error','model_temporarily_unavailable','logo_temporarily_unavailable','budget_limit','budget_uncertain','budget_pending','quota','model_content_invalid','model_output_invalid','provider_format','incomplete','invalid_report','not_configured','fx_unavailable','fx_limit','tariff_expired','model_deadline'].includes(error.code))throw error;
       processed.quality.interiorReviewRequired=true;
     }
   }

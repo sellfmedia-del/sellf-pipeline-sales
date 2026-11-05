@@ -61,7 +61,7 @@ async function searchTogether(providers,queries,options){
  return results.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'unavailable'});
 }
 export async function runBoundedStage({phase,brief,ledger,providers,collect=collector(),researchVersion='v4',freshResearch=false,researchModel='gemini-3.1-pro-preview'}){
- if(!['gemini-3.1-pro-preview','gemini-4-argon'].includes(researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+ if(!['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
  const key=name=>stageKey(brief,name,researchVersion);
  return ledger.once(key(phase),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   try{
