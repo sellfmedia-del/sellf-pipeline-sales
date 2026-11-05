@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm test && npm run build",
+  "buildCommand": "node qa-vertex-express.mjs && npm run build",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {

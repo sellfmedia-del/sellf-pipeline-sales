@@ -1,0 +1,9 @@
+import {mkdir,writeFile} from 'node:fs/promises';
+if(process.env.VERCEL_ENV!=='preview'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||process.env.VERCEL_GIT_COMMIT_REF!=='qa/vertex-express-access-20261105'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Isolated probe required');
+const key=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY,summary={configured:Boolean(key),model:'gemini-3.1-pro-preview',maximumCostTry:1,accountSettingsChanged:false};
+try{
+ if(!key)throw Error('not_configured');
+ const r=await fetch('https://aiplatform.googleapis.com/v1/publishers/google/models/'+summary.model+':generateContent',{method:'POST',headers:{'x-goog-api-key':key,'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({contents:[{role:'user',parts:[{text:'Return JSON {"ok":true}.'}]}],generationConfig:{maxOutputTokens:256,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'LOW'}}})});
+ const data=await r.json();summary.status=r.status;summary.code=data.error?.status;summary.reasons=data.error?.details?.map(d=>d.reason).filter(Boolean);summary.message=data.error?.message?.replaceAll(key,'[credential]').slice(0,200);summary.finish=data.candidates?.[0]?.finishReason;summary.usage=data.usageMetadata;summary.content=data.candidates?.[0]?.content?.parts?.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');
+}catch(error){summary.code=error.name==='TimeoutError'?'timeout':String(error.message).replaceAll(key||'NO_SECRET','[credential]').slice(0,80);}
+await mkdir('offer-engine/public',{recursive:true});await writeFile('offer-engine/public/qa-vertex-express.json',JSON.stringify(summary));console.log('VERTEX_EXPRESS_PROBE '+JSON.stringify(summary));
