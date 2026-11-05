@@ -1,39 +1,43 @@
 # Offer run repair review
 
-Status: isolated branch and preview only. Production source is unchanged at fa694ebd82a299b34681df5b52dd300d1e40128d. No production database, migration, RLS, Auth, customer-record or environment changes were made.
+Status: isolated branch and preview only. Production source remains fa694ebd82a299b34681df5b52dd300d1e40128d. No production database, migration, RLS, Auth, customer-record or environment changes were made.
 
-## Changes
+## Root causes and changes
 
-- Each newly opened offer has one UUID shared by logo cleanup, BHS, pricing and proposal translation. Existing additional-run RPCs provide its independent 50 TRY ceiling. Old card budgets, paid receipts and uncertain reservations are retained.
-- The signed audit ticket pins the run and approved model. Resume and double submission cannot change either. Fresh research bypasses the partial brand cache; explicit saved-offer reuse remains separate.
-- Compact screenshots use existing pixel checks before paid localisation. If backdrop classification is unavailable, valid edge transparency and all uncertain interior ink are retained, with visible review and the original background color.
-- Read-source citation IDs bind observations to actual source excerpts. Trusted IDs recover canonical URLs and quotes, including visible Markdown labels. Legacy source checks and numeric contradiction checks remain active.
-- A useful server-filtered synthesis can be returned without buying an entire replacement report. Sparse or unusable output keeps the existing bounded alternate path.
-- An optional Vertex route through AI Gateway preserves the exact model, context, output ceiling, usage settlement and 50 TRY ledger cap. It checks access balance and current endpoint prices first, restricts the provider, and rejects unexpected model/provider responses. Confirmed zero-provider-attempt refusals settle to zero. Ambiguous requests keep their reservation.
+- New offer openings inherited a card's historical reservations. One fresh UUID is now shared by logo, BHS, pricing and translation, using the existing independent-run budget RPC. The 50 TRY ceiling applies to that run. Old receipts and ambiguous reservations are retained; duplicate submission and signed resume keep the same run.
+- Pro/Argon service failures consumed conservative reservations, leaving insufficient room for translation. Existing-account Gemini 2.5 Pro is now the BHS default; Gemini 2.5 Flash handles support tasks. The approved alternate keeps the same contract and the ledger checks its entire envelope before any paid call.
+- A 16k output ceiling truncated the report before its 24-area evaluation. The reviewed Pro envelope can reach 32k within the same hard cap. Concise fields leave room for all areas without removing research context.
+- Findings selected unrelated quotes from otherwise relevant pages. Read-source proof IDs now bind canonical URLs and actual excerpts. References to findings resolve to their original sources; fabricated IDs and conflicting numbers still fail.
+- Recorded HTTPS, viewport, platform and tag metadata previously lacked citable evidence, so technical fields stayed empty. Those server observations now have distinct HTML-signal proofs with explicit limitations. Downloaded HTML cannot prove actual tracking operation, mobile experience, speed or the absence of a customer mechanism; such claims are qualified as hypotheses.
+- Compact screenshots use pixel checks before paid localisation. Valid edge transparency and original ink survive classifier failure, with visible interior-review notice and the original background. No replacement logo is generated.
 
-## Verification
+## Actual acceptance
 
-Repository tests, targeted source/cost/transport tests and production/preview builds pass. The 18 browser cases were exercised separately on desktop/mobile; the ordinary test command skips them unless LOGO_TEST_CHROMIUM is set. The repository has no configured lint or typecheck script.
+All commercial briefs were synthetic. Research came from public brand sources. Previously paid discovery and BHS receipts were reused for subsequent support checks; the accepted totals include their actual research cost and the 5 TRY infrastructure allowance. No customer record, offer publication or email was created.
 
-Actual public-brand provider tests with synthetic commercial briefs did **not** pass end-to-end acceptance:
-
-| Trial | Outcome | Committed usage/reservation ceiling |
+| Actual trial | Outcome | Usage plus reservation ceiling |
 | --- | --- | --- |
-| Existing Pro-first order | Report projected to 2 supported findings and 5 available areas; depth gate failed | 49.77 TRY |
-| Source-proof contract, Pro-first | Synthesis timed out; alternate could not fit the remaining ceiling | 42.58 TRY |
-| Argon-first order | Planning models unavailable; no report | 17.55 TRY |
+| Existing Pro/Argon order | Failed: unavailable models and/or sparse projection | 17.55–49.77 TRY |
+| 2.5 Pro with the old 16k ceiling | Failed: truncated report, no area coverage | 45.93 TRY |
+| Full Pro output without technical proofs | Five findings, nine supported areas; depth gate failed | 27.88 TRY |
+| Source-bound Pro BHS and Pro English | Passed; 13 supported areas / all 24 evaluated | 30.40 TRY |
+| Repeated Pro English | Failed: HTTP 503 and alternate could not fit remaining ceiling | 44.10 TRY |
+| Pro BHS plus Flash support | Passed; English proposal and both alternatives | 28.04 TRY |
+| Actual logo-first order, repeated English | Passed despite a real Flash HTTP 503; Argon completed translation. Real logo classifier returned HTTP 200 | 32.14 TRY |
 
-These ceilings include uncertain reservations and a 5 TRY infrastructure allowance. They are not provider invoices. No trial was presented as a successful full BHS or English proposal.
+The last trial retained 3.12 TRY for the ambiguous 503 request rather than claiming a refund. It produced a transparent actual brand logo without interior-review fallback, a source-bound BHS (five findings, 13 supported areas, all 24 evaluated), exact deterministic pricing and an English proposal. Status reload added no provider call or charge. These totals are accounting ceilings, not provider invoices or a guarantee of identical costs for every brief.
 
-AI Gateway credentials/balance can be read with the existing project OIDC token, but Pro requests return HTTP 403 no_providers_available: the account is on the free tier. No model provider was attempted. A native Vertex probe with the existing Google API key returns HTTP 401 and requires different account authentication.
+Repository tests, targeted source/cost/model tests, production and preview builds pass. Optional browser cases are skipped by the ordinary command and were exercised separately; the repair review also passes at 1280px and 390px with both proposal options, no page error and no document overflow. No lint or typecheck script is configured.
 
-## Runtime choices and remaining gate
+## Runtime choices and known limits
 
-- OFFER_MODEL_TRANSPORT defaults to google. Optional value vertex is prepared but disabled.
-- OFFER_BHS_PRIMARY_MODEL defaults to gemini-3.1-pro-preview. Only that model and gemini-4-argon are allowed; the choice is signed into the job. Argon-first is not enabled by default because its live test failed.
-- Vertex acceptance requires paid AI Gateway model access. Activating a new paid service requires the user's explicit approval. Do not enable the route or merge to main until a real BHS, supported report content and English offer pass the 50 TRY test.
-- The existing tariff expiration on 15 November 2026 remains a required price-review gate. Rates and expiration were not silently extended.
+- OFFER_BHS_PRIMARY_MODEL defaults to gemini-2.5-pro. Only approved Pro models may research BHS.
+- OFFER_SUPPORT_MODEL defaults to gemini-2.5-flash. Published reviewed rates are used for both models, including thinking tokens; a returned-model check prevents silent substitution.
+- OFFER_MODEL_TRANSPORT defaults to google. The optional Vertex/Gateway route remains disabled; the connected free Gateway tier refused Pro requests before a provider attempt. No paid-service activation or top-up occurred.
+- The existing tariff review gate expires on 15 November 2026. It was not silently extended.
+- Both selected 2.5 models are officially scheduled to shut down / auto-route on 1 December 2026. New paid calls are blocked from that date, and completed receipts remain reusable. This is a working interim profile on the existing account; a modern Pro route must be accepted before retirement. See https://ai.google.dev/gemini-api/docs/deprecations.
+- Provider uptime and the availability of public data remain external dependencies. Missing figures stay unavailable; no revenue, traffic or ad results are invented to fill the report.
 
-## Rollback
+## Release and rollback
 
-No schema rollback is needed. Before any production release, retain fa694ebd82a299b34681df5b52dd300d1e40128d and its current deployment. The new transport stays disabled until separately validated and approved.
+Review the actual-result preview and approve production separately before merging. Retain fa694ebd82a299b34681df5b52dd300d1e40128d and its current Vercel deployment. Rollback needs only a Git revert / previous deployment; no schema rollback is needed. Review-only fixture pages are on a separate QA branch and are excluded from the release PR.
