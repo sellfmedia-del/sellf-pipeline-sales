@@ -57,3 +57,21 @@ test('a useful filtered report is reused immediately with identical content and 
  calls=0;const sparse={data:base};await recoverModelStage(async()=>{if(++calls===1)throw Object.assign(Error(),{code:'model_output_invalid',safeResult:sparse});throw Object.assign(Error(),{providerStatus:503});},'synthesis',{model:'gemini-3.1-pro-preview'},{wait:async()=>{}});
  assert.equal(calls,2);
 });
+
+test('technical findings cite recorded HTML metadata with explicit limits; fabricated signal cards fail',()=>{
+ const f=fixture(),technicalSignals={https:true,mobileViewport:true,platformHints:['shopify'],analyticsTags:false,metaPixelTag:false};
+ const packet={...f.c.packet,sources:[{...f.c.packet.sources[0],technicalSignals}]};
+ const compact={packet:{...packet,sources:[{...packet.sources[0],technicalSignals:{ref:'signals1'}}],sharedTechnicalSignals:{signals1:technicalSignals}},searchEvidence:[]};
+ const t=citationInput(compact),proof=t.cards.find(p=>p.method==='html-signals'&&p.quote.includes('shopify'));
+ assert.ok(proof);assert.match(proof.scope,/web sayfasından alıntı/);
+ const raw={...f.c.report,sources:[],findings:[{...f.finding,statement:'İndirilen HTMLde Shopify platform ipucu gözlendi.',reportExcerpt:'İndirilen HTMLde Shopify platform ipucu gözlendi.',sourceIds:[proof.id]}],researchCoverage:[]};
+ const got=groundOfferReport(raw,{packet:{...packet,citationCards:t.cards}});assert.equal(got.findings.length,1);assert.equal(got.sources[0].verification.method,'html-signals');assert.equal(got.sources[0].sourceType,'secondary');
+ const forgedPacket={...packet,sources:[{...packet.sources[0],technicalSignals:{...technicalSignals,platformHints:['other']}}],citationCards:t.cards};
+ assert.equal(groundOfferReport(raw,{packet:forgedPacket}).findings.length,0);
+});
+test('coverage references to existing findings resolve to their original sources without authorising invalid sources or numbers',()=>{
+ const f=fixture(),raw={...f.c.report,sources:[f.source],findings:[f.finding],researchCoverage:{financial_2:{status:'observed',observation:'The Mum Planner fiyatı £39,99.',sourceIds:['price']}}};
+ const packet={...f.c.packet,citationCards:f.transport.cards},got=groundOfferReport(raw,{packet});
+ assert.ok(got.researchCoverage.some(c=>c.status==='observed'&&c.sourceIds.includes(f.proof.id)));
+ raw.researchCoverage.financial_2.observation='Fiyat £999,99.';assert.ok(!groundOfferReport(raw,{packet}).researchCoverage.some(c=>c.status==='observed'));
+});

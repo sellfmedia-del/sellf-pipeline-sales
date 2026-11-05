@@ -1,4 +1,4 @@
-import {hydrateCitationSources,verifiedCitationCards} from './citation-cards.mjs';
+import {hydrateCitationSources,verifiedCitationCards,technicalCitations} from './citation-cards.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
@@ -27,6 +27,7 @@ function completedForecast(finding,evidence){
 export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
  const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method}));
  for(const search of searchEvidence)for(const s of search.results||[])records.push({url:s.url,aliases:[s.url],title:s.title,text:s.content||'',segments:[s.content||''],method:'search-snippet'});
+ for(const source of packet?.sources||[])for(const quote of technicalCitations(source))records.push({url:source.finalUrl||source.url,aliases:[source.url,source.finalUrl],title:source.title,text:quote,segments:[quote],method:'html-signals'});
  const trusted=verifiedCitationCards(packet?.citationCards,records);
  for(const proof of trusted.values())records.push({url:proof.url,aliases:[proof.url],title:proof.title,text:proof.quote,segments:[proof.quote],method:proof.method});
  const hydrated=hydrateCitationSources(value,trusted);
