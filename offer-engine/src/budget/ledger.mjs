@@ -7,7 +7,7 @@ export class BudgetError extends Error{constructor(code,message){super(message);
 // A tariff is valid only for its reviewed date range. Expired/unknown prices
 // fail closed. The conversion is a conservative envelope, not a quoted FX rate.
 export const tariff=Object.freeze({version:'sellf-bounded-2026-11-05-v2',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,normalTargetKurus:3000,capKurus:5000,infraKurus:500,
- models:{'gemini-2.5-pro':{input:1.25,output:10,cachedInput:.125},'gemini-3.1-pro-preview':{input:2,output:12,cachedInput:.2},'gemini-4-argon':{input:2,output:10,cachedInput:.1},'gemini-3.8-flash':{input:.75,output:3.75,cachedInput:.075}},tavilyCredit:.008});
+ models:{'gemini-2.5-flash':{input:.30,output:2.50,cachedInput:.03},'gemini-2.5-pro':{input:1.25,output:10,cachedInput:.125},'gemini-3.1-pro-preview':{input:2,output:12,cachedInput:.2},'gemini-4-argon':{input:2,output:10,cachedInput:.1},'gemini-3.8-flash':{input:.75,output:3.75,cachedInput:.075}},tavilyCredit:.008});
 export function tariffReadiness(now=Date.now()){
  const remaining=Date.parse(tariff.expires)-now,valid=Number.isFinite(remaining)&&remaining>0;
  return {status:!valid?'expired':remaining<=7*86400000?'review_due':'valid',expires:tariff.expires,paidCallsAllowed:valid,daysRemaining:Math.max(0,Math.ceil(remaining/86400000))};
