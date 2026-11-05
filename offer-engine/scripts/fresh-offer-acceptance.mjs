@@ -11,7 +11,7 @@ import {prepareUploadedLogo} from '../src/upload.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {offerGeminiKey} from '../src/config.mjs';
 import {response} from '../test/fixtures/offer.mjs';
-if(process.env.VERCEL_ENV!=='preview'||process.argv[2]!=='--run'||process.env.VERCEL_GIT_COMMIT_REF!=='fix/offer-run-isolation-and-logo'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Explicit isolated acceptance required');
+if(process.env.VERCEL_ENV!=='preview'||process.argv[2]!=='--run'||process.env.VERCEL_GIT_COMMIT_REF!=='qa/fresh-offer-acceptance-20261105'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Explicit isolated acceptance required');
 const secret=offerGeminiKey();if(!secret)throw Error('Preview provider not configured');
 let charged=500,generations=0;const rows=new Map(),runId=randomUUID();
 const ledger=createLedger(async(op,a={})=>{
