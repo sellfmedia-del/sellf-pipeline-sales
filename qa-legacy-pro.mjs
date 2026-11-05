@@ -1,0 +1,10 @@
+import {mkdir,writeFile} from 'node:fs/promises';
+if(process.env.VERCEL_ENV!=='preview'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||process.env.VERCEL_GIT_COMMIT_REF!=='qa/legacy-pro-access-20261105'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Isolated probe required');
+const key=process.env.OFFER_GEMINI_API_KEY||process.env.GEMINI_API_KEY,summary={configured:Boolean(key),model:'gemini-2.5-pro',maximumCostTry:1,accountSettingsChanged:false};
+try{
+ if(!key)throw Error('not_configured');
+ const url='https://generativelanguage.googleapis.com/v1beta/models/'+summary.model,headers={'x-goog-api-key':key,'Content-Type':'application/json'};
+ const info=await fetch(url,{headers,signal:AbortSignal.timeout(15000)});summary.modelStatus=info.status;
+ if(info.ok){const r=await fetch(url+':generateContent',{method:'POST',headers,signal:AbortSignal.timeout(50000),body:JSON.stringify({contents:[{role:'user',parts:[{text:'Return JSON {"ok":true}.'}]}],generationConfig:{maxOutputTokens:512,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:128}}})});const data=await r.json();summary.status=r.status;summary.code=data.error?.status;summary.message=data.error?.message?.replaceAll(key,'[credential]').slice(0,180);summary.version=data.modelVersion;summary.finish=data.candidates?.[0]?.finishReason;summary.usage=data.usageMetadata;summary.content=data.candidates?.[0]?.content?.parts?.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');}
+}catch(error){summary.code=error.name==='TimeoutError'?'timeout':String(error.message).replaceAll(key||'NO_SECRET','[credential]').slice(0,80);}
+await mkdir('offer-engine/public',{recursive:true});await writeFile('offer-engine/public/qa-legacy-pro.json',JSON.stringify(summary));console.log('LEGACY_PRO_PROBE '+JSON.stringify(summary));
