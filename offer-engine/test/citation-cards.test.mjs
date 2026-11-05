@@ -25,6 +25,7 @@ test('known proof IDs restore their exact URL/quote and can be referenced withou
  const got=groundOfferReport(raw,{packet});assert.equal(got.findings.length,1);assert.equal(got.sources[0].url,f.url);assert.equal(got.sources[0].quote,f.proof.quote);
  raw.sources=[{...f.source,url:'https://invented.example/',quote:'An invented quotation must never become evidence.'}];
  assert.equal(groundOfferReport(raw,{packet}).sources[0].url,f.url);
+ raw.sources={malformed:true};assert.equal(groundOfferReport(raw,{packet}).findings.length,1,'trusted references survive malformed source formatting');
 });
 test('forged cards, invented IDs and conflicting numbers fail the unchanged source and numeric checks',()=>{
  const f=fixture(),fake=citationInput({packet:{...f.c.packet,sources:[{...f.c.packet.sources[0],excerpts:[{text:'An invented price of £999.99 is never present in the actual source packet.'}]}]},searchEvidence:[]}).cards[0];

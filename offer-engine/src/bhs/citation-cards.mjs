@@ -44,7 +44,7 @@ export function hydrateCitationSources(value,trusted){
  const raw=structuredClone(value?.originalReport??value??{}),ids=new Set();
  function references(v){if(!v||typeof v!=='object')return;if(Array.isArray(v)){v.forEach(references);return;}for(const [key,child]of Object.entries(v)){if(key==='sourceIds'&&Array.isArray(child))child.forEach(id=>ids.add(id));else if(key!=='originalReport')references(child);}}
  references(raw);
- const sources=new Map((raw.sources||[]).map(s=>[s.id,s]));
+ const sources=new Map((Array.isArray(raw.sources)?raw.sources:[]).filter(s=>s&&typeof s.id==='string').map(s=>[s.id,s]));
  for(const id of new Set([...sources.keys(),...ids])){
   const proof=trusted.get(id);if(!proof)continue;
   sources.set(id,{...sources.get(id),id,url:proof.url,title:proof.title,quote:proof.quote,scope:proof.scope,sourceType:sources.get(id)?.sourceType||'secondary',publishedAt:null,period:sources.get(id)?.period||null});

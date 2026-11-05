@@ -17,15 +17,15 @@ test('a fresh card run isolates old commitments; signed resume and downstream pr
  try{
   const f=await offerFixture(),old=memoryLedger(),a=memoryLedger(),b=memoryLedger();
   old.status=async()=>({chargedKurus:4980,capKurus:5000});
-  const ledgers=new Map([[first,a],[second,b]]),seen=[];
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,validateWebsite:async()=>{},
+  const ledgers=new Map([[first,a],[second,b]]),seen=[];let configuredModel='gemini-4-argon';
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getResearchModel:()=>configuredModel,validateWebsite:async()=>{},
    getLedger:async(_req,_res,lead,options)=>{assert.equal(lead,'lead-1');seen.push(options?.researchRunId);return ledgers.get(options?.researchRunId)||old;},
    getProviders:()=>({configured:()=>true}),
-   runStage:async({phase,brief,ledger,researchVersion,freshResearch})=>{assert.equal(freshResearch,true);ledger.rows.set(stageKey(brief,phase,researchVersion),{state:'complete',value:phase==='synthesis'?f.synthesis:phase==='scope'?{scopePlan:f.scope,proposalCopy:f.copy}:{}});}
+   runStage:async({phase,brief,ledger,researchVersion,freshResearch,researchModel})=>{assert.equal(researchModel,'gemini-4-argon');assert.equal(freshResearch,true);ledger.rows.set(stageKey(brief,phase,researchVersion),{state:'complete',value:phase==='synthesis'?f.synthesis:phase==='scope'?{scopePlan:f.scope,proposalCopy:f.copy}:{}});}
   });
   const start=response();await handler(req({action:'start',requestId:'fresh_run_request_1111',brief:f.brief,context:{leadId:'lead-1',spaceId:'space-1',researchRunId:first}}),start);
   assert.equal(start.code,200);assert.equal(start.data.cost.chargedKurus,500);
-  let ticket=start.data.ticket,done;
+  let ticket=start.data.ticket,done;assert.equal(createPricingProof(secret).decode(ticket,session,host,Date.now()).researchModel,'gemini-4-argon');configuredModel='gemini-3.1-pro-preview';
   for(let i=0;i<4;i++){const res=response();await handler(req({action:'advance',brief:f.brief,ticket,context:{researchRunId:second}}),res);assert.ok([200,202].includes(res.code));ticket=res.data.ticket||ticket;if(res.data.result)done=res.data;}
   if(!done){const res=response();await handler(req({action:'status',brief:f.brief,ticket}),res);assert.equal(res.code,200);done=res.data;}
   assert.ok(done?.pricingProof);assert.ok(seen.every(id=>id===first),'client cannot change the signed run when resuming');
