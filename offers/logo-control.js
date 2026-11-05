@@ -49,7 +49,7 @@
         container.querySelector('.ol-comparison figure:last-child figcaption').textContent=original?'Teklifte kullanılacak orijinal görsel':'Şeffaf logo';
         container.querySelector('.ol-checker img').alt=original?'İşlenmemiş orijinal görsel':'Arka planı kaldırılan marka logosu';
         container.querySelector('.ol-quality').textContent=(original?'Orijinal görsel hazır':'Şeffaf PNG hazır')+' · '+candidate.quality.width+' × '+candidate.quality.height+' px. Teklif taslağı için hazırlandı.';
-        result.hidden=false;status.textContent=data.fallbackReason==='cleanup_unavailable'?'Arka plan temizliği tamamlanamadı. Yüklediğin orijinal görsel korundu; teklif üzerinde görünümünü kontrol edip onaylaman gerekiyor.':original?'Görsel filtrelenmedi; kırpılmadan, arka planıyla birlikte teklife yerleştirilecek. Yerleşimi teklif üzerinde kontrol et.':'Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
+        result.hidden=false;status.textContent=data.fallbackReason==='cleanup_unavailable'?'Arka plan temizliği tamamlanamadı. Yüklediğin orijinal görsel korundu; teklif üzerinde görünümünü kontrol edip onaylaman gerekiyor.':original?'Görsel filtrelenmedi; kırpılmadan, arka planıyla birlikte teklife yerleştirilecek. Yerleşimi teklif üzerinde kontrol et.':candidate.quality?.interiorReviewRequired?'Dış arka plan temizlendi. İç boşlukların otomatik kontrolü tamamlanamadı; logo görünümünü teklif üzerinde kontrol et.':'Arka plan temizlendi. Teklif üzerindeki yerleşimi kontrol et.';apply();
       }catch(error){
         if(disposed||request!==epoch)return;
         status.textContent=error.message||'Görsel işlenemedi.';onChange({status:'error',sourceType:'upload'});

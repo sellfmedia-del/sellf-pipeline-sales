@@ -33,6 +33,10 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
     job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v5'};
+    if(body.context?.researchRunId!==undefined){
+     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(body.context.researchRunId))throw new BudgetError('budget_context','Teklif çalışması geçersiz.');
+     job.researchRunId=body.context.researchRunId;
+    }
     if(body.context?.sourceOfferId){
      if(!/^[a-f0-9-]{36}$/.test(body.context.sourceOfferId)||!/^[a-f0-9-]{36}$/.test(body.context.researchRunId||''))throw Error('Teklif kaydı geçersiz.');
      const source=await getSourceOffer(req,body.context.sourceOfferId);
@@ -115,7 +119,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     const providers=getProviders({ledger,manualRecoveryRound});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
-    await runStage({phase,brief,ledger,providers,researchVersion,...(job.sourceOfferId?{freshResearch:true}:{})});
+    await runStage({phase,brief,ledger,providers,researchVersion,...(job.researchRunId?{freshResearch:true}:{})});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
     const nextPhase=phases[phases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});

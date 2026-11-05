@@ -89,7 +89,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect=coll
   }
   if(phase==='synthesis'){
    const evidence=await previous('evidence');
-   const candidate=evidence.reusedSynthesis||(researchVersion==='v5'?await readReusableResearch(brief,ledger):null);
+   const candidate=!freshResearch&&(evidence.reusedSynthesis||(researchVersion==='v5'?await readReusableResearch(brief,ledger):null));
    const reuse=candidate;
    // The original provider's paid accounting stays in its own immutable row.
    // A free coordinator must not present that old charge as new settled usage.
