@@ -1,6 +1,6 @@
 import {proposalLanguage,localizeProposal} from '../src/proposal/language.mjs';
 import {budgetFor,BudgetError} from '../src/budget/ledger.mjs';
-import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {createRuntimeProviders as createBoundedProviders} from '../src/budget/providers.mjs';
 import {quoteCurrency} from '../src/pricing/currency.mjs';
 import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {randomUUID} from 'node:crypto';

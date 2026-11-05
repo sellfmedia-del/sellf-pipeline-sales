@@ -10,7 +10,7 @@
     if (!model || !context?.lead?.id || !context.spaceId) return;
     if (active) return;
     const draft = model.createDraft(context);
-    const researchRuns=variant?{reuse:crypto.randomUUID(),new:crypto.randomUUID()}:null;
+    const researchRuns={reuse:crypto.randomUUID(),new:crypto.randomUUID()};
     if(variant?.info){for(const key of ['segment','currency','language'])if(variant.info[key])draft[key]=variant.info[key];draft.brandName=variant.info.brand?.name||draft.brandName;draft.website=variant.info.brand?.website||'';}
     const dialog = document.createElement('dialog');
     dialog.id = 'offer-brief-dialog';
@@ -87,7 +87,7 @@
 
     const logoControl = window.PipelineLogoControl?.mount(dialog.querySelector('.ob-auto-logo'), {
       getWebsite: () => form.elements.website.value,
-      getContext: () => ({leadId:source.leadId,spaceId:source.spaceId}),
+      getContext: () => ({leadId:source.leadId,spaceId:source.spaceId,researchRunId:variant&&form.elements.bhsMode.value==='reuse'?researchRuns.reuse:researchRuns.new}),
       getBrandName: () => form.elements.brandName.value,
       onChange: value => { draft.logo = value; dialog.querySelector('#error-logoUrl').textContent = ''; }
     });
@@ -286,7 +286,7 @@
     });
     function showAuditCost(cost){
       const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi (kullanım ve rezerv): '+money(cost.attemptChargedKurus)+' TL · ':'')+'Kart toplamı (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
+      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi (kullanım ve rezerv): '+money(cost.attemptChargedKurus)+' TL · ':'')+'Bu teklif çalışması (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
       const detail=dialog.querySelector('.ob-cost-detail'),b=cost.breakdown;detail.hidden=!b;
       if(b)dialog.querySelector('.ob-cost-copy').textContent='Bu kontrolde ayrıştırılabilen kullanım: '+money(b.verifiedUsageKurus)+' TL · Korunan model/işlem rezervi: '+money(b.knownReservationKurus)+' TL · Önceki kullanım ve rezervler: '+money(b.historicalCommittedKurus)+' TL · Sabit altyapı rezervi: '+money(b.infraReserveKurus)+' TL. Kullanım makbuzu bulunmayan rezervler kesinleşmiş harcama olarak gösterilmez.';
     }
@@ -305,7 +305,7 @@
       try{
         for(;;){
           notice.textContent=action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
-          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,...(variant?{sourceOfferId:variant.sourceOfferId,researchRunId:researchRuns.new}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
           if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}

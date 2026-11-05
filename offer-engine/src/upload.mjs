@@ -3,7 +3,7 @@ import { finishLogo } from './pixels.mjs';
 import {cropLogoRegion} from './logo-region.mjs';
 
 const MAX_BYTES=2*1024*1024;
-export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
+export async function prepareUploadedLogo(image,{locate,chooseBackdrop,localFirst=false}={}) {
   if(typeof image!=='string'||image.length>Math.ceil(MAX_BYTES/3)*4+100)throw new Error('Görsel en fazla 2 MB olabilir.');
   const match=/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
   if(!match||match[2].length%4)throw new Error('PNG, JPG veya WebP ekran görüntüsü yükle.');
@@ -15,7 +15,14 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
   const {data}=await sharp(source).ensureAlpha().raw().toBuffer({resolveWithObject:true});
   let transparent=false;for(let i=3;i<data.length;i+=4)if(data[i]<10){transparent=true;break;}
   let cropped={image:source,backgroundPoints:[]},region;
-  if(locate&&!transparent){region=await locate(source);cropped=await cropLogoRegion(source,region);}
+  if(locate&&!transparent){
+    // A closely cropped screenshot does not need AI localisation. Use the same
+    // pixel checks first; a failed local crop still takes the full vision path.
+    if(localFirst&&meta.width<=1600&&meta.height<=600){
+      try{return await prepareUploadedLogo(image,{chooseBackdrop});}catch{/* Locate a wider/complex screenshot below. */}
+    }
+    region=await locate(source);cropped=await cropLogoRegion(source,region);
+  }
   let processed,extractionError;
   try{processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints});}catch(error){if(!region)throw error;extractionError=error;}
   // A locator box can be a few pixels inside the artwork. Try bounded wider
@@ -31,7 +38,15 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
     }
   }
   if(!processed)throw extractionError;
-  if(chooseBackdrop&&processed.quality.matteStable&&!processed.quality.touchesEdge)processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints,chooseBackdrop});
+  if(chooseBackdrop&&processed.quality.matteStable&&!processed.quality.touchesEdge){
+    try{processed=await finishLogo(cropped.image,undefined,{backgroundPoints:cropped.backgroundPoints,chooseBackdrop});}
+    catch(error){
+      // Provider failure must not discard a pixel-verified transparent result.
+      // Preserve all uncertain interior ink and require a visible review.
+      if(!['model_timeout','model_network','provider_error','model_temporarily_unavailable','logo_temporarily_unavailable','budget_limit','budget_uncertain','budget_pending','quota','model_content_invalid','model_output_invalid','provider_format','incomplete','invalid_report','not_configured','fx_unavailable','fx_limit','tariff_expired','model_deadline'].includes(error.code))throw error;
+      processed.quality.interiorReviewRequired=true;
+    }
+  }
   const q=processed.quality;
   if(!q.transparency||!q.matteStable||q.changedSolid||q.compositingError>=1.5){const error=new Error('Bu görselde arka plan logodan güvenle ayrılamadı. Logoya yakın, düz arka planlı bir ekran görüntüsü seç.');error.logoQuality=q;throw error;}
   if(q.touchesEdge)throw new Error('Logo görselin kenarına değiyor. Logonun çevresinde biraz boşluk bulunan bir ekran görüntüsü seç.');
@@ -39,7 +54,7 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop}={}) {
   // cutoff incorrectly rejected otherwise sharp header-logo screenshots.
   if(Math.max(q.width-24,q.height-24)<96||Math.min(q.width-24,q.height-24)<8)throw new Error('Logo teklif için fazla küçük. Daha yüksek çözünürlüklü bir ekran görüntüsü seç.');
   const dataUrl=buffer=>'data:image/png;base64,'+buffer.toString('base64');
-  const background=q.lightFraction>.03?(q.darkFraction>.15?'#626262':'#171717'):'#ffffff';
+  const background=q.interiorReviewRequired?q.originalBackground:q.lightFraction>.03?(q.darkFraction>.15?'#626262':'#171717'):'#ffffff';
   const result={generated:false,sourceType:'upload',candidates:[{id:'uploaded-logo',source:dataUrl(source),image:dataUrl(processed.png),placement:{background,area:'logo-only'},quality:{...q,status:'review',requiresReview:true,sourceKind:'uploaded-screenshot',...(cropped.region?{detectedRegion:cropped.region}:{})}}]};
   if(JSON.stringify(result).length>3800000)throw new Error('Görselin işlenmiş boyutu fazla büyük. Yalnızca logo alanını içeren bir ekran görüntüsü seç.');
   return result;
