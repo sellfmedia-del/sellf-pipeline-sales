@@ -13,7 +13,7 @@ function reversedPercentage(value,evidence){
  return /\b\d+(?:[.,]\d+)?%\s+cheaper than\b/iu.test(evidence)&&/%\s*\d+(?:[.,]\d+)?[^.!?\n]{0,35}\bdaha\s+(?:yüksek|pahalı)/iu.test(value)
   ||/\b\d+(?:[.,]\d+)?%\s+(?:more expensive|higher) than\b/iu.test(evidence)&&/%\s*\d+(?:[.,]\d+)?[^.!?\n]{0,35}\bdaha\s+ucuz/iu.test(value);
 }
-const unmeasuredJudgement=value=>/(?:gelir sağlığı[^.!?]{0,35}güçlü|bütçe ayırabilecek kapasite|pazarlama yatırım gücüne|funnel alt kısmı[^.!?]{0,50}sağlıklı|sektöre göre iyi|kategorisi için sağlıklı|sektör standardında|sağlıklı sepet|sağlam[^.!?]{0,30}altyapı|sürekli optimize|güçlü marka bilinirliği|agresif bir büyüme trendi|güçlü bir e-ticaret metrik profili|pazar liderli|ana operasyonel darboğaz)/iu.test(value||'');
+const unmeasuredJudgement=value=>/(?:gelir sağlığı[^.!?]{0,35}güçlü|bütçe ayırabilecek kapasite|pazarlama yatırım gücüne|funnel alt kısmı[^.!?]{0,50}sağlıklı|sektöre göre iyi|kategorisi için sağlıklı|sektör standardında|sağlıklı sepet|sağlam[^.!?]{0,30}altyapı|sürekli optimize|güçlü marka bilinirliği|agresif bir büyüme trendi|güçlü bir e-ticaret metrik profili|pazar liderli|ana operasyonel darboğaz|kritik bir eksiklik|(?:bülten|sadakat|analytics|analiz|analitik|pixel|piksel|ölçüm|mekanizma)[^.!?\n]{0,180}(?:eksik|yok|gözlemlenmemiş|rastlanma|bulunama))/iu.test(value||'');
 const hypothesis='Bu dış kaynak gözleminin iş etkisi, güncel iç veriler ve aynı dönem/coğrafyadaki uygun kıyaslarla doğrulanacak bir hipotezdir. Tek başına finansal sağlık, bütçe kapasitesi veya sektör üstünlüğü kanıtı değildir.';
 function completedForecast(finding,evidence){
  if(finding.kind!=='observation'||!/(?:çıkarmış|ulaşmış|artmış|gerçekleşmiş|tamamlanmış|başarmış|elde etmiş|satmış|çıkarıldı|ulaştı|arttı|gerçekleşti|tamamlandı|başardı|elde etti)/iu.test(finding.statement))return false;
@@ -81,6 +81,8 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
    if(a.status==='unavailable'||!supported(a.sourceIds)||reversedPercentage(a.observation,quotes(a.sourceIds))||!supportedNumbers(a.observation,quotes(a.sourceIds))){
     if(a.status!=='unavailable')issues.push({path:'researchCoverage',reason:'unsupported_coverage'});
     a.status='unavailable';a.observation=missing;a.sourceIds=[];
+   }else if(unmeasuredJudgement(a.observation)){
+    issues.push({path:'researchCoverage',reason:'unmeasured_impact_qualified'});a.status='partial';if(!a.observation.startsWith('Görüşmede doğrulanacak hipotez: '))a.observation='Görüşmede doğrulanacak hipotez: '+a.observation.replace(/[,.;:]?\s*(?:ancak )?bu kritik bir eksiklik\.?/giu,'')+' Bu sınırlı dış kaynak gözlemi, mekanizmanın yokluğunu veya çalışmadığını kanıtlamaz.';
    }
   }return result;
  };

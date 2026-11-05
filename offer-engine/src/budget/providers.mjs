@@ -82,7 +82,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    const remaining=()=>recoveryDeadline===undefined?Infinity:recoveryDeadline-now();
    if(remaining()<1000)throw new BudgetError('model_deadline','Bu aşamanın güvenli bekleme süresi doldu; yeni model çağrısı başlatılmadı.');
    if(!geminiKey)throw new BudgetError('not_configured','Gemini bağlantısı gerekli.');
-   if(!Object.hasOwn(tariff.models,model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>(model==='gemini-2.5-pro'?32768:16384))throw new BudgetError('model_budget','Model veya çıktı bütçesi izinli değil.');
+   if(!Object.hasOwn(tariff.models,model)||!Number.isSafeInteger(maxOutputTokens)||maxOutputTokens<1||maxOutputTokens>(model==='gemini-3.8-flash'?16384:32768))throw new BudgetError('model_budget','Model veya çıktı bütçesi izinli değil.');
    const context={...input,...(jsonMode?{outputContract:schema}:{})};delete context.instruction;delete context.outputInstructions;
    const instruction=[input.instruction,input.outputInstructions].filter(x=>typeof x==='string').join('\n');
    if(image&&(!['image/png','image/webp','image/jpeg'].includes(image.mimeType)||typeof image.data!=='string'||image.data.length>1400000))throw new BudgetError('input_budget','Logo tespit girdisi sınırı aşıyor.');
@@ -162,4 +162,4 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
  };
 }
 
-export const createRuntimeProviders=options=>createBoundedProviders({...options,transport:process.env.OFFER_MODEL_TRANSPORT||'google',defaultModel:process.env.OFFER_SUPPORT_MODEL||'gemini-3.8-flash'});
+export const createRuntimeProviders=options=>createBoundedProviders({...options,transport:process.env.OFFER_MODEL_TRANSPORT||'google',defaultModel:process.env.OFFER_SUPPORT_MODEL||'gemini-2.5-pro'});

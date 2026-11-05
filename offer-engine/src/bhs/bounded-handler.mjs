@@ -15,7 +15,7 @@ import {canContinue,abandonedStage,continuationAudit,restoreContinuation} from '
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,getResearchModel=()=>process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-3.1-pro-preview',validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,getResearchModel=()=>process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro',validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
