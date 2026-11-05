@@ -54,7 +54,7 @@ export async function prepareUploadedLogo(image,{locate,chooseBackdrop,localFirs
   // cutoff incorrectly rejected otherwise sharp header-logo screenshots.
   if(Math.max(q.width-24,q.height-24)<96||Math.min(q.width-24,q.height-24)<8)throw new Error('Logo teklif için fazla küçük. Daha yüksek çözünürlüklü bir ekran görüntüsü seç.');
   const dataUrl=buffer=>'data:image/png;base64,'+buffer.toString('base64');
-  const background=q.lightFraction>.03?(q.darkFraction>.15?'#626262':'#171717'):'#ffffff';
+  const background=q.interiorReviewRequired?q.originalBackground:q.lightFraction>.03?(q.darkFraction>.15?'#626262':'#171717'):'#ffffff';
   const result={generated:false,sourceType:'upload',candidates:[{id:'uploaded-logo',source:dataUrl(source),image:dataUrl(processed.png),placement:{background,area:'logo-only'},quality:{...q,status:'review',requiresReview:true,sourceKind:'uploaded-screenshot',...(cropped.region?{detectedRegion:cropped.region}:{})}}]};
   if(JSON.stringify(result).length>3800000)throw new Error('Görselin işlenmiş boyutu fazla büyük. Yalnızca logo alanını içeren bir ekran görüntüsü seç.');
   return result;

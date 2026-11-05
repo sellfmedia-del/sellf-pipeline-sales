@@ -1,3 +1,4 @@
+import {hasGroundedResearch} from '../bhs/research-content.mjs';
 import {BudgetError} from './ledger.mjs';
 import {modelFailure} from './recovery.mjs';
 export const recoveryStages=new Set(['source_plan','source_recovery','methodology_areas','synthesis','scope','semantic','provider_preflight','proposal_translation']);
@@ -10,6 +11,12 @@ export async function recoverModelStage(generate,stage,options,{wait=ms=>new Pro
  try{return await generate(options);}
  catch(error){
   if(!recoverableModelFailure(error))throw error;
+  const safe=error.safeResult,report=safe?.data,areas=report?.researchCoverage?.filter(a=>a.status!=='unavailable'&&a.sourceIds?.length).length||0;
+  // A useful server-filtered report is already the result served after an
+  // exhausted fallback. Do not buy a full replacement just for excluded claims.
+  if(stage==='synthesis'&&error.code==='model_output_invalid'&&hasGroundedResearch(report)&&report.sources.every(s=>s.verification?.status==='quote_matched')&&(report.findings.length>=4||areas>=12)){
+   console.info(JSON.stringify({event:'model_grounded_projection',stage,findings:report.findings.length,areas,additionalPaidCalls:0}));return safe;
+  }
   const primary=modelFailure(options.model,error);
   console.info(JSON.stringify({event:'bhs_model_failure',stage,...primary}));
   const model=options.model==='gemini-4-argon'?'gemini-3.1-pro-preview':'gemini-4-argon';

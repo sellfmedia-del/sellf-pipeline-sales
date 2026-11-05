@@ -41,9 +41,10 @@ try{
  const audit=finished.result,d=audit.data;
  Object.assign(summary,{sourceCount:d.sources.length,findingCount:d.findings.length,availableAreas:d.researchCoverage.filter(a=>a.status!=='unavailable').length,coverage:d.researchCoverage.length,continuity:d.researchContinuity?.status||null});
  await writeFile('offer-engine/public/qa-repair/audit.json',JSON.stringify({brief,audit}));
- if(d.researchContinuity||d.findings.length<4||d.sources.length<4)throw Error('Research depth acceptance failed');
+ if(d.researchContinuity||d.findings.length<4||d.sources.length<4||summary.availableAreas<12)throw Error('Research depth acceptance failed');
  const pricing=await call(createPricingHandler({getSecret:()=>secret}),{action:'start',brief,audit,pricingProof:finished.pricingProof});
  if(pricing.code!==200)throw Error('Pricing failed');
+ await writeFile('offer-engine/public/qa-repair/pricing.json',JSON.stringify(pricing.data.result));
  const image='data:image/png;base64,'+(await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160"><rect width="400" height="160" fill="white"/><text x="40" y="95" font-family="sans-serif" font-size="40" fill="#333">QA LOGO</text></svg>')).png().toBuffer()).toString('base64');
  const logo=await prepareUploadedLogo(image,{localFirst:true,locate:()=>{throw Error('Unexpected paid localisation');}});
  const proposal=await call(createProposalHandler({getSecret:()=>secret,getLedger:async(_q,_r,_lead,options)=>{if(options?.researchRunId!==runId)throw Error('Translation escaped run');return ledger;},getProviders}),{action:'start',context:{leadId:'isolated-repair',spaceId:'isolated-space'},brief,audit,pricing:pricing.data.result,proposalProof:pricing.data.proposalProof,logo:{...logo,logoProof:logoProof(secret,host,logo)}});

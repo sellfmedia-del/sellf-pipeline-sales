@@ -1,3 +1,4 @@
+import {hydrateCitationSources,verifiedCitationCards} from './citation-cards.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
@@ -24,9 +25,12 @@ function completedForecast(finding,evidence){
 // syntactically valid citation as proof that its quote was actually read.
 // Quote matches do not prove semantic entailment; inference stays labelled.
 export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
- const projected=offerReport(value),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
  const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method}));
  for(const search of searchEvidence)for(const s of search.results||[])records.push({url:s.url,aliases:[s.url],title:s.title,text:s.content||'',segments:[s.content||''],method:'search-snippet'});
+ const trusted=verifiedCitationCards(packet?.citationCards,records);
+ for(const proof of trusted.values())records.push({url:proof.url,aliases:[proof.url],title:proof.title,text:proof.quote,segments:[proof.quote],method:proof.method});
+ const hydrated=hydrateCitationSources(value,trusted);
+ const projected=offerReport(hydrated),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
  const sources=(raw.sources||[]).filter(s=>{
   const url=publicUrl(s.url),quote=normalized(s.quote),record=records.find(r=>r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote)));
   if(!record){issues.push({path:'sources.'+s.id,reason:'unread_source_or_unmatched_quote'});return false;}

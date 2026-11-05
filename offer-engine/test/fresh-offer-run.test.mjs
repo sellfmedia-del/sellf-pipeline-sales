@@ -54,3 +54,37 @@ test('a compact logo uses pixel checks without localisation; provider failure re
  const q=result.candidates[0].quality;assert.equal(q.transparency,true);assert.equal(q.changedSolid,0);assert.equal(q.interiorReviewRequired,true);assert.equal(q.requiresReview,true);
  assert.notEqual(result.candidates[0].image,image);assert.equal(result.candidates[0].source,image);
 });
+
+test('desktop/mobile: a normal card shares one logo/BHS run; double submit reuses it and a new opening gets a fresh budget',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const {chromium:playwright}=await import('playwright-core'),{default:chromium}=await import('@sparticuz/chromium');
+ const {readFile}=await import('node:fs/promises'),path=await import('node:path');
+ const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
+ try{for(const width of [1280,390]){
+  const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
+  await page.goto('https://preview.vercel.app/offers/recovery-review.html');
+  await page.waitForFunction(()=>typeof document.querySelector('#review-model').onclick==='function');
+  await page.addScriptTag({content:await readFile(path.resolve(process.cwd(),'../offers/logo-control.js'),'utf8')});
+  await page.evaluate(async()=>{
+   const data=await(await fetch('/offers/variants-review-data.json')).json();window.freshCalls=[];
+   window.PipelineLogoRequest=async p=>{freshCalls.push({kind:'logo',context:p.context});return {generated:false,sourceType:'upload-original',processing:'original',logoProof:'synthetic-only',candidates:[{id:'original',image:p.image,source:p.image,quality:{method:'original',width:400,height:160},placement:{background:'#ffffff'}}]};};
+   window.PipelineAuditRequest=async p=>{freshCalls.push({kind:'audit',context:p.context});return {phase:'complete',result:structuredClone(data.audit),pricingProof:'synthetic-only',cost:{chargedKurus:500,capKurus:5000}};};
+  });
+  const seen=[];
+  for(let i=0;i<2;i++){
+   await page.evaluate(()=>PipelineOfferBrief.open({lead:{id:'normal-card',company:'Örnek Marka',name:'Test',notes:'',timeline:[]},spaceId:'space-1'}));
+   for(const [name,value]of Object.entries({segment:'corporate',website:'https://brand.example/',goals:'Ölçülebilir büyüme.',needs:'Kanalların birlikte yönetimi.',services:'Meta ve Google Ads.'})){
+    const input=page.locator('#ob-'+name);if(name==='segment')await input.selectOption(value);else await input.fill(value);
+   }
+   await page.locator('.ol-processing').selectOption('original');
+   await page.locator('.ol-file').setInputFiles({name:'logo.png',mimeType:'image/png',buffer:await sharp({create:{width:400,height:160,channels:4,background:'#fff'}}).png().toBuffer()});
+   await page.locator('.ol-result:not([hidden])').waitFor();
+   await page.locator('.ob-next').evaluate(button=>{button.click();button.click();});
+   await page.locator('.ob-price:not([hidden])').waitFor();
+   const calls=await page.evaluate(()=>freshCalls.splice(0));assert.deepEqual(calls.map(c=>c.kind),['logo','audit']);
+   const id=calls[0].context.researchRunId;assert.match(id,/^[a-f0-9-]{36}$/);assert.equal(calls[1].context.researchRunId,id);seen.push(id);
+   await page.locator('.ob-close').click();
+  }
+  assert.notEqual(seen[0],seen[1]);assert.deepEqual(errors,[]);await page.close();
+ }}finally{await browser.close();}
+});
