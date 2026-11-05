@@ -1,3 +1,4 @@
+import {hasGroundedResearch} from './bhs/research-content.mjs';
 import {assertQuote} from './pricing/currency.mjs';
 export const originalLogoImage=value=>typeof value==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
@@ -14,6 +15,7 @@ export function assertResult(stage,result){
   if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only','read-source-and-quote-filter'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
   if(stage==='audit'&&result.data.quality?.scope==='read-source-and-quote-filter'){
     const sources=result.data.sources||[],ids=new Set(sources.map(s=>s.id));
+    if(result.status==='ready'&&!hasGroundedResearch(result.data)&&result.data.researchContinuity?.status!=='unavailable')throw Error('Boş araştırma hazır BHS olarak kullanılamaz.');
     if(sources.some(s=>s.verification?.status!=='quote_matched')||result.data.findings.some(f=>f.kind==='brief'||!f.sourceIds?.length||f.sourceIds.some(id=>!ids.has(id))))throw Error('Okunmuş kaynak doğrulaması eksik.');
   }
   if(stage==='pricing'){

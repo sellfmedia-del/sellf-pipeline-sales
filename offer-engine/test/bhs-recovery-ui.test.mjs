@@ -49,11 +49,13 @@ test('desktop/mobile continue without completed research or extra paid retries, 
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');
-  for(const kind of ['continuity','english']){
+  for(const kind of ['continuity','english','empty']){
    await page.locator('#review-'+kind).click();await page.locator('.ob-continuation:not([hidden])').waitFor();
    await page.locator('.ob-continue').evaluate(button=>{button.click();button.click();});
    await page.locator('.ob-price:not([hidden])').waitFor();assert.match(await page.locator('#ob-review-title').textContent(),/BHS tamamlanamadı/);
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),['start','advance','continue']);
+   assert.equal(await page.locator('.ob-research-report article').count(),0,'unavailable research must not render six empty dimension cards');
+   assert.equal(await page.locator('.ob-research-report h3').count(),0,'unavailable research must not render empty report headings');
    assert.ok((await page.locator('.ob-footer>p').textContent()).includes('22,32 / 50,00'));
    await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();assert.equal(await page.locator('.ob-pricing article').count(),2);
    await page.locator('.ob-compose').click();

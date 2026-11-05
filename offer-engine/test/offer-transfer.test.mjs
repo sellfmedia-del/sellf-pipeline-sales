@@ -1,3 +1,4 @@
+import {continuationAudit} from '../src/bhs/continuity.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -18,7 +19,7 @@ test('historical One More reports without their read packet cannot leak unverifi
  for(const file of ['one-more-recorded-report.json','one-more-fresh-report.json']){
   const raw=JSON.parse(readFileSync(new URL('./fixtures/'+file,import.meta.url))),before=structuredClone(raw);
   const report=normalizeCompleteDirectReport(raw),audit=directAuditResult(brief,{report}),selected=selectProposalAudit(audit.data,brief);
-  assertResult('audit',audit);assert.equal(audit.status,'ready');assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.researchCoverage.length,24);
+  assertResult('audit',audit);assert.equal(audit.status,'review');assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.researchCoverage.length,24);
   assert.deepEqual(audit.data.findings,[]);assert.deepEqual(raw,before);assert.equal(audit.data.quality.contentComplete,false);
   const failingArea=file.includes('fresh')?'Sitede gelişmiş performans':'Ad Library';
   const area=selected.dimensions.flatMap(d=>d.highlights).find(h=>h.text.includes(failingArea));assert.equal(area,undefined);
@@ -31,7 +32,7 @@ test('missing and malformed report shapes produce an honest consumable offer wit
  const cases=[null,{},[],{findings:'bad',sources:[],dimensions:[]},{summary:42,researchCoverage:{digital_2:{status:'observed',observation:'Ölçülmemiş iddia.',sourceIds:['fake']}}},
   {...context().report,findings:[null,{id:'x',statement:'Doğrulanmamış bulgu',sourceIds:['unknown']}],sources:[{id:'unknown',url:'javascript:alert(1)'}],dimensions:[{id:'digital',score:101,strengths:null,gaps:{}}]}];
  for(const raw of cases){
-  const before=structuredClone(raw),audit={stage:'audit',...directAuditResult(brief,{report:raw})};assertResult('audit',audit);
+  const before=structuredClone(raw),audit={stage:'audit',...continuationAudit(brief,{synthesis:{report:raw},reason:'research_empty'})};assertResult('audit',audit);
   assert.deepEqual(raw,before);assert.deepEqual(audit.data.sources,[]);assert.equal(audit.data.researchCoverage.length,24);assert.equal(audit.data.dimensions.length,6);assert.equal(audit.data.scoring.total,null);
   assert.ok(audit.data.dimensions.every(d=>d.score===null));assert.ok(audit.data.findings.every(f=>f.sourceIds.length===0));
   const scope={summary:'Briefte konuşulan kapsam.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:'meta',phase:'start',priority:1,reason:'Briefte konuşulan kanal.',briefQuote:brief.services,findingIds:[]}],exclusions:[]};
@@ -56,11 +57,11 @@ test('deterministic fallback survives price-boundary revalidation but an untrust
 });
 
 test('a malformed paid scope/copy response falls back once and still reaches priced proposal assembly',async()=>{
- const report=normalizeCompleteDirectReport(context().report),rows=new Map([[stageKey(brief,'synthesis','v5'),{state:'complete',value:{report}}]]);let calls=0;
+ const report=normalizeCompleteDirectReport(context().report),rows=new Map([[stageKey(brief,'synthesis','v5'),{state:'complete',value:{report,analysisPacket:context().packet}}]]);let calls=0;
  const ledger={get:async k=>rows.get(k),once:async(k,_input,amount,run)=>{assert.equal(amount,0);if(rows.has(k))return rows.get(k).value;const value=await run();rows.set(k,{state:'complete',value});return value;}};
  const providers={generate:async()=>{calls++;return {data:{scope:{services:[{serviceId:'invented'}]},copy:{headline:'Garantili %100 sonuç'}}};}};
  const input={phase:'scope',brief,ledger,providers,researchVersion:'v5'},scope=await runBoundedStage(input);await runBoundedStage(input);assert.equal(calls,1);
- const audit={stage:'audit',...directAuditResult(brief,{report})},pricing=await pricingEngine.run({brief,scope:scope.scopePlan},{audit});assertResult('pricing',pricing);assert.ok(pricing.data.scope.selected.some(s=>s.serviceId==='meta'));
+ const audit={stage:'audit',...directAuditResult(brief,{report,analysisPacket:context().packet})},pricing=await pricingEngine.run({brief,scope:scope.scopePlan},{audit});assertResult('pricing',pricing);assert.ok(pricing.data.scope.selected.some(s=>s.serviceId==='meta'));
  assert.equal(scope.proposalCopy.headline,'Net hedefler.');assert.equal(scope.proposalCopy.findingIds.length,0);
 });
 

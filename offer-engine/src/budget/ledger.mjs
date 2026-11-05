@@ -8,6 +8,10 @@ export class BudgetError extends Error{constructor(code,message){super(message);
 // fail closed. The conversion is a conservative envelope, not a quoted FX rate.
 export const tariff=Object.freeze({version:'sellf-bounded-2026-10-20-v1',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,normalTargetKurus:3000,capKurus:5000,infraKurus:500,
  models:{'gemini-3.1-pro-preview':{input:2,output:12,cachedInput:.2},'gemini-4-argon':{input:2,output:10,cachedInput:.1},'gemini-3.8-flash':{input:.75,output:3.75,cachedInput:.075}},tavilyCredit:.008});
+export function tariffReadiness(now=Date.now()){
+ const remaining=Date.parse(tariff.expires)-now,valid=Number.isFinite(remaining)&&remaining>0;
+ return {status:!valid?'expired':remaining<=7*86400000?'review_due':'valid',expires:tariff.expires,paidCallsAllowed:valid,daysRemaining:Math.max(0,Math.ceil(remaining/86400000))};
+}
 export function quoteModel(model,inputUpper,outputUpper,now=Date.now()){
  if(now>=Date.parse(tariff.expires)||!tariff.models[model])throw new BudgetError('tariff_expired','Maliyet tarifesi doğrulanmadan yeni ücretli işlem başlatılamaz.');
  if(!Number.isSafeInteger(inputUpper)||inputUpper<0||!Number.isSafeInteger(outputUpper)||outputUpper<0||inputUpper>190000)throw new BudgetError('input_budget','Analiz girdisi güvenli maliyet sınırını aşıyor.');

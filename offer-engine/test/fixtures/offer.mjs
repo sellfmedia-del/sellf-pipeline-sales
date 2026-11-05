@@ -1,3 +1,4 @@
+import {context as evidenceContext} from './evidence.mjs';
 import {snapshotBrief,briefHash} from '../../src/bhs/brief.mjs';
 import {directAuditResult} from '../../src/bhs/direct-report.mjs';
 import {pricingEngine} from '../../src/engines/pricing-engine.mjs';
@@ -7,7 +8,7 @@ import {brief as base,fixture as reportFixture} from './bhs.mjs';
 export const sourceId='11111111-1111-4111-8111-111111111111',runId='22222222-2222-4222-8222-222222222222';
 export const fx={provider:'TCMB',kind:'ForexSelling',base:'USD',quote:'TRY',rate:44.1234,publishedAt:'2026-10-21',checkedAt:'2026-10-21T17:00:00.000Z',source:rateSource};
 export async function offerFixture(currency='TRY'){
- const brief=snapshotBrief({...base,services:'Meta ve Google Ads'}),synthesis={report:reportFixture(),methodologyVersion:'synthetic-test-v1'};
+ const brief=snapshotBrief({...base,services:'Meta ve Google Ads'}),synthesis={report:evidenceContext().report,analysisPacket:evidenceContext().packet,methodologyVersion:'synthetic-test-v1'};
  const audit={stage:'audit',...directAuditResult(brief,synthesis)};
  const scope={summary:'Seçili kanallar.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:['meta','google_ads'].map(serviceId=>({serviceId,phase:'start',priority:1,reason:'Konuşulan hizmet.',briefQuote:brief.services,findingIds:[]})),exclusions:['Reklam harcaması dahil değildir.']};
  const copy={headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Görüşme kapsamına göre işbirliği teklifimiz.',findingIds:[]};

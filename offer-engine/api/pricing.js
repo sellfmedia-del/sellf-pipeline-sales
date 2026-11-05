@@ -1,3 +1,4 @@
+import {createResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
@@ -37,6 +38,8 @@ export function createPricingHandler({getProvider=null,getSecret=offerGeminiKey,
     const base=await engine.run({brief,...options,...(scope?{scope}:{})},{audit:body.audit});
     let exchangeRate;if(currency==='USD')try{exchangeRate=await getExchangeRate();}catch{/* Preserve the priced scope; never relabel TRY as USD. */}
     const result=addQuote(base,{currency,exchangeRate});
+    const researchSnapshot=createResearchSnapshot(body.audit.data,brief);
+    if(researchSnapshot)result.data.researchSnapshot=researchSnapshot;
     if(approval.sourceOfferId){result.data.offerBrief=brief;result.data.auditOrigin=approval.auditOrigin;result.data.sourceOfferId=approval.sourceOfferId;}
     assertResult('pricing',result);
     const envelope={...result,stage:'pricing',engineVersion:engine.version,inputHash,runId:randomUUID()};

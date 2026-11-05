@@ -34,10 +34,10 @@ test('handoff preserves original model JSON, recomputes only weighted arithmetic
  assert.equal(result.status,'ready');assert.equal(result.data.scoring.total,60);assert.equal(result.data.findings.length,report.findings.length);assert.deepEqual(report,before);
  assert.equal(result.data.quality.scope,'read-source-and-quote-filter');assert.equal(result.data.quality.semanticBenchmark,'not_requested');assertResult('audit',result);
  assert.ok(result.data.rawReport.includes('## 9. Kaynaklar'));assert.ok(result.data.rawReport.includes('Ön BHS: 60/100'));
- report.sources[0].url='javascript:alert(1)';const partial=directAuditResult(brief,{report,analysisPacket:packet});assert.equal(partial.status,'ready');assert.ok(!partial.data.sources.some(s=>s.url.startsWith('javascript:')));assert.equal(partial.data.findings.length,0);assert.equal(partial.data.scoring.total,null);
+ report.sources[0].url='javascript:alert(1)';const partial=directAuditResult(brief,{report,analysisPacket:packet});assert.equal(partial.status,'review');assert.ok(!partial.data.sources.some(s=>s.url.startsWith('javascript:')));assert.equal(partial.data.findings.length,0);assert.equal(partial.data.scoring.total,null);
 });
 test('same card reuses the completed paid report without invoking a model again',async()=>{
- const {ledger,rows}=cachedLedger(),stored={report:context().report,model:'stored-pro'};
+ const {ledger,rows}=cachedLedger(),stored={report:context().report,analysisPacket:context().packet,model:'stored-pro'};
  rows.set(stageKey(brief,'synthesis'),{state:'complete',value:stored});
  const result=await runBoundedStage({phase:'synthesis',brief,ledger,providers:{generate:()=>assert.fail('must reuse paid report')}});
  assert.deepEqual(result,stored);assert.equal(directAuditResult(brief,result).status,'ready');

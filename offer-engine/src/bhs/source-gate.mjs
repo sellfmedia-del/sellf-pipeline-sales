@@ -1,3 +1,4 @@
+import {requireGroundedResearch} from './research-content.mjs';
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
 import {supportedNumbers,numericEvidence} from './numeric-evidence.mjs';
@@ -92,6 +93,6 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
 }
 
 export function validateGroundedOutput(data,context){
- const report=groundOfferReport(data,context);
+ const report=requireGroundedResearch(groundOfferReport(data,context));
  if(report.transfer.issues.some(issue=>unsafeReasons.has(issue.reason))){const error=Error('Source checks rejected model claims');error.safeData=report;throw error;}
 }

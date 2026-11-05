@@ -1,3 +1,4 @@
+import {hasGroundedResearch} from './research-content.mjs';
 import {readFileSync} from 'node:fs';
 import {briefHash,dimensions} from './brief.mjs';
 import {reportSchema} from './schema.mjs';
@@ -42,8 +43,11 @@ export function directAuditResult(brief,synthesis){
  const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
- return {status:'ready',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
-  quality:{checksPassed:true,contentComplete:report.transfer.contentComplete,issues:report.transfer.issues,scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
+ const useful=hasGroundedResearch(report);
+ return {status:useful?'ready':'review',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
+  quality:{checksPassed:useful,contentComplete:report.transfer.contentComplete,issues:report.transfer.issues,scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
+  researchAsOf:synthesis.reuse?.researchedAt||synthesis.analysisPacket?.asOf||null,
+  researchContext:synthesis.researchContext?.brief?{brandName:synthesis.researchContext.brief.brandName,website:synthesis.researchContext.brief.website,briefHash:synthesis.researchContext.briefHash}:null,
   researchMethod:'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,
   usage:synthesis.usage||null}};
 }

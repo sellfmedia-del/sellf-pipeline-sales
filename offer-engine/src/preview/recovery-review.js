@@ -15,15 +15,15 @@
   if(payload.action==='start')return {ticket:'synthetic-only',phase:'source_plan',nextAction:'advance',cost:cost()};
   if(payload.action==='continue')return {phase:'complete',result:structuredClone(continuity.audit),pricingProof:'synthetic-only',cost:cost()};
   if(payload.action==='recover'){recovered=true;return {ticket:'synthetic-only',phase:'source_plan',nextAction:'advance',cost:cost()};}
-  if(!recovered)throw Object.assign(Error(scenario==='budget'?'Bu aşamanın tam çıktı rezervi için kartın kalan sınırı yeterli değil.':'Birincil ve yedek Gemini modeli bu örnekte tamamlanamadı.'),{code:scenario==='budget'?'budget_limit':'model_temporarily_unavailable',cost:cost(),recoveryAvailable:true,continuationAvailable:true,ticket:'synthetic-only',...(scenario==='budget'?{budgetDetail:{requiredKurus:2960,availableKurus:2768,followingReserveKurus:0,remainingKurus:2768,limitKurus:5000}}:{})});
+  if(!recovered)throw Object.assign(Error(scenario==='empty'?'Kaynakla doğrulanabilen araştırma içeriği oluşmadı. Boş yanıt BHS olarak kullanılmadı.':scenario==='budget'?'Bu aşamanın tam çıktı rezervi için kartın kalan sınırı yeterli değil.':'Birincil ve yedek Gemini modeli bu örnekte tamamlanamadı.'),{code:scenario==='empty'?'research_empty':scenario==='budget'?'budget_limit':'model_temporarily_unavailable',cost:cost(),recoveryAvailable:true,continuationAvailable:true,ticket:'synthetic-only',...(scenario==='budget'?{budgetDetail:{requiredKurus:2960,availableKurus:2768,followingReserveKurus:0,remainingKurus:2768,limitKurus:5000}}:{})});
   const completed=cost();completed.chargedKurus=2400;completed.attemptChargedKurus=168;completed.breakdown.verifiedUsageKurus+=168;
   return {phase:'complete',result:structuredClone(data.audit),pricingProof:'synthetic-only',cost:completed};
  };
- window.PipelinePricingRequest=async()=>({phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.pricing:['continuity','english'].includes(scenario)?continuity.pricing:data.pricing.TRY),proposalProof:'synthetic-only'});
+ window.PipelinePricingRequest=async()=>({phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.pricing:['continuity','english','empty'].includes(scenario)?continuity.pricing:data.pricing.TRY),proposalProof:'synthetic-only'});
  window.PipelineProposalRequest=async payload=>{
   window.reviewComposeCalls.push(structuredClone(payload));
   if(scenario==='english'&&payload.brief.language==='en')throw Object.assign(Error('İngilizce teklif çevirisi tamamlanamadı. BHS ve fiyatlar korundu.'),{code:'model_temporarily_unavailable'});
-  return {phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.proposal:['continuity','english'].includes(scenario)?continuity.proposal:data.proposal.TRY),saveProof:'synthetic-only'};
+  return {phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.proposal:['continuity','english','empty'].includes(scenario)?continuity.proposal:data.proposal.TRY),saveProof:'synthetic-only'};
  };
  window.PipelineOfferRequest=async()=>{throw Error('Bu örnek kaydedilmez. Gerçek veriler değiştirilmedi.');};
  function open(kind){
@@ -38,5 +38,6 @@
  document.querySelector('#review-budget').onclick=()=>open('budget');
  document.querySelector('#review-continuity').onclick=()=>open('continuity');
  document.querySelector('#review-english').onclick=()=>open('english');
+ document.querySelector('#review-empty').onclick=()=>open('empty');
  document.querySelector('#review-restored').onclick=()=>open('restored');
 })();
