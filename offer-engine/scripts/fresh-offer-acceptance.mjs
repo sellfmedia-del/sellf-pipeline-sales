@@ -11,7 +11,7 @@ import {prepareUploadedLogo} from '../src/upload.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {offerGeminiKey} from '../src/config.mjs';
 import {response} from '../test/fixtures/offer.mjs';
-if(process.env.VERCEL_ENV!=='preview'||process.argv[2]!=='--run'||process.env.VERCEL_GIT_COMMIT_REF!=='fix/offer-run-isolation-and-logo'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Explicit isolated acceptance required');
+if(process.env.VERCEL_ENV!=='preview'||process.argv[2]!=='--run'||process.env.VERCEL_GIT_COMMIT_REF!=='qa/argon-primary-20261105'||process.env.VERCEL_PROJECT_ID!=='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||Date.now()>Date.parse('2026-11-06T12:00:00Z'))throw Error('Explicit isolated acceptance required');
 const secret=offerGeminiKey();if(!secret)throw Error('Preview provider not configured');
 let charged=500,generations=0;const rows=new Map(),runId=randomUUID();
 const ledger=createLedger(async(op,a={})=>{
@@ -28,9 +28,9 @@ const ledger=createLedger(async(op,a={})=>{
 });
 const brief={brandName:'Organised Mums',website:'https://www.theorganisedmums.co.uk/',segment:'corporate',goals:'ABD pazarına e-ticaret genişlemesini değerlendirmek.',needs:'Kamuya açık ürün, teslimat, kanal ve rakip verilerine dayalı planlama.',services:'Stratejik danışmanlık, dijital pazarlama ve altyapı planlama.',meetingNotes:'Bağımsız, sentetik kalite testi. Gerçek müşteri görüşmesi veya beyanı değildir. Kamuya açık doğrulanmış olgularla hipotezleri ayır.',budget:null,language:'en',currency:'TRY'};
 const host='isolated-acceptance.example';let cookie='';const getProviders=options=>createBoundedProviders({...options,fetchImpl:async(url,init)=>{if(url.endsWith(':generateContent'))generations++;return fetch(url,init);}});
-const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async(_q,_r,_lead,options)=>{if(options?.researchRunId!==runId)throw Error('Run isolation failed');return ledger;},getProviders});
+const handler=createBoundedAuditHandler({getSecret:()=>secret,getResearchModel:()=> 'gemini-4-argon',getLedger:async(_q,_r,_lead,options)=>{if(options?.researchRunId!==runId)throw Error('Run isolation failed');return ledger;},getProviders});
 async function call(fn,body){const res=response();await fn({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);const set=res.headers['Set-Cookie'];if(set)cookie=(Array.isArray(set)?set:[set]).find(x=>x.startsWith('__Host-offer-research')).split(';')[0];return res;}
-const summary={passed:false,runIsolation:true,capKurus:5000,productionWrites:0,customerWrites:0,mailSends:0,newRun:true,modelPolicyChanged:false};let ticket;
+const summary={passed:false,runIsolation:true,capKurus:5000,productionWrites:0,customerWrites:0,mailSends:0,newRun:true,modelPolicyChanged:true,primaryBhsModel:'gemini-4-argon'};let ticket;
 await mkdir('offer-engine/public/qa-repair',{recursive:true});
 try{
  const start=await call(handler,{action:'start',requestId:'isolated_fresh_offer_acceptance',context:{leadId:'isolated-repair',spaceId:'isolated-space',researchRunId:runId},brief});
