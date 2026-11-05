@@ -1,3 +1,4 @@
+import {createGatewayTransport} from './gateway-transport.mjs';
 import {BudgetError,hash,quoteModel,quoteSearch,tariff,consumedModel,consumedSearch} from './ledger.mjs';
 import {failureReason} from '../bhs/provider.mjs';
 import {providerSchema} from '../bhs/schema.mjs';
@@ -8,7 +9,9 @@ import {recoverModelStage,recoveryStages,transientModelStatus,recoverableModelFa
 import {startLogoDiagnostic} from './logo-diagnostic.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
-export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget,manualRecoveryRound=0}={}){
+export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget,manualRecoveryRound=0,transport='google',gatewayToken=process.env.AI_GATEWAY_API_KEY||process.env.VERCEL_OIDC_TOKEN}={}){
+ if(!['google','vertex'].includes(transport))throw new BudgetError('not_configured','AI servis yolu geçersiz.');
+ const gateway=transport==='vertex'?createGatewayTransport({token:gatewayToken,fetchImpl}):null;
  if(![0,1].includes(manualRecoveryRound))throw new BudgetError('invalid_recovery','Kurtarma kaydı geçersiz.');
  let fxChecked=0,fxInFlight,fxSnapshot;
  function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
@@ -46,7 +49,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    if(url.startsWith(base)&&(error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed')){const transportError=new BudgetError(error.name==='TimeoutError'?'model_timeout':'model_network','AI bağlantısı tamamlanamadı. Mevcut maliyet kaydı korundu.');transportError.providerOperation=url.endsWith(':countTokens')?'countTokens':'generateContent';throw transportError;}
    throw error;}
  }
- return {recoveryRound:manualRecoveryRound,configured:()=>Boolean(geminiKey&&tavilyKey&&ledger),
+ return {recoveryRound:manualRecoveryRound,configured:()=>Boolean(geminiKey&&tavilyKey&&ledger&&(!gateway||gatewayToken)),
   async extract(urls){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Tavily bağlantısı gerekli.');
    if(!Array.isArray(urls)||!urls.length||urls.length>5)throw new BudgetError('invalid_query','Kaynak okuma sınırı geçersiz.');
@@ -89,7 +92,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    const isLogo=['logo-region','logo-backdrop'].includes(stage);
    if(logoFallback&&(!isLogo||model!=='gemini-4-argon'))throw new BudgetError('model_budget','Geçersiz logo kurtarma isteği.');
    if(modelFallback&&(!recoveryAttempt||!recoveryStages.has(stage)))throw new BudgetError('model_budget','Geçersiz model kurtarma isteği.');
-   const identity={body,minOutputTokens,reserveForFollowingKurus,...(logoFallback?{logoFallback:model}:{}),...(modelFallback?{modelFallback:model}:{})};
+   const identity={body,minOutputTokens,reserveForFollowingKurus,...(gateway?{transport:'vertex'}:{}),...(logoFallback?{logoFallback:model}:{}),...(modelFallback?{modelFallback:model}:{})};
    const originalStep='model:'+stage+':'+hash(identity);
    // A successful original must stay reusable even during explicit recovery.
    // Old uncertain receipts stay immutable; only the signed recovery batch may
@@ -110,7 +113,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     throw error;
    }
    if(cached?.state==='complete'){if(cached.value?.rejected)throw new BudgetError('provider_rejected','Bu model isteği daha önce reddedildi; aynı istek yeniden başlatılmadı.');return validated(cached.value);}
-   await checkCurrency();
+   await checkCurrency();if(gateway)await gateway.ready(model);
    // Exact request is tokenized before generation. Additional input allowance
    // covers control/schema overhead; no tools, media, history or autonomous loop.
    const diagnostic=['logo-region','logo-backdrop'].includes(stage)?{stage,model}:null;
@@ -137,7 +140,8 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    const generated=await ledger.once(step,body,amount,async()=>{
     if(remaining()<1000)throw new BudgetError('model_deadline','Model çağrısı için yeterli güvenli süre kalmadı.');
     const primaryTimeout=stage==='synthesis'?240000:110000;
-    const result=await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},Math.max(1,Math.min(isLogo?45000:recoveryAttempt&&!modelFallback?primaryTimeout:240000,remaining())),diagnostic?{...diagnostic,operation:'generateContent'}:null);
+    const timeout=Math.max(1,Math.min(isLogo?45000:recoveryAttempt&&!modelFallback?primaryTimeout:240000,remaining()));
+    const result=gateway?await gateway.generate(model,body,schema,timeout):await readJson(base+model+':generateContent',body,{'x-goog-api-key':geminiKey},timeout,diagnostic?{...diagnostic,operation:'generateContent'}:null);
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
@@ -149,9 +153,11 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const text=(candidate.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
     let parsed;try{parsed={data:JSON.parse(text)};}catch{if(!offerContent)return rejectedOutput('invalid_report');parsed=readPartialOutput(text);}
     if(candidate.finishReason==='MAX_TOKENS')parsed={...parsed,originalText:text,issues:[...(parsed.issues||[]),'model_output_limit']};
-    return {...parsed,usage,model,reservedKurus:amount,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:tariff.version,accountingVersion:'verified-usage-fx-v2'};
+    return {...parsed,usage,model,...(result.gatewayReceipt?{gatewayReceipt:result.gatewayReceipt}:{}),reservedKurus:amount,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:tariff.version,accountingVersion:'verified-usage-fx-v2'};
    },{settle:value=>value.accountedKurus,...(recoveryStages.has(stage)?{limitKurus:tariff.capKurus}:{})});
    return validated(generated);
   }
  };
 }
+
+export const createRuntimeProviders=options=>createBoundedProviders({...options,transport:process.env.OFFER_MODEL_TRANSPORT||'google'});

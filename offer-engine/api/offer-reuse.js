@@ -3,7 +3,7 @@ import {hasGroundedResearch} from '../src/bhs/research-content.mjs';
 import {randomBytes} from 'node:crypto';
 import {offersEnabled,runtimeStore,bearer} from '../src/runtime.mjs';
 import {budgetFor} from '../src/budget/ledger.mjs';
-import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {createRuntimeProviders as createBoundedProviders} from '../src/budget/providers.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';

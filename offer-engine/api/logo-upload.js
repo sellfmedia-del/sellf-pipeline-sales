@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import {prepareOriginalLogo} from '../src/original-upload.mjs';
 import {createLogoEngine} from '../src/engines/logo-engine.mjs';
 import {budgetFor} from '../src/budget/ledger.mjs';
-import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {createRuntimeProviders as createBoundedProviders} from '../src/budget/providers.mjs';
 import {createLogoRecovery} from '../src/budget/logo-recovery.mjs';
 import {logoRegionSchema,logoRegionInstruction} from '../src/logo-region.mjs';
 let active=0;

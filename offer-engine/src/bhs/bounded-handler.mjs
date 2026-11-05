@@ -4,7 +4,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
-import {createBoundedProviders} from '../budget/providers.mjs';
+import {createRuntimeProviders as createBoundedProviders} from '../budget/providers.mjs';
 import {phases,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
@@ -19,7 +19,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
-  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
+  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
