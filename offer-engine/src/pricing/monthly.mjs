@@ -5,7 +5,7 @@ export class MonthlyPlanError extends Error {}
 const fail=message=>{throw new MonthlyPlanError(message);};
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
 const amount=(value,label)=>{
- if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1e10||!Number.isSafeInteger(Math.round(value*100))||Math.abs(value*100-Math.round(value*100))>0.00001)fail(label+' sıfırdan büyük, en fazla iki ondalıklı bir TL tutarı olmalı.');
+ if(typeof value!=='number'||!Number.isFinite(value)||value<0.01||value>1e10||!Number.isSafeInteger(Math.round(value*100))||Math.abs(value*100-Math.round(value*100))>0.00001)fail(label+' sıfırdan büyük, en fazla iki ondalıklı bir TL tutarı olmalı.');
  return Math.round(value*100);
 };
 const tl=value=>value/100;

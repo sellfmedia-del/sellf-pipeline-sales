@@ -24,6 +24,7 @@ test('fractional custom costs and influencer list commissions retain exact kuru�
  const f=await offerFixture(),result=await run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:12345.67},{serviceId:'influencer'}],influencerListAmount:100000.01}]});
  const row=result.data.monthlyPlan.months[0];assert.equal(row.accountCost,15000);assert.equal(row.cost,27345.67);assert.equal(row.commissionAmount,10000.01);assert.equal(row.monthlyAmount,64691.35);assert.equal(row.minimumAmount,51018.52);
  await assert.rejects(()=>run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:1.005}]}]}),/iki ondalıklı/);
+ await assert.rejects(()=>run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:0.00000001}]}]}),/iki ondalıklı/);
 });
 
 test('monthly selection uses sheet costs and existing ideal rules for every segment/service, exactly matching standard operations costing',async()=>{
