@@ -1,4 +1,5 @@
 import {operations,byId} from './catalog.mjs';
+import {interpretOperations} from './service-interpretation.mjs';
 import {assertSchema} from '../bhs/schema.mjs';
 import {isDeepStrictEqual} from 'node:util';
 const str=maxLength=>({type:'string',minLength:1,maxLength});
@@ -22,6 +23,7 @@ export function scopeEnvelope(brief,audit){
   'targetQuote yalnız briefte açıkça TL ile belirtilmiş aylık Sellf teklif aralığını veya toplam büyüme bütçesini içerebilir. BHS rakamlarını, ciro/hedef/reklam bütçesini Sellf teklif aralığına dönüştürme. Belirsiz tutarları null bırak. targetScope açıkça metinde yazılan kapsama göre seçilir.',
   'Influencer liste bedeli, AI ve özel yazılım maliyeti senin tarafından üretilemez. Bunları ilgili katalog kimliğiyle seç; sunucu koşullu/özel fiyat gereğini ayrıca gösterecek. Sıfır maliyet ücretsiz demek değildir.',
   'Aynı varlık için webmaster, ecommerce_webmaster, custom_webmaster seçeneklerinden yalnız uygun olanı seç. Tasarımın katalog kapsamı aylık 25 statik + 5 motion, tasarım başına 2 revizedir; özel kapsam uydurma.',
+  'Dijital reklamlar / paid media uygulaması, kanal belirtilmemişse Meta ve Google Ads yönetimini kapsar. Sadece reklam danışmanlığı/stratejisi/planlaması talebi Medya ve Bütçe Planlama kapsamıdır; kampanya yönetimi sayılmaz. Belirtilen platform sınırlamalarını ve hariç tutulan hizmetleri koru. SEO gibi alt kapsamı belirsiz ifadelerden tüm operasyonları veya proje fiyatlarını varsayma.',
   'Briefte belirtilmeyen zorunlu reklam/üçüncü taraf bütçesi, sonuç taahhüdü veya geri ödeme sözü verme. Fiyatlandırılamayan projeyi ücretsiz sunma.'
  ],brief,audit:{summary:audit.summary,findings:audit.findings,serviceRecommendations:audit.serviceRecommendations},catalog:operations.map(({id,name,kind})=>({id,name,kind}))};
 }
@@ -95,6 +97,13 @@ export function normalizeGeneratedScope(value,brief,audit){
 export function fallbackScope(brief){
  const aliases={meta:/\bmeta\b|facebook|instagram reklam/,google_ads:/google ads|google reklam/,b2b:/\bb2b\b/,onsite_seo:/on.?site seo/,offsite_seo:/off.?site seo/,technical_seo:/teknik seo/,social:/sosyal medya yonet/,design:/tasarim/,moderation:/moderasyon/,tiktok:/tiktok/,amazon_ppc:/amazon ppc/,ugc:/\bugc\b|barter/};
  const text=normalize(brief.services),services=Object.entries(aliases).filter(([,re])=>re.test(text)).map(([serviceId])=>({serviceId,phase:'start',priority:1,reason:'Briefte açıkça konuşulan hizmet; otomatik kapsam değerlendirmesi tamamlanmadı.',briefQuote:brief.services.slice(0,1200),findingIds:[]}));
+ const interpreted=interpretOperations(brief.services,{context:[brief.needs,brief.meetingNotes].filter(Boolean).join('\n')});
+ if(!interpreted.unresolved.length){
+  // Keep legacy non-advertising aliases, while respecting advice-only wording
+  // and explicit platform exclusions in this shared advertising vocabulary.
+  for(let i=services.length-1;i>=0;i--)if(['meta','google_ads','tiktok','amazon_ppc'].includes(services[i].serviceId)&&!interpreted.serviceIds.includes(services[i].serviceId))services.splice(i,1);
+  for(const serviceId of interpreted.serviceIds)if(!services.some(s=>s.serviceId===serviceId))services.push({serviceId,phase:'start',priority:1,reason:'Görüşmede yazılan hizmet ifadesi katalog operasyonuna eşlendi.',briefQuote:brief.services.slice(0,1200),findingIds:[]});
+ }
  if(!services.length)services.push({serviceId:'media_planning',phase:'start',priority:1,reason:'Geçici başlangıç alternatifi: hedefler, medya ve bütçenin planlanması. Tam operasyon kapsamı ayrıca gözden geçirilmeli.',briefQuote:briefParts(brief).find(v=>typeof v==='string'&&v.trim())?.slice(0,1200)||null,findingIds:[]});
  const part=briefParts(brief).find(concern);
  return {summary:'Kapsam değerlendirmesi tamamlanamadı; fiyatlı başlangıç alternatifleri kontrol için hazırlandı.',services,budget:{posture:part?'limited':'unspecified',quote:part?.slice(0,1200)||null,targetQuote:null,targetScope:'unspecified'},target:null,exclusions:['Doğrulanmamış özel işler ve reklam harcaması bu fiyatlara dahil değildir.'],warnings:['Başlangıç kapsamı kontrol edilmeli; yeni model çağrısı otomatik başlatılmadı.'],fallback:true};

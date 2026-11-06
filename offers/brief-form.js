@@ -78,7 +78,7 @@
       monthlyBox.hidden=!monthlyToggle.checked;monthlyError.textContent='';
       if(!monthlyToggle.checked||monthlyEditor||monthlyLoading)return;
       monthlyLoading=true;
-      try{const {mountMonthlyEditor}=await import('/offers/monthly-plan.mjs');monthlyEditor=await mountMonthlyEditor(monthlyBox,{getSegment:()=>form.elements.segment.value,onChange:()=>{monthlyError.textContent='';}});}
+      try{const {mountMonthlyEditor}=await import('/offers/monthly-plan.mjs');monthlyEditor=await mountMonthlyEditor(monthlyBox,{getSegment:()=>form.elements.segment.value,getContext:()=>['services','needs','meetingNotes'].map(name=>form.elements[name].value).join('\n'),onChange:()=>{monthlyError.textContent='';}});}
       catch(error){monthlyError.textContent=error.message||'Aylık operasyon listesi yüklenemedi.';}
       finally{monthlyLoading=false;}
     });

@@ -108,3 +108,5 @@
 #offer-brief-dialog .ob-monthly-card input,#offer-brief-dialog .ob-monthly-card select{box-sizing:border-box;display:block;width:100%;min-width:0;margin-top:6px;padding:9px;border:1px solid var(--border);border-radius:5px;font:inherit;background:white}
 #offer-brief-dialog .ob-monthly-button{border:1px solid var(--border2);border-radius:5px;padding:7px 10px;background:white;font:inherit;font-size:12px;cursor:pointer}
 #offer-brief-dialog .ob-monthly-actions{justify-content:flex-start;margin-top:14px}
+#offer-brief-dialog .ob-monthly-card textarea{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:65px;margin-top:6px;padding:9px;border:1px solid var(--border);border-radius:5px;font:inherit;resize:vertical}
+#offer-brief-dialog .ob-interpretation{overflow-wrap:anywhere;margin:8px 0}

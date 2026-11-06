@@ -17,6 +17,29 @@ standard alternatives. Pricing the monthly selection makes no model calls. The
 existing TR/EN translation and frozen TRY/USD conversion apply to the monthly
 document; internal costs are excluded from the customer document.
 
+## Meaning of free text
+
+Each month also accepts ordinary service wording. A shared, deterministic
+vocabulary maps “dijital reklamlar” / “paid media” to Meta and Google Ads, and
+advertising consultancy/strategy to Media and Budget Planning. Explicit channel
+limits, exclusions and clear advisory-only meeting context are respected; an
+explicit management instruction wins over general advisory context. Social
+management does not add Meta advertising unless advertising is requested.
+
+The operator sees and can edit the catalogue selections before pricing. Repeated
+mentions are charged once. Unknown or ambiguous scope (for example unspecified
+SEO or a brandbook project) gets an inline explanation and the existing direct
+picker stays available. The system does not silently price it as an unrelated
+operation. No model call, external dependency or additional research cost is
+introduced. The standard scope planner receives the same distinction, and its
+existing fallback recognises these clear advertising phrases.
+
+Prices remain server-calculated catalogue costs plus the existing coordination
+and markup rules. A separate golden-arithmetic test checks advertising,
+consultancy and combined operations in all three segments; fractional custom
+costs and commission rounding are also tested. Costs with more than two decimal
+places are rejected instead of silently rounded.
+
 ## Persistence compatibility
 
 No migration, new table, policy, gateway deployment, authentication change,
@@ -38,8 +61,8 @@ is outside this change; create a new offer version using the usual brief.
 
 ## Verification
 
-- The full existing root/engine suites pass (54 root tests and 315 engine tests;
-  19 opt-in browser/live checks skipped in that run).
+- The full existing root/engine suites pass (54 root tests and 322 engine tests;
+  20 opt-in browser/live checks skipped in that run).
 - Monthly calculations match the existing operations formula for every catalogue
   operation and segment, including missing costs and influencer commissions.
 - Signed API tests cover pricing, all months of frozen FX, English translation,
@@ -47,7 +70,7 @@ is outside this change; create a new offer version using the usual brief.
 - An isolated PostgreSQL test uses the current schema to save, retry, publish and
   reopen a monthly variant. Original offers, cards, contacts, notes, history and
   budgets remain identical.
-- Six desktop/mobile browser regressions pass: monthly selection, pricing,
+- Seven desktop/mobile browser regressions pass: monthly selection, pricing,
   workflow and save/reopen; standard offers and price edits; language/currency;
   saved cards; customer credentials and Offerletter routing.
 - Five Offerletter portal/API tests and its production build pass.
@@ -61,8 +84,9 @@ server handlers and persistence are exercised separately in the tests above.
 
 ## Release and rollback
 
-Production has not been changed. Review the branch preview before merging.
-Release requires a separate production approval. Before any monthly documents
+The user approved production release on 2026-11-06, including service-wording
+interpretation and final calculation checks. Merge only the verified PR head
+after its updated preview build passes. Before any monthly documents
 are saved, the rollback target is `f3d2d0d` / deployment
 `dpl_4mRTtkzq1PSZtAjLVGSRiyEvRM9K`. After a monthly document has been saved,
 disable monthly creation with a targeted code revert while retaining the monthly

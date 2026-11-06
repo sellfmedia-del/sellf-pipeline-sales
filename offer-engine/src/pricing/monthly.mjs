@@ -1,10 +1,11 @@
 import {operations,byId,cost,costVersion} from './catalog.mjs';
+import {interpretOperations} from './service-interpretation.mjs';
 
 export class MonthlyPlanError extends Error {}
 const fail=message=>{throw new MonthlyPlanError(message);};
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
 const amount=(value,label)=>{
- if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1e10||!Number.isSafeInteger(Math.round(value*100)))fail(label+' sıfırdan büyük, geçerli bir TL tutarı olmalı.');
+ if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1e10||!Number.isSafeInteger(Math.round(value*100))||Math.abs(value*100-Math.round(value*100))>0.00001)fail(label+' sıfırdan büyük, en fazla iki ondalıklı bir TL tutarı olmalı.');
  return Math.round(value*100);
 };
 const tl=value=>value/100;
@@ -12,13 +13,20 @@ const ids=new Set(operations.map(s=>s.id));
 
 // An explicit monthly selection is independent of the research brief. Neither
 // a model nor a budget hint may add, remove or postpone these operations.
-export function normalizeMonthlyPlan(input,segment){
+export function normalizeMonthlyPlan(input,segment,context=''){
  if(!keys(input,['months'])||!Array.isArray(input.months)||!input.months.length||input.months.length>36)fail('Aylık plan 1–36 ay içermeli.');
  return {months:input.months.map((row,index)=>{
   const month=index+1,label=month+'. ay';
-  if(!keys(row,['month','services','influencerListAmount'])||row.month!==month||!Array.isArray(row.services)||!row.services.length||row.services.length>operations.length)fail(label+' için en az bir operasyon seç; aylar sıralı olmalı.');
+  if(!keys(row,['month','services','influencerListAmount','operationsText'])||row.month!==month||!Array.isArray(row.services)||row.services.length>operations.length)fail(label+' operasyonları geçersiz; aylar sıralı olmalı.');
+  const entries=[...row.services];
+  if(row.operationsText!==undefined){
+   const interpretation=interpretOperations(row.operationsText,{context});
+   if(interpretation.unresolved.length)fail(label+' · '+interpretation.unresolved.join(' '));
+   for(const serviceId of interpretation.serviceIds)if(!entries.some(s=>s?.serviceId===serviceId))entries.push({serviceId});
+  }
+  if(!entries.length)fail(label+' için en az bir operasyon seç.');
   const used=new Set();
-  const services=row.services.map(item=>{
+  const services=entries.map(item=>{
    if(!keys(item,['serviceId','description','customCost'])||!ids.has(item.serviceId)||used.has(item.serviceId))fail(label+' operasyonları geçersiz veya tekrarlanıyor.');
    used.add(item.serviceId);const service=byId[item.serviceId],base=cost(service.id,segment);
    if(item.description!==undefined&&(typeof item.description!=='string'||item.description.length>240||/[<>]/.test(item.description)))fail(label+' kapsam açıklaması geçersiz.');
@@ -38,7 +46,7 @@ export function monthlyCatalog(){
 }
 
 export function monthlyPricing(input,brief){
- const plan=normalizeMonthlyPlan(input.monthlyPlan,brief.segment);
+ const plan=normalizeMonthlyPlan(input.monthlyPlan,brief.segment,[brief.services,brief.needs,brief.meetingNotes].filter(Boolean).join('\n'));
  if(input.customCosts!==undefined||input.influencerListAmount!==undefined)fail('Aylık planda özel maliyet ve influencer tutarını ilgili ayın içinde gir.');
  const rows=plan.months.map(row=>{
   const selected=row.services.map(item=>{
