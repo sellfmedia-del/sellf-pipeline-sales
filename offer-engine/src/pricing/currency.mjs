@@ -34,6 +34,7 @@ export function addQuote(result,{currency='TRY',exchangeRate}={}){
  quoteCurrency(currency);if(currency==='TRY')return result;
  const data=structuredClone(result.data);
  data.quote=exchangeRate?{currency:'USD',status:'ready',exchangeRate:structuredClone(exchangeRate),rounding:'ceil_cent',alternatives:data.alternatives.map(a=>({id:a.id,monthlyAmount:usdAmount(a.monthlyAmount,exchangeRate.rate)}))}:{currency:'USD',status:'pending',notice:'Dolar kuru alınamadı; TL hesaplaması korundu. Araştırmayı tekrarlamadan fiyatı yeniden hesaplayabilirsin.'};
+ if(exchangeRate&&data.pricingMode==='monthly')data.quote.monthlyPlan={months:data.monthlyPlan.months.map(row=>({month:row.month,monthlyAmount:usdAmount(row.monthlyAmount,exchangeRate.rate)}))};
  return {...result,status:exchangeRate?result.status:'review',data};
 }
 export function assertQuote(data,{requireReady=false}={}){
@@ -43,4 +44,8 @@ export function assertQuote(data,{requireReady=false}={}){
  const fx=q.exchangeRate;
  if(fx?.provider!=='TCMB'||fx.kind!=='ForexSelling'||fx.base!=='USD'||fx.quote!=='TRY'||fx.source!==rateSource||!/^\d{4}-\d{2}-\d{2}$/.test(fx.publishedAt)||!Number.isFinite(Date.parse(fx.checkedAt))||q.rounding!=='ceil_cent'||q.alternatives?.length!==2)throw Error('Kur kaydı doğrulanamadı.');
  for(const [i,a]of data.alternatives.entries())if(q.alternatives[i]?.id!==a.id||q.alternatives[i].monthlyAmount!==usdAmount(a.monthlyAmount,fx.rate))throw Error('Dolar tutarı doğrulanmış TL hesabıyla eşleşmiyor.');
+ if(data.pricingMode==='monthly'){
+  if(q.monthlyPlan?.months?.length!==data.monthlyPlan.months.length)throw Error('Aylık dolar fiyatları eksik.');
+  for(const [i,row]of data.monthlyPlan.months.entries())if(q.monthlyPlan.months[i]?.month!==row.month||q.monthlyPlan.months[i]?.monthlyAmount!==usdAmount(row.monthlyAmount,fx.rate))throw Error('Aylık dolar tutarı doğrulanmış TL hesabıyla eşleşmiyor.');
+ }else if(q.monthlyPlan!==undefined)throw Error('Aylık dolar fiyatları fiyatlandırma moduyla eşleşmiyor.');
 }

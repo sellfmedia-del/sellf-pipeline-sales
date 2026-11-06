@@ -1,5 +1,6 @@
 import {hasGroundedResearch} from './bhs/research-content.mjs';
 import {assertQuote} from './pricing/currency.mjs';
+import {assertMonthlyPlan} from './pricing/monthly.mjs';
 export const originalLogoImage=value=>typeof value==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
 export function assertResult(stage,result){
@@ -20,6 +21,7 @@ export function assertResult(stage,result){
   }
   if(stage==='pricing'){
     const p=result.data;
+    assertMonthlyPlan(p);
     assertQuote(p);
     if(p.currency!=='TRY'||!p.costVersion||!Array.isArray(p.alternatives)||p.alternatives.length!==2||p.alternatives.some(a=>a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0))throw new Error('İki toplam aylık fiyat ve maliyet sürümü gerekli.');
     if(['pricing-v1','pricing-v2'].includes(p.schemaVersion)){
@@ -32,6 +34,7 @@ export function assertResult(stage,result){
   }
   if(stage==='proposal'){
     const p=result.data;
+    assertMonthlyPlan(p,{customer:true});
     if(p.language!==undefined&&!['tr','en'].includes(p.language))throw Error('Teklif dili geçersiz.');
     if(!Array.isArray(p.sections))throw new Error('Teklif bölümleri eksik.');
     if(p.schemaVersion==='proposal-v1'){

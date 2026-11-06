@@ -31,8 +31,8 @@
       selectedId=offer.id;
       latest=latest?.id===offer.id?{...latest,...offer}:offer;offer=latest;
       const doc=offer.customer_document,quote=doc?.quote,amount=quote?.status==='ready'?quote.alternatives.find(a=>a.id===doc.recommendedAlternativeId)?.monthlyAmount:offer.monthlyAmount??offer.monthly_amount;
-      container.querySelector('.offer-empty').textContent='Aylık bedel: '+new Intl.NumberFormat('tr-TR',{style:'currency',currency:quote?.currency||'TRY'}).format(amount);
-      createButton.textContent='Yeni Teklif Oluştur';container.querySelector('.offer-prices').hidden=!variantsReady;createButton.disabled=!variantsReady;
+      container.querySelector('.offer-empty').textContent=(doc?.pricingMode==='monthly'?'Ay bazlı teklif · 1. ay: ':'Aylık bedel: ')+new Intl.NumberFormat('tr-TR',{style:'currency',currency:quote?.currency||'TRY'}).format(amount);
+      createButton.textContent='Yeni Teklif Oluştur';container.querySelector('.offer-prices').hidden=!variantsReady||doc?.pricingMode==='monthly';createButton.disabled=!variantsReady;
       rows[0].textContent=offer.state==='published'?'Yayınlandı':'Taslak kaydedildi';rows[3].textContent='v'+offer.version;container.querySelector('.offer-view').hidden=!offer.customer_document;
       publishButton.hidden=!offer.customer_document||offer.state==='published';rows[1].textContent='—';rows[2].textContent='—';
       if(offer.publicUrl){rows[1].replaceChildren();const a=document.createElement('a');a.href=offer.publicUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Müşteri teklifini aç ↗';rows[1].append(a);rows[2].textContent=offer.password;}

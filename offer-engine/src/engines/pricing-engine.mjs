@@ -3,6 +3,7 @@ import {snapshotBrief,briefHash} from '../bhs/brief.mjs';
 import {assertResult} from '../contracts.mjs';
 import {byId,catalog,cost,costVersion} from '../pricing/catalog.mjs';
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
+import {monthlyPricing,MonthlyPlanError} from '../pricing/monthly.mjs';
 
 function money(value){
  if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1e10||!Number.isSafeInteger(Math.round(value*100)))throw Error('Özel maliyet tutarı geçersiz.');
@@ -10,10 +11,14 @@ function money(value){
 }
 const tl=value=>value/100;
 const markup=(cost,numerator)=>Math.ceil(cost*numerator/2);
-export const pricingEngine=Object.freeze({id:'pricing',version:'0.3.0',async run(input,{audit}={}){
+export const pricingEngine=Object.freeze({id:'pricing',version:'0.4.0',async run(input,{audit}={}){
  const brief=snapshotBrief(input?.brief);
  assertResult('audit',audit);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief))throw Error('Fiyatlama için bu briefe ait doğrulanmış BHS gerekli.');
+ if(input.pricingMode==='monthly'){
+  const result=monthlyPricing(input,brief);result.data.briefHash=briefHash(brief);result.data.costSnapshotHash=createHash('sha256').update(JSON.stringify(result.data.costSnapshot)).digest('hex');return result;
+ }
+ if(input.monthlyPlan!==undefined||input.pricingMode!==undefined&&input.pricingMode!=='standard')throw new MonthlyPlanError('Geçerli fiyatlandırma modunu seç.');
  const scope=input.scope?validateScope(input.scope,brief,audit.data):fallbackScope(brief);
  const custom=new Map();
  if(input.customCosts!==undefined&&!Array.isArray(input.customCosts))throw Error('Özel maliyet listesi geçersiz.');

@@ -8,6 +8,7 @@ export function monetaryAmount(value){
 }
 export function priceTerms(row){
  const doc=row.customer_document,pricing=row.pricing_snapshot;assertQuote(doc,{requireReady:true});
+ if(doc.pricingMode==='monthly')return {currency:doc.quote?.currency||'TRY',documentHash:digest(doc),readOnly:true,alternatives:[]};
  if(!pricing?.alternatives||ids.some(id=>!pricing.alternatives.some(a=>a.id===id)))throw Error('Kaydedilen fiyat dayanağı bulunamadı.');
  const currency=doc.quote?.currency||'TRY',rate=doc.quote?.exchangeRate?.rate;
  const display=value=>currency==='USD'?usdAmount(value,rate):value;
@@ -17,7 +18,7 @@ export function priceTerms(row){
  })};
 }
 export function negotiatedDocument(row,amounts,{confirmedBelowMinimum=false}={}){
- const terms=priceTerms(row);if(!amounts||Object.keys(amounts).sort().join(',')!==[...ids].sort().join(','))throw Error('İki alternatifin fiyatını gir.');
+ const terms=priceTerms(row);if(terms.readOnly)throw Error('Aylık planın fiyatları ay bazlı oluşturucuda hesaplanır; sabit fiyat ekranından değiştirilemez.');if(!amounts||Object.keys(amounts).sort().join(',')!==[...ids].sort().join(','))throw Error('İki alternatifin fiyatını gir.');
  const input=Object.fromEntries(ids.map(id=>[id,monetaryAmount(amounts[id])])),below=terms.alternatives.filter(a=>input[a.id]<a.minimum);
  if(below.length&&!confirmedBelowMinimum)throw Error('Önerilen kârlılık tabanının altındaki fiyatı ayrıca onayla.');
  const doc=structuredClone(row.customer_document),rate=doc.quote?.exchangeRate?.rate;
