@@ -119,3 +119,16 @@
 
 .so-dimension-highlights{margin:12px 0 0;padding-left:18px;max-height:12em;overflow:auto;font-size:12px;line-height:1.6}.so-dimension-highlights li{margin:0 0 7px}.so-action-lane ul{max-height:16em;overflow:auto}
 #sellf-two-option-offer .so-benchmark{margin:18px 0;font-size:12px}#sellf-two-option-offer .so-benchmark-scroll{overflow-x:auto;max-width:100%}#sellf-two-option-offer .so-benchmark table{border-collapse:collapse;min-width:560px;width:100%;font-size:11px}#sellf-two-option-offer .so-benchmark th,#sellf-two-option-offer .so-benchmark td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid #e9eff7;min-width:120px;max-width:240px;overflow-wrap:anywhere}#sellf-two-option-offer .so-benchmark caption{text-align:left;color:#737d8a;padding:12px 0}#sellf-two-option-offer .so-action-lane details{font-size:11px;margin-top:5px}#sellf-two-option-offer .so-action-lane details p{margin:6px 0}
+
+#sellf-two-option-offer .so-options.so-monthly-options{display:block;border:1px solid var(--so-line);border-radius:12px;overflow:hidden}
+#sellf-two-option-offer .so-monthly-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
+#sellf-two-option-offer .so-monthly-table th,#sellf-two-option-offer .so-monthly-table td{padding:18px 20px;text-align:left;vertical-align:top;border-bottom:1px solid var(--so-line);overflow-wrap:anywhere}
+#sellf-two-option-offer .so-monthly-table thead{font-size:11px;text-transform:uppercase;letter-spacing:.6px;background:#f4f7fb;color:#65758a}
+#sellf-two-option-offer .so-monthly-table th:first-child{width:16%}
+#sellf-two-option-offer .so-monthly-table th:last-child{width:25%}
+#sellf-two-option-offer .so-monthly-table td strong,#sellf-two-option-offer .so-monthly-table td span{display:block}
+#sellf-two-option-offer .so-monthly-table td strong{font-weight:500;line-height:1.6}
+#sellf-two-option-offer .so-monthly-table td span{color:#6e7f94;font-size:11px;line-height:1.7;margin-bottom:6px}
+#sellf-two-option-offer .so-monthly-table .so-monthly-amount{font-size:18px;font-weight:600;color:var(--so-ink)}
+#sellf-two-option-offer .so-monthly-caption{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(max-width:650px){#sellf-two-option-offer .so-monthly-table thead{display:none}#sellf-two-option-offer .so-monthly-table tr{display:grid;grid-template-columns:minmax(0,1fr) auto;border-bottom:1px solid var(--so-line);padding:15px}#sellf-two-option-offer .so-monthly-table th,#sellf-two-option-offer .so-monthly-table td{width:auto!important;border:0;padding:0}#sellf-two-option-offer .so-monthly-table th{grid-column:1;font-size:12px;color:#6e7f94}#sellf-two-option-offer .so-monthly-table td:nth-child(2){grid-row:2;grid-column:1/-1;margin-top:10px}#sellf-two-option-offer .so-monthly-table .so-monthly-amount{grid-column:2;grid-row:1;text-align:right;font-size:17px}}

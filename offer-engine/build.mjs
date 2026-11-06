@@ -20,6 +20,9 @@ const pipelineSource=await readFile(path.join(root,'index.html'),'utf8');
 // Diagnostic source is inert if opened directly; it cannot initialize production.
 await writeFile(path.join(here,'public/crm-source.html'),pipelineSource.replace('<head>',`<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'">`));
 await cp(path.join(root,'offers'),path.join(here,'public/offers'),{recursive:true});
+const {monthlyCatalog}=await import('./src/pricing/monthly.mjs');
+await writeFile(path.join(here,'public/offers/monthly-catalog.json'),JSON.stringify(monthlyCatalog()));
+await cp(path.join(here,'src/pricing/service-interpretation.mjs'),path.join(here,'public/offers/service-interpretation.mjs'));
 const html=await readFile(path.join(here,'public/offers/preview.html'),'utf8');
 await writeFile(path.join(here,'public/offers/preview.html'),html.replace('<html lang="tr">','<html lang="tr" data-logo-service="ready">'));
 const js=await readFile(path.join(here,'public/offers/preview.js'),'utf8');
@@ -47,3 +50,5 @@ const {buildLanguageReview}=await import('./src/preview/language-build.mjs');
 await buildLanguageReview(path.join(here,'public'),{production});
 const {buildRecoveryReview}=await import('./src/preview/recovery-build.mjs');
 await buildRecoveryReview(path.join(here,'public'),{production});
+const {buildMonthlyReview}=await import('./src/preview/monthly-build.mjs');
+await buildMonthlyReview(path.join(here,'public'),{production});

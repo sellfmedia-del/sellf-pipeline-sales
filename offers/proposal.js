@@ -10,6 +10,14 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   return quoted.monthlyAmount;
  }
  const currencyLabel=data=>data.quote?.currency==='USD'?'USD':data.language==='en'?'TRY':'TL';
+ function monthlyAmount(data,row){
+  if(!data.quote)return row.monthlyAmount;
+  const quoted=data.quote.monthlyPlan?.months?.find(m=>m.month===row.month);
+  if(data.quote.status!=='ready'||!quoted||!Number.isFinite(quoted.monthlyAmount))throw Error('Aylık dolar fiyatları doğrulanamadı.');
+  return quoted.monthlyAmount;
+ }
+ const monthLabel=(month,english)=>english?'Month '+month:month+'. ay';
+
  const contractRecipients=Object.freeze(['yigit@sellfmedia.com','businessdevelopment@sellfmedia.com']);
  const englishText={"Sellf logosu":"Sellf logo","Müşteri logosunun yerleşim alanı":"Client logo","Marka logosu":"Brand logo","Marka özel teklifi":"A proposal for your brand","BÜYÜME, MÜHENDİSLİK İŞİDİR.":"GROWTH IS ENGINEERING.","STRATEJİ · OPERASYON · VERİMLİLİK":"STRATEGY · OPERATIONS · EFFICIENCY","Ön BHS · Öncelik haritası":"Preliminary BHS · Priority map","BHS boyutu":"BHS dimension","Finansal değerlendirme ilişkisi":"Financial assessment","Önerilen eylemler":"Recommended actions","Acil":"Urgent","Önemli":"Important","Düşük öncelikli":"Lower priority","Önce doğrula":"Validate first","İlk çalışma odağı":"Initial focus","Sonraki aşama":"Next phase","Puan: Yeterli veri yok":"Score: Insufficient data","İç verilerle derinleştirilecek":"To be refined with internal data","İşbirliği alternatifleri":"Partnership options","Bir model seçin, kapsamını inceleyin.":"Choose an option and explore its scope.","Teklif alternatifleri":"Proposal options","01 / ENTEGRE":"01 / INTEGRATED","02 / UYGULAMA":"02 / EXECUTION","Önerilen":"Recommended","Growth + Operasyon":"Growth + Operations","Operasyon Paketi":"Operations Package","TL / ay":"TRY / month","Strateji ve uygulama, aynı yapıda.":"Strategy and execution, together.","Growth ekibi ve operasyonların birlikte yönetimi.":"Growth consulting and operations, managed together.","SEÇİLİ KAPSAM":"SELECTED SCOPE","Toplam aylık hizmet bedelidir. KDV, reklam harcaması ve üçüncü taraf bedelleri dahil değildir.":"Total monthly service fee. VAT, advertising spend and third-party fees are excluded.","Başlangıç planı":"Getting started","Growth + Operasyon ile ilerleyelim.":"Let’s proceed with Growth + Operations.","Kapsam ve başlangıç planını sözleşmeye taşıyalım.":"Let’s take the agreed scope and starting plan into a contract.","Sözleşme talep et":"Request a contract","Sözleşme talebi":"Contract request","Yetkili adı":"Contact name","Ad Soyad":"Full name","İş e-postası":"Work email","isim@marka.com":"name@brand.com","E-postayı aç ↗":"Open email ↗","Finansal":"Financial","Operasyon":"Operations","Dijital":"Digital","Algı":"Perception","Rekabet":"Competition","Daralt −":"Collapse −","Analizi aç ↗":"Expand analysis ↗","Doğrulanacak: ":"To be verified: ","Çıkarım: ":"Inference: ","İş etkisi ve dayanak":"Business impact and evidence","Bu öncelikte doğrulanmış bulgu yok.":"No verified findings at this priority.","Ön BHS: ":"Preliminary BHS: ","Yeterli veri yok":"Insufficient data"," kaynak · ":" sources · "," rakip · Dışsal ön analiz":" competitors · Preliminary external assessment","Bu boyutta yeterli veri yok.":"Insufficient data for this dimension.","Veri eksik":"Insufficient data","Kaynaklı değerlendirme":"Source-based assessment","İç veriyle doğrula":"Validate with internal data","Aylık web trafiği":"Monthly website traffic","Sosyal kitle":"Social audience","Yorumlar":"Reviews","Reklam aktivitesi":"Advertising activity","İçerik olgunluğu":"Content maturity","Ciro / büyüme":"Revenue / growth","Farklılaştırıcı":"Differentiator","Tahmini Ön BHS":"Estimated preliminary BHS","Rakip karşılaştırmasını incele":"Explore the competitor comparison","Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.":"Metrics that could not be verified for the same period and geography are left blank.","Metrik":"Metric","Veri bulunamadı":"Data unavailable","Seçili bulguların kaynakları":"Sources for selected findings","Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.":"Growth consulting and selected operations, managed together.","Seçili hizmetler için uygulama, ölçüm ve takip.":"Execution, measurement and monitoring for the selected services.","Çalışma odağı: ":"Working focus: "," ile ilerleyelim.":" — let’s proceed."," / ay":" / month","Teklif kuru: 1 USD = ":"Proposal exchange rate: 1 USD = "," TL · TCMB dolar satış kuru, ":" TRY · CBRT USD selling rate, ",". Bu teklifin USD tutarları sabittir.":". USD amounts in this proposal are fixed.",": ayrıca fiyatlandırılacak; bu toplama dahil değildir.":": priced separately; excluded from this total.",": sonraki aşamaya ayrıldı.":": deferred to a later phase.","Kapsam sınırları":"Scope exclusions","E-posta taslağı müşteri bağlantısı oluşturulduktan sonra açılabilir.":"The email draft is available after the customer link is published.","E-posta taslağını yeniden aç":"Reopen email draft","Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.":"Complete sending from the draft in your email application.","E-posta taslağı hazırlanamadı.":"The email draft could not be prepared.","Sözleşme talebi · ":"Contract request · ","Marka: ":"Brand: ","Teklif: ":"Proposal: ","Alternatif: ":"Option: ","Aylık hizmet bedeli: ":"Monthly service fee: ","Teklif bağlantısı: ":"Proposal link: ","Yetkili: ":"Contact: ","E-posta: ":"Email: "," için özel olarak hazırlanmıştır.":" — prepared exclusively for your brand."," logosu":" logo","Geçerli yayınlanmış teklif bağlantısı gerekli.":"A valid published proposal link is required.","Geçerli işbirliği alternatifini seç.":"Choose a valid partnership option.","Yetkili adı ve geçerli iş e-postası gerekli.":"A contact name and valid work email are required."};
  function buildMailto(data,{offerUrl,offerId,alternativeId,name,email}){
@@ -17,11 +25,13 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const url=new URL(offerUrl),alternative=data.alternatives.find(a=>a.id===alternativeId);
   const tokenLink=url.pathname==='/offers/customer.html'&&/^#[A-Za-z0-9_-]{43}$/.test(url.hash),slugLink=!url.hash&&url.pathname.length<=121&&/^\/[a-z0-9]+(?:-[a-z0-9]+)*-teklifi(?:-v\d+-[a-f0-9]{8})?$/.test(url.pathname);
   if(url.protocol!=='https:'||url.username||url.password||url.search||!(tokenLink||slugLink))throw Error(t('Geçerli yayınlanmış teklif bağlantısı gerekli.'));
+  if(data.pricingMode==='monthly'&&alternativeId!=='operations_bundle')throw Error(t('Geçerli işbirliği alternatifini seç.'));
   if(!alternative||!Number.isFinite(alternative.monthlyAmount))throw Error(t('Geçerli işbirliği alternatifini seç.'));
   if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error(t('Yetkili adı ve geçerli iş e-postası gerekli.'));
   const line=value=>String(value??'').replace(/[\r\n]/g,' ');
   const subject=t('Sözleşme talebi · ')+line(data.brand.name).slice(0,150);
-  const body=[t('Marka: ')+line(data.brand.name),t('Teklif: ')+line(offerId)+' · v'+line(data.version),t('Alternatif: ')+line(alternative.name),t('Aylık hizmet bedeli: ')+money(quoteAmount(data,alternative))+' '+currencyLabel(data)+t(' / ay'),t('Teklif bağlantısı: ')+url.href,t('Yetkili: ')+name.trim(),t('E-posta: ')+email.trim()].join('\r\n');
+  const feeLines=data.pricingMode==='monthly'?data.monthlyPlan.months.map(row=>monthLabel(row.month,english)+': '+money(monthlyAmount(data,row))+' '+currencyLabel(data)+' · '+row.services.map(s=>line(s.name)).join(', ')):[t('Aylık hizmet bedeli: ')+money(quoteAmount(data,alternative))+' '+currencyLabel(data)+t(' / ay')];
+  const body=[t('Marka: ')+line(data.brand.name),t('Teklif: ')+line(offerId)+' · v'+line(data.version),t('Alternatif: ')+(data.pricingMode==='monthly'?(english?'Monthly operations plan':'Ay bazlı operasyon planı'):line(alternative.name)),...feeLines,t('Teklif bağlantısı: ')+url.href,t('Yetkili: ')+name.trim(),t('E-posta: ')+email.trim()].join('\r\n');
   return 'mailto:'+contractRecipients.join(',')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
  }
  function mount(container,data,{offerUrl,offerId}={}){
@@ -73,9 +83,10 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   }
   const full=add('details','',$('#so-analysis'));add('summary',t('Seçili bulguların kaynakları'),full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
-  const options=$('.so-options');options.replaceChildren();let selected;
+  const monthly=data.pricingMode==='monthly',options=$('.so-options');options.replaceChildren();let selected;
   const form=$('#so-request-form'),status=$('.so-request-status');
   function select(id){
+   if(monthly&&id!=='operations_bundle')return;
    selected=data.alternatives.find(a=>a.id===id);status.textContent='';form.querySelector('.so-mailto-reopen')?.remove();
    options.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.alternative===id)));
    $('#so-scope-title').textContent=selected.name;$('#so-scope-note').textContent=id==='growth_operations'?t('Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.'):t('Seçili hizmetler için uygulama, ölçüm ve takip.');
@@ -85,9 +96,25 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    data.plans[id].steps.forEach(s=>{const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);});
    let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent=t('Çalışma odağı: ')+data.plans[id].focus;
    $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+t(' ile ilerleyelim.');
-   $('#so-request-model').textContent=selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+t(' / ay');
+   $('#so-request-model').textContent=monthly?(english?'Monthly operations plan · Fees as shown above':'Ay bazlı operasyon planı · Yukarıdaki aylık bedeller geçerlidir'):selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+t(' / ay');
+   if(monthly){
+    $('#so-scope-title').textContent=english?'Planned operations':'Planlanan operasyonlar';
+    $('#so-process-model').textContent=english?'Monthly operations plan':'Ay bazlı operasyon planı';
+    $('#so-choice-label').textContent=english?'Let’s proceed with the monthly plan.':'Aylık planla ilerleyelim.';
+   }
   }
-  for(const [i,a]of data.alternatives.entries()){
+  if(monthly){
+   options.classList.add('so-monthly-options');options.setAttribute('aria-label',english?'Monthly service fees':'Aylık hizmet bedelleri');
+   const heading=options.previousElementSibling;heading.querySelector('h2').textContent=english?'Monthly service fees':'Aylık hizmet bedelleri';heading.querySelector('span').textContent=english?'Scope and fee for each month.':'Her ayın kapsamı ve hizmet bedeli.';
+   const table=add('table','',options,'so-monthly-table'),caption=add('caption',english?'Monthly operations plan':'Ay bazlı operasyon planı',table);caption.className='so-monthly-caption';
+   const head=add('tr','',add('thead','',table));for(const label of (english?['Month','Operations','Monthly fee']:['Ay','Operasyonlar','Aylık bedel']))add('th',label,head).scope='col';
+   const body=add('tbody','',table);
+   for(const row of data.monthlyPlan.months){
+    const tr=add('tr','',body);tr.dataset.month=row.month;add('th',monthLabel(row.month,english),tr).scope='row';
+    const services=add('td','',tr);for(const service of row.services){add('strong',service.name,services);if(service.description!==service.name)add('span',service.description,services);}
+    add('td',money(monthlyAmount(data,row))+' '+currencyLabel(data),tr,'so-monthly-amount');
+   }
+  }else for(const [i,a]of data.alternatives.entries()){
    const b=add('button','',options,'so-option');b.type='button';b.dataset.alternative=a.id;
    const meta=add('span','',b,'so-option-meta');add('span',i===0?t('01 / ENTEGRE'):t('02 / UYGULAMA'),meta);
    if(a.id===data.recommendedAlternativeId)add('span',t('Önerilen'),meta,'so-recommended');

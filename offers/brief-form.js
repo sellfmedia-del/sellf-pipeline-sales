@@ -40,6 +40,7 @@
             <div class="ob-field"><label for="ob-currency">Teklif para birimi</label><select id="ob-currency" name="currency"><option value="TRY">TL · Türk lirası</option><option value="USD">USD · ABD doları</option></select><p class="ob-hint">Dolar teklifi güncel TCMB satış kuruyla hesaplanır. Bütçe ve iç maliyetler TL olarak kalır.</p><p class="ob-error" id="error-currency"></p></div>
             <div class="ob-field"><label for="ob-budget">Aylık bütçe, TL <small>(varsa)</small></label><input id="ob-budget" name="budget" type="number" inputmode="decimal" min="0" step="any" placeholder="Bilinmiyorsa boş bırak"><p class="ob-hint">Görüşmede belirtilen bütçedir; teklif fiyatı değildir.</p><p class="ob-error" id="error-budget"></p></div>
           </div></fieldset>
+          <fieldset class="ob-monthly-fieldset"><legend>Fiyatlandırma</legend><label class="ob-monthly-choice"><input type="checkbox" class="ob-monthly-toggle"> Ay bazlı fiyatlandır</label><p class="ob-hint">Seçili değilse mevcut iki alternatifli teklif hazırlanır. Seçildiğinde her aya operasyon ekle; aylık bedeller maliyet tablosundaki ideal kârlılıkla hesaplanır.</p><div class="ob-monthly-editor" hidden></div><p class="ob-monthly-error ob-error" role="alert"></p></fieldset>
           <fieldset><legend>Toplantı notları ve bağlam</legend><div class="ob-field"><label for="ob-meetingNotes">Araştırmada kullanılacak notlar</label><textarea id="ob-meetingNotes" name="meetingNotes" class="ob-notes" maxlength="30000"></textarea><p class="ob-hint">Kart notları ve görüşme geçmişinden aktarıldı. Buradaki düzenlemeler kartın asıl kayıtlarını değiştirmez.</p></div>
             <details class="ob-sources"><summary>Karttaki kaynak bilgilerini gör</summary><div class="ob-source-content"></div></details>
           </fieldset>
@@ -71,7 +72,23 @@
     source.timeline.forEach(t => sourceParagraph([t.date, t.type].filter(Boolean).join(' · ') + ': ', t.note));
     if (!source.timeline.length) sourceParagraph('Görüşme geçmişi: ', 'Henüz görüşme kaydı yok.');
 
+    let monthlyEditor=null,monthlyLoading=false;
+    const monthlyToggle=dialog.querySelector('.ob-monthly-toggle'),monthlyBox=dialog.querySelector('.ob-monthly-editor'),monthlyError=dialog.querySelector('.ob-monthly-error');
+    monthlyToggle.addEventListener('change',async()=>{
+      monthlyBox.hidden=!monthlyToggle.checked;monthlyError.textContent='';
+      if(!monthlyToggle.checked||monthlyEditor||monthlyLoading)return;
+      monthlyLoading=true;
+      try{const {mountMonthlyEditor}=await import('/offers/monthly-plan.mjs');monthlyEditor=await mountMonthlyEditor(monthlyBox,{getSegment:()=>form.elements.segment.value,getContext:()=>['services','needs','meetingNotes'].map(name=>form.elements[name].value).join('\n'),onChange:()=>{monthlyError.textContent='';}});}
+      catch(error){monthlyError.textContent=error.message||'Aylık operasyon listesi yüklenemedi.';}
+      finally{monthlyLoading=false;}
+    });
+    form.elements.segment.addEventListener('change',()=>monthlyEditor?.refresh());
     function sync() { fields.forEach(name => { draft[name] = form.elements[name].value; }); }
+    function pricingOptions(){
+      if(!monthlyToggle.checked)return {};
+      if(!monthlyEditor||monthlyLoading)throw Error('Aylık operasyon listesinin yüklenmesini bekle.');
+      return {pricingMode:'monthly',monthlyPlan:monthlyEditor.getPlan()};
+    }
     function close() {
       stopTask();
       logoControl?.destroy();
@@ -171,12 +188,24 @@
       draft.pricing=result;
       const box=dialog.querySelector('.ob-pricing'),data=result.data;box.replaceChildren();box.hidden=false;
       const add=(tag,text,parent=box)=>{const node=document.createElement(tag);node.textContent=text;parent.appendChild(node);return node;};
-      add('h3','Aylık fiyat alternatifleri');
+      const monthly=data.pricingMode==='monthly';
+      add('h3',monthly?'Ay bazlı hizmet bedelleri':'Aylık fiyat alternatifleri');
       if(data.quote?.status==='ready'){const fx=data.quote.exchangeRate;add('p','Sabit teklif kuru: 1 USD = '+fx.rate+' TL · TCMB '+fx.publishedAt+'. Gönderilmiş teklifin tutarı kur değişikliğiyle güncellenmez.');}
       if(data.quote?.status==='pending')add('p',data.quote.notice);add('p',data.scope.summary);
       add('p',data.scope.budgetPosture==='limited'?'Görüşmedeki bütçe kısıtı başlangıç kapsamına yansıtıldı.':'Bütçe belirtilmese de hizmet kapsamı ve maliyetlerden fiyat hesaplandı.');
       if(data.scope.budgetQuote)add('p','Görüşme dayanağı: '+data.scope.budgetQuote);
-      data.alternatives.forEach(alternative=>{
+      if(monthly){
+        for(const row of data.monthlyPlan.months){
+          const article=add('article',''),quoted=data.quote?.monthlyPlan?.months.find(m=>m.month===row.month);
+          add('h4',row.month+'. ay',article);
+          add('p',data.quote?.status==='pending'?'USD tutarı için kur bekleniyor':formatMoney(quoted?.monthlyAmount??row.monthlyAmount,quoted?'USD':'TRY')+' / ay',article);
+          row.services.forEach(service=>add('p',service.name+(service.reason!==service.name?' · '+service.reason:''),article));
+          const details=add('details','',article);add('summary','İç hesaplama ayrıntıları',details);
+          add('p','Maliyet: '+formatMoney(row.cost)+' · Asgari: '+formatMoney(row.minimumAmount)+' · İdeal: '+formatMoney(row.idealAmount),details);
+          add('p','Account koordinasyon maliyeti: '+formatMoney(row.accountCost),details);
+        }
+        add('p','Kayıt sırasında kart tahmini değeri için ilk ayın operasyon bedeli referans alınır; diğer ayların bedelleri teklifte ayrı gösterilir.');
+      }else data.alternatives.forEach(alternative=>{
         const article=document.createElement('article');box.appendChild(article);
         add('h4',alternative.name+(alternative.id===data.recommendedAlternativeId?' · Önerilen':''),article);
         const quoted=data.quote?.alternatives?.find(a=>a.id===alternative.id);
@@ -194,7 +223,8 @@
       data.scope.exclusions.forEach(item=>add('p',item));data.notices.forEach(item=>add('p',item));
       add('p','Maliyet tablosu: '+data.costVersion+' · Kartın tahmini değeri henüz değiştirilmedi.');
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'?'Fiyat alternatifleri hazır':'Fiyat alternatifleri hazır · Kapsam kontrolü gerekli';
-      dialog.querySelector('.ob-review-notice').textContent='İki alternatifin toplam aylık hizmet bedelleri hesaplandı. Sıradaki aşama teklif taslağının oluşturulması. '+(draft.audit?.data.researchContinuity?.notice||'');
+      dialog.querySelector('.ob-review-notice').textContent=(monthly?'Seçtiğin her ayın operasyon bedeli ve uygulama takvimi hazır. ':'İki alternatifin toplam aylık hizmet bedelleri hesaplandı. ')+'Sıradaki aşama teklif taslağının oluşturulması. '+(draft.audit?.data.researchContinuity?.notice||'');
+      dialog.querySelector('.ob-scope-approved').parentElement.lastChild.textContent=monthly?' Kapsamı, her ayın bedelini ve aylık iş akışını kontrol ettim.':' Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.';
       dialog.querySelector('.ob-price').hidden=true;
       dialog.querySelector('.ob-steps li[aria-current]')?.removeAttribute('aria-current');dialog.querySelectorAll('.ob-steps li')[2].setAttribute('aria-current','step');
       dialog.querySelector('.ob-body').scrollTop=0;
@@ -203,15 +233,15 @@
       if(task||draft.audit?.status!=='ready')return;
       const button=dialog.querySelector('.ob-price'),notice=dialog.querySelector('.ob-review-notice');
       if(typeof window.PipelinePricingRequest!=='function'||!draft.pricingProof){notice.textContent='Fiyat hesaplama bağlantısı için bu önizlemede tamamlanmış ve doğrulanmış BHS gerekli.';return;}
-      const current={kind:'pricing',stopped:false,ticket:null,audit:draft.audit,pricingProof:draft.pricingProof,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;button.disabled=true;
+      const current={kind:'pricing',stopped:false,ticket:null,audit:draft.audit,pricingProof:draft.pricingProof,brief:Object.fromEntries(fields.map(key=>[key,draft[key]])),pricingOptions:draft.pricingOptions||{}};task=current;button.disabled=true;
       try{
         let action='start';
         for(;;){
-          notice.textContent='Görüşme bağlamıyla başlangıç kapsamı seçiliyor; segment maliyetlerinden iki alternatif hesaplanıyor…';
-          const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          notice.textContent=current.pricingOptions.pricingMode==='monthly'?'Seçtiğin operasyonların aylık bedelleri maliyet tablosundan hesaplanıyor…':'Görüşme bağlamıyla başlangıç kapsamı seçiliyor; segment maliyetlerinden iki alternatif hesaplanıyor…';
+          const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...current.pricingOptions,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelinePricingRequest({action:'cancel',brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.phase==='complete'){draft.proposalProof=response.proposalProof;renderPricing(response.result);dialog.querySelector('.ob-proposal-controls').hidden=false;dialog.querySelector('.ob-compose').hidden=response.result.data.quote?.status==='pending';dialog.querySelector('.ob-price').hidden=response.result.data.quote?.status!=='pending';task=null;return;}
+          if(response.phase==='complete'){draft.proposalProof=response.proposalProof;renderPricing(response.result);dialog.querySelector('.ob-proposal-controls').hidden=response.result.data.pricingMode==='monthly';dialog.querySelector('.ob-compose').hidden=response.result.data.quote?.status==='pending';dialog.querySelector('.ob-price').hidden=response.result.data.quote?.status!=='pending';task=null;return;}
           action='status';await new Promise(resolve=>setTimeout(resolve,3000));if(current.stopped)return;
         }
       }catch(error){if(!current.stopped)notice.textContent=error.message||'Fiyat alternatifleri hazırlanamadı. Yeni model çağrısı otomatik başlatılmadı.';}
@@ -225,7 +255,7 @@
       if(task||!draft.pricing||!draft.logo?.verifiedData)return;
       const notice=dialog.querySelector('.ob-review-notice'),button=dialog.querySelector('.ob-compose');
       if(typeof window.PipelineProposalRequest!=='function'){notice.textContent='Teklif servisi bu ortamda bağlı değil.';return;}
-      const planMode=dialog.querySelector('.ob-plan-mode').value;
+      const planMode=draft.pricing.data.pricingMode==='monthly'?'operations':dialog.querySelector('.ob-plan-mode').value;
       const manualSteps=dialog.querySelector('.ob-manual-steps').value.split('\n').filter(x=>x.trim()).map(line=>{const i=line.indexOf('|');return {time:i<0?'':line.slice(0,i).trim(),title:i<0?line:line.slice(i+1).trim()};});
       if(planMode==='manual'&&(!manualSteps.length||manualSteps.some(s=>!s.title||!s.time))){notice.textContent='Her manuel adımı zaman | adım biçiminde gir.';return;}
       const payload={context:{leadId:source.leadId,spaceId:source.spaceId},brief:Object.fromEntries(fields.map(key=>[key,draft[key]])),audit:draft.audit,pricing:draft.pricing,proposalProof:draft.proposalProof,logo:draft.logo.verifiedData,logoBackground:draft.logo.placement?.background||draft.logo.verifiedData?.candidates?.[0]?.placement?.background||'#ffffff',planMode,manualSteps};
@@ -262,7 +292,7 @@
         if(action==='save'){
           draft.saved=response.offer;if(!variant)context.lead.value=String(response.offer.monthlyAmount);
           window.dispatchEvent(new CustomEvent('pipeline-offer-saved',{detail:{leadId:source.leadId,spaceId:source.spaceId,value:context.lead.value,keepCardValue:Boolean(variant),offer:response.offer}}));
-          status.textContent='Teklif v'+response.offer.version+' kaydedildi. '+(variant?'Önceki teklif ve kart değeri korundu.':'Kart tahmini değeri: '+formatMoney(response.offer.monthlyAmount)+' / ay.');
+          status.textContent='Teklif v'+response.offer.version+' kaydedildi. '+(variant?'Önceki teklif ve kart değeri korundu.':(draft.pricing?.data.pricingMode==='monthly'?'Kart tahmini değeri (ilk ay): ':'Kart tahmini değeri: ')+formatMoney(response.offer.monthlyAmount)+' / ay.');
           button.hidden=true;dialog.querySelector('.ob-publish').hidden=false;
         }else{status.textContent='Müşteri bağlantısı: '+response.url+' · Şifre: '+response.password;draft.published=response;window.dispatchEvent(new CustomEvent('pipeline-offer-published',{detail:{leadId:source.leadId,spaceId:source.spaceId,url:response.url,password:response.password}}));}
       }catch(error){status.textContent=error.message||'İşlem tamamlanamadı; kart değeri değiştirilmedi.';}
@@ -337,6 +367,7 @@
       event.preventDefault();
       if (reviewing) return;
       sync();
+      try{draft.pricingOptions=pricingOptions();monthlyError.textContent='';}catch(error){monthlyError.textContent=error.message;monthlyError.scrollIntoView({block:'center'});return;}
       const errors = model.validate(draft);
 
       const summary = dialog.querySelector('#ob-errors');

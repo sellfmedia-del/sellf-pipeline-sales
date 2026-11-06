@@ -96,3 +96,17 @@
 #offer-brief-dialog .ob-continuation{margin:16px 0;padding:12px;border:1px solid var(--border,#e2e0d8);border-radius:7px}
 #offer-brief-dialog .ob-continuation p{margin:0 0 12px;font-size:12px;line-height:1.6}
 #offer-brief-dialog .ob-continue{max-width:100%;white-space:normal;border:1px solid var(--text,#1a1917);border-radius:7px;padding:8px 12px;background:var(--text,#1a1917);color:white}
+
+#offer-brief-dialog .ob-monthly-choice{display:flex;align-items:center;gap:9px;font-size:13px}
+#offer-brief-dialog .ob-monthly-choice input{width:auto}
+#offer-brief-dialog .ob-monthly-card{padding:16px;border:1px solid var(--border);border-radius:8px;margin-top:14px;min-width:0}
+#offer-brief-dialog .ob-monthly-header,#offer-brief-dialog .ob-monthly-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#offer-brief-dialog .ob-monthly-header h4{margin:0;font-size:15px}
+#offer-brief-dialog .ob-monthly-header strong{min-width:0;overflow-wrap:anywhere}
+#offer-brief-dialog .ob-monthly-service{background:var(--surface2,#f6f6f3);padding:12px;border-radius:6px;margin:12px 0}
+#offer-brief-dialog .ob-monthly-card label{display:block;margin:9px 0;font-size:12px}
+#offer-brief-dialog .ob-monthly-card input,#offer-brief-dialog .ob-monthly-card select{box-sizing:border-box;display:block;width:100%;min-width:0;margin-top:6px;padding:9px;border:1px solid var(--border);border-radius:5px;font:inherit;background:white}
+#offer-brief-dialog .ob-monthly-button{border:1px solid var(--border2);border-radius:5px;padding:7px 10px;background:white;font:inherit;font-size:12px;cursor:pointer}
+#offer-brief-dialog .ob-monthly-actions{justify-content:flex-start;margin-top:14px}
+#offer-brief-dialog .ob-monthly-card textarea{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:65px;margin-top:6px;padding:9px;border:1px solid var(--border);border-radius:5px;font:inherit;resize:vertical}
+#offer-brief-dialog .ob-interpretation{overflow-wrap:anywhere;margin:8px 0}
