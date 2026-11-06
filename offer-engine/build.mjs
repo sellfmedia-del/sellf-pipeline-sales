@@ -20,6 +20,9 @@ const pipelineSource=await readFile(path.join(root,'index.html'),'utf8');
 // Diagnostic source is inert if opened directly; it cannot initialize production.
 await writeFile(path.join(here,'public/crm-source.html'),pipelineSource.replace('<head>',`<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'">`));
 await cp(path.join(root,'offers'),path.join(here,'public/offers'),{recursive:true});
+const {operations,projects}=await import('./src/pricing/catalog.mjs');
+const pick=({id,name,kind,costs})=>({id,name,kind,customSegments:Object.keys(costs).filter(segment=>costs[segment]===0&&kind!=='commission')});
+await writeFile(path.join(here,'public/offers/service-catalog.json'),JSON.stringify({services:operations.map(pick),projects:projects.map(pick)}));
 const {monthlyCatalog}=await import('./src/pricing/monthly.mjs');
 await writeFile(path.join(here,'public/offers/monthly-catalog.json'),JSON.stringify(monthlyCatalog()));
 await cp(path.join(here,'src/pricing/service-interpretation.mjs'),path.join(here,'public/offers/service-interpretation.mjs'));

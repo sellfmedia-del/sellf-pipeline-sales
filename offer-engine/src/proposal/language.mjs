@@ -12,6 +12,7 @@ export function presentationSlots(doc){
  const add=(obj,key)=>{if(typeof obj?.[key]==='string'&&obj[key].trim())slots.push({obj,key,text:obj[key]});};
  for(const key of ['headline','accent','subtitle'])add(doc.copy,key);
  for(const a of doc.alternatives){add(a,'name');for(const s of a.services){add(s,'name');add(s,'description');}}
+ for(const plan of [doc.projectPlan,...(doc.monthlyPlan?.months||[]).map(row=>row.projectPlan)])for(const p of plan?.items||[]){add(p,'name');add(p,'description');}
  for(const row of doc.monthlyPlan?.months||[])for(const s of row.services){add(s,'name');add(s,'description');}
  for(const p of Object.values(doc.plans)){add(p,'focus');for(const s of p.steps){add(s,'time');add(s,'title');}}
  add(doc.bhs,'summary');

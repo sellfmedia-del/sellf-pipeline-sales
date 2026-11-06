@@ -15,7 +15,7 @@ test('existing PostgreSQL schema saves/publishes/opens a monthly variant without
   const old=await rpc('save_pipeline_offer_production',args);
   const snapshot=async()=>Object.fromEntries(await Promise.all(['spaces','leads','pipeline_offer_price_history','pipeline_offer_budgets','pipeline_offer_budget_steps'].map(async table=>[table,(await db.query('select to_jsonb(t) as row from '+table+' t order by to_jsonb(t)::text')).rows])));
   const before=await snapshot(),oldBefore=(await db.query('select * from pipeline_offer_versions where id=$1',[old.id])).rows[0];
-  const monthlyPlan={months:[{month:1,services:[{serviceId:'webmaster'}]},{month:2,services:[{serviceId:'brand_marketing'}]},{month:3,services:[{serviceId:'social'},{serviceId:'meta'}]}]};
+  const monthlyPlan={months:[{month:1,services:[],projects:[{serviceId:'project_wordpress'}]},{month:2,services:[],projects:[{serviceId:'project_brandbook'}]},{month:3,services:[{serviceId:'social'},{serviceId:'meta'}]}]};
   const pricing={stage:'pricing',...await pricingEngine.run({brief:f.brief,pricingMode:'monthly',monthlyPlan},{audit:f.audit})};
   pricing.data.sourceOfferId=old.id;
   const doc=(await proposalEngine.run({brief:f.brief,copy:f.copy},{...f,pricing})).data;doc.logo.reviewed=true;
@@ -32,5 +32,12 @@ test('existing PostgreSQL schema saves/publishes/opens a monthly variant without
   assert.deepEqual(await snapshot(),before);
   assert.deepEqual((await db.query('select * from pipeline_offer_versions where id=$1',[old.id])).rows[0],oldBefore);
   assert.equal((await db.query('select count(*)::integer as count from pipeline_offer_versions')).rows[0].count,2);
+  const explicit={stage:'pricing',...await pricingEngine.run({brief:f.brief,serviceSelection:{services:[],projects:[{serviceId:'project_brandbook'}]}},{audit:f.audit})};explicit.data.sourceOfferId=old.id;
+  const projectDoc=(await proposalEngine.run({brief:f.brief,copy:f.copy},{...f,pricing:explicit})).data;projectDoc.logo.reviewed=true;
+  const projectSaved=await rpc('save_pipeline_offer_variant',{...variantArgs,p_request_id:'new-project-only-fixture',p_document:projectDoc,p_pricing:explicit.data});assert.equal(projectSaved.monthlyAmount,0);
+  const projectDetail=await api({action:'detail',offerId:projectSaved.id});assert.equal(projectDetail.code,200);assert.deepEqual(projectDetail.data.offer.customer_document.projectPlan,projectDoc.projectPlan);
+  const projectPublished=await api({action:'publish',offerId:projectSaved.id});assert.equal(projectPublished.code,200);
+  const projectAccess=await api({action:'access',slug:new URL(projectPublished.data.url).pathname.slice(1),password:projectPublished.data.password});assert.equal(projectAccess.code,200);assert.deepEqual(projectAccess.data.document.projectPlan,projectDoc.projectPlan);
+  assert.deepEqual(await snapshot(),before);assert.deepEqual((await db.query('select * from pipeline_offer_versions where id=$1',[old.id])).rows[0],oldBefore);
  }finally{await db.close();for(const key of Object.keys(process.env))if(!(key in env))delete process.env[key];Object.assign(process.env,env);}
 });
