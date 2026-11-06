@@ -1,5 +1,6 @@
 import {hasGroundedResearch} from './bhs/research-content.mjs';
 import {assertQuote} from './pricing/currency.mjs';
+import {assertProjectPlans} from './pricing/project-contract.mjs';
 import {assertMonthlyPlan} from './pricing/monthly.mjs';
 export const originalLogoImage=value=>typeof value==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
@@ -21,20 +22,20 @@ export function assertResult(stage,result){
   }
   if(stage==='pricing'){
     const p=result.data;
-    assertMonthlyPlan(p);
+    assertMonthlyPlan(p);assertProjectPlans(p);
     assertQuote(p);
     if(p.currency!=='TRY'||!p.costVersion||!Array.isArray(p.alternatives)||p.alternatives.length!==2||p.alternatives.some(a=>a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0))throw new Error('İki toplam aylık fiyat ve maliyet sürümü gerekli.');
     if(['pricing-v1','pricing-v2'].includes(p.schemaVersion)){
       if(p.alternatives.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!p.costSnapshotHash||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Fiyat alternatifleri veya maliyet kaydı eksik.');
       for(const a of p.alternatives){
-        if(['cost','minimumAmount','idealAmount','accountCost'].some(key=>!Number.isFinite(a[key])||a[key]<0)||Math.round(a.monthlyAmount*100)<Math.round(a.minimumAmount*100)||a.monthlyAmount>a.idealAmount||!a.services?.length)throw Error('Maliyet tabanı veya aylık toplam geçersiz.');
+        if(['cost','minimumAmount','idealAmount','accountCost'].some(key=>!Number.isFinite(a[key])||a[key]<0)||Math.round(a.monthlyAmount*100)<Math.round(a.minimumAmount*100)||a.monthlyAmount>a.idealAmount||!a.services?.length&&!p.projectPlan?.items?.length&&!p.monthlyPlan?.months.some(row=>row.projectPlan?.items?.length))throw Error('Maliyet tabanı veya aylık toplam geçersiz.');
         if(a.id==='individual_operations'&&Math.round(a.monthlyAmount*100)!==a.services.reduce((sum,s)=>sum+Math.round(s.monthlyAmount*100),0))throw Error('Tekil hizmetlerin toplamı uyuşmuyor.');
       }
     }
   }
   if(stage==='proposal'){
     const p=result.data;
-    assertMonthlyPlan(p,{customer:true});
+    assertMonthlyPlan(p,{customer:true});assertProjectPlans(p,{customer:true});
     if(p.language!==undefined&&!['tr','en'].includes(p.language))throw Error('Teklif dili geçersiz.');
     if(!Array.isArray(p.sections))throw new Error('Teklif bölümleri eksik.');
     if(p.schemaVersion==='proposal-v1'){

@@ -27,9 +27,10 @@ const rows=[
  ['amazon_ppc','Amazon PPC',25,[0,10000,15000]],
  ['ugc','Barter ve UGC Influencer',26,[10000,12500,15000]],
  ['ecommerce_webmaster','E-Ticaret Altyapısı Webmaster',27,[15000,20000,25000]],
- ['custom_webmaster','Özel Yazılım ve App Webmaster',28,[0,0,0],'custom']
+ ['custom_webmaster','Özel Yazılım ve App Webmaster',28,[0,0,0],'custom'],
+ ['email_marketing','Mail Pazarlama',29,[15000,20000,22500]]
 ];
-export const costVersion='sellf-costs-2026-10-19-v1';
+export const costVersion='sellf-costs-2026-11-06-v2';
 export const segments=Object.freeze(['kobi','corporate','key_account']);
 export const catalog=Object.freeze(rows.map(([id,name,row,values,kind='fixed'])=>Object.freeze({id,name,row,kind,costs:Object.freeze(Object.fromEntries(segments.map((segment,i)=>[segment,values[i]])))})));
 export const operations=Object.freeze(catalog.filter(row=>['fixed','commission','custom'].includes(row.kind)));
@@ -38,3 +39,15 @@ export const cost=(id,segment)=>{
  if(!segments.includes(segment)||!byId[id])throw Error('Maliyet kalemi veya segment geçersiz.');
  return byId[id].costs[segment]*100;
 };
+// Source: Proje Kalem ve Bedelleri, rows 3–9. These are one-off costs,
+// never monthly webmaster/design retainers. Zero means a scoped cost is required.
+export const projects=Object.freeze([
+ ['project_custom_website','Web Sitesi (Custom)',3,[0,0,0]],
+ ['project_brandbook','Brandbook Tasarımı',4,[20000,27500,32400]],
+ ['project_ecommerce','Shopify ve E-Ticaret Websitesi',5,[15000,20000,30000]],
+ ['project_wordpress','WordPress vb. Websitesi',6,[15000,20000,30000]],
+ ['project_static','Statik Tasarım',7,[1500,3000,4500]],
+ ['project_motion','Motion Tasarım',8,[4500,6000,9000]],
+ ['project_app','App & WebApp',9,[0,0,0]]
+].map(([id,name,row,values])=>Object.freeze({id,name,row,kind:'project',costs:Object.freeze(Object.fromEntries(segments.map((segment,i)=>[segment,values[i]])))})));
+export const projectById=Object.freeze(Object.fromEntries(projects.map(s=>[s.id,s])));

@@ -9,10 +9,10 @@ test('desktop/mobile restores the recorded research view at 46.21 TRY and reache
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
+  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');await page.locator('#review-restored').click();await page.locator('.ob-price:not([hidden])').waitFor();
   assert.match(await page.locator('#ob-review-title').textContent(),/Kısmi BHS/);assert.match(await page.locator('.ob-review-notice').textContent(),/daha önce tamamlanan araştırma/);assert.match(await page.locator('.ob-footer>p').textContent(),/46,21 \/ 50,00/);
-  await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();
+  await page.locator('.ob-standard-editor input[value=meta]').check();await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();
   assert.equal(await page.locator('.ob-scope-approved').isChecked(),false);assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),['start']);assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });
@@ -21,7 +21,7 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');requests.push(u.pathname);assert.ok(!u.pathname.startsWith('/api/'),'synthetic review must not call APIs');try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
+  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');requests.push(u.pathname);assert.ok(!u.pathname.startsWith('/api/'),'synthetic review must not call APIs');try{await route.fulfill({contentType:{'.html':'text/html','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');
   for(const kind of ['budget','model']){
    await page.locator('#review-'+kind).click();await page.locator('.ob-recovery:not([hidden])').waitFor();
@@ -35,7 +35,7 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
    await page.locator('.ob-price:not([hidden])').waitFor();
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start','advance','recover','advance']);
    assert.equal(await page.locator('.ob-recovery').isVisible(),false);
-   await page.locator('.ob-price').click();assert.equal(await page.locator('.ob-pricing article').count(),2);
+   await page.locator('.ob-standard-editor input[value=meta]').check();await page.locator('.ob-price').click();assert.equal(await page.locator('.ob-pricing article').count(),2);
    assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
    await page.locator('.ob-edit').click();assert.equal(await page.locator('#ob-goals').inputValue(),'Ölçülebilir büyüme.');
    await page.locator('.ob-close').click();
@@ -47,7 +47,7 @@ test('desktop/mobile continue without completed research or extra paid retries, 
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
+  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');
   for(const kind of ['continuity','english','empty']){
    await page.locator('#review-'+kind).click();await page.locator('.ob-continuation:not([hidden])').waitFor();
@@ -57,7 +57,7 @@ test('desktop/mobile continue without completed research or extra paid retries, 
    assert.equal(await page.locator('.ob-research-report article').count(),0,'unavailable research must not render six empty dimension cards');
    assert.equal(await page.locator('.ob-research-report h3').count(),0,'unavailable research must not render empty report headings');
    assert.ok((await page.locator('.ob-footer>p').textContent()).includes('22,32 / 50,00'));
-   await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();assert.equal(await page.locator('.ob-pricing article').count(),2);
+   await page.locator('.ob-standard-editor input[value=meta]').check();await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();assert.equal(await page.locator('.ob-pricing article').count(),2);
    await page.locator('.ob-compose').click();
    if(kind==='english'){
     await page.locator('.ob-turkish:not([hidden])').waitFor();await page.locator('.ob-compose:not([disabled])').waitFor();

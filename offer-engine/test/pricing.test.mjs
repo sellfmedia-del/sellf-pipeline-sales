@@ -38,8 +38,9 @@ test('workbook corporate example: exact cost, floor and ideal; two scope alterna
  assert.equal(growth.cost,83000);assert.equal(growth.monthlyAmount,166000);assert.equal(growth.growthCosting.initialTeamCost,60000);assert.equal(growth.growthCosting.costBasis,68000);
  assert.equal(data.scope.target,null);assert.equal(data.scope.statedBudget,null);assert.equal(data.valueSync.performed,false);assert.equal(JSON.stringify(ctx),before);
 });
-test('catalogue retains original row count and segment-specific source values',()=>{
- assert.equal(catalog.length,27);
+test('catalogue retains original costs and includes the current sheet email row',()=>{
+ assert.equal(catalog.length,28);
+ assert.deepEqual(catalog.find(x=>x.id==='email_marketing').costs,{kobi:15000,corporate:20000,key_account:22500});
  assert.deepEqual(catalog.filter(x=>x.id==='growth_after')[0].costs,{kobi:20000,corporate:45000,key_account:60000});
  assert.deepEqual(catalog.filter(x=>x.id==='ugc')[0].costs,{kobi:10000,corporate:12500,key_account:15000});
 });

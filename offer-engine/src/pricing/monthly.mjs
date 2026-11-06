@@ -1,4 +1,5 @@
 import {operations,byId,cost,costVersion} from './catalog.mjs';
+import {normalizeProjects,priceProjects,priceServices} from './selection.mjs';
 import {interpretOperations} from './service-interpretation.mjs';
 
 export class MonthlyPlanError extends Error {}
@@ -17,14 +18,15 @@ export function normalizeMonthlyPlan(input,segment,context=''){
  if(!keys(input,['months'])||!Array.isArray(input.months)||!input.months.length||input.months.length>36)fail('Aylık plan 1–36 ay içermeli.');
  return {months:input.months.map((row,index)=>{
   const month=index+1,label=month+'. ay';
-  if(!keys(row,['month','services','influencerListAmount','operationsText'])||row.month!==month||!Array.isArray(row.services)||row.services.length>operations.length)fail(label+' operasyonları geçersiz; aylar sıralı olmalı.');
+  if(!keys(row,['month','services','projects','influencerListAmount','operationsText'])||row.month!==month||!Array.isArray(row.services)||row.services.length>operations.length)fail(label+' operasyonları geçersiz; aylar sıralı olmalı.');
   const entries=[...row.services];
   if(row.operationsText!==undefined){
    const interpretation=interpretOperations(row.operationsText,{context});
    if(interpretation.unresolved.length)fail(label+' · '+interpretation.unresolved.join(' '));
    for(const serviceId of interpretation.serviceIds)if(!entries.some(s=>s?.serviceId===serviceId))entries.push({serviceId});
   }
-  if(!entries.length)fail(label+' için en az bir operasyon seç.');
+  const projects=normalizeProjects(row.projects,segment);
+  if(!entries.length&&!projects.length)fail(label+' için en az bir hizmet veya proje seç.');
   const used=new Set();
   const services=entries.map(item=>{
    if(!keys(item,['serviceId','description','customCost'])||!ids.has(item.serviceId)||used.has(item.serviceId))fail(label+' operasyonları geçersiz veya tekrarlanıyor.');
@@ -37,7 +39,7 @@ export function normalizeMonthlyPlan(input,segment,context=''){
   if(services.filter(s=>['webmaster','ecommerce_webmaster','custom_webmaster'].includes(s.serviceId)).length>1)fail(label+' için bir webmaster kategorisi seç.');
   const influencer=used.has('influencer');
   if(!influencer&&row.influencerListAmount!==undefined)fail(label+' influencer liste tutarı için ilgili operasyonu seç.');
-  return {month,services,...(influencer?{influencerListAmount:tl(amount(row.influencerListAmount,label+' influencer liste tutarı'))}:{})};
+  return {month,services,...(projects.length?{projects}:{}),...(influencer?{influencerListAmount:tl(amount(row.influencerListAmount,label+' influencer liste tutarı'))}:{})};
  })};
 }
 
@@ -49,16 +51,9 @@ export function monthlyPricing(input,brief){
  const plan=normalizeMonthlyPlan(input.monthlyPlan,brief.segment,[brief.services,brief.needs,brief.meetingNotes].filter(Boolean).join('\n'));
  if(input.customCosts!==undefined||input.influencerListAmount!==undefined)fail('Aylık planda özel maliyet ve influencer tutarını ilgili ayın içinde gir.');
  const rows=plan.months.map(row=>{
-  const selected=row.services.map(item=>{
-   const service=byId[item.serviceId],operationCost=item.customCost!==undefined?amount(item.customCost,'Özel maliyet'):cost(service.id,brief.segment);
-   const commission=service.kind==='commission'?Math.ceil(amount(row.influencerListAmount,'Influencer liste tutarı')/10):0;
-   return {serviceId:service.id,name:service.name,row:service.row,reason:item.description||service.name,description:item.description||(service.id==='design'?'Aylık 25 statik + 5 motion; tasarım başına 2 revize.':service.name),cost:tl(operationCost),commissionAmount:tl(commission),pricingRule:service.kind==='commission'?'10_percent_of_list':item.customCost!==undefined?'explicit_custom_cost':'catalog'};
-  });
-  const operationCost=selected.reduce((sum,s)=>sum+Math.round(s.cost*100),0),commission=selected.reduce((sum,s)=>sum+Math.round(s.commissionAmount*100),0);
-  // These are the existing sheet rules: one operation uses 5,000 TL account;
-  // a bundle uses the segment's account cost; ideal is 2x cost plus commission.
-  const account=selected.length===1?500000:cost('account',brief.segment),base=operationCost+account;
-  return {month:row.month,services:selected,monthlyAmount:tl(base*2+commission),cost:tl(base),minimumAmount:tl(Math.ceil(base*3/2)+commission),idealAmount:tl(base*2+commission),accountCost:tl(account),operationCost:tl(operationCost),commissionAmount:tl(commission)};
+  const priced=priceServices(row,brief.segment),projectPlan=priceProjects(row.projects,brief.segment);
+  const {operation,commission,account,base,...publicPrice}=priced;
+  return {month:row.month,...publicPrice,...(projectPlan.items.length?{projectPlan}:{})};
  });
  const first=rows[0],union=[...new Map(rows.flatMap(row=>row.services).map(s=>[s.serviceId,s])).values()];
  const alternatives=['growth_operations','operations_bundle'].map(id=>({id,name:'Ay bazlı operasyon planı',billingPeriod:'monthly',monthlyAmount:first.monthlyAmount,minimumAmount:first.minimumAmount,idealAmount:first.idealAmount,cost:first.cost,accountCost:first.accountCost,budgetFit:'unknown',services:union}));
@@ -80,9 +75,9 @@ export function assertMonthlyPlan(data,{customer=false}={}){
  const rows=data.monthlyPlan?.months;
  if(!Array.isArray(rows)||!rows.length||rows.length>36||data.recommendedAlternativeId!=='operations_bundle')fail('Aylık fiyat kaydı eksik.');
  for(const [i,row]of rows.entries()){
-  if(row.month!==i+1||!Number.isFinite(row.monthlyAmount)||row.monthlyAmount<=0||!Array.isArray(row.services)||!row.services.length)fail('Aylık fiyat veya kapsam kaydı geçersiz.');
+  if(row.month!==i+1||!Number.isFinite(row.monthlyAmount)||row.monthlyAmount<0||!Array.isArray(row.services)||!row.services.length&&!row.projectPlan?.items?.length)fail('Aylık fiyat veya kapsam kaydı geçersiz.');
   if(customer){
-   if(Object.keys(row).some(k=>!['month','monthlyAmount','services'].includes(k))||row.services.some(s=>Object.keys(s).some(k=>!['id','name','description'].includes(k))))fail('Müşteri belgesinde iç maliyet bulunamaz.');
+   if(Object.keys(row).some(k=>!['month','monthlyAmount','services','projectPlan'].includes(k))||row.services.some(s=>Object.keys(s).some(k=>!['id','name','description'].includes(k))))fail('Müşteri belgesinde iç maliyet bulunamaz.');
   }else if(['cost','minimumAmount','idealAmount','accountCost'].some(k=>!Number.isFinite(row[k])||row[k]<0)||row.monthlyAmount!==row.idealAmount||row.monthlyAmount<row.minimumAmount)fail('Aylık maliyet ve kârlılık kaydı geçersiz.');
  }
  if(data.alternatives?.find(a=>a.id==='operations_bundle')?.monthlyAmount!==rows[0].monthlyAmount)fail('İlk ay referans tutarı aylık planla eşleşmiyor.');
