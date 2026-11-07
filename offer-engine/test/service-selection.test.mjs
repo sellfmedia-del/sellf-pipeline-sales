@@ -100,3 +100,10 @@ test('an alternative with no selected scope is disabled, cannot become a free co
  const sandbox={window:{},URL,Intl};vm.runInNewContext(await readFile(new URL('../../offers/proposal.js',import.meta.url),'utf8'),sandbox);assert.throws(()=>sandbox.window.PipelineProposal.buildMailto({...doc,version:1},{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'saved',alternativeId:'growth_operations',name:'Person',email:'person@example.com'}));
  const bad=structuredClone(doc);bad.recommendedAlternativeId='growth_operations';assert.throws(()=>assertResult('proposal',{status:'ready',data:bad}));
 });
+
+
+test('an unfinished legacy explicit quote keeps its already-priced Growth scope; new manual-cost quotes never acquire unselected Growth',async()=>{
+ const f=await offerFixture(),old=structuredClone(f.pricing);old.data.selectionMode='explicit';old.data.costVersion='sellf-costs-2026-11-06-v2';
+ const legacy=await proposalEngine.run({brief:f.brief,copy:f.copy},{...f,pricing:old});assertResult('proposal',legacy);assert.ok(legacy.data.alternatives[0].services.some(s=>s.id==='growth'));assert.deepEqual(legacy.data.alternatives.map(a=>a.monthlyAmount),old.data.alternatives.map(a=>a.monthlyAmount));
+ const pricing=await selected(f,{services:[{serviceId:'meta'}]});const current=await proposalEngine.run({brief:f.brief,copy:f.copy},{...f,pricing});assertResult('proposal',current);assert.deepEqual(current.data.alternatives[0].services.map(s=>s.id),['meta']);assert.equal(current.data.alternatives[0].monthlyAmount,18000);
+});

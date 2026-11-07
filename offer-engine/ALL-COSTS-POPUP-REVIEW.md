@@ -87,3 +87,10 @@ and the three new popup flows. The search flow was additionally rerun for
 multi-word Account Manager filtering. Contract typecheck, focused lint and diff
 checks passed. Production build retained index.html byte-for-byte, projected all
 28 + 8 exact source names without costs, and removed preview fixtures/modules.
+
+
+Release check: unfinished legacy explicit quotes can still carry the pre-change
+pricing rule. Proposal assembly preserves the Growth service already included in
+that signed old price snapshot. New manual-cost snapshots use the selected-only
+rule and never gain an unselected Growth service. Regression test added before
+release; stored documents and all monetary amounts remain unchanged.
