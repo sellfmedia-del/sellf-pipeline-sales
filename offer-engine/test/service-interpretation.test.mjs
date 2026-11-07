@@ -41,7 +41,7 @@ test('clear advisory-only meeting context informs generic advertising wording; a
  assert.deepEqual(interpretOperations('sosyal medya yönetimi',{context}).serviceIds,['social']);
 });
 
-test('free text and explicit month selections have identical kuruş-accurate costs, ideal markup, one account charge and exact service scope',async()=>{
+test('free text and explicit month selections have identical kuruş-accurate costs, ideal markup, no unselected Account charge and exact service scope',async()=>{
  const f=await offerFixture();
  for(const segment of ['kobi','corporate','key_account']){
   const brief=snapshotBrief({...f.brief,segment}),audit={...f.audit,data:{...f.audit.data,briefHash:briefHash(brief)}};
@@ -51,7 +51,7 @@ test('free text and explicit month selections have identical kuruş-accurate cos
   const a=await run(words),b=await run(explicit);assert.deepEqual(a.data.monthlyPlan,b.data.monthlyPlan);
   // Independent arithmetic using the approved workbook's three segment columns.
   const inputs={kobi:{ads:6000,social:10000,account:10000,planning:6000},corporate:{ads:9000,social:15000,account:15000,planning:9000},key_account:{ads:12000,social:20000,account:20000,planning:12000}}[segment];
-  assert.deepEqual(a.data.monthlyPlan.months.map(row=>row.monthlyAmount),[(inputs.ads*2+inputs.account)*2,(inputs.planning+5000)*2,(inputs.ads*2+inputs.social+inputs.account)*2]);
+  assert.deepEqual(a.data.monthlyPlan.months.map(row=>row.monthlyAmount),[(inputs.ads*2)*2,inputs.planning*2,(inputs.ads*2+inputs.social)*2]);
   await assert.rejects(()=>run({months:[{month:1,services:[],operationsText:'SEO'}]}),/SEO/);
  }
 });

@@ -32,7 +32,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const tokenLink=url.pathname==='/offers/customer.html'&&/^#[A-Za-z0-9_-]{43}$/.test(url.hash),slugLink=!url.hash&&url.pathname.length<=121&&/^\/[a-z0-9]+(?:-[a-z0-9]+)*-teklifi(?:-v\d+-[a-f0-9]{8})?$/.test(url.pathname);
   if(url.protocol!=='https:'||url.username||url.password||url.search||!(tokenLink||slugLink))throw Error(t('Geçerli yayınlanmış teklif bağlantısı gerekli.'));
   if(data.pricingMode==='monthly'&&alternativeId!=='operations_bundle')throw Error(t('Geçerli işbirliği alternatifini seç.'));
-  if(!alternative||!Number.isFinite(alternative.monthlyAmount))throw Error(t('Geçerli işbirliği alternatifini seç.'));
+  if(!alternative||alternative.available===false||!Number.isFinite(alternative.monthlyAmount))throw Error(t('Geçerli işbirliği alternatifini seç.'));
   if(typeof name!=='string'||!name.trim()||name.length>160||/[\r\n]/.test(name)||typeof email!=='string'||email.length>254||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw Error(t('Yetkili adı ve geçerli iş e-postası gerekli.'));
   const line=value=>String(value??'').replace(/[\r\n]/g,' ');
   const subject=t('Sözleşme talebi · ')+line(data.brand.name).slice(0,150);
@@ -96,7 +96,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const form=$('#so-request-form'),status=$('.so-request-status');
   function select(id){
    if(monthly&&id!=='operations_bundle')return;
-   selected=data.alternatives.find(a=>a.id===id);status.textContent='';form.querySelector('.so-mailto-reopen')?.remove();
+   const next=data.alternatives.find(a=>a.id===id);if(!next||next.available===false)return;selected=next;status.textContent='';form.querySelector('.so-mailto-reopen')?.remove();
    options.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.alternative===id)));
    $('#so-scope-title').textContent=selected.name;$('#so-scope-note').textContent=id==='growth_operations'?t('Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.'):t('Seçili hizmetler için uygulama, ölçüm ve takip.');
    const list=$('#so-service-list');list.replaceChildren();
@@ -132,7 +132,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const b=add('button','',options,'so-option');b.type='button';b.dataset.alternative=a.id;
    const meta=add('span','',b,'so-option-meta');add('span',i===0?t('01 / ENTEGRE'):t('02 / UYGULAMA'),meta);
    if(a.id===data.recommendedAlternativeId)add('span',t('Önerilen'),meta,'so-recommended');
-   add('span',a.name,b,'so-option-title');const amount=add('span',money(quoteAmount(data,a))+' ',b,'so-option-price');add('small',currencyLabel(data)+t(' / ay'),amount);
+   add('span',a.name,b,'so-option-title');if(a.available===false){b.disabled=true;b.setAttribute('aria-disabled','true');add('span',english?'No operations selected':'Operasyon kapsamı seçilmedi',b,'so-feenote');continue;}const amount=add('span',money(quoteAmount(data,a))+' ',b,'so-option-price');add('small',currencyLabel(data)+t(' / ay'),amount);
    b.addEventListener('click',()=>select(a.id));
   }
   if(data.projectPlan){

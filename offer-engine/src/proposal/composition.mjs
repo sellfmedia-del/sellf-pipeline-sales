@@ -33,7 +33,7 @@ export function buildPlans(plan,pricing){
    {time:'BHS onayından sonra 4–6 hafta',title:'Strateji, öncelikler ve uygulama takvimi'},
    {time:'Plan onayıyla',title:'Seçili operasyonlar, ölçüm ve takip'}
   ]:[{time:'Başlangıç',title:'Seçili hizmetler için erişim ve kurulum'},{time:'Kurulum sonrası',title:'Ölçüm doğrulaması ve uygulama takvimi'},{time:'Takvim onayıyla',title:'Seçili operasyonların başlatılması'},{time:'Aylık',title:'Raporlama ve iyileştirme'}];
-  return [a.id,{mode:plan.mode==='manual'?'manual':growth?'growth':'operations',steps:structuredClone(steps),focus:pricing.scope.selected.map(s=>s.name).join(' · ')}];
+  return [a.id,{mode:plan.mode==='manual'?'manual':growth?'growth':'operations',steps:structuredClone(steps),focus:a.services.map(s=>s.name).join(' · ')}];
  }));
 }
 export const compositionHash=(brief,audit,pricing,logo,plan)=>digest({brief,audit:digest(audit),pricing:digest(pricing),logo:digest(logo),plan});

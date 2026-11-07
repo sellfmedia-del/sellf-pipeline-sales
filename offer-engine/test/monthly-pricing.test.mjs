@@ -22,7 +22,7 @@ const run=(f,monthlyPlan=example)=>pricingEngine.run({brief:f.brief,pricingMode:
 
 test('fractional custom costs and influencer list commissions retain exact kuruş, without multiplying commission or duplicating account cost',async()=>{
  const f=await offerFixture(),result=await run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:12345.67},{serviceId:'influencer'}],influencerListAmount:100000.01}]});
- const row=result.data.monthlyPlan.months[0];assert.equal(row.accountCost,15000);assert.equal(row.cost,27345.67);assert.equal(row.commissionAmount,10000.01);assert.equal(row.monthlyAmount,64691.35);assert.equal(row.minimumAmount,51018.52);
+ const row=result.data.monthlyPlan.months[0];assert.equal(row.accountCost,0);assert.equal(row.cost,12345.67);assert.equal(row.commissionAmount,10000.01);assert.equal(row.monthlyAmount,34691.35);assert.equal(row.minimumAmount,28518.52);
  await assert.rejects(()=>run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:1.005}]}]}),/iki ondalıklı/);
  await assert.rejects(()=>run(f,{months:[{month:1,services:[{serviceId:'ai',customCost:0.00000001}]}]}),/iki ondalıklı/);
 });
@@ -34,15 +34,15 @@ test('monthly selection uses sheet costs and existing ideal rules for every segm
   const row={month:1,services:[{serviceId:service.id,...(custom?{customCost:12345.67}:{})}],...(service.kind==='commission'?{influencerListAmount:123456.78}:{})};
   const monthly=await run({brief,audit},{months:[row]});assertResult('pricing',monthly);
   const scope={summary:'Explicit scope.',budget:{posture:'unspecified',quote:null,targetQuote:null,targetScope:'unspecified'},services:[{serviceId:service.id,phase:'start',priority:1,reason:'Selected service.',briefQuote:brief.services,findingIds:[]}],exclusions:[]};
-  const standard=await pricingEngine.run({brief,scope,...(custom?{customCosts:[{serviceId:service.id,monthlyCost:12345.67}]}:{}),...(service.kind==='commission'?{influencerListAmount:123456.78}:{})},{audit});
+  const standard=await pricingEngine.run({brief,serviceSelection:{services:row.services,...(service.kind==='commission'?{influencerListAmount:123456.78}:{})}},{audit});
   for(const key of ['monthlyAmount','cost','minimumAmount','idealAmount','accountCost'])assert.equal(monthly.data.monthlyPlan.months[0][key],standard.data.alternatives[1][key],segment+' '+service.id+' '+key);
  }
 });
 
 test('each month contains only selected work; one-off operations stop, account is counted once, and budgets/BHS cannot override an explicit plan',async()=>{
  const f=await offerFixture(),before=structuredClone(f),result=await run(f),rows=result.data.monthlyPlan.months;
- assert.deepEqual(rows.map(row=>row.monthlyAmount),[28000,40000,85000,121000]);
- assert.equal(rows[0].accountCost,5000);assert.equal(rows[2].accountCost,15000);
+ assert.deepEqual(rows.map(row=>row.monthlyAmount),[18000,30000,55000,91000]);
+ assert.equal(rows[0].accountCost,0);assert.equal(rows[2].accountCost,0);
  assert.equal(rows[3].services.some(s=>s.serviceId==='webmaster'),false);
  assert.deepEqual(f,before);assert.equal(result.data.recommendedAlternativeId,'operations_bundle');
  const brief=snapshotBrief({...f.brief,budget:1,meetingNotes:'Aylık Sellf teklif 1 TL, çok kısıtlı bütçe.'}),audit={...f.audit,data:{...f.audit.data,briefHash:briefHash(brief),summary:'İdeal yatırım 999 milyon TL'}};
@@ -52,7 +52,7 @@ test('each month contains only selected work; one-off operations stop, account i
 
 test('missing costs, invalid/duplicate months/services, fixed cost overrides and unpriced influencers fail before a quote is created',async()=>{
  const f=await offerFixture();
- const bad=[{}, {months:[]},{months:[{month:2,services:[{serviceId:'meta'}]}]},{months:[{month:1,services:[]}]},{months:[{month:1,services:[{serviceId:'account'}]}]},{months:[{month:1,services:[{serviceId:'meta'},{serviceId:'meta'}]}]},{months:[{month:1,services:[{serviceId:'meta',customCost:1}]}]},{months:[{month:1,services:[{serviceId:'ai'}]}]},{months:[{month:1,services:[{serviceId:'influencer'}]}]},{months:[{month:1,services:[{serviceId:'webmaster'},{serviceId:'ecommerce_webmaster'}]}]},{months:[{month:1,services:[{serviceId:'meta',description:'<script>'}]}]},{months:Array.from({length:37},(_,i)=>({month:i+1,services:[{serviceId:'meta'}]}))}];
+ const bad=[{}, {months:[]},{months:[{month:2,services:[{serviceId:'meta'}]}]},{months:[{month:1,services:[]}]},{months:[{month:1,services:[{serviceId:'unknown'}]}]},{months:[{month:1,services:[{serviceId:'meta'},{serviceId:'meta'}]}]},{months:[{month:1,services:[{serviceId:'meta',customCost:1}]}]},{months:[{month:1,services:[{serviceId:'ai'}]}]},{months:[{month:1,services:[{serviceId:'influencer'}]}]},{months:[{month:1,services:[{serviceId:'webmaster'},{serviceId:'ecommerce_webmaster'}]}]},{months:[{month:1,services:[{serviceId:'meta',description:'<script>'}]}]},{months:Array.from({length:37},(_,i)=>({month:i+1,services:[{serviceId:'meta'}]}))}];
  for(const plan of bad)assert.throws(()=>normalizeMonthlyPlan(plan,'corporate'));
  await assert.rejects(()=>pricingEngine.run({brief:f.brief,monthlyPlan:example},{audit:f.audit}));
  await assert.rejects(()=>pricingEngine.run({brief:f.brief,pricingMode:'monthly',monthlyPlan:example,customCosts:[]},{audit:f.audit}));

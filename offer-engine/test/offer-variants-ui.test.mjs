@@ -1,3 +1,4 @@
+import {chooseBoth} from './helpers/cost-picker.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -32,7 +33,7 @@ test('desktop/mobile: select independent offers, negotiate only prices with warn
   await page.locator('.ob-body').evaluate(el=>el.scrollTop=0);await page.screenshot({path:'/workspace/scratch/28851c4d6589/offer-variant-brief-'+width+'.png'});assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await page.locator('.ob-next').click();await page.locator('.ob-price').waitFor();assert.equal(await page.evaluate(()=>window.reviewCalls.filter(c=>c.kind==='audit').length),0);
   assert.equal(await page.evaluate(()=>window.reviewCalls.filter(c=>c.action==='prepare').length),1);
-  await page.locator('.ob-standard-editor input[value=meta]').check();await page.locator('.ob-price').click();await page.locator('.ob-compose').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-save').waitFor();
+  await chooseBoth(page,'meta');await page.locator('.ob-price').click();await page.locator('.ob-compose').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-save').waitFor();
   await page.locator('.ob-logo-approved').check();await page.locator('.ob-scope-approved').check();await page.locator('.ob-save').click();await page.getByText('Teklif v3 kaydedildi. Önceki teklif ve kart değeri korundu.',{exact:true}).waitFor();
   await page.locator('.ob-close').click();await page.waitForFunction(()=>document.querySelectorAll('.offer-select option').length===3);
   assert.deepEqual(await page.evaluate(()=>window.reviewRows.slice(0,2)),changed);assert.deepEqual(await page.evaluate(()=>window.reviewLead),original.lead);
