@@ -8,7 +8,7 @@ export function monetaryAmount(value){
 }
 export function priceTerms(row){
  const doc=row.customer_document,pricing=row.pricing_snapshot;assertQuote(doc,{requireReady:true});
- if(doc.pricingMode==='monthly')return {currency:doc.quote?.currency||'TRY',documentHash:digest(doc),readOnly:true,alternatives:[]};
+ if(doc.pricingMode==='monthly'||doc.alternatives?.some(a=>a.available===false))return {currency:doc.quote?.currency||'TRY',documentHash:digest(doc),readOnly:true,alternatives:[]};
  if(!pricing?.alternatives||ids.some(id=>!pricing.alternatives.some(a=>a.id===id)))throw Error('Kaydedilen fiyat dayanağı bulunamadı.');
  const currency=doc.quote?.currency||'TRY',rate=doc.quote?.exchangeRate?.rate;
  const display=value=>currency==='USD'?usdAmount(value,rate):value;

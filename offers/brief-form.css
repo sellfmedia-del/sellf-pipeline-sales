@@ -112,13 +112,31 @@
 #offer-brief-dialog .ob-interpretation{overflow-wrap:anywhere;margin:8px 0}
 
 #offer-brief-dialog .ob-service-selection[hidden],#offer-brief-dialog .ob-standard-editor[hidden]{display:none}
-#offer-brief-dialog .ob-service-group{margin:16px 0;padding:14px;border:1px solid #d6d6d2;border-radius:10px}
-#offer-brief-dialog .ob-service-group legend{font-weight:700;padding:0 6px}
-#offer-brief-dialog .ob-service-choice{border-bottom:1px solid #e7e7e2;padding:10px 0}
-#offer-brief-dialog .ob-service-choice:last-child{border-bottom:0}
-#offer-brief-dialog .ob-service-check{display:flex;align-items:flex-start;gap:10px;cursor:pointer;line-height:1.4}
-#offer-brief-dialog .ob-service-check input{width:18px;min-width:18px;height:18px;margin:1px 0}
-#offer-brief-dialog .ob-service-details{margin:10px 0 4px 28px;display:grid;gap:10px}
-#offer-brief-dialog .ob-service-details label{display:grid;gap:5px;font-size:13px}
-#offer-brief-dialog .ob-service-details input{width:100%;box-sizing:border-box;min-width:0}
-#offer-brief-dialog .ob-service-selection{margin:20px 0}
+#offer-brief-dialog .ob-service-group{margin:12px 0;padding:0;border:0;min-width:0}
+#offer-brief-dialog .ob-service-group legend{font-size:12px;font-weight:600;margin-bottom:6px}
+#offer-brief-dialog .ob-service-trigger{display:flex;width:100%;box-sizing:border-box;justify-content:space-between;text-align:left;align-items:center;min-height:42px;padding:10px 12px;border:1px solid var(--border2,#c9cdd2);border-radius:7px;background:white;color:inherit;font:inherit;font-size:13px;cursor:pointer}
+#offer-brief-dialog .ob-service-trigger[aria-expanded=true]{border-color:#325ee0;box-shadow:0 0 0 2px #325ee01c}
+#offer-brief-dialog .ob-service-empty{font-size:12px;margin:7px 0}
+#offer-brief-dialog .ob-service-menu{position:fixed;inset:auto;margin:0;padding:14px;box-sizing:border-box;display:none;flex-direction:column;gap:10px;background:#fff;color:#202936;border:1px solid #ccd2dd;border-radius:11px;box-shadow:0 12px 48px #17223632;font:13px/1.45 system-ui,sans-serif;z-index:10000}
+#offer-brief-dialog .ob-service-menu:popover-open{display:flex}
+#offer-brief-dialog .ob-service-menu[data-fallback-open]{display:flex}
+#offer-brief-dialog .ob-service-menu[hidden]{display:none!important}
+#offer-brief-dialog .ob-service-menu-header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#offer-brief-dialog .ob-service-search{box-sizing:border-box;width:100%;min-height:40px;padding:9px 11px;border:1px solid #c9cdd2;border-radius:6px;font:inherit;margin:0;flex:none;background:#fff}
+#offer-brief-dialog .ob-service-options{overflow:auto;overscroll-behavior:contain;min-height:0;max-height:320px;flex:1}
+#offer-brief-dialog .ob-service-check{display:flex;align-items:flex-start;gap:10px;cursor:pointer;line-height:1.45;padding:10px 7px;border-radius:5px;margin:0;font-size:13px}
+#offer-brief-dialog .ob-service-check:hover{background:#f1f4fa}
+#offer-brief-dialog .ob-service-check[hidden]{display:none}
+#offer-brief-dialog .ob-service-check input{display:block;box-sizing:border-box;width:17px;min-width:17px;height:17px;padding:0;margin:1px 0 0;accent-color:#325ee0}
+#offer-brief-dialog .ob-service-row{padding:10px 0;border-bottom:1px solid var(--border,#e7e7e2);font-size:12px}
+#offer-brief-dialog .ob-service-row .ob-monthly-header{flex-wrap:nowrap;align-items:flex-start}
+#offer-brief-dialog .ob-service-row strong{font-size:12px;font-weight:600}
+#offer-brief-dialog .ob-service-remove{border:0;background:transparent;color:#66748a;text-decoration:underline;cursor:pointer;padding:0;font:inherit;flex:none}
+#offer-brief-dialog .ob-service-details{margin-top:6px;font-size:12px}
+#offer-brief-dialog .ob-service-details summary{cursor:pointer;color:#66748a}
+#offer-brief-dialog .ob-service-detail-fields{display:grid;gap:9px;margin-top:10px}
+#offer-brief-dialog .ob-service-detail-fields label{display:grid;gap:5px;font-size:12px;margin:0}
+#offer-brief-dialog .ob-service-detail-fields input{display:block;width:100%;box-sizing:border-box;min-width:0;margin:0;padding:8px;border:1px solid var(--border,#d6d6d2);border-radius:5px;font:inherit;background:#fff}
+#offer-brief-dialog .ob-service-selection{margin:18px 0}
+#offer-brief-dialog .ob-alternative-costs{padding:12px 0;border-bottom:1px solid var(--border,#e7e7e2)}
+#offer-brief-dialog .ob-alternative-costs h4{font-size:14px;margin:0 0 8px}

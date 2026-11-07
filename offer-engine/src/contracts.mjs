@@ -28,7 +28,8 @@ export function assertResult(stage,result){
     if(['pricing-v1','pricing-v2'].includes(p.schemaVersion)){
       if(p.alternatives.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!p.costSnapshotHash||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Fiyat alternatifleri veya maliyet kaydı eksik.');
       for(const a of p.alternatives){
-        if(['cost','minimumAmount','idealAmount','accountCost'].some(key=>!Number.isFinite(a[key])||a[key]<0)||Math.round(a.monthlyAmount*100)<Math.round(a.minimumAmount*100)||a.monthlyAmount>a.idealAmount||!a.services?.length&&!p.projectPlan?.items?.length&&!p.monthlyPlan?.months.some(row=>row.projectPlan?.items?.length))throw Error('Maliyet tabanı veya aylık toplam geçersiz.');
+        if(a.available!==undefined&&typeof a.available!=='boolean'||a.available===false&&(a.monthlyAmount!==0||a.cost!==0||a.accountCost!==0||a.services.length||a.id===p.recommendedAlternativeId))throw Error('Kapsam seçilmeyen alternatif fiyatlandırılamaz.');
+        if(['cost','minimumAmount','idealAmount','accountCost'].some(key=>!Number.isFinite(a[key])||a[key]<0)||Math.round(a.monthlyAmount*100)<Math.round(a.minimumAmount*100)||a.monthlyAmount>a.idealAmount||!a.services?.length&&!p.projectPlan?.items?.length&&!p.monthlyPlan?.months.some(row=>row.projectPlan?.items?.length)&&a.available!==false)throw Error('Maliyet tabanı veya aylık toplam geçersiz.');
         if(a.id==='individual_operations'&&Math.round(a.monthlyAmount*100)!==a.services.reduce((sum,s)=>sum+Math.round(s.monthlyAmount*100),0))throw Error('Tekil hizmetlerin toplamı uyuşmuyor.');
       }
     }
@@ -41,7 +42,7 @@ export function assertResult(stage,result){
     if(p.schemaVersion==='proposal-v1'){
       assertQuote(p,{requireReady:true});
       if(p.alternatives?.map(a=>a.id).join(',')!=='growth_operations,operations_bundle'||!(p.logo?.image?.startsWith('data:image/png;base64,')||p.logo?.processing==='original'&&originalLogoImage(p.logo.image))||!p.alternatives.some(a=>a.id===p.recommendedAlternativeId))throw Error('Teklif kapsamı veya logo eksik.');
-      for(const a of p.alternatives)if(a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0||!p.plans?.[a.id]?.steps?.length||a.services.some(s=>['cost','monthlyAmount','minimumAmount','idealAmount'].some(key=>key in s)))throw Error('Müşteri teklifi toplamları veya hizmet alanları geçersiz.');
+      for(const a of p.alternatives)if(a.available!==undefined&&typeof a.available!=='boolean'||a.available===false&&(a.monthlyAmount!==0||a.services.length||a.id===p.recommendedAlternativeId)||a.billingPeriod!=='monthly'||!Number.isFinite(a.monthlyAmount)||a.monthlyAmount<0||!p.plans?.[a.id]?.steps?.length||a.services.some(s=>['cost','monthlyAmount','minimumAmount','idealAmount'].some(key=>key in s)))throw Error('Müşteri teklifi toplamları veya hizmet alanları geçersiz.');
     }
   }
 }

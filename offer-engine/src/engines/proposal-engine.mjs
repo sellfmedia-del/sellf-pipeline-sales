@@ -1,3 +1,4 @@
+import {byId} from '../pricing/catalog.mjs';
 import {publicProjects} from '../pricing/selection.mjs';
 import {assertQuote} from '../pricing/currency.mjs';
 import {snapshotBrief,briefHash} from '../bhs/brief.mjs';
@@ -5,7 +6,7 @@ import {assertResult} from '../contracts.mjs';
 import {offerCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
 import {selectProposalAudit} from '../proposal/audit-selection.mjs';
 import {digest} from '../pricing/proof.mjs';
-export const proposalEngine=Object.freeze({id:'proposal',version:'0.8.0',async run(input,dependencies={}){
+export const proposalEngine=Object.freeze({id:'proposal',version:'0.9.0',async run(input,dependencies={}){
  const brief=snapshotBrief(input.brief),{audit,pricing,logo}=dependencies;
  for(const [name,result]of Object.entries({audit,pricing,logo}))assertResult(name,result);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief)||pricing.data.briefHash!==briefHash(brief))throw Error('Teklif girdileri aynı doğrulanmış brief için olmalı.');
@@ -14,7 +15,7 @@ export const proposalEngine=Object.freeze({id:'proposal',version:'0.8.0',async r
  const background=input.logoBackground||candidate.placement?.background||'#ffffff';
  if(!['#ffffff','#171717','#626262'].includes(background))throw Error('Logo zemini geçersiz.');
  const monthly=pricing.data.pricingMode==='monthly';
- const alternatives=pricing.data.alternatives.map(a=>({id:a.id,name:a.name,billingPeriod:'monthly',monthlyAmount:a.monthlyAmount,services:[...(a.id==='growth_operations'&&!monthly?[{id:'growth',name:'Growth danışmanlığı ve strateji',description:'Tam BHS, onaylanan strateji ve uygulama planıyla Growth danışmanlığı.'}]:[]),...a.services.map(s=>({id:s.serviceId,name:s.name,description:s.deliverables||s.reason}))]}));
+ const alternatives=pricing.data.alternatives.map(a=>({id:a.id,name:a.name,billingPeriod:'monthly',monthlyAmount:a.monthlyAmount,...(a.available===false?{available:false}:{}),services:[...(a.id==='growth_operations'&&!monthly&&pricing.data.selectionMode!=='explicit'&&!a.services.some(s=>byId[s.serviceId]?.kind==='growth')?[{id:'growth',name:'Growth danışmanlığı ve strateji',description:'Tam BHS, onaylanan strateji ve uygulama planıyla Growth danışmanlığı.'}]:[]),...a.services.map(s=>({id:s.serviceId,name:s.name,description:s.deliverables||s.reason}))]}));
  const monthlyPlan=monthly?{months:pricing.data.monthlyPlan.months.map(row=>({month:row.month,monthlyAmount:row.monthlyAmount,...(row.projectPlan?{projectPlan:publicProjects(row.projectPlan)}:{}),services:row.services.map(s=>({id:s.serviceId,name:s.name,description:s.description}))}))}:null;
  const plans=buildPlans(plan,pricing.data);
  if(!pricing.data.scope.selected.length&&pricing.data.projectPlan&&plan.mode!=='manual')plans.operations_bundle.steps=[{time:'Başlangıç',title:'Proje kapsamı, erişimler ve teslimlerin netleştirilmesi'},{time:'Proje takvimine göre',title:'Proje uygulaması ve teslim onayı'}];

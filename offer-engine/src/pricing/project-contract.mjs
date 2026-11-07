@@ -2,7 +2,7 @@
 // contains only the one-off selling price; internal costs never leave pricing.
 export function assertProjectPlan(plan,{customer=false}={}){
  if(plan===undefined)return;
- if(!plan||Object.keys(plan).some(k=>!['items','oneTimeAmount'].includes(k))||!Array.isArray(plan.items)||!plan.items.length||plan.items.length>7)throw Error('Proje fiyat kaydı eksik.');
+ if(!plan||Object.keys(plan).some(k=>!['items','oneTimeAmount'].includes(k))||!Array.isArray(plan.items)||!plan.items.length||plan.items.length>8)throw Error('Proje fiyat kaydı eksik.');
  const ids=new Set();let total=0;
  for(const p of plan.items){
   const id=customer?p.id:p.serviceId;

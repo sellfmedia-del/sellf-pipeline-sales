@@ -1,3 +1,4 @@
+import {chooseBoth} from './helpers/cost-picker.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -117,10 +118,10 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
   if(viewport.width===390){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
-  await frame.locator('.ob-standard-editor input[value=social]').check();
+  await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.equal(priceActions.includes('status'),false);
-  assert.match(await frame.locator('.ob-pricing').textContent(),/40.000/);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
+  assert.match(await frame.locator('.ob-pricing').textContent(),/30.000/);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await frame.locator('.ob-compose').click();await frame.getByText('Teklif taslağı hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-proposal .so-option').count(),2);assert.match(await frame.locator('.so-option').first().textContent(),viewport.currency==='USD'?/USD \/ ay/:/TL \/ ay/);if(viewport.currency==='USD'){assert.match(await frame.locator('.so-exchange-rate').textContent(),/44,1234/);assert.equal(actions.filter(a=>a==='start').length,1);}

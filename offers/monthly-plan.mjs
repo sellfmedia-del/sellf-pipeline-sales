@@ -6,7 +6,7 @@ export async function mountMonthlyEditor(container,{getSegment,onChange=()=>{}})
  const button=(text,parent,action)=>{const el=add('button',text,parent,'ob-monthly-button');el.type='button';el.addEventListener('click',action);return el;};
  const snapshot=()=>{months=months.map((row,i)=>({month:row.month,...pickers[i].snapshot()}));};
  async function draw(){
-  container.replaceChildren();pickers=[];const cards=add('div','',container,'ob-monthly-cards');
+  for(const p of pickers)p.destroy();container.replaceChildren();pickers=[];const cards=add('div','',container,'ob-monthly-cards');
   for(const [index,row]of months.entries()){
    const card=add('section','',cards,'ob-monthly-card');card.dataset.month=row.month;
    const header=add('div','',card,'ob-monthly-header');add('h4',row.month+'. ay',header);
@@ -17,5 +17,5 @@ export async function mountMonthlyEditor(container,{getSegment,onChange=()=>{}})
   const more=button('Ay ekle',actions,async()=>{snapshot();months.push({month:months.length+1,services:[],projects:[]});await draw();onChange();});more.disabled=months.length===36;
   if(months.length>1)button('Son ayı kaldır',actions,async()=>{snapshot();months.pop();await draw();onChange();});
  }
- await draw();return {getPlan:()=>({months:pickers.map((picker,i)=>{try{return {month:i+1,...picker.getSelection()};}catch(error){throw Error((i+1)+'. ay · '+error.message);}})}),refresh:async()=>{snapshot();await draw();}};
+ await draw();return {getPlan:()=>({months:pickers.map((picker,i)=>{try{return {month:i+1,...picker.getSelection()};}catch(error){throw Error((i+1)+'. ay · '+error.message);}})}),refresh:async()=>{snapshot();await draw();},destroy:()=>pickers.forEach(p=>p.destroy())};
 }

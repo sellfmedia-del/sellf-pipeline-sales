@@ -1,0 +1,332 @@
+{
+  "spreadsheetId": "10TQmuNVY8ArWrk9iH8iGzqvOcQHnrRXzx3AMPy1-Z8c",
+  "checkedAt": "2026-11-07",
+  "retainers": [
+    {
+      "row": 2,
+      "name": "Account Director / Manager (Markaya özel POC)",
+      "costs": [
+        10000,
+        15000,
+        20000
+      ]
+    },
+    {
+      "row": 3,
+      "name": "Growth Ekibi Tam Kapsam (İlk İki Ay)",
+      "costs": [
+        40000,
+        60000,
+        80000
+      ]
+    },
+    {
+      "row": 4,
+      "name": "Growth Ekibi Proje Yönetimi (Planlama Sonrası)",
+      "costs": [
+        20000,
+        45000,
+        60000
+      ]
+    },
+    {
+      "row": 5,
+      "name": "Growth Ekibi Essential (Tek Danışman)",
+      "costs": [
+        15000,
+        30000,
+        40000
+      ]
+    },
+    {
+      "row": 6,
+      "name": "Meta Reklam Yönetimi Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 7,
+      "name": "Google Ads Reklam Yönetimi Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 8,
+      "name": "B2B Dijital Pazarlama Operasyon",
+      "costs": [
+        10000,
+        15000,
+        15000
+      ]
+    },
+    {
+      "row": 9,
+      "name": "Programmatic Reklam operasyon",
+      "costs": [
+        0,
+        15000,
+        20000
+      ]
+    },
+    {
+      "row": 10,
+      "name": "On site SEO operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 11,
+      "name": "Off Site SEO operasyon",
+      "costs": [
+        8000,
+        10000,
+        12000
+      ]
+    },
+    {
+      "row": 12,
+      "name": "Teknik SEO operasyon",
+      "costs": [
+        8000,
+        12000,
+        15000
+      ]
+    },
+    {
+      "row": 13,
+      "name": "E-Ticaret Pazaryeri Operasyon",
+      "costs": [
+        9000,
+        12000,
+        15000
+      ]
+    },
+    {
+      "row": 14,
+      "name": "E-Ticaret Danışmanlık & Planlama Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 15,
+      "name": "Sosyal Medya Yönetimi Operasyon",
+      "costs": [
+        10000,
+        15000,
+        20000
+      ]
+    },
+    {
+      "row": 16,
+      "name": "Statik & Motion Tasarım Operasyon",
+      "costs": [
+        10000,
+        20000,
+        30000
+      ]
+    },
+    {
+      "row": 17,
+      "name": "Webmaster Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 18,
+      "name": "Marka Pazarlama Operasyon",
+      "costs": [
+        10000,
+        15000,
+        20000
+      ]
+    },
+    {
+      "row": 19,
+      "name": "Influencer Pazarlama Operasyon",
+      "costs": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "row": 20,
+      "name": "Yapay Zeka Entegrasyon & Pazarlama Operasyon",
+      "costs": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "row": 21,
+      "name": "Fullfilment & Lojistik Planlama Operasyon",
+      "costs": [
+        0,
+        20000,
+        25000
+      ]
+    },
+    {
+      "row": 22,
+      "name": "Moderasyon Hizmeti Operasyon ",
+      "costs": [
+        5000,
+        10000,
+        15000
+      ]
+    },
+    {
+      "row": 23,
+      "name": "Medya Planlama & Bütçe Planlama Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 24,
+      "name": "Tiktok Reklam Yönetim Operasyon",
+      "costs": [
+        6000,
+        9000,
+        12000
+      ]
+    },
+    {
+      "row": 25,
+      "name": "Amazon PPC Operasyon",
+      "costs": [
+        0,
+        10000,
+        15000
+      ]
+    },
+    {
+      "row": 26,
+      "name": "Barter & UGC Influencer Operasyon",
+      "costs": [
+        10000,
+        12500,
+        15000
+      ]
+    },
+    {
+      "row": 27,
+      "name": "E-Ticaret Altyapılar Webmaster Operasyon",
+      "costs": [
+        15000,
+        20000,
+        25000
+      ]
+    },
+    {
+      "row": 28,
+      "name": "Custom Yazılım & App Webmaster",
+      "costs": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "row": 29,
+      "name": "Mail Pazarlama",
+      "costs": [
+        15000,
+        20000,
+        22500
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "row": 2,
+      "name": "Account Director / Manager",
+      "costs": [
+        10000,
+        15000,
+        20000
+      ]
+    },
+    {
+      "row": 3,
+      "name": "Web Sitesi (Custom)",
+      "costs": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "row": 4,
+      "name": "Brandbook Tasarımı",
+      "costs": [
+        20000,
+        27500,
+        32400
+      ]
+    },
+    {
+      "row": 5,
+      "name": "Shopify ve E-Ticaret websitesi",
+      "costs": [
+        15000,
+        20000,
+        30000
+      ]
+    },
+    {
+      "row": 6,
+      "name": "Workdpress vb. websitesi",
+      "costs": [
+        15000,
+        20000,
+        30000
+      ]
+    },
+    {
+      "row": 7,
+      "name": "Statik",
+      "costs": [
+        1500,
+        3000,
+        4500
+      ]
+    },
+    {
+      "row": 8,
+      "name": "Motion",
+      "costs": [
+        4500,
+        6000,
+        9000
+      ]
+    },
+    {
+      "row": 9,
+      "name": "App & Web App",
+      "costs": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

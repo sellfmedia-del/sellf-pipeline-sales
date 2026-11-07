@@ -1,24 +1,17 @@
-import {operations,byId,cost,costVersion} from './catalog.mjs';
-import {normalizeProjects,priceProjects,priceServices} from './selection.mjs';
+import {catalog,costVersion} from './catalog.mjs';
+import {normalizeProjects,priceProjects,priceServices,normalizeServices} from './selection.mjs';
 import {interpretOperations} from './service-interpretation.mjs';
 
 export class MonthlyPlanError extends Error {}
 const fail=message=>{throw new MonthlyPlanError(message);};
 const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(k=>allowed.includes(k));
-const amount=(value,label)=>{
- if(typeof value!=='number'||!Number.isFinite(value)||value<0.01||value>1e10||!Number.isSafeInteger(Math.round(value*100))||Math.abs(value*100-Math.round(value*100))>0.00001)fail(label+' sıfırdan büyük, en fazla iki ondalıklı bir TL tutarı olmalı.');
- return Math.round(value*100);
-};
-const tl=value=>value/100;
-const ids=new Set(operations.map(s=>s.id));
-
 // An explicit monthly selection is independent of the research brief. Neither
 // a model nor a budget hint may add, remove or postpone these operations.
 export function normalizeMonthlyPlan(input,segment,context=''){
  if(!keys(input,['months'])||!Array.isArray(input.months)||!input.months.length||input.months.length>36)fail('Aylık plan 1–36 ay içermeli.');
  return {months:input.months.map((row,index)=>{
   const month=index+1,label=month+'. ay';
-  if(!keys(row,['month','services','projects','influencerListAmount','operationsText'])||row.month!==month||!Array.isArray(row.services)||row.services.length>operations.length)fail(label+' operasyonları geçersiz; aylar sıralı olmalı.');
+  if(!keys(row,['month','services','projects','influencerListAmount','operationsText'])||row.month!==month||!Array.isArray(row.services)||row.services.length>catalog.length)fail(label+' operasyonları geçersiz; aylar sıralı olmalı.');
   const entries=[...row.services];
   if(row.operationsText!==undefined){
    const interpretation=interpretOperations(row.operationsText,{context});
@@ -27,24 +20,13 @@ export function normalizeMonthlyPlan(input,segment,context=''){
   }
   const projects=normalizeProjects(row.projects,segment);
   if(!entries.length&&!projects.length)fail(label+' için en az bir hizmet veya proje seç.');
-  const used=new Set();
-  const services=entries.map(item=>{
-   if(!keys(item,['serviceId','description','customCost'])||!ids.has(item.serviceId)||used.has(item.serviceId))fail(label+' operasyonları geçersiz veya tekrarlanıyor.');
-   used.add(item.serviceId);const service=byId[item.serviceId],base=cost(service.id,segment);
-   if(item.description!==undefined&&(typeof item.description!=='string'||item.description.length>240||/[<>]/.test(item.description)))fail(label+' kapsam açıklaması geçersiz.');
-   if(item.customCost!==undefined&&(base>0||service.kind==='commission'))fail('Sheet’te maliyeti tanımlı operasyonun maliyeti değiştirilemez.');
-   const custom=base===0&&service.kind!=='commission'?tl(amount(item.customCost,label+' · '+service.name+' maliyeti')):undefined;
-   return {serviceId:service.id,...(item.description?.trim()?{description:item.description.trim()}:{}),...(custom!==undefined?{customCost:custom}:{})};
-  });
-  if(services.filter(s=>['webmaster','ecommerce_webmaster','custom_webmaster'].includes(s.serviceId)).length>1)fail(label+' için bir webmaster kategorisi seç.');
-  const influencer=used.has('influencer');
-  if(!influencer&&row.influencerListAmount!==undefined)fail(label+' influencer liste tutarı için ilgili operasyonu seç.');
-  return {month,services,...(projects.length?{projects}:{}),...(influencer?{influencerListAmount:tl(amount(row.influencerListAmount,label+' influencer liste tutarı'))}:{})};
+  const selected=normalizeServices(entries,segment,row.influencerListAmount);
+  return {month,...selected,...(projects.length?{projects}:{})};
  })};
 }
 
 export function monthlyCatalog(){
- return operations.map(({id,name,kind,costs})=>({id,name,kind,customSegments:Object.keys(costs).filter(segment=>costs[segment]===0&&kind!=='commission')}));
+ return catalog.map(({id,name,sourceName,kind,costs})=>({id,name:sourceName||name,kind,customSegments:Object.keys(costs).filter(segment=>costs[segment]===0&&kind!=='commission')}));
 }
 
 export function monthlyPricing(input,brief){
@@ -52,15 +34,15 @@ export function monthlyPricing(input,brief){
  if(input.customCosts!==undefined||input.influencerListAmount!==undefined)fail('Aylık planda özel maliyet ve influencer tutarını ilgili ayın içinde gir.');
  const rows=plan.months.map(row=>{
   const priced=priceServices(row,brief.segment),projectPlan=priceProjects(row.projects,brief.segment);
-  const {operation,commission,account,base,...publicPrice}=priced;
+  const {operation,commission,account,base,growthCost,explicitAccount,...publicPrice}=priced;
   return {month:row.month,...publicPrice,...(projectPlan.items.length?{projectPlan}:{})};
  });
  const first=rows[0],union=[...new Map(rows.flatMap(row=>row.services).map(s=>[s.serviceId,s])).values()];
- const alternatives=['growth_operations','operations_bundle'].map(id=>({id,name:'Ay bazlı operasyon planı',billingPeriod:'monthly',monthlyAmount:first.monthlyAmount,minimumAmount:first.minimumAmount,idealAmount:first.idealAmount,cost:first.cost,accountCost:first.accountCost,budgetFit:'unknown',services:union}));
+ const alternatives=['growth_operations','operations_bundle'].map(id=>({id,name:'Ay bazlı hizmet planı',billingPeriod:'monthly',monthlyAmount:first.monthlyAmount,minimumAmount:first.minimumAmount,idealAmount:first.idealAmount,cost:first.cost,accountCost:first.accountCost,budgetFit:'unknown',services:union}));
  // Retain the existing two-entry storage contract. In this opt-in mode only
  // monthlyPlan is presented to the customer; the legacy scalar is the first
  // month's operations fee, explicitly labelled by the operator UI.
- const costSnapshot={version:costVersion,segment:brief.segment,monthlyPlan:plan,months:rows,rules:{minimumMarkup:1.5,idealMarkup:2,singleServiceAccount:5000,influencer:'10_percent_of_list',referenceAmount:'first_month_operations'}};
+ const costSnapshot={version:costVersion,segment:brief.segment,monthlyPlan:plan,months:rows,rules:{minimumMarkup:1.5,idealMarkup:2,account:'selected_only',growth:'selected_only',projectAccount:'selected_only',influencer:'10_percent_of_list',referenceAmount:'first_month_operations'}};
  return {status:'ready',data:{schemaVersion:'pricing-v2',currency:'TRY',costVersion,segment:brief.segment,pricingMode:'monthly',monthlyPlan:{months:rows},alternatives,recommendedAlternativeId:'operations_bundle',
   scope:{summary:'Operasyonlar ve başlangıç ayları kullanıcı tarafından belirlendi. Her ay kendi kapsamıyla ideal kârlılık üzerinden fiyatlandırıldı.',budgetPosture:'unspecified',budgetQuote:null,statedBudget:brief.budget,statedBudgetScope:'unspecified',target:null,selected:union,deferred:[],pending:[],exclusions:[],provisional:false},
   costSnapshot,

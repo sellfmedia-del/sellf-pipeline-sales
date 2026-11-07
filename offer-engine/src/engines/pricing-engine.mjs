@@ -12,7 +12,7 @@ function money(value){
 }
 const tl=value=>value/100;
 const markup=(cost,numerator)=>Math.ceil(cost*numerator/2);
-export const pricingEngine=Object.freeze({id:'pricing',version:'0.5.0',async run(input,{audit}={}){
+export const pricingEngine=Object.freeze({id:'pricing',version:'0.6.0',async run(input,{audit}={}){
  const brief=snapshotBrief(input?.brief);
  assertResult('audit',audit);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief))throw Error('Fiyatlama için bu briefe ait doğrulanmış BHS gerekli.');
