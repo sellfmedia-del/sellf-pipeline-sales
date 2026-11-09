@@ -7,7 +7,7 @@ import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {createSequentialProviders,stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
-import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
@@ -42,11 +42,13 @@ test('six logical stages run in order through real PostgreSQL receipts and provi
   const report=directAuditResult(brief,synthesis);
   assert.deepEqual(synthesis.supervision.stageOrder,logicalPhases);
   assert.deepEqual(synthesis.supervision.stageDecisions.map(s=>s.phase),logicalPhases.slice(0,5));
-  assert.equal(report.status,'ready');assert.equal(report.data.researchCoverage.length,24);assert.equal(report.data.competitors.length,3);assert.ok(report.data.findings.length>=12);assert.equal(report.data.quality.checksPassed,true);
+  assert.equal(report.status,'ready');const limited=directAuditResult(brief,{...synthesis,supervision:{...synthesis.supervision,finalDecision:'limited'}});assert.equal(limited.status,'review');assert.ok(limited.data.supervision.acceptance.issues.includes('manager_final_limited'));
+  const drafted=(await db.ledger.get(stageKey(brief,'report_draft','v8'))).value,review=modelAnswer('v8-final-report',{operatorDraft:drafted.reportDraft});assert.throws(()=>applyFinalReview(drafted.reportDraft,{...review,patches:[{...drafted.reportDraft.findings[0],sourceIds:['fabricated']} ]},sequentialContext(brief,drafted)),e=>e.code==='model_output_invalid');
+  assert.equal(report.data.researchCoverage.length,24);assert.equal(report.data.competitors.length,3);assert.ok(report.data.findings.length>=12);assert.equal(report.data.quality.checksPassed,true);
   assert.deepEqual(new Set(synthesis.supervision.swot.map(s=>s.quadrant)),new Set(['strength','weakness','opportunity','threat']));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-sector-extract')>t.events.findIndex(e=>e.stage==='v8-brand-review'));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-swot-draft')>t.events.findIndex(e=>e.stage==='v8-competition-review'));
-  const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=4400);assert.ok(cost.chargedKurus>500);
+  const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=4800);assert.ok(cost.chargedKurus>500);
   const count=t.events.length;
   for(const phase of sequentialPhases.slice(0,-2))await run(db,phase,t);
   assert.equal(t.events.length,count);assert.deepEqual(await db.ledger.status(),cost);
@@ -67,6 +69,17 @@ test('a revenue topic label on historical growth cannot pass the industry-unders
   for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector')+1))await run(db,phase,t);
   assert.equal((await db.ledger.get(stageKey(brief,'sector','v8'))).value.decision,'limited');
   await run(db,'sector_validation',t);const count=t.events.length;await assert.rejects(run(db,'competition_plan',t),e=>e.code==='research_stage_incomplete');assert.equal(t.events.length,count);
+ }finally{await db.close();}
+});
+
+test('legacy paid facts receive one source-backed manager amendment without resetting prior charges',async()=>{
+ const db=await localBudget(),t=modelTransport();try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector')+1))await run(db,phase,t);
+  const key=stageKey(brief,'sector','v8'),row=await db.ledger.get(key),old={...row.value,facts:row.value.facts.map(({kind,...fact})=>fact)};
+  await db.db.query('update public.pipeline_offer_preview_budget_steps set value=$1 where budget_id=$2 and step_key=$3',[JSON.stringify(old),row.budget_id,key]);
+  const cost=await db.ledger.status(),events=t.events.length;
+  const corrected=await run(db,'sector_validation',t);assert.equal(corrected.decision,'accepted');assert.equal(corrected.managerAmendment,true);assert.ok(corrected.facts.every(f=>f.kind==='observation'));assert.ok((await db.ledger.status()).chargedKurus>cost.chargedKurus);
+  const after=await db.ledger.status();await run(db,'sector_validation',t);assert.deepEqual(await db.ledger.status(),after);assert.equal(t.events.length,events+1);assert.ok((await db.ledger.get(key)).value.facts.every(f=>f.kind===undefined));
  }finally{await db.close();}
 });
 test('new process resumes the committed stage without duplicating model or search fees',async()=>{
@@ -113,6 +126,6 @@ test('stage tools cannot spend final-report headroom even through parallel reser
  const db=await localBudget();try{
   const l=stageBudgetLedger(db.ledger,'coverage_actors');let calls=0;
   await Promise.allSettled(Array.from({length:8},(_,i)=>l.once('tool:'+i,{i},400,async()=>{calls++;return {receipt:hash(i)};})));
-  assert.ok((await db.ledger.status()).chargedKurus<=3000);assert.ok(calls<=6);
+  assert.ok((await db.ledger.status()).chargedKurus<=3600);assert.ok(calls<=7);
  }finally{await db.close();}
 });

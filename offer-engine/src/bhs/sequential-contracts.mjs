@@ -8,7 +8,7 @@ export const logicalPhases=Object.freeze(['brand','sector','competition','swot',
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // A stage may spend only its share of the SAME 50 TRY account. The remainder
 // protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:1400,sector:2100,sector_validation:2600,competition:2600,swot:2800,coverage:3000,report_draft:3500,synthesis:4400,scope:5000});
+export const stageCeilings=Object.freeze({brand:1400,sector:2100,sector_validation:3000,competition:3200,swot:3400,coverage:3600,report_draft:3800,synthesis:4800,scope:5000});
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -16,7 +16,8 @@ export const refs=arr(str(80),12);
 export const factSchema=obj({id:str(80),kind:{type:'string',enum:['observation','inference']},topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
 export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400),12)});
 export const taskSchema=obj({instruction:str(1200),queries:arr(str(500),2)});
-export const understandingSchema=obj({facts:arr(factSchema,10),unknowns:arr(str(400),8),decision:{type:'string',enum:['accepted','limited']},notes:str(700),nextTask:taskSchema});
+const conciseFact=structuredClone(factSchema);conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
+export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(400),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(1400),nextTask:taskSchema,repairTask:taskSchema});
 export const peerSchema=expertSchema.properties.peers.items;
 export const peerReviewSchema=obj({...reviewSchema.properties,peers:arr(peerSchema,5)});
@@ -25,6 +26,23 @@ swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness'
 export const swotSchema=obj({findings:arr(swotFindingSchema,24),unknowns:arr(str(400),12)});
 export const coverageSchema=obj({coverage:expertSchema.properties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500),6)});
 export const finalSchema=obj({...expertSchema.properties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80),12)])))});
+
+const patch=structuredClone(expertSchema.properties.findings.items);
+for(const [field,limit]of Object.entries({observation:280,commercialHypothesis:260,limitation:220,question:180}))patch.properties[field].maxLength=limit;
+export const finalReviewSchema=obj({acceptedIds:arr(str(80),24),rejectedIds:arr(str(80),24),patches:arr(patch,4),rejectedPeerIds:arr(str(80),5),dimensions:expertSchema.properties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertSchema.properties.coverage.properties)[0])}),6),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(700)});
+export function applyFinalReview(draft,review,context,peers=draft.peers){
+ const selected=acceptedRows(draft.findings,review),ids=new Set(selected.map(f=>f.id)),patches=new Map();
+ for(const p of review.patches){if(!ids.has(p.id)||patches.has(p.id))throw new BudgetError('model_output_invalid','Son denetim düzeltmesi kabul edilen bulguya bağlı değil.');patches.set(p.id,p);}
+ const findings=selected.map(f=>patches.get(f.id)||f);validateProofRows(findings,context);
+ const peerIds=new Set(peers.map(p=>p.entityId));if(review.rejectedPeerIds.some(id=>!peerIds.has(id)))throw new BudgetError('model_output_invalid','Son denetimde bilinmeyen rakip kimliği.');
+ const coverage=structuredClone(draft.coverage),changed=new Set();
+ for(const c of review.coverageChanges){if(changed.has(c.key))throw new BudgetError('model_output_invalid','Yinelenen alan düzeltmesi.');changed.add(c.key);coverage[c.key]=c.value;}
+ for(const c of Object.values(coverage)){c.findingIds=c.findingIds.filter(id=>ids.has(id));if(!c.findingIds.length)c.status='unavailable';}
+ for(const d of review.dimensions)if([...d.findingIds,...d.comparisonFindingIds].some(id=>!ids.has(id)))throw new BudgetError('model_output_invalid','Son boyut değerlendirmesi reddedilmiş bulguya bağlı.');
+ if(review.dimensions.length!==6||new Set(review.dimensions.map(d=>d.id)).size!==6)throw new BudgetError('model_output_invalid','Son denetim altı farklı boyutu değerlendirmeli.');
+ if(review.approvedBenchmarkIndices.some(i=>!Number.isSafeInteger(i)||i>=draft.benchmarks.length)||Object.values(review.swot).flat().some(id=>!ids.has(id)))throw new BudgetError('model_output_invalid','Son SWOT veya kıyas kimliği geçersiz.');
+ return {...draft,findings,peers:peers.filter(p=>!review.rejectedPeerIds.includes(p.entityId)),dimensions:review.dimensions,coverage,benchmarks:[...new Set(review.approvedBenchmarkIndices)].map(i=>draft.benchmarks[i]),swot:review.swot,overviewIds:draft.overviewIds.filter(id=>ids.has(id)),opportunityId:ids.has(draft.opportunityId)?draft.opportunityId:null,riskId:ids.has(draft.riskId)?draft.riskId:null};
+}
 export const factTopics=Object.freeze({brand:['identity','products','business_model','market','scale','ownership'],sector:['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'],competition:['product_overlap','audience_overlap','geography','price','differentiation','competitive_risk']});
 export function phaseExtractionSchema(phase){const s=structuredClone(extractionSchema);s.properties.facts.items.properties.topic.enum=factTopics[phase];return s;}
 
@@ -76,10 +94,11 @@ export function acceptedRows(rows,review){
  if([...ids].some(id=>!accepted.has(id)&&!review.rejectedIds.includes(id)))throw new BudgetError('model_output_invalid','Yönetici bütün aday bulguları değerlendirmeli.');
  return rows.filter(f=>accepted.has(f.id));
 }
-export function qualityAcceptance(report,{stages,swot,budget}){
+export function qualityAcceptance(report,{stages,swot,budget,finalDecision='accepted'}){
  const issues=[],sourceIds=new Set((report.sources||[]).filter(s=>s.verification?.status==='quote_matched').map(s=>s.id));
  const backed=f=>f.sourceIds?.length&&f.sourceIds.every(id=>sourceIds.has(id));
  const findings=(report.findings||[]).filter(f=>f.kind!=='brief'&&backed(f));
+ if(finalDecision!=='accepted')issues.push('manager_final_limited');
  if(findings.length<12)issues.push('insufficient_substantive_findings');
  if(new Set(findings.map(f=>String(f.statement||'').toLocaleLowerCase('tr').replace(/\s+/g,' ').trim())).size<Math.min(12,findings.length))issues.push('duplicate_findings');
  if(new Set(findings.map(f=>f.dimension)).size<6)issues.push('insufficient_dimension_depth');
