@@ -14,8 +14,16 @@ import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recover
 import {canContinue,abandonedStage,continuationAudit,restoreContinuation} from './continuity.mjs';
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
+import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
+import {supervisedPhases} from './supervised-research.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,getResearchModel=()=>process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro',getResearchVersion=()=> 'v6',validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+// Preview opt-in only. Production activation remains a separate reviewed change.
+const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&process.env.OFFER_BHS_RESEARCH_VERSION==='v7';
+const researchVersion=()=>supervisedPreview()?'v7':'v6';
+const researchModel=()=>supervisedPreview()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
+const researchProviders=options=>options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
+
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -47,8 +55,9 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   if(job.researchModel&&!['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
-   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6','v7'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
+   if(job.researchModel&&!(researchVersion==='v7'?job.researchModel===supervisedModels.manager:['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+   const activePhases=researchVersion==='v7'?supervisedPhases:phases;
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
@@ -69,7 +78,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
    if(!['start','status','advance','recover','continue'].includes(action))throw Error();
-   const pendingPhases=phases.filter(x=>x!=='complete');
+   const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const finish=async final=>{
     const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
@@ -117,12 +126,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
      if(manualRecoveryRound<=failedRound)throw new BudgetError(step.value.code,'Bu aşama önceki denemede tamamlanamadı. Kayıtlar ve maliyetler korundu; yeniden deneme veya mevcut bilgilerle devam et seçeneklerini kullanabilirsin.');
     }
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
-    const providers=getProviders({ledger,manualRecoveryRound});
+    const providers=getProviders({ledger,manualRecoveryRound,researchVersion});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
     await runStage({phase,brief,ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
-    const nextPhase=phases[phases.indexOf(phase)+1];
+    const nextPhase=activePhases[activePhases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     break;
    }

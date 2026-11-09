@@ -1,0 +1,50 @@
+import {BudgetError,tariff} from '../budget/ledger.mjs';
+import {researchUrl} from './research-url.mjs';
+
+export const approvedActors=Object.freeze([
+ 'harvestapi/linkedin-company-search','harvestapi/linkedin-post-search','curious_coder/linkedin-jobs-scraper',
+ 'apify/instagram-profile-scraper','apify/instagram-scraper','compass/crawler-google-places',
+ 'jmlp/meta-ad-library-scraper','logiover/website-seo-audit-crawler','apify/website-content-crawler',
+ 'clockworks/tiktok-scraper','fatihtahta/trendyol-scraper','junglee/free-amazon-product-scraper','damilo/google-shopping-apify'
+]);
+// A console form, a favourite, and an Actor's developer defaults are not a
+// verified account-specific spending policy. Use a saved Task or an explicit
+// server policy snapshot. Never fall back to .40 when a smaller cap is unknown.
+export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus,followingKurus=1600,pricing}){
+ if(!approvedActors.includes(actor))throw new BudgetError('actor_not_approved','Bu aktör normal BHS kapsamına alınmadı.');
+ const cap=task?.options?.maxTotalChargeUsd;
+ if(task?.actId!==actorId||!Number.isFinite(cap)||cap<=0||cap>.4)throw new BudgetError('actor_limit_unverified','Aktörün hesapta kaydedilmiş özel harcama limiti doğrulanamadı.');
+ // REST and MCP documents differ on other pricing types. Until verified in a
+// real bounded run, only PPE with explicitly included platform usage is safe.
+ if(pricing?.pricingModel!=='PAY_PER_EVENT'||pricing.isPPEPlatformUsagePaidByUser!==false)throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
+ if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<600||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
+ const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
+ const maxTotalChargeUsd=Math.min(cap,.4,requestedUsd,remainingUsd);
+ if(maxTotalChargeUsd<=0||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&maxTotalChargeUsd<pricing.minimalMaxTotalChargeUsd)throw new BudgetError('budget_limit','Aktörün minimum ücreti kalan bütçeye sığmıyor.');
+ return {maxTotalChargeUsd,reservedKurus:Math.ceil(maxTotalChargeUsd*tariff.usdTry*tariff.overhead*100),capSource:'saved-task',taskId:task.id,actorId};
+}
+export function safeActorInput(actor,url){
+ const safe=researchUrl(url);if(!safe)throw new BudgetError('actor_source_unverified','Aktör kaynağı geçersiz.');
+ const parsed=new URL(safe),host=parsed.hostname.replace(/^www\./,'');
+ if(actor==='apify/instagram-profile-scraper'&&host==='instagram.com'&&/^\/[\w.]+\/?$/.test(parsed.pathname)&&!['p','reel','explore','accounts'].includes(parsed.pathname.split('/')[1]))return {usernames:[parsed.pathname.split('/')[1]],includeAboutSection:false};
+ if(actor==='logiover/website-seo-audit-crawler')return {startUrls:[{url:safe}],crawlScope:'same-hostname',maxPagesToCrawl:5,maxConcurrency:2,useProxy:false};
+ // Other schemas need their own bounded inputs and output provenance adapter.
+ // Merely being approved in the catalogue must never allow arbitrary inputs.
+ throw new BudgetError('actor_adapter_pending','Bu aktörün sınırlandırılmış girdi ve kaynak doğrulama adaptörü henüz hazır değil.');
+}
+export function matchedActorTasks(actorId,tasks){return tasks.filter(task=>task.actId===actorId&&Number.isFinite(task.options?.maxTotalChargeUsd)&&task.options.maxTotalChargeUsd>0&&task.options.maxTotalChargeUsd<=.4).sort((a,b)=>a.options.maxTotalChargeUsd-b.options.maxTotalChargeUsd);}
+
+// Read-only account inspection. No /runs endpoint, inputs, cookies or actor
+// execution is exposed by this adapter. Task options remain server-side.
+export async function inspectApifyPolicies({token,fetchImpl=fetch}={}){
+ if(!token)return {configured:false,taskPolicies:0,complete:false};
+ let offset=0;const tasks=[];
+ while(offset<1000){
+  const r=await fetchImpl('https://api.apify.com/v2/actor-tasks?limit=100&offset='+offset,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000),redirect:'error'});
+  if(!r.ok)return {configured:true,authenticated:false,taskPolicies:0,complete:false};
+  const data=(await r.json()).data;if(!Array.isArray(data?.items))throw Error('Invalid task metadata.');
+  tasks.push(...data.items);offset+=data.items.length;
+  if(offset>=data.total||data.items.length<100)break;
+ }
+ return {configured:true,authenticated:true,taskPolicies:tasks.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete:offset<1000,tasks};
+}

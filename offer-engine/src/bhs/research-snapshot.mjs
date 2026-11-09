@@ -2,7 +2,7 @@ import {deflateRawSync,inflateRawSync} from 'node:zlib';
 import {hash} from '../budget/ledger.mjs';
 import {groundOfferReport} from './source-gate.mjs';
 import {hasGroundedResearch,requireGroundedResearch} from './research-content.mjs';
-import {expertVersion} from './expert-report.mjs';
+import {isExpertMethodology} from './expert-report.mjs';
 
 const version='source-checked-research-v1',maxBytes=1800000,maxEncoded=280000;
 const withoutOriginal=report=>{const copy=structuredClone(report);delete copy.originalReport;delete copy.transfer;return copy;};
@@ -15,7 +15,7 @@ export function createResearchSnapshot(audit,brief){
  const report=withoutOriginal(audit.report||audit),researchedAt=audit.researchReuse?.researchedAt||audit.researchAsOf||null;
  const sourceContext=audit.researchContext||{brandName:brief.brandName,website:brief.website,briefHash:audit.researchReuse?.originalBriefHash||audit.briefHash};
  const packet={version:'sellf-evidence-v1',briefHash:sourceContext.briefHash,asOf:researchedAt,provenance:'historical-verified-quotes-only',sources:report.sources.map(s=>({url:s.url,finalUrl:s.url,title:s.title,method:s.verification.method,excerpts:[{text:s.quote}],retrievedAt:researchedAt}))};
- requireGroundedResearch(groundOfferReport(report,{packet,brief,preserveQualifiedImpacts:audit.methodologyVersion===expertVersion}));
+ requireGroundedResearch(groundOfferReport(report,{packet,brief,preserveQualifiedImpacts:isExpertMethodology(audit.methodologyVersion)}));
  const claimContext=Object.fromEntries(['goals','needs','services','meetingNotes'].map(key=>[key,brief[key]||'']));
  const payload={version,report,analysisPacket:packet,researchedAt,sourceContext,claimContext,methodologyVersion:audit.methodologyVersion};
  const json=JSON.stringify(payload);if(Buffer.byteLength(json)>maxBytes)throw Error('Saklanan araştırmanın boyut sınırı aşıldı.');
@@ -29,6 +29,6 @@ export function readResearchSnapshot(snapshot){
  let payload;try{payload=JSON.parse(inflateRawSync(Buffer.from(snapshot.data,'base64url'),{maxOutputLength:maxBytes}).toString('utf8'));}catch{throw Error('Saklanan BHS okunamadı.');}
  if(payload?.version!==version||hash(payload)!==snapshot.digest||!payload.sourceContext?.brandName||!payload.sourceContext?.website||!/^[a-f0-9]{64}$/.test(payload.sourceContext.briefHash||'')||payload.analysisPacket?.provenance!=='historical-verified-quotes-only')throw Error('Saklanan BHS dayanağı doğrulanamadı.');
  const brief={...payload.claimContext,brandName:payload.sourceContext.brandName,website:payload.sourceContext.website};
- const report=requireGroundedResearch(groundOfferReport(payload.report,{packet:payload.analysisPacket,brief,preserveQualifiedImpacts:payload.methodologyVersion===expertVersion}));
+ const report=requireGroundedResearch(groundOfferReport(payload.report,{packet:payload.analysisPacket,brief,preserveQualifiedImpacts:isExpertMethodology(payload.methodologyVersion)}));
  return {...payload,report:withoutOriginal(report)};
 }

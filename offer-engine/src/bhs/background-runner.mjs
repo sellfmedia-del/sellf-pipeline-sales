@@ -1,0 +1,33 @@
+import {supervisedPhases} from './supervised-research.mjs';
+import {runBoundedStage,stageKey} from './direct-research.mjs';
+import {snapshotBrief,briefHash} from './brief.mjs';
+import {BudgetError} from '../budget/ledger.mjs';
+
+// Transport-independent, one phase per leased invocation. The DB/queue adapter
+// must validate the lease and bind getLedger to this job's immutable budget.
+// No browser cookie, user refresh token or provider secret is stored in a job.
+export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runStage=runBoundedStage,now=Date.now}){
+ if(job?.researchVersion!=='v7'||job?.researchModel!=='claude-sonnet-5-5'||!supervisedPhases.includes(job.phase)||job.phase==='complete'||!job.leaseToken||job.leaseUntil<=now())throw new BudgetError('invalid_job','BHS arka plan işi veya kilidi geçersiz.');
+ const brief=snapshotBrief(job.brief);
+ if(briefHash(brief)!==job.briefHash)throw new BudgetError('changed_brief','BHS iş kaydı brief ile eşleşmiyor.');
+ const ledger=await getLedger(job),key=stageKey(brief,job.phase,'v7');
+ // Persist-before-ack: a crash after the phase commits is recovered without
+ // replaying any source/model call. A lost paid request is never refunded.
+ try{
+  const step=await ledger.get(key);
+  if(step?.state!=='complete'){
+   if(step?.state==='reserved')throw new BudgetError('stage_abandoned','Önceki çalışanın aşama kaydı açık kaldı; ücretli iş tekrarlanmadı.');
+   if(step?.state==='uncertain')throw new BudgetError('stage_paused','Önceki aşama durdu; kayıtlar korunuyor.');
+   const providers=await getProviders({ledger,researchVersion:'v7'});
+   await runStage({phase:job.phase,brief,ledger,providers,researchVersion:'v7',researchModel:job.researchModel,freshResearch:true});
+  }
+  const nextPhase=supervisedPhases[supervisedPhases.indexOf(job.phase)+1];
+  await queue.advance(job,{nextPhase,checkpointKey:key});
+  return {status:nextPhase==='complete'?'complete':'queued',nextPhase};
+ }catch(error){
+  // Queue/DB ack errors are not permission to rerun a provider. The already
+  // committed phase remains authoritative on the next leased invocation.
+  await queue.pause(job,{code:error.code||'worker_unavailable',phase:job.phase}).catch(()=>{});
+  throw error;
+ }
+}

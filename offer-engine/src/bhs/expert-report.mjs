@@ -8,6 +8,7 @@ import {researchHost} from './research-url.mjs';
 import {hash} from '../budget/ledger.mjs';
 
 export const expertVersion='sellf-pre-bhs-2026-11-09-expert-v6';
+export const isExpertMethodology=version=>[expertVersion,'sellf-pre-bhs-2026-11-10-supervised-v7'].includes(version);
 export const expertInstruction=()=>readFileSync(new URL('./expert-methodology.txt',import.meta.url),'utf8');
 const str=(maxLength=600)=>({type:'string',maxLength});
 const arr=(items,maxItems=60)=>({type:'array',items,maxItems});
