@@ -1,6 +1,6 @@
 // Explicit branch/commit-gated public-brand QA. No database, user/customer
 // records, publication, mail, environment changes or external subscriptions.
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
@@ -11,6 +11,7 @@ import {offerGeminiKey} from '../src/config.mjs';
 import {response,offerFixture} from '../test/fixtures/offer.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {expertVersion} from '../src/bhs/expert-report.mjs';
+import {replayPublicSample} from './expert-preview-replay.mjs';
 
 const branch='feat/bhs-expert-evidence-v6';
 export const acceptanceEnabled=()=>process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF===branch&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_ACCEPTANCE_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
@@ -18,7 +19,9 @@ const brands=[['Gümüşsuyu','https://www.gumussuyu.com.tr/'],['Humm Organic','
 export async function runExpertAcceptance(){
  if(!acceptanceEnabled())return;
  const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY))throw Error('Isolated preview provider configuration is missing.');
+ const recheck=String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_BLUM_RECHECK_20261109]');
  const results=[];let index=0;
+ if(recheck){const prior=JSON.parse(await readFile(new URL('../test/fixtures/expert-public-acceptance.json',import.meta.url),'utf8'));results.push(...prior.samples.map(sample=>replayPublicSample(sample,prior.commit)));}
  async function runBrand([brandName,website]){
   const rows=new Map();let charged=500,generations=0,searches=0,cookie;
   const host='expert-acceptance.example',leadId='isolated-expert-'+randomUUID(),brief={brandName,website,segment:'corporate',currency:'TRY',language:'tr',budget:null,goals:'Türkiye pazarında sürdürülebilir ve ölçülebilir büyüme fırsatlarını incelemek.',needs:'Ürün/teklif/kanal ve rakip farklarını dış kaynaklarla doğrulamak; gözlem ile iç veri gerektiren hipotezi ayırmak.',services:'Kullanıcının seçtiği hizmetler ayrıca hesaplanır.',meetingNotes:'Yalnız kamuya açık marka testi; müşteri görüşmesi, özel dosya veya iç performans verisi değildir. Türkiye pazarı. Ülke/domain yönlenmesini açıkça belirt.'};
@@ -72,7 +75,7 @@ export async function runExpertAcceptance(){
   console.info('BHS_EXPERT_ACCEPTANCE '+JSON.stringify(summary));
  }
  // Two independent public brands at a time; page reads are already bounded.
- const selected=String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_BLUM_RECHECK_20261109]')?brands.filter(([name])=>name==='Blum Coffee House'):brands;
+ const selected=recheck?brands.filter(([name])=>name==='Blum Coffee House'):brands;
  await Promise.all(Array.from({length:2},async()=>{while(index<selected.length){const brand=selected[index++];await runBrand(brand);}}));
  const safe={generatedAt:new Date().toISOString(),commit:process.env.VERCEL_GIT_COMMIT_SHA,databaseWrites:0,mailSends:0,manualSemanticReview:'pending',results};
  await mkdir('public/expert-review',{recursive:true});await writeFile('public/expert-review/results.json',JSON.stringify(safe,null,2));

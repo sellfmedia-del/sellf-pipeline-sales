@@ -27,6 +27,10 @@ monthly/standard offers, logos, template, existing records and production data.
 - Compact output is source-checked inside the existing provider recovery
   boundary: an empty document can use the same bounded alternate model rather
   than failing only after the recovery layer. Useful partial facts remain usable.
+- Technical proxy effects become neutral verification questions; unconfirmed
+  competitor examples are labelled consistently in all derived sections.
+  Frozen public QA samples (synthetic briefs, verified quotes only) allow the
+  updated qualification to be reviewed without purchasing the same audit again.
 - Findings contain observation, commercial hypothesis, limitation and question.
   Local guards address reviewed failure classes; they are not a general semantic
   truth guarantee. Current-model instructions, citations and human comparison
