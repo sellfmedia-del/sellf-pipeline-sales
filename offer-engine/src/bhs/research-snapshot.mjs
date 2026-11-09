@@ -17,7 +17,7 @@ export function createResearchSnapshot(audit,brief){
  const packet={version:'sellf-evidence-v1',briefHash:sourceContext.briefHash,asOf:researchedAt,provenance:'historical-verified-quotes-only',sources:report.sources.map(s=>({url:s.url,finalUrl:s.url,title:s.title,method:s.verification.method,excerpts:[{text:s.quote}],retrievedAt:researchedAt}))};
  requireGroundedResearch(groundOfferReport(report,{packet,brief,preserveQualifiedImpacts:isExpertMethodology(audit.methodologyVersion)}));
  const claimContext=Object.fromEntries(['goals','needs','services','meetingNotes'].map(key=>[key,brief[key]||'']));
- const payload={version,report,analysisPacket:packet,researchedAt,sourceContext,claimContext,methodologyVersion:audit.methodologyVersion};
+ const payload={version,report,analysisPacket:packet,researchedAt,sourceContext,claimContext,methodologyVersion:audit.methodologyVersion,...(audit.supervision?{supervision:audit.supervision}:{})};
  const json=JSON.stringify(payload);if(Buffer.byteLength(json)>maxBytes)throw Error('Saklanan araştırmanın boyut sınırı aşıldı.');
  const data=deflateRawSync(Buffer.from(json)).toString('base64url');if(data.length>maxEncoded)throw Error('Saklanan araştırmanın aktarım sınırı aşıldı.');
  return {version,encoding:'deflate-raw-base64url',digest:hash(payload),data};

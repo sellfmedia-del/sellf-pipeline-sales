@@ -16,12 +16,14 @@ import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
 import {supervisedPhases} from './supervised-research.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
+import {createSequentialProviders} from './sequential-providers.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
-const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&process.env.OFFER_BHS_RESEARCH_VERSION==='v7';
-const researchVersion=()=>supervisedPreview()?'v7':'v6';
+const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
+const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:'v6';
 const researchModel=()=>supervisedPreview()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
-const researchProviders=options=>options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
+const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
 export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
@@ -55,9 +57,9 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6','v7'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
-   if(job.researchModel&&!(researchVersion==='v7'?job.researchModel===supervisedModels.manager:['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
-   const activePhases=researchVersion==='v7'?supervisedPhases:phases;
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6','v7','v8'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
+   if(job.researchModel&&!(['v7','v8'].includes(researchVersion)?job.researchModel===supervisedModels.manager:['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+   const activePhases=researchVersion==='v8'?sequentialPhases:researchVersion==='v7'?supervisedPhases:phases;
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
@@ -126,7 +128,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
      if(manualRecoveryRound<=failedRound)throw new BudgetError(step.value.code,'Bu aşama önceki denemede tamamlanamadı. Kayıtlar ve maliyetler korundu; yeniden deneme veya mevcut bilgilerle devam et seçeneklerini kullanabilirsin.');
     }
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
-    const providers=getProviders({ledger,manualRecoveryRound,researchVersion});
+    const providers=getProviders({ledger,manualRecoveryRound,researchVersion,phase});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
     await runStage({phase,brief,ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});

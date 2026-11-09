@@ -1,4 +1,5 @@
 import {supervisedPhases} from './supervised-research.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
 import {runBoundedStage,stageKey} from './direct-research.mjs';
 import {snapshotBrief,briefHash} from './brief.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
@@ -7,10 +8,11 @@ import {BudgetError} from '../budget/ledger.mjs';
 // must validate the lease and bind getLedger to this job's immutable budget.
 // No browser cookie, user refresh token or provider secret is stored in a job.
 export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runStage=runBoundedStage,now=Date.now}){
- if(job?.researchVersion!=='v7'||job?.researchModel!=='claude-sonnet-5-5'||!supervisedPhases.includes(job.phase)||job.phase==='complete'||!job.leaseToken||job.leaseUntil<=now())throw new BudgetError('invalid_job','BHS arka plan işi veya kilidi geçersiz.');
+ const phases=job?.researchVersion==='v8'?sequentialPhases:supervisedPhases;
+ if(!['v7','v8'].includes(job?.researchVersion)||job?.researchModel!=='claude-sonnet-5-5'||!phases.includes(job.phase)||job.phase==='complete'||!job.leaseToken||job.leaseUntil<=now())throw new BudgetError('invalid_job','BHS arka plan işi veya kilidi geçersiz.');
  const brief=snapshotBrief(job.brief);
  if(briefHash(brief)!==job.briefHash)throw new BudgetError('changed_brief','BHS iş kaydı brief ile eşleşmiyor.');
- const ledger=await getLedger(job),key=stageKey(brief,job.phase,'v7');
+ const ledger=await getLedger(job),key=stageKey(brief,job.phase,job.researchVersion);
  // Persist-before-ack: a crash after the phase commits is recovered without
  // replaying any source/model call. A lost paid request is never refunded.
  try{
@@ -18,10 +20,10 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
   if(step?.state!=='complete'){
    if(step?.state==='reserved')throw new BudgetError('stage_abandoned','Önceki çalışanın aşama kaydı açık kaldı; ücretli iş tekrarlanmadı.');
    if(step?.state==='uncertain')throw new BudgetError('stage_paused','Önceki aşama durdu; kayıtlar korunuyor.');
-   const providers=await getProviders({ledger,researchVersion:'v7'});
-   await runStage({phase:job.phase,brief,ledger,providers,researchVersion:'v7',researchModel:job.researchModel,freshResearch:true});
+   const providers=await getProviders({ledger,researchVersion:job.researchVersion,phase:job.phase});
+   await runStage({phase:job.phase,brief,ledger,providers,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
   }
-  const nextPhase=supervisedPhases[supervisedPhases.indexOf(job.phase)+1];
+  const nextPhase=phases[phases.indexOf(job.phase)+1];
   await queue.advance(job,{nextPhase,checkpointKey:key});
   return {status:nextPhase==='complete'?'complete':'queued',nextPhase};
  }catch(error){

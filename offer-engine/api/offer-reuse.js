@@ -24,7 +24,7 @@ export async function loadSavedSynthesis(row,ledger){
  const snapshot=row.pricing_snapshot?.researchSnapshot;
  if(snapshot){
   const saved=readResearchSnapshot(snapshot),origin={...(row.pricing_snapshot?.auditOrigin||{}),briefHash:saved.sourceContext.briefHash};
-  return {origin,synthesis:{report:saved.report,analysisPacket:saved.analysisPacket,methodologyVersion:saved.methodologyVersion,researchContext:{brief:saved.sourceContext,briefHash:origin.briefHash},reuse:{sourceOfferId:row.id,researchedAt:saved.researchedAt,originalBriefHash:origin.briefHash,exactBrief:false,contextNeedsConfirmation:true,incrementalResearchCalls:0,historicalCapture:true}}};
+  return {origin,synthesis:{report:saved.report,analysisPacket:saved.analysisPacket,methodologyVersion:saved.methodologyVersion,...(saved.supervision?{supervision:saved.supervision}:{}),researchContext:{brief:saved.sourceContext,briefHash:origin.briefHash},reuse:{sourceOfferId:row.id,researchedAt:saved.researchedAt,originalBriefHash:origin.briefHash,exactBrief:false,contextNeedsConfirmation:true,incrementalResearchCalls:0,historicalCapture:true}}};
  }
  const origin=row.pricing_snapshot?.auditOrigin||{briefHash:row.customer_document?.provenance?.briefHash};
  if(!/^[a-f0-9]{64}$/.test(origin.briefHash||''))throw Error('Kaydedilen BHS dayanağı bulunamadı.');

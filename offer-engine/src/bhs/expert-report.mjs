@@ -8,7 +8,7 @@ import {researchHost} from './research-url.mjs';
 import {hash} from '../budget/ledger.mjs';
 
 export const expertVersion='sellf-pre-bhs-2026-11-09-expert-v6';
-export const isExpertMethodology=version=>[expertVersion,'sellf-pre-bhs-2026-11-10-supervised-v7'].includes(version);
+export const isExpertMethodology=version=>[expertVersion,'sellf-pre-bhs-2026-11-10-supervised-v7','sellf-pre-bhs-2026-11-10-sequential-v8'].includes(version);
 export const expertInstruction=()=>readFileSync(new URL('./expert-methodology.txt',import.meta.url),'utf8');
 const str=(maxLength=600)=>({type:'string',maxLength});
 const arr=(items,maxItems=60)=>({type:'array',items,maxItems});
@@ -34,21 +34,21 @@ const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|grow
 
 // Paragraph-sized context is selected once; model only returns immutable IDs.
 // The complete original packet stays in the ledger, never in a public bundle.
-export function expertContext(brief,evidence){
+export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true}={}){
  const cards=[],sources=[],proofGroups=new Map();let used=0;
  for(const s of evidence.packet.sources||[]){
   const excerpts=list(s.excerpts).map(e=>e.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1'));
   const candidates=excerpts.flatMap(t=>t.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])/u).flatMap(p=>p.length>1000?Array.from({length:Math.ceil(p.length/800)},(_,i)=>p.slice(i*800,i*800+900)):[p])).map(t=>t.trim()).filter(t=>t.length>=24);
   const picked=[],seen=new Set();
   for(const pattern of Object.values(terms)){const p=candidates.find(t=>pattern.test(fold(t))&&!seen.has(t));if(p){picked.push(p);seen.add(p);}}
-  for(const p of candidates)if(picked.length<7&&!seen.has(p)){picked.push(p);seen.add(p);}
+  for(const p of candidates)if(picked.length<(allParagraphs?24:7)&&!seen.has(p)){picked.push(p);seen.add(p);}
   const sections=[];
   for(const paragraph of picked){if(used+paragraph.length>60000)continue;used+=paragraph.length;
    const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),scope:s.metadataOnly?'Yalnız yayıncının başlık/açıklama meta verisi; sayfa işlevi veya performans kanıtı değildir.':'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
    for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
   }
-  for(const quote of technicalCitations(s)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:'html-signals',scope:'Yalnız indirilen HTML sinyali; yokluk/çalışırlık/mobil hız testi değildir.'});sections.push({text:quote,proofIds:[id]});}
+  for(const quote of includeTechnicalSignals?technicalCitations(s):[]){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:'html-signals',scope:'Yalnız indirilen HTML sinyali; yokluk/çalışırlık/mobil hız testi değildir.'});sections.push({text:quote,proofIds:[id]});}
   sources.push({url:s.finalUrl||s.url,requestedUrl:s.url,title:s.title,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),asOf:s.retrievedAt,sections});
  }
  let snippets=0;
