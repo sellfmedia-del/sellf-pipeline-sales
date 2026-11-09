@@ -67,7 +67,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect,rese
  return ledger.once(key(phase),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   try{
   const previous=async name=>{const row=await ledger.get(key(name));if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');return row.value;};
-  if(researchVersion==='v6')return await runExpertStage({phase,brief,providers,previous,collect,researchModel});
+  if(researchVersion==='v6'&&phase!=='scope')return await runExpertStage({phase,brief,providers,previous,collect,researchModel});
   collect??=collector();
   if(phase==='source_plan'){
    if(researchVersion==='v5'&&!freshResearch){const reuse=await readReusableResearch(brief,ledger);if(reuse)return {reusedSynthesis:reuse};}

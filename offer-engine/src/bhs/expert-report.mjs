@@ -89,16 +89,36 @@ export function unsafeExpertClaim(f,quotes){
  return null;
 }
 
+// Keep an observed signal, but do not turn a technical proxy into a diagnosis.
+// These are neutral verification questions, not a second paid content review.
+export function qualifyExpertFinding(value,quotes){
+ const f={...value},q=fold(quotes),t=fold([f.observation,f.commercialHypothesis].join(' '));
+ const qualify=(hypothesis,limit,question)=>{f.commercialHypothesis=hypothesis;f.limitation=f.limitation?.startsWith(limit)?f.limitation:limit+(f.limitation?' '+f.limitation:'');f.question=question;};
+ if(/internet explorer/.test(q)&&/eski|guncel|modern|teknik borc/.test(t))qualify('Tarayıcı desteği kararının güncel ziyaretçi kitlesi ve test sonuçlarıyla uyumu doğrulanabilir.','Eski tarayıcı desteği uyarısı, altyapının eski veya verimsiz olduğunu kanıtlamaz.','Hangi tarayıcı sürümlerini destekliyorsunuz ve bu kararları hangi güncel kullanım/test verileriyle alıyorsunuz?');
+ else if(/"(?:analyticsTags|metaPixelTag|mobileViewport)":false/i.test(quotes)&&/olcum|donusum|yeniden pazarlama|retarget|mobil|viewport/.test(t))qualify('İndirilen HTML sinyali ile gerçek kullanıcı oturumundaki ölçüm ve görünüm davranışı, izin ve çalışma zamanı testleriyle birlikte doğrulanabilir.','Statik HTML sinyali; ölçümün yokluğunu, çalışmadığını, reklam verimsizliğini veya mobil sorun olduğunu göstermez.','Analitik/reklam etiketleri hangi yöntemle ve izin koşullarında tetikleniyor; gerçek mobil oturum ve dönüşüm testlerinin sonuçları nedir?');
+ else if(/(?:\/en\/|euro)/.test(t)&&/turkiye/.test(t)&&/donusum|terk|kayip|lokal/.test(t))qualify('İncelenen oturumun dil ve para birimi kapsamı, hedef ülkedeki gerçek kullanıcı oturumuyla karşılaştırılarak doğrulanabilir.','Yurt dışındaki araştırma oturumu Türkiye kullanıcı deneyimini veya satış kaybını kanıtlamaz.','Hedef ülkelere göre beklenen dil/para birimi yönlendirmeleri nelerdir ve gerçek kullanıcı testlerinde bu kurallar beklendiği gibi çalışıyor mu?');
+ else if(/e-posta|e posta|email/.test(t)&&/alan ad|domain/.test(t)&&/seo|otorite|dmarc|spf|teslim edilebilir/.test(t))qualify('Web ve e-posta alan adlarının görevleri netleştirilerek marka iletişimi tercihlerinin gerekçesi anlaşılabilir.','Farklı e-posta alan adı; bölünmüş SEO otoritesi, güvenlik veya teslimat sorunu kanıtı değildir.','Hangi alan adları yalnız e-posta için, hangileri web sitesi veya yönlendirme için kullanılıyor?');
+ else if(/shopify|wordpress|ideasoft|woocommerce|platformHints|e-turizm platform/i.test(quotes)&&/platform|altyapi/.test(t)&&/maliyet|hiz|kolay|esnek|olceklen|kontrol|avantaj|yuk|modern|yavas/.test(t))qualify('Mevcut platformun operasyon ve entegrasyon ihtiyaçlarına uyumu, somut süre/maliyet ve kullanım verileriyle değerlendirilebilir.','Platform adı veya HTML ipucu; performans, kolaylık, maliyet veya ölçeklenme üstünlüğü kanıtı değildir.','Platformun karşıladığı ihtiyaçları ve varsa entegrasyon/operasyon kısıtlarını hangi somut ölçümlerle değerlendiriyorsunuz?');
+ else if(/followers|takipci/.test(q)&&/yeni oldug|aktif.*yonetil|yonetilmed|pasif/.test(t))qualify('İlgili kanalın hedef kitlesi ve ticari katkısı güncel yayın, etkileşim ve yönlendirme verileriyle değerlendirilebilir.','Takipçi sayısı tek başına kanalın aktif yönetilmediğini veya düşük performansı göstermez.','Bu kanal için hedefiniz, güncel yayın/etkileşim ölçümleriniz ve takip edilen ticari katkınız nedir?');
+ return f;
+}
+export function labelUnconfirmedComparison(f){
+ const statement='Doğrudan rakipliği doğrulanmamış karşılaştırma örneği: '+f.statement.replace(/doğrudan rakip olarak/giu,'karşılaştırma adayı olarak').replace(/doğrudan rakipler/giu,'karşılaştırma adayları').replace(/doğrudan rakip/giu,'karşılaştırma adayı');
+ return {...f,statement,reportExcerpt:statement,impact:f.impact.replace(' Sınır: ',' Sınır: Karşılaştırılan işletmenin doğrudan rakipliği doğrulanmadı. ')};
+}
+
 export function projectExpertReport(value,context){
- if(Array.isArray(value?.researchCoverage)&&value?.sources)return value; // safe provider partial projection
+ // Recovery may return a legacy-shaped partial document. Recheck provenance;
+ // a model returning `sources` must never bypass source verification.
+ if(Array.isArray(value?.researchCoverage)&&value?.sources)return groundOfferReport(value,{packet:context.packet,brief:context.input.brief,preserveQualifiedImpacts:true});
  const raw=value||{},cards=context.known,issues=[],sources=new Map();
  // A model ID identifies a bounded paragraph, not a disconnected 200-char
  // slice. Retain its adjacent proof chunks so a cited sentence stays readable.
  const refs=ids=>unique(list(ids).filter(id=>cards.has(id)).flatMap(id=>context.proofGroups?.get(id)||[id]));
  const use=ids=>refs(ids).map(id=>{const c=cards.get(id);sources.set(id,{...c,publishedAt:null,period:null,sourceType:c.method==='search-snippet'?'secondary':'primary'});return id;});
  const findings=[],seenIds=new Set();
- for(const f of list(raw.findings).filter(f=>f&&typeof f==='object')){
-  const sourceIds=refs(f.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n');
+ for(const original of list(raw.findings).filter(f=>f&&typeof f==='object')){
+  const sourceIds=refs(original.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n'),f=qualifyExpertFinding(original,quotes);
   const reason=unsafeExpertClaim(f,quotes);
   if(typeof f.id!=='string'||seenIds.has(f.id)||typeof f.observation!=='string'||!f.observation.trim()||!sourceIds.length||list(f.sourceIds).some(id=>!cards.has(id))||reason){issues.push({path:'findings.'+f.id,reason:reason||'unsupported_finding'});continue;}
   seenIds.add(f.id);
@@ -111,14 +131,25 @@ export function projectExpertReport(value,context){
  const competitors=[];
  for(const p of list(raw.peers).filter(p=>p&&typeof p==='object')){
   const e=entities.find(e=>e.id===p.entityId&&e.role==='competitor');if(!e||p.relationship!=='direct')continue;
-  const sourceIds=refs(p.sourceIds).filter(id=>researchHost(cards.get(id).url)===researchHost(e.website)&&cards.get(id).method!=='html-signals');if(!sourceIds.length)continue;
-  const evidence=fold(sourceIds.map(id=>cards.get(id).quote).join(' ')),category=topicWords(e.scope+' '+e.audienceReason);
+  const publisher=card=>researchHost(card.url)===researchHost(e.website)||context.input.sources.some(s=>s.url===card.url&&s.requestedUrl&&researchHost(s.requestedUrl)===researchHost(e.website));
+  let sourceIds=refs(p.sourceIds).filter(id=>publisher(cards.get(id))&&!['html-signals','search-snippet'].includes(cards.get(id).method));if(!sourceIds.length)continue;
+  const category=topicWords(e.scope+' '+e.audienceReason);
   const expectedCategories=categories.filter(p=>p.test(fold(e.scope+' '+e.audienceReason)));
+  // A newsletter citation is not product identity. Reuse a product paragraph
+  // already read from that same publisher instead of losing a valid peer or
+  // trusting an unrelated same-name business. No new request or model call.
+  const productCards=[...cards.values()].filter(c=>publisher(c)&&!['html-signals','search-snippet'].includes(c.method)&&(expectedCategories.length?expectedCategories.some(p=>p.test(fold(c.quote))):category.some(w=>fold(c.quote).includes(w))));
+  sourceIds=unique([...sourceIds,...refs(productCards.slice(0,3).map(c=>c.id))]);
+  const evidence=fold(sourceIds.map(id=>cards.get(id).quote).join(' '));
   if(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
   // Bind the displayed peer URL to its verified final host (www redirects are
   // common). The legacy source gate still requires an exact source hostname.
   competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds)});
  }
+ // A rejected direct peer can still supply a factual comparison example,
+ // but every derived section must preserve its unconfirmed relationship.
+ const unconfirmed=entities.filter(e=>e.role==='competitor'&&!competitors.some(p=>p.id===e.id));
+ for(const f of findings)if(unconfirmed.some(e=>fold([f.statement,f.impact,f.goalConnection].join(' ')).includes(fold(e.name))))Object.assign(f,labelUnconfirmedComparison(f));
  const hasBrand=f=>f.sourceIds.some(id=>researchHost(cards.get(id).url)===brandHost);
  const relevantIds=(ids,dimension)=>unique(list(ids).filter(id=>findingById.has(id)&&(!dimension||findingById.get(id).dimension===dimension)));
  const researchCoverage=methodologyAreas.map(a=>{

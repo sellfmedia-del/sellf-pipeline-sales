@@ -72,7 +72,8 @@ export function mergeExtractedEvidence(packet,extraction={}){
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8}={}){
- return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false}={}){
+ return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false,sourceLimit=maxSources}={}){
+  const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
   const seed=initialPacket&&initialPacket.briefHash===briefHash(brief)?structuredClone(initialPacket):null;
@@ -107,8 +108,8 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    if(JSON.stringify(sources).length+JSON.stringify(record).length>180000)return false;
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
-  while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:maxSources)&&clock()<deadline-(identityOnly?2000:22000)){
-   const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:maxSources)-sources.length-renderCandidates.length));
+  while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
+   const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:capacity)-sources.length-renderCandidates.length));
    const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:result.reason});continue;}
@@ -122,9 +123,9 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   if(renderCandidates.length&&clock()<deadline-3000){
    const renderPages=render||(await import('./render-source.mjs')).renderEvidencePages;
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
-   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<maxSources)keep({...page,method:'rendered'});});
+   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<capacity)keep({...page,method:'rendered'});});
   }
-  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<maxSources)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<maxSources)keep({...page,text:page.metadata,metadataOnly:true});}}
+  for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<capacity)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<capacity)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
   onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?host(x.url)||null:null,reason:x.reason}))});
   return assertEvidencePacket(packet,brief);

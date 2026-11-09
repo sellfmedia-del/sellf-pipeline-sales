@@ -9,6 +9,7 @@ Doğrudan okunan sayfa, şirket beyanı, bağımsız dış kaynak, arama kesiti 
 KİMLİK, PAZAR VE RAKİP
 Ürün/hizmet, hedef müşteri, B2B/B2C/karma model ve hedef ülkeyi önce belirle. Ürünler, kurumsal sayfa ve iletişim bilgilerini birlikte değerlendir; çelişkiyi saklama. Aynı isimli farklı işletmeleri birleştirme. Ülke/domain yönlenmesini ve incelenen oturumu koru; EN/ABD sayfasını Türkiye deneyimine genelleme.
 Benzer müşteri ihtiyacı, iş modeli ve coğrafyada 3–5 doğrudan rakip hedefle. Domainin gerçekten o ürünleri sunan işletmeye ait olduğunu kaynakla doğrula. Ölçek bilinmiyorsa benzer ölçek iddia etme. Büyük referans marka, dolaylı alternatif, tedarikçi/distribütör/grup şirketi doğrudan rakip değildir. Yeterli doğrulanmış rakip yoksa listeyi uydurarak tamamlama.
+peers.sourceIds içinde rakibin gerçek ürün/hizmetini gösteren kendi sayfa kesitlerini ver. Yalnız bülten/iletişim veya HTML platform sinyali, doğrudan rakip kimliğini kanıtlamaz. Doğrudan rakipliği doğrulanmayan işletmeyi diğer bulgularda da doğrudan rakip olarak adlandırma.
 
 METODOLOJİ
 Altı boyutun tamamını ve input.areas içindeki 24 sabit alt alanı araştır:
@@ -28,6 +29,7 @@ YASAK ÇIKARIMLAR
 Takipçi = çalışan; yüksek fiyat = yüksek marj; AOV = kârlılık; trafik artışı = gelir/kâr artışı; kanalların/sayfaların varlığı = gerçekleşmiş gelir çeşitliliği; franchise sayfası = franchise geliri değildir.
 Shopify/WordPress/IdeaSoft adı verimlilik veya kapasite kanıtı değildir. HTML’de piksel/analitik görülmedi diye ölçüm yok/ROAS hesaplanamaz/retargeting imkansız deme. Etiket varsa doğru çalışıyor deme. Mobil viewport hız veya mobil deneyim testi değildir. Bot 403/EBUSY aldı diye müşteri/Google erişemiyor deme.
 IE desteği uyarısı eski altyapı kanıtı değildir. Rakibin Shopify kullanması daha modern, daha hızlı, daha ucuz veya daha kolay entegre olduğu anlamına gelmez; bunu hipotezde ya da soruda üstünlük varsayımına dönüştürme. Ölçek, entegrasyon süresi ve maliyetleri tarafsız sorularla doğrula.
+Web sitesinden farklı e-posta alan adı SEO otoritesinin bölündüğünü veya DMARC/SPF/teslimat sorunu olduğunu göstermez. Düşük/eski takipçi sayısı da hesabın aktif yönetilmediği anlamına gelmez. Bu durumlarda sorun teşhisi yerine görev/kapsam ve ölçüm sorusu üret.
 Bir sayının alıntıda bulunması yeterli değildir: aynı birim ve anlamla geçmelidir. Örneğin yorum tarihindeki 11 sayısı '11 şikayet', saat listesindeki 12 sayısı '12 liman' olamaz. Toplam sayısı yazmayan yorum kesitinden toplam şikayet veya tekrarlayan sorun oranı çıkarma. Tekil şikayetleri tekil olarak, çözüm yanıtı varsa onunla birlikte anlat.
 Başlangıç adresi bir Instagram/Facebook/sosyal profilse, profilin teknik etiketlerini markanın kendi web mağazası gibi değerlendirme. Profilde link görülmedi diye web sitesi veya birinci taraf müşteri verisi yok deme.
 Yorum bulunamaması memnuniyetsizlik değildir; tekil şikayet yaygın sorun değildir; kurucunun görünürlüğü kişi bağımlılığı değildir; basın görünürlüğü ürün kalitesi onayı değildir. Gelir kaybı/dönüşüm artışı/ROI/bütçe veya veri yokken sıfır trafik/reklam icat etme.
@@ -35,6 +37,7 @@ Yorum bulunamaması memnuniyetsizlik değildir; tekil şikayet yaygın sorun de�
 ADİL KIYAS VE PUAN
 Ürün türü/miktarı/içeriği/paket/kampanya; metrik dönemi/coğrafyası/platformu/yöntemi karşılaştırılabilir olmalı. Somut rakip kanıtı olmadan sektör ortalaması/üstünlük/liderlik iddia etme.
 Sağlık puanı kanıt yeterliliğinden farklıdır. İlgili doğrulanmış bulgu, uygun doğrudan rakiple aynı kapsamdaki bulgu kıyası ve puan bandı gerekçesi olmadan score=null. Kısmi veride gerekçeli ön değerlendirme olabilir; veri yokluğunu 0 veya otomatik 40/50 yapma. Bantlar: 80–100 güçlü karşılaştırmalı sinyaller; 60–79 temel yapı ve doğrulanmış fırsatlar; 40–59 kanıtlı karışık/zayıf sinyaller; 0–39 doğrulanmış kritik sorunlar. Düşük veri düşük sağlık değildir.
+Puanlanabilen her boyutta findingIds marka bulgularını, comparisonFindingIds aynı konudaki rakip bulgularını içersin. Rakip bulgusunu da kaynaklı ayrı finding olarak yaz; yalnız peers kimliği kıyas değildir. bandReason, bu iki kanıtın neden belirtilen banda karşılık geldiğini açıklasın. Fiyatları farklı paket/para birimi veya ülke üzerinden üstünlük kıyasına dönüştürme.
 Altı boyuttan biri puanlanamıyorsa toplam üretme; ağırlıkları değiştirme. Toplam ve tabloları sunucu hesaplar.
 
 SON KONTROL VE ÇIKTI

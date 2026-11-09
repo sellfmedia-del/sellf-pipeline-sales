@@ -1,6 +1,6 @@
 // Explicit branch/commit-gated public-brand QA. No database, user/customer
 // records, publication, mail, environment changes or external subscriptions.
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,writeFile,rm} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
@@ -12,11 +12,16 @@ import {response,offerFixture} from '../test/fixtures/offer.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {expertVersion} from '../src/bhs/expert-report.mjs';
 
-const branch='feat/bhs-expert-evidence-v6';
+const branch='fix/bhs-quality-only';
 export const acceptanceEnabled=()=>process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF===branch&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_ACCEPTANCE_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
 const brands=[['Gümüşsuyu','https://www.gumussuyu.com.tr/'],['Humm Organic','https://www.humm.com.tr/'],['Rebel Burger','https://www.instagram.com/rebel_bybundle/'],['Anker Turizm','https://www.ankertravel.com/'],['Blum Coffee House','https://www.blumcoffeehouse.com/']];
 export async function runExpertAcceptance(){
- if(!acceptanceEnabled())return;
+ if(!acceptanceEnabled()){
+  // npm test also runs on ordinary/production builds. Remove only generated
+  // BHS QA output so a reused build cache cannot publish old test reports.
+  await rm(new URL('../public/expert-review/',import.meta.url),{recursive:true,force:true});
+  return;
+ }
  const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY))throw Error('Isolated preview provider configuration is missing.');
  const results=[];let index=0;
  async function runBrand([brandName,website]){
@@ -52,7 +57,10 @@ export async function runExpertAcceptance(){
    if(!finished)throw Error('No research result');audit=finished.result;
    const d=audit.data;Object.assign(summary,{findings:d.findings.length,sources:d.sources.length,peers:d.competitors.length,availableAreas:d.researchCoverage.filter(c=>c.status!=='unavailable').length,coverage:d.researchCoverage.length,fullResearch:!d.researchContinuity&&d.methodologyVersion===expertVersion});
    const entries=[...rows.entries()],synthesis=entries.find(([key,row])=>key.startsWith('audit:synthesis:')&&row.state==='complete')?.[1].value,planning=entries.find(([key,row])=>key.startsWith('audit:source_plan:')&&row.state==='complete')?.[1].value;
-   const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).find(v=>Array.isArray(v?.findings));
+   const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).filter(v=>Array.isArray(v?.findings)).at(-1);
+   summary.scoredDimensions=d.dimensions.filter(x=>x.score!==null).length;
+   summary.totalScore=d.scoring?.total??null;
+   summary.proposalCopyPersonalized=d.proposalCopy?.headline!=='Net hedefler.';
    summary.rawFindings=generated?.findings.length;summary.rawCoverageKeys=Object.keys(generated?.coverage||{}).length;
    summary.projectionIssues=Object.fromEntries([...new Set((synthesis?.report?.transfer?.issues||[]).map(i=>i.reason))].map(reason=>[reason,synthesis.report.transfer.issues.filter(i=>i.reason===reason).length]));
    summary.peerDiagnostics=(planning?.plan?.entities||[]).filter(e=>e.role==='competitor').map(e=>({name:e.name,website:e.website,relationship:generated?.peers?.find(p=>p.entityId===e.id)?.relationship||'unconfirmed',accepted:d.competitors.some(p=>p.id===e.id)}));
