@@ -4,7 +4,7 @@ import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
 import {plan as legacyPlan} from './fixtures/evidence.mjs';
 import {expertContext,expertModelInput,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
-import {validateExpertOutput,generateExpert} from '../src/bhs/expert-research.mjs';
+import {validateExpertOutput,generateExpert,expertBrandQuery} from '../src/bhs/expert-research.mjs';
 import {recoverModelStage} from '../src/budget/model-recovery.mjs';
 import {runExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
 import {readFileSync} from 'node:fs';
@@ -236,6 +236,17 @@ test('partial competitor plans do not block identity collection; seeded URLs are
  const p={entities:[plan.entities[0]],sources:[{url:brief.website,purpose:'Identity'}]};let reads=0;
  const collect=createEvidenceCollector({allowPartialPlan:true,read:async()=>{reads++;return {status:200,headers:{'content-type':'text/html'},body:Buffer.from('<title>Brand planners</title><main>'+('Family planners and newsletters. '.repeat(50))+'</main>')};}});
  const first=await collect(brief,p);const second=await collect(brief,p,{initialPacket:first});assert.equal(reads,1);assert.equal(second.sources.length,1);
+});
+test('BHS evidence and snippet transport share the exact company identity filter',async()=>{
+ const b=snapshotBrief({...raw,brandName:'Humm Organic',website:'https://humm.com.tr/'}),p={entities:[{...plan.entities[0],name:'Humm Organic',website:b.website}],sources:[{url:b.website,purpose:'Identity'}],researchQueries:dimensionsForTest()};
+ const localPacket={...packet(),entities:p.entities,sources:[page(b.website,'Humm Organic offers organic snacks with delivery details for customers.') ]};
+ const searches=[];
+ const result=await runBoundedStage({phase:'evidence',brief:b,researchVersion:'v6',researchModel:'gemini-2.5-pro',ledger:{get:async()=>({state:'complete',value:{plan:p,initialPacket:localPacket,searches:[]}}),once:async(_k,_i,_a,run)=>run()},collect:async()=>localPacket,providers:{search:async query=>{searches.push(query);return {query,results:[{url:'https://unrelated.example/finance',title:'Humm financial results',content:'Humm consumer finance publishes annual results, organic revenue growth and credit products.'},{url:'https://publisher.example/snacks',title:'Humm Organic',content:'Humm Organic offers snack products in Türkiye and explains its product catalogue.'}]};}}});
+ assert.ok(searches.slice(0,6).every(q=>q.startsWith('"Humm Organic"')));
+ assert.ok(result.searches.every(s=>s.results.every(r=>!r.url.includes('unrelated.example'))));
+ assert.ok(result.searches.some(s=>s.results.some(r=>r.url.includes('publisher.example'))));
+ assert.equal(expertBrandQuery(b,'"Humm Organic" revenue growth'),'"Humm Organic" revenue growth');
+ assert.ok(expertBrandQuery(b,'x'.repeat(800)).length<=500);
 });
 test('new signed jobs use v6 while already signed v5 jobs retain their original version',async t=>{
  const prior=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';t.after(()=>{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;});

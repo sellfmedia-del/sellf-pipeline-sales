@@ -40,6 +40,10 @@ async function searchBatch(providers,queries,options){
  return rows.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'search_unavailable'});
 }
 function urls(searches){return [...new Set(Array.from({length:12},(_,i)=>searches.flatMap(s=>s.results?.[i]?.url?[s.results[i].url]:[])).flat())];}
+export function expertBrandQuery(brief,query){
+ const name=brief.brandName.replace(/"/g,'').trim();
+ return ('"'+name+'" '+String(query).replaceAll('"'+name+'"','').trim()).slice(0,500);
+}
 export function expertFollowups(brief,plan,packet){
  const brand='"'+brief.brandName.replace(/"/g,'')+'"';
  const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,3).map(e=>'site:'+researchHost(e.website)+' "'+e.name.replace(/"/g,'')+'" products prices subscription delivery reviews');
@@ -61,7 +65,7 @@ export async function runExpertStage({phase,brief,providers,previous,collect=col
  }
  if(phase==='evidence'){
   const planning=await previous('source_plan'),plan=parseSourcePlan(planning.plan,{allowPartial:true});
-  const first=await searchBatch(providers,plan.researchQueries.slice(0,6).map(q=>q.query),{depth:'basic',maxResults:12});
+  const first=await searchBatch(providers,plan.researchQueries.slice(0,6).map(q=>expertBrandQuery(brief,q.query)),{depth:'basic',maxResults:12});
   // Keep eight of the existing 24 source slots for the targeted followups.
   // Previously the first pass filled all slots, so followup searches could
   // never contribute a page even when they found the missing evidence.
@@ -72,7 +76,10 @@ export async function runExpertStage({phase,brief,providers,previous,collect=col
   const essential=[brief.website,...plan.entities.filter(e=>e.role==='competitor').slice(0,3).map(e=>e.website)].filter(url=>!packet.sources.some(s=>researchHost(s.finalUrl||s.url)===researchHost(url)&&s.excerpts.reduce((n,e)=>n+e.text.length,0)>=1200));
   if(essential.length&&providers.extract){const extracted=await providers.extract(essential).catch(()=>({pages:[],failed:essential.map(url=>({url,reason:'extract_unavailable'}))}));packet=mergeExtractedEvidence(packet,extracted);}
   const relevant=prepareResearchInput(brief,{packet,searches:all});
-  return {packet:relevant.packet,searches:all,searchCount:all.length,methodologyVersion:expertVersion};
+  // Apply the same company/domain selector to snippets as to read pages.
+  // Raw searches remain in their immutable paid rows; they must not re-enter
+  // synthesis just because one generic word matches the brand name.
+  return {packet:relevant.packet,searches:relevant.searchEvidence,searchCount:all.length,methodologyVersion:expertVersion};
  }
  if(phase==='synthesis'){
   const evidence=await previous('evidence'),context=expertContext(brief,evidence);

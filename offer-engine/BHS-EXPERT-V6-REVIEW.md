@@ -16,6 +16,9 @@ monthly/standard offers, logos, template, existing records and production data.
   The first pass retains at most 16 sources, leaving eight slots for followups.
   Verified publisher redirects and already-read product paragraphs preserve
   appropriate peers without accepting an unrelated same-name business.
+  Read pages and unread search snippets use the same identity filter; six
+  methodology queries are anchored to the full exact brand name. Raw search
+  receipts remain in the existing paid records.
 - BHS v6 uses Gemini 2.5 Pro with Gemini 3.1 Pro as its bounded alternate.
   The primary synthesis has at most 160 seconds within the same 250-second
   recovery window, leaving time for an alternate. Other engines and signed
@@ -61,7 +64,7 @@ technical proxies cannot reappear as critical risks. The v6 response omits
 redundant originalReport copies; all findings, quotes and source references
 remain in the response and immutable paid stage records.
 
-Local verification: 54 root tests + 357 engine tests passed (21 opt-in
+Local verification: 54 root tests + 359 engine tests passed (21 opt-in
 checks skipped), focused ESLint/module parsing and production build passed.
 Ten desktop/mobile browser tests passed for BHS continuation, both currencies,
 explicit costs, monthly variants, stored offers and both proposal languages.
@@ -69,11 +72,13 @@ No non-BHS production source, build script, config or dependency differs from ma
 
 A five-public-brand batch and a separate forced-primary-503 Humm acceptance
 are reviewed separately; build success alone is not quality acceptance.
-The forced 503 is a QA fixture; the Pro alternate is called for real.
+The forced 503 was a QA fixture. Its alternate call entered the unchanged cap
+but did not complete. That failure remains a release blocker, not a passing
+BHS. The final focused Humm run has no injected failure.
 
 Public-brand acceptance is restricted to the Pipeline project's preview build,
-the exact feature branch, a dated commit marker and an expiry. It runs five
-public brands with independent in-memory ledgers and no database writes, email
+the exact feature branch, a dated commit marker and an expiry. It runs a single focused
+public brand with independent in-memory ledgers and no database writes, email
 or publishing. Paid calls cover BHS only; the unchanged proposal scope stage
 uses its existing fixture in this QA, with separate equality/browser tests. Each retains the same 50 TRY cap. Generated QA output is removed
 by the BHS test on every ordinary build and never generated in production.
