@@ -64,7 +64,9 @@ export function stageModelInput(context,{rows,sample=false,areas=false}={}){
 }
 export function withProofIds(schema,context){
  const out=structuredClone(schema),ids=[...context.known.keys()];
- const bind=s=>{if(s.properties)for(const [key,value]of Object.entries(s.properties)){if(key==='sourceIds')value.items={...value.items,enum:ids};else bind(value);}if(s.items)bind(s.items);};
+ // Gemini rejects large enum grammars. Larger packets use the explicit
+ // citation contract and the identical server-side membership validation.
+ const bind=s=>{if(s.properties)for(const [key,value]of Object.entries(s.properties)){if(key==='sourceIds'&&ids.length<=128)value.items={...value.items,enum:ids};else bind(value);}if(s.items)bind(s.items);};
  bind(out);return out;
 }
 export function acceptedRows(rows,review){

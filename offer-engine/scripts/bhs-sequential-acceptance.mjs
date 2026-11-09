@@ -38,7 +38,7 @@ export async function runSequentialAcceptance(){
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:'humm',status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
  }catch(error){
-  result={case:'humm',status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
+  result={case:'humm',status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints}:{}),...(error.validationDetail?{validationDetail:error.validationDetail}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
  }finally{
   // Synthesis is capped at 44 TRY; the protected remaining 6 TRY can cover
   // this build-only infrastructure allowance without starving early stages.

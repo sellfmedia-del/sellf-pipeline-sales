@@ -22,7 +22,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const response=await fetchImpl(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeout),redirect:'error'});
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','BHS sağlayıcı yanıtı çok büyük.');
   let value;try{value=JSON.parse(raw);}catch{throw new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.');}
-  if(!response.ok){const error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(value?.error?.message||'');throw error;}
+  if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));throw error;}
   return value;
  }
  async function fx(){
@@ -46,7 +46,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const step='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(body);
   const validate=value=>{
    if(value.rejectedOutput)throw new BudgetError(value.rejectedOutput,'BHS model yanıtı tamamlanmadı; kullanım kaydı korundu.');
-   try{assertSchema(value.data,schema);validateData?.(value.data);}catch(error){throw new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');}
+   try{assertSchema(value.data,schema);validateData?.(value.data);}catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
    return value;
   };
   const saved=await ledger.get(step);
