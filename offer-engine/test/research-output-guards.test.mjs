@@ -54,7 +54,7 @@ test('completed legacy empty stages restore research or explicitly hand off; nev
  for(const canRestore of [false,true]){
   const ledger=memoryLedger(['source_plan','evidence','synthesis','scope'].map(phase=>[stageKey(f.brief,phase,'v5'),{state:'complete',value:phase==='synthesis'?{report:{}}:phase==='scope'?{scopePlan:f.scope}: {}}]));
   if(canRestore)ledger.rows.set(researchCacheKey(f.brief,now),{state:'complete',value:saved(f,context())});
-  const handler=createBoundedAuditHandler({getLedger:async()=>ledger,getSecret:()=>secret,validateWebsite:async()=>{},getProviders:()=>assert.fail('no provider'),runStage:()=>assert.fail('no paid stage replay'),now:()=>now,logger:{}}),res=response();
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getLedger:async()=>ledger,getSecret:()=>secret,validateWebsite:async()=>{},getProviders:()=>assert.fail('no provider'),runStage:()=>assert.fail('no paid stage replay'),now:()=>now,logger:{}}),res=response();
   await handler(req({action:'start',brief:f.brief,requestId:'legacy_empty_request_2026',context:{leadId:'lead-1',spaceId:'space-1'}}),res);
   assert.equal(res.code,200);assert.equal(res.data.result.data.researchContinuity.status,canRestore?'partial':'unavailable');assert.ok(res.data.pricingProof);
   const price=response();await createPricingHandler({getSecret:()=>secret,now:()=>now})(req({action:'start',brief:f.brief,audit:res.data.result,pricingProof:res.data.pricingProof}),price);assert.equal(price.code,200);

@@ -19,7 +19,7 @@ test('a fresh card run isolates old commitments; signed resume and downstream pr
   const f=await offerFixture(),old=memoryLedger(),a=memoryLedger(),b=memoryLedger();
   old.status=async()=>({chargedKurus:4980,capKurus:5000});
   const ledgers=new Map([[first,a],[second,b]]),seen=[];let configuredModel='gemini-4-argon';
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getResearchModel:()=>configuredModel,validateWebsite:async()=>{},
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getResearchModel:()=>configuredModel,validateWebsite:async()=>{},
    getLedger:async(_req,_res,lead,options)=>{assert.equal(lead,'lead-1');seen.push(options?.researchRunId);return ledgers.get(options?.researchRunId)||old;},
    getProviders:()=>({configured:()=>true}),
    runStage:async({phase,brief,ledger,researchVersion,freshResearch,researchModel})=>{assert.equal(researchModel,'gemini-4-argon');assert.equal(freshResearch,true);ledger.rows.set(stageKey(brief,phase,researchVersion),{state:'complete',value:phase==='synthesis'?f.synthesis:phase==='scope'?{scopePlan:f.scope,proposalCopy:f.copy}:{}});}

@@ -24,7 +24,7 @@ function completedForecast(finding,evidence){
 // Deterministic provenance gate: never fetch model-invented URLs or treat a
 // syntactically valid citation as proof that its quote was actually read.
 // Quote matches do not prove semantic entailment; inference stays labelled.
-export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
+export function groundOfferReport(value,{packet,searchEvidence=[],brief={},preserveQualifiedImpacts=false}={}){
  const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method}));
  for(const search of searchEvidence)for(const s of search.results||[])records.push({url:s.url,aliases:[s.url],title:s.title,text:s.content||'',segments:[s.content||''],method:'search-snippet'});
  for(const source of packet?.sources||[])for(const quote of technicalCitations(source))records.push({url:source.finalUrl||source.url,aliases:[source.url,source.finalUrl],title:source.title,text:quote,segments:[quote],method:'html-signals'});
@@ -49,6 +49,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
   const ok=supported(f.sourceIds)&&!completedForecast(f,quotes(f.sourceIds))&&!reversedPercentage([f.statement,f.reportExcerpt,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
   if(!ok)issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});return ok;
  }).map(f=>{
+  if(preserveQualifiedImpacts&&f.impact.startsWith('Hipotez: ')&&f.impact.includes(' Sınır: '))return f;
   if(!unmeasuredJudgement([f.statement,f.impact,f.goalConnection].join(' ')))return f;
   issues.push({path:'findings.'+f.id,reason:'unmeasured_impact_qualified'});
   const inferred=unmeasuredJudgement(f.statement);
@@ -81,7 +82,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={}}={}){
    if(a.status==='unavailable'||!supported(a.sourceIds)||reversedPercentage(a.observation,quotes(a.sourceIds))||!supportedNumbers(a.observation,quotes(a.sourceIds))){
     if(a.status!=='unavailable')issues.push({path:'researchCoverage',reason:'unsupported_coverage'});
     a.status='unavailable';a.observation=missing;a.sourceIds=[];
-   }else if(unmeasuredJudgement(a.observation)){
+   }else if(!preserveQualifiedImpacts&&unmeasuredJudgement(a.observation)){
     issues.push({path:'researchCoverage',reason:'unmeasured_impact_qualified'});a.status='partial';if(!a.observation.startsWith('Görüşmede doğrulanacak hipotez: '))a.observation='Görüşmede doğrulanacak hipotez: '+a.observation.replace(/[,.;:]?\s*(?:ancak )?bu kritik bir eksiklik\.?/giu,'')+' Bu sınırlı dış kaynak gözlemi, mekanizmanın yokluğunu veya çalışmadığını kanıtlamaz.';
    }
   }return result;

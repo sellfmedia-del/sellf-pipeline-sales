@@ -68,7 +68,7 @@ test('wrong card or missing saved BHS cannot allocate a new budget or silently s
 test('explicit new BHS keeps separate run budget and signed source across every stage; cannot reuse old report cache',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';try{
   const f=await offerFixture(),ledger=memoryLedger();const phases=[];let ticket;
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getSourceOffer:async()=>f.row,getLedger:async(_r,_s,id,options)=>{assert.equal(id,'lead-1');assert.equal(options.researchRunId,runId);return ledger;},getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{info(){},error(){}},runStage:async options=>{
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getSourceOffer:async()=>f.row,getLedger:async(_r,_s,id,options)=>{assert.equal(id,'lead-1');assert.equal(options.researchRunId,runId);return ledger;},getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{info(){},error(){}},runStage:async options=>{
    assert.equal(options.freshResearch,true);phases.push(options.phase);ledger.rows.set(stageKey(options.brief,options.phase,'v5'),{state:'complete',value:options.phase==='synthesis'?f.synthesis:options.phase==='scope'?{scopePlan:f.scope,proposalCopy:f.copy}:{}});
   }});
   for(let i=0;i<5;i++){
