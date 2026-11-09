@@ -43,12 +43,12 @@ export function expertContext(brief,evidence){
   for(const p of candidates)if(picked.length<7&&!seen.has(p)){picked.push(p);seen.add(p);}
   const sections=[];
   for(const paragraph of picked){if(used+paragraph.length>60000)continue;used+=paragraph.length;
-   const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,scope:'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
+   const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),scope:s.metadataOnly?'Yalnız yayıncının başlık/açıklama meta verisi; sayfa işlevi veya performans kanıtı değildir.':'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
    for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
   }
   for(const quote of technicalCitations(s)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:'html-signals',scope:'Yalnız indirilen HTML sinyali; yokluk/çalışırlık/mobil hız testi değildir.'});sections.push({text:quote,proofIds:[id]});}
-  sources.push({url:s.finalUrl||s.url,requestedUrl:s.url,title:s.title,method:s.method,asOf:s.retrievedAt,sections});
+  sources.push({url:s.finalUrl||s.url,requestedUrl:s.url,title:s.title,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),asOf:s.retrievedAt,sections});
  }
  let snippets=0;
  for(const search of evidence.searches||[])for(const s of search.results||[]){
@@ -93,7 +93,7 @@ export function unsafeExpertClaim(f,quotes){
 // These are neutral verification questions, not a second paid content review.
 export function qualifyExpertFinding(value,quotes){
  const f={...value},q=fold(quotes),t=fold([f.observation,f.commercialHypothesis].join(' '));
- const qualify=(hypothesis,limit,question)=>{f.commercialHypothesis=hypothesis;f.limitation=f.limitation?.startsWith(limit)?f.limitation:limit+(f.limitation?' '+f.limitation:'');f.question=question;};
+ const qualify=(hypothesis,limit,question)=>{f.stance='neutral';f.commercialHypothesis=hypothesis;f.limitation=f.limitation?.startsWith(limit)?f.limitation:limit+(f.limitation?' '+f.limitation:'');f.question=question;};
  if(/internet explorer/.test(q)&&/eski|guncel|modern|teknik borc/.test(t))qualify('Tarayıcı desteği kararının güncel ziyaretçi kitlesi ve test sonuçlarıyla uyumu doğrulanabilir.','Eski tarayıcı desteği uyarısı, altyapının eski veya verimsiz olduğunu kanıtlamaz.','Hangi tarayıcı sürümlerini destekliyorsunuz ve bu kararları hangi güncel kullanım/test verileriyle alıyorsunuz?');
  else if(/"(?:analyticsTags|metaPixelTag|mobileViewport)":false/i.test(quotes)&&/olcum|donusum|yeniden pazarlama|retarget|mobil|viewport/.test(t))qualify('İndirilen HTML sinyali ile gerçek kullanıcı oturumundaki ölçüm ve görünüm davranışı, izin ve çalışma zamanı testleriyle birlikte doğrulanabilir.','Statik HTML sinyali; ölçümün yokluğunu, çalışmadığını, reklam verimsizliğini veya mobil sorun olduğunu göstermez.','Analitik/reklam etiketleri hangi yöntemle ve izin koşullarında tetikleniyor; gerçek mobil oturum ve dönüşüm testlerinin sonuçları nedir?');
  else if(/(?:\/en\/|euro)/.test(t)&&/turkiye/.test(t)&&/donusum|terk|kayip|lokal/.test(t))qualify('İncelenen oturumun dil ve para birimi kapsamı, hedef ülkedeki gerçek kullanıcı oturumuyla karşılaştırılarak doğrulanabilir.','Yurt dışındaki araştırma oturumu Türkiye kullanıcı deneyimini veya satış kaybını kanıtlamaz.','Hedef ülkelere göre beklenen dil/para birimi yönlendirmeleri nelerdir ve gerçek kullanıcı testlerinde bu kurallar beklendiği gibi çalışıyor mu?');
@@ -108,20 +108,20 @@ export function labelUnconfirmedComparison(f){
 }
 
 export function projectExpertReport(value,context){
- // Recovery may return a legacy-shaped partial document. Recheck provenance;
- // a model returning `sources` must never bypass source verification.
- if(Array.isArray(value?.researchCoverage)&&value?.sources)return groundOfferReport(value,{packet:context.packet,brief:context.input.brief,preserveQualifiedImpacts:true});
+ // Only immutable proof IDs from the compact contract are accepted here.
+ // A model cannot bypass these semantic guards by returning a legacy report.
  const raw=value||{},cards=context.known,issues=[],sources=new Map();
  // A model ID identifies a bounded paragraph, not a disconnected 200-char
  // slice. Retain its adjacent proof chunks so a cited sentence stays readable.
  const refs=ids=>unique(list(ids).filter(id=>cards.has(id)).flatMap(id=>context.proofGroups?.get(id)||[id]));
  const use=ids=>refs(ids).map(id=>{const c=cards.get(id);sources.set(id,{...c,publishedAt:null,period:null,sourceType:c.method==='search-snippet'?'secondary':'primary'});return id;});
- const findings=[],seenIds=new Set();
+ const findings=[],seenIds=new Set(),qualifiedStances=new Map();
  for(const original of list(raw.findings).filter(f=>f&&typeof f==='object')){
   const sourceIds=refs(original.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n'),f=qualifyExpertFinding(original,quotes);
   const reason=unsafeExpertClaim(f,quotes);
-  if(typeof f.id!=='string'||seenIds.has(f.id)||typeof f.observation!=='string'||!f.observation.trim()||!sourceIds.length||list(f.sourceIds).some(id=>!cards.has(id))||reason){issues.push({path:'findings.'+f.id,reason:reason||'unsupported_finding'});continue;}
+  if(typeof f.id!=='string'||seenIds.has(f.id)||!dimensions.some(d=>d.id===f.dimension)||typeof f.observation!=='string'||!f.observation.trim()||!sourceIds.length||list(f.sourceIds).some(id=>!cards.has(id))||reason){issues.push({path:'findings.'+f.id,reason:reason||'unsupported_finding'});continue;}
   seenIds.add(f.id);
+  qualifiedStances.set(f.id,f.stance);
   const locale=sourceIds.map(id=>cards.get(id).url).some(url=>/\/en(?:\/|$)|\.us(?:\/|$)/.test(url));
   if(locale&&/(?:turkiye.*(?:musteri|donusum|satin)|turk lira.*yerine|yurt ici.*(?:bozuk|engell))/i.test(fold(f.observation))){issues.push({path:'findings.'+f.id,reason:'market_scope_mismatch'});continue;}
   const limitation=String(f.limitation||'İç veriler ve hedef pazar deneyimi görüşmede doğrulanacak.');
@@ -132,13 +132,14 @@ export function projectExpertReport(value,context){
  for(const p of list(raw.peers).filter(p=>p&&typeof p==='object')){
   const e=entities.find(e=>e.id===p.entityId&&e.role==='competitor');if(!e||p.relationship!=='direct')continue;
   const publisher=card=>researchHost(card.url)===researchHost(e.website)||context.input.sources.some(s=>s.url===card.url&&s.requestedUrl&&researchHost(s.requestedUrl)===researchHost(e.website));
-  let sourceIds=refs(p.sourceIds).filter(id=>publisher(cards.get(id))&&!['html-signals','search-snippet'].includes(cards.get(id).method));if(!sourceIds.length)continue;
+  const readProduct=card=>publisher(card)&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method);
+  let sourceIds=refs(p.sourceIds).filter(id=>readProduct(cards.get(id)));if(!sourceIds.length)continue;
   const category=topicWords(e.scope+' '+e.audienceReason);
   const expectedCategories=categories.filter(p=>p.test(fold(e.scope+' '+e.audienceReason)));
   // A newsletter citation is not product identity. Reuse a product paragraph
   // already read from that same publisher instead of losing a valid peer or
   // trusting an unrelated same-name business. No new request or model call.
-  const productCards=[...cards.values()].filter(c=>publisher(c)&&!['html-signals','search-snippet'].includes(c.method)&&(expectedCategories.length?expectedCategories.some(p=>p.test(fold(c.quote))):category.some(w=>fold(c.quote).includes(w))));
+  const productCards=[...cards.values()].filter(c=>readProduct(c)&&(expectedCategories.length?expectedCategories.some(p=>p.test(fold(c.quote))):category.some(w=>fold(c.quote).includes(w))));
   sourceIds=unique([...sourceIds,...refs(productCards.slice(0,3).map(c=>c.id))]);
   const evidence=fold(sourceIds.map(id=>cards.get(id).quote).join(' '));
   if(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
@@ -153,7 +154,10 @@ export function projectExpertReport(value,context){
  const hasBrand=f=>f.sourceIds.some(id=>researchHost(cards.get(id).url)===brandHost);
  const relevantIds=(ids,dimension)=>unique(list(ids).filter(id=>findingById.has(id)&&(!dimension||findingById.get(id).dimension===dimension)));
  const researchCoverage=methodologyAreas.map(a=>{
-  const v=raw.coverage?.[a.key]||{},ids=relevantIds(v.findingIds,a.dimension),selected=ids.map(id=>findingById.get(id));
+  // One grounded observation can support several methodology areas (for
+  // example platform use in both digital and operations). Its primary display
+  // dimension must not erase those cross-references or duplicate the finding.
+  const v=raw.coverage?.[a.key]||{},ids=relevantIds(v.findingIds),selected=ids.map(id=>findingById.get(id));
   return {dimension:a.dimension,topic:a.topic,status:selected.length&&v.status!=='unavailable'?(v.status==='observed'?'observed':'partial'):'unavailable',observation:selected.length?selected.map(f=>f.statement).join(' '):String(v.note||'Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.'),sourceIds:unique(selected.flatMap(f=>f.sourceIds))};
  });
  const projectedDimensions=dimensions.map(({id})=>{
@@ -162,7 +166,7 @@ export function projectExpertReport(value,context){
   const peerIds=competitors.filter(p=>compared.some(f=>f.sourceIds.some(sid=>researchHost(cards.get(sid).url)===researchHost(p.website)))).map(p=>p.id);
   const score=selected.some(hasBrand)&&peerIds.length&&typeof d.bandReason==='string'&&d.bandReason.trim()&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
   const qs=selected.map(f=>f.goalConnection).filter(Boolean);
-  const stance=f=>list(raw.findings).find(x=>x?.id===f.id)?.stance;
+  const stance=f=>qualifiedStances.get(f.id);
   return {id,score,dataStatus:selected.length?'partial':'insufficient',rationale:selected.length?selected.map(f=>f.statement).join(' '):'Bu boyut için yeterli kanıt bulunamadı; görüşmede doğrulanacak.',findingIds:ids,comparisonCompetitorIds:peerIds,strengths:selected.filter(f=>stance(f)==='positive').map(f=>f.statement),gaps:selected.filter(f=>stance(f)==='risk').map(f=>f.kind==='inference'?'Doğrulanacak hipotez: '+f.statement:f.statement),onboardingQuestions:qs.length?qs:['Bu boyutun mevcut durumunu hangi güncel verilerle doğrulayabiliriz?']};
  });
  const entityIds=new Set([brand?.id,...competitors.map(e=>e.id)]);
@@ -185,7 +189,7 @@ export function projectExpertReport(value,context){
  const meetingQuestions=findings.slice().sort((a,b)=>({high:0,medium:1,low:2}[a.priority])-({high:0,medium:1,low:2}[b.priority])).slice(0,8).map(f=>({dimension:f.dimension,question:f.goalConnection,findingIds:[f.id]}));
  for(const d of projectedDimensions)if(meetingQuestions.length<5&&!meetingQuestions.some(q=>q.dimension===d.id))meetingQuestions.push({dimension:d.id,question:d.onboardingQuestions[0],findingIds:d.findingIds});
  const overview=relevantIds(raw.overviewIds).map(id=>findingById.get(id));
- const report={summary:(overview.length?overview:findings.slice(0,4)).map(f=>f.statement).join(' '),sources:[...sources.values()],findings,competitors,dimensions:projectedDimensions,benchmarks,meetingQuestions,serviceRecommendations:[],researchCoverage,criticalOpportunityFindingId:findingById.has(raw.opportunityId)?raw.opportunityId:null,criticalRiskFindingId:findingById.has(raw.riskId)?raw.riskId:null};
+ const report={summary:(overview.length?overview:findings.slice(0,4)).map(f=>f.statement).join(' '),sources:[...sources.values()],findings,competitors,dimensions:projectedDimensions,benchmarks,meetingQuestions,serviceRecommendations:[],researchCoverage,criticalOpportunityFindingId:findingById.has(raw.opportunityId)&&qualifiedStances.get(raw.opportunityId)!=='risk'?raw.opportunityId:null,criticalRiskFindingId:findingById.has(raw.riskId)&&qualifiedStances.get(raw.riskId)==='risk'?raw.riskId:null};
  const grounded=groundOfferReport(report,{packet:context.packet,brief:context.input.brief,preserveQualifiedImpacts:true});
  delete grounded.originalReport;
  grounded.transfer.issues.push(...issues);grounded.transfer.contentComplete=!grounded.transfer.issues.length;

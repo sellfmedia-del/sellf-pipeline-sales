@@ -6,7 +6,7 @@ import {plan as legacyPlan} from './fixtures/evidence.mjs';
 import {expertContext,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
 import {validateExpertOutput} from '../src/bhs/expert-research.mjs';
 import {recoverModelStage} from '../src/budget/model-recovery.mjs';
-import {runExpertAcceptance,acceptanceEnabled} from '../scripts/bhs-expert-acceptance.mjs';
+import {runExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
@@ -44,6 +44,8 @@ test('expert projection reaches existing nine-section contract and saved researc
  const audit=directAuditResult(brief,{report,analysisPacket:context.packet,methodologyVersion:expertVersion});
  assert.equal(audit.status,'ready');assert.equal(audit.data.scoring.total,null);assert.match(audit.data.rawReport,/## 9\. Kaynaklar/);
  assert.match(audit.data.findings[0].impact,/Hipotez:.*Sınır:/);assert.ok(!audit.data.findings[0].impact.includes('Bu dış kaynak'));
+ assert.equal(audit.data.originalReport,undefined);assert.equal(audit.data.report.originalReport,undefined);
+ assert.deepEqual(audit.data.sources,report.sources);assert.deepEqual(audit.data.findings,report.findings);
  const restored=readResearchSnapshot(createResearchSnapshot(audit.data,brief));assert.equal(restored.report.findings.length,2);assert.match(restored.report.findings[0].impact,/Satın alma dönüşümü ölçülmedi/);
 });
 test('unmatched claims cannot revive through report summaries, strengths, coverage or scores',()=>{
@@ -134,6 +136,23 @@ test('actual redirect provenance can confirm peer identity, but an unrelated hos
  delete context.input.sources.find(s=>s.url===peer.finalUrl).requestedUrl;
  assert.equal(projectExpertReport(value,context).competitors.length,0);
 });
+test('metadata-only pages keep their limitation and do not establish a read competitor product page',()=>{
+ const {value}=fixture(),p=packet();p.sources[1].metadataOnly=true;
+ const context=expertContext(brief,{packet:p,searches:[]});
+ assert.equal(context.input.sources[1].metadataOnly,true);
+ assert.ok(context.cards.filter(c=>c.url===p.sources[1].url).every(c=>c.metadataOnly&&c.scope.includes('meta verisi')));
+ assert.equal(projectExpertReport(value,context).competitors.length,0);
+});
+test('a shared grounded finding supports multiple methodology areas without duplicating or losing it',()=>{
+ const {value}=fixture(),p=packet();p.sources[0].excerpts.push({text:'Our family planner store runs on the WordPress ecommerce platform for its catalogue.'});
+ const context=expertContext(brief,{packet:p,searches:[]}),proof=context.cards.find(c=>c.quote.includes('WordPress'));
+ value.findings[0]={...value.findings[0],dimension:'digital',observation:'Markanın mağazası WordPress platformunu kullanıyor.',sourceIds:[proof.id]};
+ value.coverage.operations_2={status:'partial',findingIds:['f1'],note:'Aynı doğrulanmış platformun operasyon boyutu.'};
+ value.coverage.digital_2={status:'partial',findingIds:['f1'],note:'Doğrulanmış platform sinyali.'};
+ const report=projectExpertReport(value,context);assert.equal(report.findings.length,2);
+ const area=report.researchCoverage.find(a=>a.dimension==='operations'&&a.topic.includes('Platform'));
+ assert.equal(area.status,'partial');assert.equal(area.observation,value.findings[0].observation);assert.deepEqual(area.sourceIds,report.findings[0].sourceIds);
+});
 test('followups can add missing sources after a bounded first pass without repeating completed reads',async()=>{
  const p={entities:[plan.entities[0]],sources:Array.from({length:24},(_,i)=>({url:brief.website+'page-'+i,purpose:'Research'}))},read=[];
  const collect=createEvidenceCollector({allowPartialPlan:true,read:async url=>{read.push(url);return {status:200,headers:{'content-type':'text/html'},body:Buffer.from('<title>Brand planners</title><main>'+('Brand family planners catalogue and delivery information. '.repeat(40))+'</main>')};}});
@@ -148,6 +167,14 @@ test('observed technical proxies retain neutral questions without diagnosing unm
   ['E-posta ve web alan adları farklı.','SEO otoritesi bölünmüş ve DMARC bozuk.','email domains'],
   ['16 takipçi listeleniyor.','Hesap aktif yönetilmiyor.','16 followers']
  ]){const f=qualifyExpertFinding({observation,commercialHypothesis,limitation:'Ölçülmedi.',question:'Neden?'},quote);assert.equal(f.observation,observation);assert.notEqual(f.commercialHypothesis,commercialHypothesis);assert.match(f.limitation,/kanıt|göster/);}
+});
+test('a neutralized technical proxy cannot remain a weakness or critical risk elsewhere in the report',()=>{
+ const {value}=fixture(),p=packet();p.sources[0].excerpts.push({text:'Internet Explorer browser support is limited to the currently supported browser versions.'});
+ const context=expertContext(brief,{packet:p,searches:[]}),id=context.cards.find(c=>c.quote.includes('Internet Explorer')).id;
+ value.findings[0]={...value.findings[0],stance:'risk',observation:'Internet Explorer uyarısı bulunuyor.',commercialHypothesis:'Eski altyapı teknik borç yaratıyor.',sourceIds:[id]};value.riskId='f1';
+ const report=projectExpertReport(value,context);assert.equal(report.findings.length,2);assert.equal(report.criticalRiskFindingId,null);assert.equal(report.dimensions.find(d=>d.id==='funnel').gaps.length,0);
+ const legacy={researchCoverage:[],sources:[{id:'proof',url:brief.website,quote:context.cards[0].quote}],findings:[{id:'invented',dimension:'digital',kind:'observation',statement:'Meta Pixel eksik ve dönüşüm takibi yapılamaz.',sourceIds:['proof']}]};
+ assert.throws(()=>validateExpertOutput(legacy,context));
 });
 function dimensionsForTest(){return ['financial','operations','funnel','digital','perception','competition'].map(d=>({dimension:d,query:'Brand '+d,purpose:d+' research'}));}
 test('partial competitor plans do not block identity collection; seeded URLs are not downloaded again',async()=>{
@@ -166,6 +193,5 @@ test('new signed jobs use v6 while already signed v5 jobs retain their original 
  const next=response();await handler({method:'POST',headers:{host,origin:'https://'+host,cookie},body:{action:'advance',ticket:old,brief}},next);assert.deepEqual(seen,['v5']);
 });
 test('BHS public acceptance is confined to its explicit preview commit; ordinary builds remove QA output',async()=>{
- if(acceptanceEnabled())await runExpertAcceptance();
- else await runExpertAcceptance();
+ await runExpertAcceptance();
 });

@@ -12,7 +12,7 @@ import {response,offerFixture} from '../test/fixtures/offer.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {expertVersion} from '../src/bhs/expert-report.mjs';
 
-const branch='fix/bhs-quality-only';
+const branch='qa/bhs-quality-final';
 export const acceptanceEnabled=()=>process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF===branch&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_ACCEPTANCE_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
 const brands=[['Gümüşsuyu','https://www.gumussuyu.com.tr/'],['Humm Organic','https://www.humm.com.tr/'],['Rebel Burger','https://www.instagram.com/rebel_bybundle/'],['Anker Turizm','https://www.ankertravel.com/'],['Blum Coffee House','https://www.blumcoffeehouse.com/']];
 export async function runExpertAcceptance(){
@@ -40,7 +40,11 @@ export async function runExpertAcceptance(){
    if(op==='complete')charged-=old.charge_kurus-a.amount;
    const row={...old,state:op,value:a.value,charge_kurus:op==='complete'?a.amount:old.charge_kurus};rows.set(a.step,row);return row;
   });
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>ledger,getProviders:options=>createBoundedProviders({...options,fetchImpl:async(url,init)=>{if(url.endsWith(':generateContent'))generations++;if(url==='https://api.tavily.com/search')searches++;return fetch(url,init);}}),logger:{info(){},error:v=>console.info('BHS_EXPERT_STAGE_ERROR '+v)}});
+  // Paid acceptance covers BHS only. The existing scope/copy stage already has
+  // equality and browser regressions; use its ordinary fixture here instead of
+  // purchasing non-BHS model calls while reviewing research quality.
+  const scopeFixture=await offerFixture();
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>ledger,getProviders:options=>{const providers=createBoundedProviders({...options,fetchImpl:async(url,init)=>{if(url.endsWith(':generateContent'))generations++;if(url==='https://api.tavily.com/search')searches++;return fetch(url,init);}});return {...providers,generate:async(stage,...args)=>stage==='scope'?{data:{scope:scopeFixture.scope,copy:scopeFixture.copy},isolatedScopeFixture:true}:providers.generate(stage,...args)};},logger:{info(){},error:v=>console.info('BHS_EXPERT_STAGE_ERROR '+v)}});
   async function call(h,body){const res=response();await h({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);const cookies=res.headers['Set-Cookie'];if(cookies)cookie=(Array.isArray(cookies)?cookies:[cookies]).find(c=>c.startsWith('__Host-offer-research')).split(';')[0];return res;}
   const summary={brandName,website,passed:false,databaseWrites:0,mailSends:0,capKurus:5000,researchVersion:expertVersion,manualSemanticReview:'pending',stages:[]};
   let audit;
@@ -60,7 +64,7 @@ export async function runExpertAcceptance(){
    const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).filter(v=>Array.isArray(v?.findings)).at(-1);
    summary.scoredDimensions=d.dimensions.filter(x=>x.score!==null).length;
    summary.totalScore=d.scoring?.total??null;
-   summary.proposalCopyPersonalized=d.proposalCopy?.headline!=='Net hedefler.';
+   summary.nonBhsModelCalls=0;summary.proposalScopeFixture=true;summary.auditSize=JSON.stringify(audit).length;
    summary.rawFindings=generated?.findings.length;summary.rawCoverageKeys=Object.keys(generated?.coverage||{}).length;
    summary.projectionIssues=Object.fromEntries([...new Set((synthesis?.report?.transfer?.issues||[]).map(i=>i.reason))].map(reason=>[reason,synthesis.report.transfer.issues.filter(i=>i.reason===reason).length]));
    summary.peerDiagnostics=(planning?.plan?.entities||[]).filter(e=>e.role==='competitor').map(e=>({name:e.name,website:e.website,relationship:generated?.peers?.find(p=>p.entityId===e.id)?.relationship||'unconfirmed',accepted:d.competitors.some(p=>p.id===e.id)}));
