@@ -24,7 +24,7 @@ grant select,insert,update on public.pipeline_bhs_jobs to service_role;
 
 create function public.pipeline_bhs_job_op(p_mode text,p_op text,p_owner uuid default null,p_lead text default null,p_id uuid default null,p_token uuid default null,p_data jsonb default '{}')
 returns jsonb language plpgsql security invoker set search_path='' as $$
-declare j public.pipeline_bhs_jobs;b jsonb;receipt jsonb;budget_lead text;expected text;phases text[]:=array['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_mechanism','sector_gate','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','synthesis','scope','complete'];
+declare j public.pipeline_bhs_jobs;b jsonb;receipt jsonb;budget_lead text;expected text;phases text[]:=array['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete'];
 begin
  if current_user<>'service_role' or p_mode not in ('preview','production') then raise exception 'private BHS worker required';end if;
  if p_op='find' then
@@ -45,7 +45,7 @@ begin
  if p_op='claim' then
   if p_token is null then raise exception 'BHS lease required';end if;
   -- A killed worker is paused. Its paid reservations are never refunded/replayed.
-  update public.pipeline_bhs_jobs set state='paused',diagnostic='{"code":"lease_expired"}',updated_at=now() where mode=p_mode and state='running' and lease_until<=now();
+  update public.pipeline_bhs_jobs set state=case when cancel_requested then 'cancelled' else 'paused' end,diagnostic='{"code":"lease_expired"}',updated_at=now() where mode=p_mode and state='running' and lease_until<=now();
   update public.pipeline_bhs_jobs set state='paused',diagnostic='{"code":"job_execution_limit"}',updated_at=now() where mode=p_mode and state='queued' and (claims>=40 or created_at<now()-interval '2 hours');
   select * into j from public.pipeline_bhs_jobs where mode=p_mode and state='queued' order by created_at for update skip locked limit 1;
   if not found then return null;end if;

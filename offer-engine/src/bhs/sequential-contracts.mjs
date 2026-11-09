@@ -3,19 +3,20 @@ import {expertContext,expertSchema,expertModelInput} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 
 export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
-export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_mechanism','sector_gate','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','synthesis','scope','complete']);
+export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete']);
 export const logicalPhases=Object.freeze(['brand','sector','competition','swot','coverage','synthesis']);
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // A stage may spend only its share of the SAME 50 TRY account. The remainder
 // protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:1400,sector:2100,sector_mechanism:2350,sector_gate:2350,competition:2600,swot:2800,coverage:3000,synthesis:4400,scope:5000});
+export const stageCeilings=Object.freeze({brand:1400,sector:2100,sector_validation:2600,competition:2600,swot:2800,coverage:3000,report_draft:3500,synthesis:4400,scope:5000});
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 export const refs=arr(str(80),12);
-export const factSchema=obj({id:str(80),topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
+export const factSchema=obj({id:str(80),kind:{type:'string',enum:['observation','inference']},topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
 export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400),12)});
 export const taskSchema=obj({instruction:str(1200),queries:arr(str(500),2)});
+export const understandingSchema=obj({facts:arr(factSchema,10),unknowns:arr(str(400),8),decision:{type:'string',enum:['accepted','limited']},notes:str(700),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(1400),nextTask:taskSchema,repairTask:taskSchema});
 export const peerSchema=expertSchema.properties.peers.items;
 export const peerReviewSchema=obj({...reviewSchema.properties,peers:arr(peerSchema,5)});

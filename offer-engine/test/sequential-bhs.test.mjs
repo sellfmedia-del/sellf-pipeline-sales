@@ -66,7 +66,7 @@ test('a revenue topic label on historical growth cannot pass the industry-unders
  try{
   for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector')+1))await run(db,phase,t);
   assert.equal((await db.ledger.get(stageKey(brief,'sector','v8'))).value.decision,'limited');
-  const count=t.events.length;await assert.rejects(run(db,'sector_mechanism',t),e=>e.code==='research_stage_incomplete');assert.equal(t.events.length,count);
+  await run(db,'sector_validation',t);const count=t.events.length;await assert.rejects(run(db,'competition_plan',t),e=>e.code==='research_stage_incomplete');assert.equal(t.events.length,count);
  }finally{await db.close();}
 });
 test('new process resumes the committed stage without duplicating model or search fees',async()=>{

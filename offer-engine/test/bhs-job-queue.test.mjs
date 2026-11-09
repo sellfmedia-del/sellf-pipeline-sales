@@ -112,3 +112,15 @@ test('existing audit endpoint queues v8 and reconnects to the original budget wi
   r=res();await h(request,r);assert.equal(r.code,202);assert.equal(enqueues,1);assert.equal(r.body.phase,'sector_sources');
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
+test('explicit continuation from a paused background job keeps the offer open and labels incomplete research',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const job={id:other,leadId:'lead1',budgetId:token,briefHash:hash,state:'paused',phase:'sector_gate',diagnostic:{code:'research_stage_incomplete'}};
+  const queue={find:async()=>job,read:async()=>job},ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:1300}),get:async()=>null,once:async(key,input,amount,run)=>{assert.equal(amount,0);return run();}};
+  const h=createBoundedAuditHandler({getQueue:async()=>queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('no paid provider'),logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'lead1'}}};
+  let r=res();await h(request,r);assert.equal(r.code,422);assert.equal(r.body.continuationAvailable,true);
+  const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0];r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
+  assert.equal(r.code,200);assert.equal(r.body.phase,'complete');assert.equal(r.body.result.data.researchContinuity.status,'unavailable');assert.equal(r.body.result.data.quality.contentComplete,false);assert.equal(r.body.result.cost.chargedKurus,1300);assert.ok(r.body.pricingProof);
+ }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});

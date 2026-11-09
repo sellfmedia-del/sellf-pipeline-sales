@@ -107,6 +107,13 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
    };
+   if(queue&&action==='continue'){
+    const saved=await queue.read(job);
+    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id||!['paused','complete'].includes(saved.state))throw new BudgetError('continuation_unavailable','Araştırma sürerken mevcut bilgilerle devam edilemez.');
+    const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=saved.phase;
+    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason:saved.diagnostic?.code||'quality_review'}));
+    return await finish(partial);
+   }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
    if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){
     const chosen=await ledger.get('audit:continuation:v1:'+pendingPhases[stoppedIndex]+':'+hash);
