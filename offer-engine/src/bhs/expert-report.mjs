@@ -72,12 +72,28 @@ export function expertContext(brief,evidence){
  return {packet,cards,known,proofGroups,input:{brief,asOf:evidence.packet.asOf,entities:evidence.packet.entities,areas:methodologyAreas,sources,unavailable:evidence.packet.unavailable||[]}};
 }
 
+// Lossless model transport: repeated page chrome/HTML signals are sent once.
+// One visible paragraph ID resolves to all its original proof chunks server-side.
+export function expertModelInput(context){
+ const input=structuredClone(context.input),counts=new Map(),shared={},ids=new Map();
+ for(const source of input.sources)for(const section of source.sections)counts.set(section.text,(counts.get(section.text)||0)+1);
+ for(const source of input.sources)for(const section of source.sections){
+  section.proofIds=section.proofIds.slice(0,1);
+  const count=counts.get(section.text);
+  if(count>1&&(count-1)*section.text.length>count*35+50){let id=ids.get(section.text);if(!id){id='paragraph'+(ids.size+1);ids.set(section.text,id);shared[id]=section.text;}delete section.text;section.paragraphRef=id;}
+ }
+ if(ids.size)input.sharedParagraphs=shared;
+ console.info(JSON.stringify({event:'bhs_expert_transport',beforeChars:JSON.stringify(context.input).length,afterChars:JSON.stringify(input).length,sharedParagraphs:ids.size}));
+ return input;
+}
+
 export function unsafeExpertClaim(f,quotes){
  const t=fold([f.observation,f.commercialHypothesis,f.question].join(' ')),q=fold(quotes);
  const countUnits=['sikayet|complaints?','yorum|reviews?','takipci|followers?','personel|calisan|employees?','franchise|sube|branches','magaza|stores?','liman|ports?'];
  if(/(?:olcum|roas|retarget|yeniden pazarlama|butce|donusum)[^.?!]{0,120}(?:imkansiz|yapilamaz|yapilamiyor|sifira|mahved|mahvol)/.test(t))return 'unmeasured_performance';
  if(/(?:403|ebusy|bot)/.test(q)&&/(?:seo|google|ziyaretci|musteri)[^.?!]{0,100}(?:bozuk|erisem|engell|kritik sorun)/.test(t))return 'reader_failure_not_brand_failure';
  if(/followers|takipci/.test(q)&&!/(?:employees|personel|calisan|team size)/.test(q)&&/(?:\d+[\s\S]{0,30}(?:personel|calisan)|(?:personel|calisan)[\s\S]{0,30}\d+)/.test(t))return 'followers_not_employees';
+ if(/tek (?:bir )?(?:fiziksel lokasyon|sube|magaza)/.test(t)&&!/(?:tek|yalnizca bir|sadece bir|single|only one|one (?:store|location|branch))/.test(q))return 'location_total_unconfirmed';
  const countText=q.replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'');
  for(const unit of countUnits)for(const match of t.matchAll(new RegExp('(?<![a-z0-9])([0-9]+(?:[.,][0-9]+)*)\\s*(?:adet\\s*)?(?:'+unit+')','g'))){
   const literal=match[1].replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'').replace(/[.*+?^$()|[\]{}\\]/g,'\\$&'),bound='(?<![a-z0-9.,])'+literal+'(?![0-9.,])';
@@ -93,13 +109,24 @@ export function unsafeExpertClaim(f,quotes){
 // These are neutral verification questions, not a second paid content review.
 export function qualifyExpertFinding(value,quotes){
  const f={...value},q=fold(quotes),t=fold([f.observation,f.commercialHypothesis].join(' '));
- const qualify=(hypothesis,limit,question)=>{f.stance='neutral';f.commercialHypothesis=hypothesis;f.limitation=f.limitation?.startsWith(limit)?f.limitation:limit+(f.limitation?' '+f.limitation:'');f.question=question;};
+ const qualify=(hypothesis,limit,question)=>{f.stance='neutral';f.commercialHypothesis=hypothesis;f.limitation=limit;f.question=question;};
  if(/internet explorer/.test(q)&&/eski|guncel|modern|teknik borc/.test(t))qualify('Tarayıcı desteği kararının güncel ziyaretçi kitlesi ve test sonuçlarıyla uyumu doğrulanabilir.','Eski tarayıcı desteği uyarısı, altyapının eski veya verimsiz olduğunu kanıtlamaz.','Hangi tarayıcı sürümlerini destekliyorsunuz ve bu kararları hangi güncel kullanım/test verileriyle alıyorsunuz?');
  else if(/"(?:analyticsTags|metaPixelTag|mobileViewport)":false/i.test(quotes)&&/olcum|donusum|yeniden pazarlama|retarget|mobil|viewport/.test(t))qualify('İndirilen HTML sinyali ile gerçek kullanıcı oturumundaki ölçüm ve görünüm davranışı, izin ve çalışma zamanı testleriyle birlikte doğrulanabilir.','Statik HTML sinyali; ölçümün yokluğunu, çalışmadığını, reklam verimsizliğini veya mobil sorun olduğunu göstermez.','Analitik/reklam etiketleri hangi yöntemle ve izin koşullarında tetikleniyor; gerçek mobil oturum ve dönüşüm testlerinin sonuçları nedir?');
- else if(/(?:\/en\/|euro)/.test(t)&&/turkiye/.test(t)&&/donusum|terk|kayip|lokal/.test(t))qualify('İncelenen oturumun dil ve para birimi kapsamı, hedef ülkedeki gerçek kullanıcı oturumuyla karşılaştırılarak doğrulanabilir.','Yurt dışındaki araştırma oturumu Türkiye kullanıcı deneyimini veya satış kaybını kanıtlamaz.','Hedef ülkelere göre beklenen dil/para birimi yönlendirmeleri nelerdir ve gerçek kullanıcı testlerinde bu kurallar beklendiği gibi çalışıyor mu?');
+ else if(/(?:\/en\/|euro|avro|€)/.test(t)&&/turkiye/.test(t)&&/donusum|terk|kayip|lokal|fiyat/.test(t)){
+  f.observation=f.observation.replace(/Türkiye pazarına yönelik/giu,'bu araştırma oturumunda incelenen');
+  qualify('İncelenen oturumun dil ve para birimi kapsamı, hedef ülkedeki gerçek kullanıcı oturumuyla karşılaştırılarak doğrulanabilir.','Araştırma oturumu Türkiye kullanıcı deneyimini, yanlış fiyatlandırmayı veya satış kaybını kanıtlamaz.','Hedef ülkelere göre beklenen dil/para birimi yönlendirmeleri nelerdir ve gerçek kullanıcı testlerinde bu kurallar beklendiği gibi çalışıyor mu?');
+ }
  else if(/e-posta|e posta|email/.test(t)&&/alan ad|domain/.test(t)&&/seo|otorite|dmarc|spf|teslim edilebilir/.test(t))qualify('Web ve e-posta alan adlarının görevleri netleştirilerek marka iletişimi tercihlerinin gerekçesi anlaşılabilir.','Farklı e-posta alan adı; bölünmüş SEO otoritesi, güvenlik veya teslimat sorunu kanıtı değildir.','Hangi alan adları yalnız e-posta için, hangileri web sitesi veya yönlendirme için kullanılıyor?');
- else if(/shopify|wordpress|ideasoft|woocommerce|platformHints|e-turizm platform/i.test(quotes)&&/platform|altyapi/.test(t)&&/maliyet|hiz|kolay|esnek|olceklen|kontrol|avantaj|yuk|modern|yavas/.test(t))qualify('Mevcut platformun operasyon ve entegrasyon ihtiyaçlarına uyumu, somut süre/maliyet ve kullanım verileriyle değerlendirilebilir.','Platform adı veya HTML ipucu; performans, kolaylık, maliyet veya ölçeklenme üstünlüğü kanıtı değildir.','Platformun karşıladığı ihtiyaçları ve varsa entegrasyon/operasyon kısıtlarını hangi somut ölçümlerle değerlendiriyorsunuz?');
+ else if(/shopify|wordpress|ideasoft|woocommerce|platformHints|e-turizm platform/i.test(quotes)&&/platform|altyapi/.test(t)&&/maliyet|hiz|kolay|esnek|olceklen|kontrol|avantaj|yuk|modern|yavas|basitles|sadelest|odaklan|ekosistem/.test(t))qualify('Mevcut platformun operasyon ve entegrasyon ihtiyaçlarına uyumu, somut süre/maliyet ve kullanım verileriyle değerlendirilebilir.','Platform adı veya HTML ipucu; performans, kolaylık, maliyet veya ölçeklenme üstünlüğü kanıtı değildir.','Platformun karşıladığı ihtiyaçları ve varsa entegrasyon/operasyon kısıtlarını hangi somut ölçümlerle değerlendiriyorsunuz?');
  else if(/followers|takipci/.test(q)&&/yeni oldug|aktif.*yonetil|yonetilmed|pasif/.test(t))qualify('İlgili kanalın hedef kitlesi ve ticari katkısı güncel yayın, etkileşim ve yönlendirme verileriyle değerlendirilebilir.','Takipçi sayısı tek başına kanalın aktif yönetilmediğini veya düşük performansı göstermez.','Bu kanal için hedefiniz, güncel yayın/etkileşim ölçümleriniz ve takip edilen ticari katkınız nedir?');
+ else if(/kurucu|kardes|founder/.test(t)&&/kisi bagim|asiri bagim|kilit karar|devredile|kuruculara.*bagim/.test(t))qualify('Kurucu hikayesinin marka iletişimindeki rolü ile operasyonel görev dağılımı ayrı konular olarak değerlendirilebilir.','Kurucuların kamuya açık görünürlüğü, operasyonun kuruculara bağımlı olduğunu veya devir sorunu yaşadığını kanıtlamaz.','Kritik görevler, karar yetkileri ve bilgi paylaşımı ekip içinde nasıl düzenleniyor; bu düzeni değerlendirmek için hangi somut göstergeleri kullanıyorsunuz?');
+ else if(/holding|ortaklik/.test(t)&&/finansal guc|istikrarli.*kaynak|onemli.*rekabet avantaj|yatirim.*guclu/.test(t))qualify('Ortaklık yapısının yatırım kararlarına ve kaynak tahsisine etkisi güncel şirket verileriyle değerlendirilebilir.','Bir holdinge bağlı olmak, markaya ayrılmış bütçeyi, mevcut yatırım gücünü veya rekabet üstünlüğünü kanıtlamaz.','Ortaklık yapısının yatırım kararları ve kaynak tahsisine etkisini hangi güncel verilerle değerlendirebiliriz?');
+ else if(/ihracat|export/.test(t)&&/gelir kaynaklarini cesitlend|bagimliligini azalt|kur.*koruma|guclu ihracat/.test(t))qualify('İhracat yapılan pazarların gelir içindeki payı ve kur riskinin yönetimi, dönemsel verilerle değerlendirilebilir.','Ülke sayısı tek başına gerçekleşmiş gelir çeşitliliği, kârlılık veya kur riskinden korunma kanıtı değildir.','Yurt içi ve yurt dışı gelir dağılımı, pazar yoğunlaşması ve kur riskini hangi dönemsel verilerle izliyorsunuz?');
+ else if(/oturum ac|oturum duvar|accounts\/login/.test(t))qualify('Markanın kullandığı dijital kanallar ve erişim davranışı gerçek kullanıcı oturumlarında ayrı ayrı doğrulanabilir.','Platformun bu okuyucuya gösterdiği giriş ekranı; müşterilerin erişemediğini, markanın web sitesi olmadığını veya satış kaybı yaşandığını kanıtlamaz.','Hangi web, sosyal profil, menü ve sipariş kanallarını kullanıyorsunuz; bunların gerçek kullanıcı erişimini ve ticari katkısını nasıl ölçüyorsunuz?');
+ else if(/kargo/.test(t)&&/abonelik/.test(t)&&/avantaj|kosulsuz|agresif|daha dusuk/.test(t))qualify('Kargo politikalarının etkisi aynı ürün, sepet ve abonelik koşullarında karşılaştırılarak değerlendirilebilir.','Tek seferlik alışveriş eşiği ile abonelikte ücretsiz kargo aynı koşul değildir; bu veriler doğrudan üstünlük veya müşteri kaybı göstermez.','Benzer ürün, sepet ve abonelik koşullarında müşterinin ödediği toplam tutar ve kargo maliyetinin satın alma davranışıyla ilişkisini nasıl değerlendiriyorsunuz?');
+ else if(/yorum/.test(t)&&/hic olmamasi|mekanizma.*eksik|sistem.*eksik|gostermeme|yorum.*etkisiz/.test(t))qualify('İncelenen ürün sayfalarındaki yorum görünümü; satın alma sonrası yorum toplama, moderasyon ve yayınlama kurallarıyla birlikte değerlendirilebilir.','Bazı sayfalardaki yorum yokluğu veya sıfır sayacı, markanın yorum toplamadığını, sistemin etkisiz olduğunu ya da müşteri güveninin düştüğünü kanıtlamaz.','Satın alma sonrası yorum toplama, moderasyon ve yayınlama kurallarınız nelerdir; sayfa, dönem ve sipariş hacmine göre bu mekanizmayı nasıl değerlendiriyorsunuz?');
+ else if(/kullanmamasi|kullanmama|one cikarmamasi|belirgin degil|indirimsiz gorunum|mekanizma.*eksik|sistem.*eksik/.test(t))qualify('Gözlemlenen mekanizmanın markadaki karşılığı ve ticari etkisi, mevcut uygulamalar ve deney verileriyle doğrulanabilir.','Sınırlı sayfa gözlemi veya rakipte bir özellik bulunması; markada bu mekanizmanın yokluğunu, etkisizliğini veya müşteri kaybını kanıtlamaz.','Benzer mekanizmaları kullanıyor musunuz? Kullanıyorsanız hangi müşteri gruplarında, hangi deney ve sonuç verileriyle değerlendiriyorsunuz?');
+ if(/avantaj sagli|ustunlug|daha rekabetci/.test(fold(f.question))&&!/var mi|olup olmadig|dogrulan|olcumlendi|saglayip saglama/.test(fold(f.question)))f.question='Bu gözlemin müşteri tercihi ve ticari sonuçlarla ilişkisini hangi verilerle değerlendiriyorsunuz?';
  return f;
 }
 export function labelUnconfirmedComparison(f){
@@ -145,7 +172,7 @@ export function projectExpertReport(value,context){
   if(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
   // Bind the displayed peer URL to its verified final host (www redirects are
   // common). The legacy source gate still requires an exact source hostname.
-  competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds)});
+  competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds),scaleReason:'Ölçek eşitliği bu araştırmada doğrulanmadı; karşılaştırma ürün ve müşteri ihtiyacı temelindedir.',audienceReason:typeof p.reason==='string'&&p.reason.trim()&&supportedNumbers(p.reason,evidence)?'Kaynaklı ürün/kitle kıyası: '+p.reason:'Ürün ve hedef kitle örtüşmesinin kapsamı görüşmede doğrulanacak.',geographyReason:'Coğrafi kapsam incelenen kaynaklarla sınırlıdır; hedef pazardaki erişim ayrıca doğrulanmalıdır.'});
  }
  // A rejected direct peer can still supply a factual comparison example,
  // but every derived section must preserve its unconfirmed relationship.
@@ -164,7 +191,8 @@ export function projectExpertReport(value,context){
   const d=list(raw.dimensions).find(d=>d?.id===id)||{},ids=relevantIds(d.findingIds,id),selected=ids.map(id=>findingById.get(id));
   const compared=relevantIds(d.comparisonFindingIds).map(id=>findingById.get(id));
   const peerIds=competitors.filter(p=>compared.some(f=>f.sourceIds.some(sid=>researchHost(cards.get(sid).url)===researchHost(p.website)))).map(p=>p.id);
-  const score=selected.some(hasBrand)&&peerIds.length&&typeof d.bandReason==='string'&&d.bandReason.trim()&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
+  const perceptionEvidence=id!=='perception'||selected.some(f=>f.sourceIds.some(sid=>/sikayetvar\.com|trustpilot\.com|google\.[^/]+\/(?:maps|reviews)|maps\.app\.goo\.gl/.test(cards.get(sid).url)));
+  const score=perceptionEvidence&&selected.some(hasBrand)&&peerIds.length&&typeof d.bandReason==='string'&&d.bandReason.trim()&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
   const qs=selected.map(f=>f.goalConnection).filter(Boolean);
   const stance=f=>qualifiedStances.get(f.id);
   return {id,score,dataStatus:selected.length?'partial':'insufficient',rationale:selected.length?selected.map(f=>f.statement).join(' '):'Bu boyut için yeterli kanıt bulunamadı; görüşmede doğrulanacak.',findingIds:ids,comparisonCompetitorIds:peerIds,strengths:selected.filter(f=>stance(f)==='positive').map(f=>f.statement),gaps:selected.filter(f=>stance(f)==='risk').map(f=>f.kind==='inference'?'Doğrulanacak hipotez: '+f.statement:f.statement),onboardingQuestions:qs.length?qs:['Bu boyutun mevcut durumunu hangi güncel verilerle doğrulayabiliriz?']};

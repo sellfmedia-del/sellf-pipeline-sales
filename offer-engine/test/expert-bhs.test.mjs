@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
 import {plan as legacyPlan} from './fixtures/evidence.mjs';
-import {expertContext,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
+import {expertContext,expertModelInput,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
 import {validateExpertOutput,generateExpert} from '../src/bhs/expert-research.mjs';
 import {recoverModelStage} from '../src/budget/model-recovery.mjs';
 import {runExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
@@ -41,6 +41,16 @@ test('compact evidence IDs bind actual paragraphs and remain much smaller than r
  const before=packet(),copy=structuredClone(before),context=expertContext(brief,{packet:before,searches:[]});assert.deepEqual(before,copy);
  assert.ok(context.cards.length);assert.ok(context.cards.every(c=>/^e\d+$/.test(c.id)&&c.quote.length>=24&&c.quote.length<=200));
  assert.ok(context.input.sources[0].sections.some(s=>s.text.includes('24.95')));assert.ok(!JSON.stringify(context.input).includes('proof_'));
+});
+test('lossless model transport preserves repeated paragraph facts and all server proof chunks',()=>{
+ const p=packet(),repeated='Family planner delivery returns newsletter and household ordering information '.repeat(5);
+ p.sources[0].excerpts.push({text:repeated});p.sources[1].excerpts.push({text:repeated});
+ const context=expertContext(brief,{packet:p,searches:[]}),original=structuredClone(context.input),input=expertModelInput(context);
+ assert.deepEqual(context.input,original);assert.ok(JSON.stringify(input).length<JSON.stringify(original).length);
+ for(let i=0;i<input.sources.length;i++)for(let j=0;j<input.sources[i].sections.length;j++){
+  const s=input.sources[i].sections[j],before=original.sources[i].sections[j];assert.equal(s.text||input.sharedParagraphs[s.paragraphRef],before.text);assert.equal(s.proofIds[0],before.proofIds[0]);
+  assert.ok(before.proofIds.every(id=>(context.proofGroups.get(s.proofIds[0])||[s.proofIds[0]]).includes(id)));
+ }
 });
 test('expert projection reaches existing nine-section contract and saved research without extra model calls',()=>{
  const {context,value}=fixture(),report=projectExpertReport(value,context);
@@ -198,6 +208,20 @@ test('observed technical proxies retain neutral questions without diagnosing unm
   ['E-posta ve web alan adları farklı.','SEO otoritesi bölünmüş ve DMARC bozuk.','email domains'],
   ['16 takipçi listeleniyor.','Hesap aktif yönetilmiyor.','16 followers']
  ]){const f=qualifyExpertFinding({observation,commercialHypothesis,limitation:'Ölçülmedi.',question:'Neden?'},quote);assert.equal(f.observation,observation);assert.notEqual(f.commercialHypothesis,commercialHypothesis);assert.match(f.limitation,/kanıt|göster/);}
+});
+test('reviewed public output does not revive locale, founder, holding, export or mismatched-shipping diagnoses',()=>{
+ const cases=[
+  ['Markanın Türkiye pazarına yönelik sitesinde Avro fiyatlar var.','Türkiye dönüşüm kaybı yaşar.','Avro prices','Hedef ülkelere'],
+  ['Marka iki kardeş kurucu tarafından kurulmuştur.','Operasyon kuruculara aşırı bağımlı olabilir.','Founder story','Kritik görevler'],
+  ['Marka bir holding tarafından satın alınmıştır.','Holdingin finansal gücü istikrarlı bir kaynak olduğunu düşündürür.','Holding acquisition','Ortaklık yapısının'],
+  ['Marka ihracat yaptığını belirtiyor.','İhracat gelir kaynaklarını çeşitlendirir ve kur riskine karşı koruma sağlar.','Exports','Yurt içi'],
+  ['Rakip abonelikte kargo almıyor.','Daha düşük kargo rakibe avantaj sağlar.','Shipping subscription','Benzer ürün'],
+  ['Shopify platformu kullanılıyor.','Teknik yönetimi basitleştirir ve ürün geliştirmeye odaklanma sağlar.','Shopify','Platformun']
+ ];
+ for(const [observation,commercialHypothesis,quotes,prefix]of cases){const f=qualifyExpertFinding({observation,commercialHypothesis,limitation:'Bu standart bir uygulama değildir.',question:'Bu üstünlüğünüz nasıl satılıyor?',stance:'risk'},quotes);assert.equal(f.stance,'neutral');assert.ok(f.question.startsWith(prefix));assert.ok(!f.limitation.includes('standart bir uygulama değildir'));assert.notEqual(f.commercialHypothesis,commercialHypothesis);}
+ assert.equal(unsafeExpertClaim({observation:'Tek bir fiziksel lokasyon var.'},'Akaretler office address'),'location_total_unconfirmed');
+ const {context,value}=fixture();value.findings[0].dimension='perception';value.dimensions=[{...value.dimensions[0],id:'perception',score:85}];
+ assert.equal(projectExpertReport(value,context).dimensions.find(d=>d.id==='perception').score,null,'Company positioning is not independent customer perception evidence.');
 });
 test('a neutralized technical proxy cannot remain a weakness or critical risk elsewhere in the report',()=>{
  const {value}=fixture(),p=packet();p.sources[0].excerpts.push({text:'Internet Explorer browser support is limited to the currently supported browser versions.'});

@@ -47,7 +47,7 @@ export async function runExpertAcceptance(){
   const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>ledger,getProviders:options=>{const providers=createBoundedProviders({...options,fetchImpl:async(url,init)=>{if(url.endsWith(':generateContent'))generations++;if(url==='https://api.tavily.com/search')searches++;if(providerStage==='synthesis'&&!injectedPrimary503&&url.endsWith('/gemini-2.5-pro:generateContent')){injectedPrimary503=true;return Response.json({error:{message:'Isolated primary 503 acceptance fixture'}},{status:503});}return fetch(url,init);}});return {...providers,generate:async(stage,...args)=>{providerStage=stage;return stage==='scope'?{data:{scope:scopeFixture.scope,copy:scopeFixture.copy},isolatedScopeFixture:true}:providers.generate(stage,...args);}};},logger:{info(){},error:v=>console.info('BHS_EXPERT_STAGE_ERROR '+v)}});
   async function call(h,body){const res=response();await h({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);const cookies=res.headers['Set-Cookie'];if(cookies)cookie=(Array.isArray(cookies)?cookies:[cookies]).find(c=>c.startsWith('__Host-offer-research')).split(';')[0];return res;}
   const summary={brandName,website,passed:false,databaseWrites:0,mailSends:0,capKurus:5000,researchVersion:expertVersion,manualSemanticReview:'pending',stages:[]};
-  let audit;
+  let audit,replay;
   try{
    const started=await call(handler,{action:'start',requestId:randomUUID(),brief,context:{leadId,spaceId:'isolated-expert'}});
    if(started.code!==200)throw Object.assign(Error('Start failed'),{code:started.data.code});let ticket=started.data.ticket,finished;
@@ -55,13 +55,15 @@ export async function runExpertAcceptance(){
     let res=await call(handler,{action:'advance',brief,ticket});ticket=res.data.ticket||ticket;
     summary.stages.push({phase:res.data.phase,status:res.code,costKurus:charged});
     console.info('BHS_EXPERT_PROGRESS '+JSON.stringify({brandName,...summary.stages.at(-1)}));
-    if(res.code>=400){summary.failureCode=res.data.code;if(!res.data.continuationAvailable)throw Object.assign(Error('Research stage failed'),{code:res.data.code});res=await call(handler,{action:'continue',brief,ticket});summary.explicitZeroCostHandoff=true;}
+    if(res.code>=400){summary.failureCode=res.data.code;if(res.data.budgetDetail)summary.budgetDetail=res.data.budgetDetail;if(!res.data.continuationAvailable)throw Object.assign(Error('Research stage failed'),{code:res.data.code});res=await call(handler,{action:'continue',brief,ticket});summary.explicitZeroCostHandoff=true;}
     if(res.data.result){finished=res.data;break;}
    }
    if(!finished)throw Error('No research result');audit=finished.result;
    const d=audit.data;Object.assign(summary,{findings:d.findings.length,sources:d.sources.length,peers:d.competitors.length,availableAreas:d.researchCoverage.filter(c=>c.status!=='unavailable').length,coverage:d.researchCoverage.length,fullResearch:!d.researchContinuity&&d.methodologyVersion===expertVersion});
    const entries=[...rows.entries()],synthesis=entries.find(([key,row])=>key.startsWith('audit:synthesis:')&&row.state==='complete')?.[1].value,planning=entries.find(([key,row])=>key.startsWith('audit:source_plan:')&&row.state==='complete')?.[1].value;
    const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).filter(v=>Array.isArray(v?.findings)).at(-1);
+   const evidence=entries.find(([key,row])=>key.startsWith('audit:evidence:')&&row.state==='complete')?.[1].value;
+   if(evidence&&generated)replay={evidence,generated};
    summary.scoredDimensions=d.dimensions.filter(x=>x.score!==null).length;
    summary.totalScore=d.scoring?.total??null;
    summary.nonBhsModelCalls=0;summary.proposalScopeFixture=true;summary.auditSize=JSON.stringify(audit).length;summary.forcedPrimary503=injectedPrimary503;summary.finalResearchModel=synthesis?.model;
@@ -78,12 +80,12 @@ export async function runExpertAcceptance(){
   }catch(error){summary.code=error.code||'acceptance_failed';summary.error=String(error.message||'Acceptance failed').replaceAll(secret,'[credential]').slice(0,180);}
   Object.assign(summary,{chargedKurus:charged,generations,searches,uncertainReservationsKurus:[...rows.values()].filter(r=>r.state==='uncertain').reduce((n,r)=>n+r.charge_kurus,0),costNote:'Verified provider usage plus retained uncertain reservations and a virtual 5 TRY infrastructure allowance; not a provider invoice.'});
   if(charged>5000||searches>14)throw Error('Isolated acceptance exceeded the existing ceiling');
-  const value={summary,brief,...(audit?{audit}:{})};results.push(value);
+  const value={summary,brief,...(audit?{audit}:{}),...(replay?{replay}:{})};results.push(value);
   console.info('BHS_EXPERT_ACCEPTANCE '+JSON.stringify(summary));
  }
  // Two independent public brands at a time; page reads are already bounded.
  await Promise.all(Array.from({length:2},async()=>{while(index<brands.length){const brand=brands[index++];await runBrand(brand);}}));
  const safe={generatedAt:new Date().toISOString(),commit:process.env.VERCEL_GIT_COMMIT_SHA,databaseWrites:0,mailSends:0,manualSemanticReview:'pending',results};
  await mkdir('public/expert-review',{recursive:true});await writeFile('public/expert-review/results.json',JSON.stringify(safe,null,2));
- await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS uzman akışı — izole karşılaştırma</title><style>body{font:16px/1.6 system-ui;max-width:1050px;margin:40px auto;padding:0 20px;background:#f5f6fa;color:#202532}article{background:white;padding:24px;margin:20px 0;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}small{color:#596274}</style><h1>BHS uzman akışı</h1><p>İzole kamuya açık marka testleri. Müşteri kaydı, yayınlama veya e-posta işlemi yapılmadı. Maliyet gösterimi sağlayıcı tüketimi ve altyapı rezervini içerir.</p><main></main><script>fetch("results.json").then(r=>r.json()).then(data=>{for(const x of data.results){const a=document.createElement("article"),h=document.createElement("h2"),s=document.createElement("p"),p=document.createElement("pre");h.textContent=x.summary.brandName;s.textContent=(x.summary.passed?"Teknik akış geçti":"İnceleme gerekli")+" · "+(x.summary.chargedKurus/100).toFixed(2)+" TL · "+(x.summary.findings||0)+" bulgu · "+(x.summary.peers||0)+" rakip";p.textContent=x.audit?.data?.rawReport||x.summary.error||"Araştırma tamamlanamadı";a.append(h,s,p);document.querySelector("main").append(a);}})</script></html>');
+ await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS uzman akışı — izole karşılaştırma</title><style>body{font:16px/1.6 system-ui;max-width:1050px;margin:40px auto;padding:0 20px;background:#f5f6fa;color:#202532}article{background:white;padding:24px;margin:20px 0;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}small{color:#596274}</style><h1>BHS uzman akışı</h1><p>İzole kamuya açık marka testleri. Müşteri kaydı, yayınlama veya e-posta işlemi yapılmadı. Maliyet gösterimi sağlayıcı tüketimi ve altyapı rezervini içerir. Ana model 503 kesintisi testte simüle edilir; kaynak araştırması ve Pro yedek model çağrısı gerçektir.</p><main></main><script>fetch("results.json").then(r=>r.json()).then(data=>{for(const x of data.results){const a=document.createElement("article"),h=document.createElement("h2"),s=document.createElement("p"),p=document.createElement("pre");h.textContent=x.summary.brandName;s.textContent=(x.summary.passed?"Teknik akış geçti":"İnceleme gerekli")+" · "+(x.summary.chargedKurus/100).toFixed(2)+" TL · "+(x.summary.findings||0)+" bulgu · "+(x.summary.peers||0)+" rakip";p.textContent=x.audit?.data?.rawReport||x.summary.error||"Araştırma tamamlanamadı";a.append(h,s,p);document.querySelector("main").append(a);}})</script></html>');
 }

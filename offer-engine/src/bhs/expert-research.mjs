@@ -1,7 +1,7 @@
 import {researchPlanSchema,parseSourcePlan} from './source-plan.mjs';
 import {createEvidenceCollector,mergeExtractedEvidence,evidenceHash} from './evidence.mjs';
 import {prepareResearchInput} from './research-input.mjs';
-import {expertVersion,expertInstruction,expertSchema,expertContext,projectExpertReport} from './expert-report.mjs';
+import {expertVersion,expertInstruction,expertSchema,expertContext,expertModelInput,projectExpertReport} from './expert-report.mjs';
 import {briefHash} from './brief.mjs';
 import {hasGroundedResearch,requireGroundedResearch} from './research-content.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
@@ -77,7 +77,7 @@ export async function runExpertStage({phase,brief,providers,previous,collect=col
  if(phase==='synthesis'){
   const evidence=await previous('evidence'),context=expertContext(brief,evidence);
   if(!context.cards.length)throw new BudgetError('research_empty','Kaynakla doğrulanabilir araştırma verisi bulunamadı; boş BHS için ücretli analiz yapılmadı.');
-  const generated=await generateExpert(providers,'synthesis',{...context.input,instruction:expertInstruction()},expertSchema,{model:researchModel,maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:600,thinkingLevel:'MEDIUM',jsonMode:true,validateData:data=>validateExpertOutput(data,context)});
+  const generated=await generateExpert(providers,'synthesis',{...expertModelInput(context),instruction:expertInstruction()},expertSchema,{model:researchModel,maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:600,thinkingLevel:'MEDIUM',jsonMode:true,validateData:data=>validateExpertOutput(data,context)});
   const report=projectExpertReport(generated.data,context);requireGroundedResearch(report);
   return {report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:expertVersion,model:generated.model,usage:generated.usage,fullPacketHash:evidenceHash(evidence.packet),researchContext:{brief,briefHash:briefHash(brief)},outputIssues:generated.issues||[]};
  }

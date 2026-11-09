@@ -16,8 +16,14 @@ monthly/standard offers, logos, template, existing records and production data.
   The first pass retains at most 16 sources, leaving eight slots for followups.
   Verified publisher redirects and already-read product paragraphs preserve
   appropriate peers without accepting an unrelated same-name business.
+- BHS v6 uses Gemini 2.5 Pro with Gemini 3.1 Pro as its bounded alternate.
+  The primary synthesis has at most 160 seconds within the same 250-second
+  recovery window, leaving time for an alternate. Other engines and signed
+  legacy jobs keep their original provider paths. No tariff or cap changes.
 - One Pro synthesis returns compact findings, peer/score references and all 24
-  area statuses. Server binds short immutable IDs to read quotes, constructs
+  area statuses. Repeated paragraph text is transported once, with one visible
+  ID per complete paragraph; all original proof chunks remain server-side.
+  No source fact is omitted by this compression. Server binds short immutable IDs to read quotes, constructs
   the same six dimensions and nine report sections, and computes weighted totals.
 - Markdown link labels retain provenance through the existing canonical-card
   verifier against original read segments; fabricated cleaned quotes still fail.
@@ -55,11 +61,15 @@ technical proxies cannot reappear as critical risks. The v6 response omits
 redundant originalReport copies; all findings, quotes and source references
 remain in the response and immutable paid stage records.
 
-Local verification: 54 root tests + 353 engine tests passed (21 opt-in
+Local verification: 54 root tests + 357 engine tests passed (21 opt-in
 checks skipped), focused ESLint/module parsing and production build passed.
 Ten desktop/mobile browser tests passed for BHS continuation, both currencies,
 explicit costs, monthly variants, stored offers and both proposal languages.
 No non-BHS production source, build script, config or dependency differs from main.
+
+A five-public-brand batch and a separate forced-primary-503 Humm acceptance
+are reviewed separately; build success alone is not quality acceptance.
+The forced 503 is a QA fixture; the Pro alternate is called for real.
 
 Public-brand acceptance is restricted to the Pipeline project's preview build,
 the exact feature branch, a dated commit marker and an expiry. It runs five
