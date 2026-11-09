@@ -4,15 +4,20 @@ import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
 import {plan as legacyPlan} from './fixtures/evidence.mjs';
 import {expertContext,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
-import {validateExpertOutput} from '../src/bhs/expert-research.mjs';
+import {validateExpertOutput,generateExpert} from '../src/bhs/expert-research.mjs';
 import {recoverModelStage} from '../src/budget/model-recovery.mjs';
 import {runExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
+import {readFileSync} from 'node:fs';
+import {inflateRawSync} from 'node:zlib';
+import {createPricingHandler} from '../api/pricing.js';
+import {createProposalHandler} from '../api/proposal.js';
+import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
-import {createPricingProof} from '../src/pricing/proof.mjs';
+import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {createEvidenceCollector} from '../src/bhs/evidence.mjs';
 import {response,offerFixture} from './fixtures/offer.mjs';
 
@@ -47,6 +52,23 @@ test('expert projection reaches existing nine-section contract and saved researc
  assert.equal(audit.data.originalReport,undefined);assert.equal(audit.data.report.originalReport,undefined);
  assert.deepEqual(audit.data.sources,report.sources);assert.deepEqual(audit.data.findings,report.findings);
  const restored=readResearchSnapshot(createResearchSnapshot(audit.data,brief));assert.equal(restored.report.findings.length,2);assert.match(restored.report.findings[0].impact,/Satın alma dönüşümü ölçülmedi/);
+});
+test('the real rich BHS keeps every finding/source and reaches unchanged pricing/proposal limits',async t=>{
+ const prior=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';t.after(()=>{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;});
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/rich-bhs-payload.json',import.meta.url),'utf8'));
+ const sample=JSON.parse(inflateRawSync(Buffer.from(fixture.data,'base64')).toString('utf8')),normalizedBrief=snapshotBrief(sample.brief);
+ assert.ok(JSON.stringify(sample.audit).length>600000,'The real incident must reproduce the existing size limit.');
+ const packet={asOf:'2026-11-09',sources:sample.audit.data.sources.map(s=>({url:s.url,finalUrl:s.url,title:s.title,method:s.verification.method,excerpts:[{text:s.quote}]}))};
+ const audit={stage:'audit',...directAuditResult(normalizedBrief,{report:sample.audit.data.report,analysisPacket:packet,methodologyVersion:expertVersion})};
+ assert.deepEqual(audit.data.findings,sample.audit.data.findings);assert.deepEqual(audit.data.sources,sample.audit.data.sources);
+ assert.ok(JSON.stringify(audit).length<600000);
+ const host='bhs-rich-fixture.example',secret='bhs-fixture-only',session='x'.repeat(43),leadId='bhs-fixture-lead',headers={host,origin:'https://'+host,cookie:'__Host-offer-research='+session};
+ const pricingProof=createPricingProof(secret).encode({kind:'audit_ready',createdAt:Date.now(),briefHash:briefHash(normalizedBrief),auditHash:digest(audit),budgetLeadId:leadId},session,host);
+ const priced=response();await createPricingHandler({getSecret:()=>secret})({method:'POST',headers,body:{action:'start',brief:sample.brief,audit,pricingProof,serviceSelection:{services:[{serviceId:'onsite_seo'}],projects:[]}}},priced);
+ assert.equal(priced.code,200);
+ const f=await offerFixture(),logo={...f.logo.data,logoProof:logoProof(secret,host,f.logo.data)},composed=response();
+ await createProposalHandler({getSecret:()=>secret})({method:'POST',headers,body:{action:'start',brief:sample.brief,audit,pricing:priced.data.result,proposalProof:priced.data.proposalProof,logo,context:{leadId,spaceId:'isolated-fixture'}}},composed);
+ assert.equal(composed.code,200);assert.ok(composed.data.saveProof);
 });
 test('unmatched claims cannot revive through report summaries, strengths, coverage or scores',()=>{
  const {context,value}=fixture();value.findings.push({...value.findings[0],id:'unsafe',observation:'Meta Pixel kurulu değildir; ROAS ölçümü imkansızdır.'});
@@ -122,6 +144,15 @@ test('empty or fabricated projected output enters bounded recovery instead of be
  const models=[];
  const result=await recoverModelStage(async opts=>{models.push(opts.model);const data=models.length===1?{}:value;try{validateExpertOutput(data,context);}catch(e){e.code='model_output_invalid';throw e;}return {data};},'synthesis',{model:'gemini-2.5-pro'},{wait:async()=>{}});
  assert.deepEqual(models,['gemini-2.5-pro','gemini-4-argon']);assert.equal(result.data,value);
+});
+test('BHS alone switches to the existing priced Pro alternate and leaves time for a complete second attempt',async()=>{
+ let now=1000;const calls=[],input={private:'unchanged'},schema={type:'object'},options={model:'gemini-2.5-pro',maxOutputTokens:16384,minOutputTokens:12288,thinkingLevel:'MEDIUM',validateData:()=>{}};
+ const result=await generateExpert({generate:async(...args)=>{calls.push(args);if(calls.length===1){now+=160000;throw Object.assign(Error('Unavailable'),{code:'model_timeout'});}return {ok:true};}},'synthesis',input,schema,options,{now:()=>now});
+ assert.deepEqual(result,{ok:true});assert.equal(calls.length,2);assert.equal(calls[0][3].recoveryDeadline,161000);assert.equal(calls[1][3].recoveryDeadline,251000);
+ assert.equal(calls[1][3].model,'gemini-3.1-pro-preview');assert.equal(calls[1][1],input);assert.equal(calls[1][2],schema);
+ for(const key of ['maxOutputTokens','minOutputTokens','thinkingLevel','validateData'])assert.equal(calls[1][3][key],options[key]);
+ for(const code of ['budget_limit','budget_uncertain','quota','provider_accounting']){let count=0;await assert.rejects(generateExpert({generate:async()=>{count++;throw Object.assign(Error(),{code});}},'synthesis',input,schema,options),e=>e.code===code);assert.equal(count,1);}
+ let count=0;await assert.rejects(generateExpert({generate:async()=>{count++;throw Object.assign(Error(),{providerStatus:503});}},'synthesis',input,schema,options),e=>e.code==='model_temporarily_unavailable'&&e.modelAttempts.length===2);assert.equal(count,2);
 });
 test('a peer product paragraph already read is retained when the model cited only its newsletter',()=>{
  const {value}=fixture(),p=packet();p.sources[1].excerpts=[{text:'Subscribe to our newsletter to receive useful updates about our company.'},{text:'Family planners and calendars are available in our product catalogue for households.'}];
