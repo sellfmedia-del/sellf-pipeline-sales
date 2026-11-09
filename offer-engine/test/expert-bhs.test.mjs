@@ -48,6 +48,20 @@ test('unmatched claims cannot revive through report summaries, strengths, covera
  value.overviewIds=['unsafe'];value.dimensions[0].findingIds=['unsafe'];value.coverage.funnel_4.findingIds=['unsafe'];
  const report=projectExpertReport(value,context);assert.equal(report.findings.length,2);assert.ok(!report.summary.includes('imkansız'));assert.equal(report.dimensions.find(d=>d.id==='funnel').score,null);assert.equal(report.researchCoverage.find(a=>a.topic.includes('Intent')).status,'unavailable');
 });
+test('read Markdown link labels retain verified facts without accepting fabricated cleaned quotes',()=>{
+ const {value}=fixture(),p=packet();p.sources[0].excerpts[0].text='Family [planners](https://brand.example/products/) cost $24.95. Subscribe to our newsletter for product updates and delivery information.';
+ const context=expertContext(brief,{packet:p,searches:[]}),id=context.cards.find(c=>c.url===brief.website&&c.quote.includes('24.95')).id;
+ value.findings[0].sourceIds=[id];const report=projectExpertReport(value,context);
+ assert.ok(report.findings.some(f=>f.id==='f1'));assert.equal(report.sources.find(s=>s.id===id).verification.status,'quote_matched');
+ context.known.get(id).quote='Fabricated product price is $24.95 and delivery is always free.';
+ assert.ok(!projectExpertReport(value,context).findings.some(f=>f.id==='f1'));
+});
+test('verified www peer redirects preserve the competitor, while a missing score reason cannot earn a score',()=>{
+ const {context,value}=fixture(),peer=context.input.entities[1],proof=context.known.get(value.peers[0].sourceIds[0]);
+ peer.website='https://www.'+new URL(peer.website).hostname+'/';
+ const report=projectExpertReport(value,context);assert.equal(report.competitors.length,1);assert.equal(new URL(report.competitors[0].website).hostname,new URL(proof.url).hostname);
+ value.dimensions[0].bandReason='';assert.equal(projectExpertReport(value,context).dimensions.find(d=>d.id==='funnel').score,null);
+});
 test('past real failure classes are rejected without treating factual website signals as performance',()=>{
  assert.equal(unsafeExpertClaim({observation:'140 çalışan bulunmaktadır.'},'140 followers'),'followers_not_employees');
  assert.equal(unsafeExpertClaim({observation:'Shopify kullanmadığı için teknolojide geride.'},'Shopify platform'),'platform_not_performance');

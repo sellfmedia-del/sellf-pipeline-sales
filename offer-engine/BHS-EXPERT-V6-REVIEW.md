@@ -16,6 +16,10 @@ monthly/standard offers, logos, template, existing records and production data.
 - One Pro synthesis returns compact findings, peer/score references and all 24
   area statuses. Server binds short immutable IDs to read quotes, constructs
   the same six dimensions and nine report sections, and computes weighted totals.
+- Markdown link labels retain provenance through the existing canonical-card
+  verifier against original read segments; fabricated cleaned quotes still fail.
+  Peer URLs bind to verified final hosts so www redirects do not discard peers.
+  Scores also require a nonempty band reason.
 - Findings contain observation, commercial hypothesis, limitation and question.
   Local guards address reviewed failure classes; they are not a general semantic
   truth guarantee. Current-model instructions, citations and human comparison

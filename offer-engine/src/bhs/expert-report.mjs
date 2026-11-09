@@ -5,6 +5,7 @@ import {technicalCitations,citationChunks} from './citation-cards.mjs';
 import {groundOfferReport} from './source-gate.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
 import {researchHost} from './research-url.mjs';
+import {hash} from '../budget/ledger.mjs';
 
 export const expertVersion='sellf-pre-bhs-2026-11-09-expert-v6';
 export const expertInstruction=()=>readFileSync(new URL('./expert-methodology.txt',import.meta.url),'utf8');
@@ -61,6 +62,10 @@ export function expertContext(brief,evidence){
  // Existing provenance verifier checks each short proof against this exact read
  // paragraph. IDs are server-created; arbitrary model quotes never enter it.
  const packet={...evidence.packet,sources:[...evidence.packet.sources,...sources.filter(s=>s.method==='search-snippet').map((s,i)=>({id:'search'+i,url:s.url,finalUrl:s.url,title:s.title,method:'extracted',excerpts:s.sections.map(x=>({text:x.text}))}))]};
+ // Use the existing visible-text provenance verifier for Markdown link labels.
+ // The short model IDs stay unchanged; canonical cards prove cleaned quotes
+ // against the original read segments before they can enter source records.
+ packet.citationCards=cards.map(c=>({...c,id:'proof_'+hash({url:c.url,quote:c.quote}).slice(0,20)}));
  const known=new Map(cards.map(c=>[c.id,c]));
  return {packet,cards,known,input:{brief,asOf:evidence.packet.asOf,entities:evidence.packet.entities,areas:methodologyAreas,sources,unavailable:evidence.packet.unavailable||[]}};
 }
@@ -100,7 +105,9 @@ export function projectExpertReport(value,context){
   const evidence=fold(sourceIds.map(id=>cards.get(id).quote).join(' ')),category=topicWords(e.scope+' '+e.audienceReason);
   const expectedCategories=categories.filter(p=>p.test(fold(e.scope+' '+e.audienceReason)));
   if(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
-  competitors.push({...e,sourceIds:use(sourceIds)});
+  // Bind the displayed peer URL to its verified final host (www redirects are
+  // common). The legacy source gate still requires an exact source hostname.
+  competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds)});
  }
  const hasBrand=f=>f.sourceIds.some(id=>researchHost(cards.get(id).url)===brandHost);
  const relevantIds=(ids,dimension)=>unique(list(ids).filter(id=>findingById.has(id)&&(!dimension||findingById.get(id).dimension===dimension)));
@@ -112,7 +119,7 @@ export function projectExpertReport(value,context){
   const d=list(raw.dimensions).find(d=>d?.id===id)||{},ids=relevantIds(d.findingIds,id),selected=ids.map(id=>findingById.get(id));
   const compared=relevantIds(d.comparisonFindingIds).map(id=>findingById.get(id));
   const peerIds=competitors.filter(p=>compared.some(f=>f.sourceIds.some(sid=>researchHost(cards.get(sid).url)===researchHost(p.website)))).map(p=>p.id);
-  const score=selected.some(hasBrand)&&peerIds.length&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
+  const score=selected.some(hasBrand)&&peerIds.length&&typeof d.bandReason==='string'&&d.bandReason.trim()&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
   const qs=selected.map(f=>f.goalConnection).filter(Boolean);
   const stance=f=>list(raw.findings).find(x=>x?.id===f.id)?.stance;
   return {id,score,dataStatus:selected.length?'partial':'insufficient',rationale:selected.length?selected.map(f=>f.statement).join(' '):'Bu boyut için yeterli kanıt bulunamadı; görüşmede doğrulanacak.',findingIds:ids,comparisonCompetitorIds:peerIds,strengths:selected.filter(f=>stance(f)==='positive').map(f=>f.statement),gaps:selected.filter(f=>stance(f)==='risk').map(f=>f.kind==='inference'?'Doğrulanacak hipotez: '+f.statement:f.statement),onboardingQuestions:qs.length?qs:['Bu boyutun mevcut durumunu hangi güncel verilerle doğrulayabiliriz?']};
