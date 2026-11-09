@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createSupervisedProviders,quoteSupervised,supervisedModels} from '../src/bhs/supervised-providers.mjs';
-import {actorChargeLimit,safeActorInput,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {actorChargeLimit,safeActorInput,matchedActorTasks,inspectApifyPolicies} from '../src/bhs/apify-policy.mjs';
 import {remapWorkerProofs,runSupervisedStage} from '../src/bhs/supervised-research.mjs';
 import {stageKey} from '../src/bhs/direct-research.mjs';
 import {createSupervisedReadiness} from '../src/bhs/supervised-readiness.mjs';
@@ -112,6 +112,17 @@ test('saved .03 actor limit is never raised to the .40 maximum',()=>{
  const result=actorChargeLimit(policy);assert.equal(result.maxTotalChargeUsd,.03);
  const limited=actorChargeLimit({...policy,remainingKurus:1650});assert.ok(limited.maxTotalChargeUsd<.03);assert.ok(limited.reservedKurus<=50);
  assert.equal(matchedActorTasks('actor1',[policy.task,{...policy.task,id:'cheaper',options:{maxTotalChargeUsd:.01}}])[0].id,'cheaper');
+});
+test('policy inspection resolves omitted list options from the exact saved Task without changing its lower cap',async()=>{
+ const task={id:'task12345678901',actId:'hGO9TU7F0OD97VxNC'},calls=[];
+ const result=await inspectApifyPolicies({token:'private-policy',fetchImpl:async(url,options)=>{
+  calls.push({url,method:options.method||'GET'});
+  return json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,options:{maxTotalChargeUsd:.03}}});
+ }});
+ assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,1);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
+ assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==='GET'&&!c.url.includes('/runs')));assert.ok(!JSON.stringify(result).includes('private-policy'));
+ const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'differentActor',options:{maxTotalChargeUsd:.03}}})});
+ assert.equal(invalid.taskPolicies,0);assert.equal(invalid.complete,false);
 });
 test('unverified console form, mismatched Task and excluded platform fees cannot start an actor',()=>{
  for(const patch of [{task:null},{task:{...policy.task,actId:'other'}},{task:{...policy.task,options:{maxTotalChargeUsd:.5}}},{pricing:{pricingModel:'FREE'}},{pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:true}}])assert.throws(()=>actorChargeLimit({...policy,...patch}));

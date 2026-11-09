@@ -1,5 +1,6 @@
 import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {researchUrl} from './research-url.mjs';
+import {actorIds} from './apify-inputs.mjs';
 
 export const approvedActors=Object.freeze([
  'harvestapi/linkedin-company-search','harvestapi/linkedin-post-search','curious_coder/linkedin-jobs-scraper',
@@ -46,5 +47,20 @@ export async function inspectApifyPolicies({token,fetchImpl=fetch}={}){
   tasks.push(...data.items);offset+=data.items.length;
   if(offset>=data.total||data.items.length<100)break;
  }
- return {configured:true,authenticated:true,taskPolicies:tasks.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete:offset<1000,tasks};
+ // The list endpoint omits Task options. A zero count there does not prove
+ // that saved individual caps are missing; inspect the relevant Task details.
+ const known=new Set(Object.values(actorIds)),relevant=tasks.filter(t=>known.has(t.actId)&&/^[a-zA-Z0-9]{10,30}$/.test(t.id)).slice(0,40),resolved=[];
+ let complete=offset<1000;
+ for(let start=0;start<relevant.length;start+=4){
+  const batch=await Promise.allSettled(relevant.slice(start,start+4).map(async task=>{
+   if(task.options)return task;
+   const response=await fetchImpl('https://api.apify.com/v2/actor-tasks/'+task.id,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(5000),redirect:'error'});
+   if(!response.ok)throw Error('Task policy unavailable');
+   const detail=(await response.json()).data;
+   if(detail?.id!==task.id||detail.actId!==task.actId)throw Error('Task policy identity mismatch');
+   return {id:detail.id,actId:detail.actId,options:detail.options};
+  }));
+  for(const result of batch)if(result.status==='fulfilled')resolved.push(result.value);else complete=false;
+ }
+ return {configured:true,authenticated:true,savedTaskCount:tasks.length,taskPolicies:resolved.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:resolved};
 }
