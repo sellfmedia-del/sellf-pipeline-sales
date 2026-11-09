@@ -5,6 +5,8 @@ import {brief as raw} from './fixtures/bhs.mjs';
 import {plan as legacyPlan} from './fixtures/evidence.mjs';
 import {expertContext,projectExpertReport,unsafeExpertClaim,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
+import {validateExpertOutput} from '../src/bhs/expert-research.mjs';
+import {recoverModelStage} from '../src/budget/model-recovery.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
@@ -33,6 +35,16 @@ test('compact evidence IDs bind actual paragraphs and remain much smaller than r
  const before=packet(),copy=structuredClone(before),context=expertContext(brief,{packet:before,searches:[]});assert.deepEqual(before,copy);
  assert.ok(context.cards.length);assert.ok(context.cards.every(c=>/^e\d+$/.test(c.id)&&c.quote.length>=24&&c.quote.length<=200));
  assert.ok(context.input.sources[0].sections.some(s=>s.text.includes('24.95')));assert.ok(!JSON.stringify(context.input).includes('proof_'));
+});
+test('empty compact output enters existing bounded model recovery, while useful partial output stays usable',async()=>{
+ const {context,value}=fixture(),models=[];
+ assert.equal(validateExpertOutput({findings:value.findings},context).findings.length,2);
+ const result=await recoverModelStage(async options=>{
+  models.push(options.model);const data=models.length===1?{}:value;
+  try{validateExpertOutput(data,context);}catch(error){error.code='model_output_invalid';throw error;}
+  return {data};
+ },'synthesis',{model:'gemini-2.5-pro'},{wait:async()=>{}});
+ assert.deepEqual(models,['gemini-2.5-pro','gemini-4-argon']);assert.equal(result.data.findings.length,2);
 });
 test('expert projection reaches existing nine-section contract and saved research without extra model calls',()=>{
  const {context,value}=fixture(),report=projectExpertReport(value,context);
@@ -97,6 +109,7 @@ test('v6 starts from identity, keeps the existing search ceiling, avoids scope m
  for(const phase of ['source_plan','evidence','synthesis','scope'])await run(phase);
  assert.equal(calls[0][0],'read');assert.ok(calls.filter(x=>x[0]==='search').length<=14);assert.equal(calls.filter(x=>x[0]==='model').length,2);
  const synth=calls.find(x=>x[0]==='model'&&x[1]==='synthesis');assert.equal(synth[2].maxOutputTokens,16384);
+ assert.equal(typeof synth[2].validateData,'function');assert.throws(()=>synth[2].validateData({}));
  const count=calls.length;await run('synthesis');assert.equal(calls.length,count);assert.notEqual(stageKey(brief,'evidence','v6'),stageKey(brief,'evidence','v5'));
 });
 function dimensionsForTest(){return ['financial','operations','funnel','digital','perception','competition'].map(d=>({dimension:d,query:'Brand '+d,purpose:d+' research'}));}

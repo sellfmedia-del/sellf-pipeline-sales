@@ -24,6 +24,9 @@ monthly/standard offers, logos, template, existing records and production data.
   so the evidence view does not cut off a supporting sentence. Numeric counts
   also require the same unit: dates cannot become review counts or time slots
   port counts. Platform hints cannot imply speed or cost advantages.
+- Compact output is source-checked inside the existing provider recovery
+  boundary: an empty document can use the same bounded alternate model rather
+  than failing only after the recovery layer. Useful partial facts remain usable.
 - Findings contain observation, commercial hypothesis, limitation and question.
   Local guards address reviewed failure classes; they are not a general semantic
   truth guarantee. Current-model instructions, citations and human comparison

@@ -5,12 +5,22 @@ import {expertVersion,expertInstruction,expertSchema,expertContext,projectExpert
 import {fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {briefHash} from './brief.mjs';
-import {requireGroundedResearch} from './research-content.mjs';
+import {hasGroundedResearch,requireGroundedResearch} from './research-content.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {researchHost} from './research-url.mjs';
 
 const brandPlan=brief=>({entities:[{id:'brand',role:'brand',name:brief.brandName,website:brief.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve hedef kitle kaynaklardan doğrulanacak.',geographyReason:'Hedef pazar görüşme bağlamıyla doğrulanacak.',scope:'Kimlik araştırması; performans değerlendirmesi değildir.'}],sources:[{url:brief.website,purpose:'Marka kimliği, ürün ve kurumsal bilgiler.'}]});
 const collector=()=>createEvidenceCollector({timeout:65000,allowPartialPlan:true,concurrency:4,onDiagnostic:v=>console.info(JSON.stringify({event:'bhs_expert_evidence',...v}))});
+// Validate within the existing provider recovery boundary. An empty/malformed
+// compact document must not bypass the already-budgeted alternate model.
+export function validateExpertOutput(data,context){
+ const report=projectExpertReport(data,context);
+ if(!hasGroundedResearch(report)){
+  console.info(JSON.stringify({event:'bhs_expert_output_rejected',keys:data&&typeof data==='object'?Object.keys(data).slice(0,12):[],rawFindings:Array.isArray(data?.findings)?data.findings.length:0}));
+  throw Error('Expert output contains no source-grounded findings.');
+ }
+ return report;
+}
 async function searchBatch(providers,queries,options){
  const rows=await Promise.allSettled(queries.map(q=>providers.search(q,options)));
  return rows.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'search_unavailable'});
@@ -50,7 +60,7 @@ export async function runExpertStage({phase,brief,providers,previous,collect=col
  if(phase==='synthesis'){
   const evidence=await previous('evidence'),context=expertContext(brief,evidence);
   if(!context.cards.length)throw new BudgetError('research_empty','Kaynakla doğrulanabilir araştırma verisi bulunamadı; boş BHS için ücretli analiz yapılmadı.');
-  const generated=await providers.generate('synthesis',{...context.input,instruction:expertInstruction()},expertSchema,{model:researchModel,maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,thinkingLevel:'MEDIUM',jsonMode:true});
+  const generated=await providers.generate('synthesis',{...context.input,instruction:expertInstruction()},expertSchema,{model:researchModel,maxOutputTokens:16384,minOutputTokens:12288,reserveForFollowingKurus:100,thinkingLevel:'MEDIUM',jsonMode:true,validateData:data=>validateExpertOutput(data,context)});
   const report=projectExpertReport(generated.data,context);requireGroundedResearch(report);
   return {report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:expertVersion,model:generated.model,usage:generated.usage,fullPacketHash:evidenceHash(evidence.packet),researchContext:{brief,briefHash:briefHash(brief)},outputIssues:generated.issues||[]};
  }

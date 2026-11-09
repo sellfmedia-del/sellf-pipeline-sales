@@ -52,7 +52,9 @@ export async function runExpertAcceptance(){
    if(!finished)throw Error('No research result');audit=finished.result;
    const d=audit.data;Object.assign(summary,{findings:d.findings.length,sources:d.sources.length,peers:d.competitors.length,availableAreas:d.researchCoverage.filter(c=>c.status!=='unavailable').length,coverage:d.researchCoverage.length,fullResearch:!d.researchContinuity&&d.methodologyVersion===expertVersion});
    const entries=[...rows.entries()],synthesis=entries.find(([key,row])=>key.startsWith('audit:synthesis:')&&row.state==='complete')?.[1].value,planning=entries.find(([key,row])=>key.startsWith('audit:source_plan:')&&row.state==='complete')?.[1].value;
-   const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).find(v=>Array.isArray(v?.findings));
+   const outputs=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value);
+   summary.modelOutputs=outputs.map(v=>({model:v.model,type:typeof v.data,keys:v.data&&typeof v.data==='object'?Object.keys(v.data).slice(0,12):[],issues:v.issues||[]}));
+   const generated=outputs.map(v=>v.data).find(v=>Array.isArray(v?.findings));
    summary.rawFindings=generated?.findings.length;summary.rawCoverageKeys=Object.keys(generated?.coverage||{}).length;
    summary.projectionIssues=Object.fromEntries([...new Set((synthesis?.report?.transfer?.issues||[]).map(i=>i.reason))].map(reason=>[reason,synthesis.report.transfer.issues.filter(i=>i.reason===reason).length]));
    summary.peerDiagnostics=(planning?.plan?.entities||[]).filter(e=>e.role==='competitor').map(e=>({name:e.name,website:e.website,relationship:generated?.peers?.find(p=>p.entityId===e.id)?.relationship||'unconfirmed',accepted:d.competitors.some(p=>p.id===e.id)}));
@@ -70,7 +72,8 @@ export async function runExpertAcceptance(){
   console.info('BHS_EXPERT_ACCEPTANCE '+JSON.stringify(summary));
  }
  // Two independent public brands at a time; page reads are already bounded.
- await Promise.all(Array.from({length:2},async()=>{while(index<brands.length){const brand=brands[index++];await runBrand(brand);}}));
+ const selected=String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_BLUM_RECHECK_20261109]')?brands.filter(([name])=>name==='Blum Coffee House'):brands;
+ await Promise.all(Array.from({length:2},async()=>{while(index<selected.length){const brand=selected[index++];await runBrand(brand);}}));
  const safe={generatedAt:new Date().toISOString(),commit:process.env.VERCEL_GIT_COMMIT_SHA,databaseWrites:0,mailSends:0,manualSemanticReview:'pending',results};
  await mkdir('public/expert-review',{recursive:true});await writeFile('public/expert-review/results.json',JSON.stringify(safe,null,2));
  await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS uzman akışı — izole karşılaştırma</title><style>body{font:16px/1.6 system-ui;max-width:1050px;margin:40px auto;padding:0 20px;background:#f5f6fa;color:#202532}article{background:white;padding:24px;margin:20px 0;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}small{color:#596274}</style><h1>BHS uzman akışı</h1><p>İzole kamuya açık marka testleri. Müşteri kaydı, yayınlama veya e-posta işlemi yapılmadı. Maliyet gösterimi sağlayıcı tüketimi ve altyapı rezervini içerir.</p><main></main><script>fetch("results.json").then(r=>r.json()).then(data=>{for(const x of data.results){const a=document.createElement("article"),h=document.createElement("h2"),s=document.createElement("p"),p=document.createElement("pre");h.textContent=x.summary.brandName;s.textContent=(x.summary.passed?"Teknik akış geçti":"İnceleme gerekli")+" · "+(x.summary.chargedKurus/100).toFixed(2)+" TL · "+(x.summary.findings||0)+" bulgu · "+(x.summary.peers||0)+" rakip";p.textContent=x.audit?.data?.rawReport||x.summary.error||"Araştırma tamamlanamadı";a.append(h,s,p);document.querySelector("main").append(a);}})</script></html>');
