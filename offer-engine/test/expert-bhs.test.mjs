@@ -112,6 +112,7 @@ test('public paid samples replay without new calls, source changes, invented pee
  const humm=replayPublicSample(fixture.samples.find(x=>x.summary.brandName==='Humm Organic'),fixture.commit).audit.data;
  assert.equal(humm.findings.length,10);assert.equal(humm.competitors.length,0);assert.ok(humm.findings.filter(f=>f.statement.includes('Saf Nutrition')).every(f=>f.statement.startsWith('Doğrudan rakipliği doğrulanmamış')));
  const ie=humm.findings.find(f=>f.statement.includes('Internet Explorer'));assert.ok(!ie.impact.includes('teknik bir borç'));assert.match(ie.impact,/kanıtlamaz/);
+ assert.ok(humm.dimensions.every(d=>[...d.gaps,...d.strengths].every(text=>!text.includes(ie.statement))));assert.notEqual(humm.criticalRiskFindingId,ie.id);
 });
 test('a same-name cup designer cannot be silently accepted as a burger competitor',()=>{
  const {context,value}=fixture(),p={...plan.entities[1],scope:'Burger restaurant',audienceReason:'Smash burger customers'};
