@@ -1,5 +1,5 @@
 import {hasGroundedResearch} from './research-content.mjs';
-import {offersEnabled} from '../runtime.mjs';
+import {offersEnabled,productionOffers} from '../runtime.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
@@ -18,14 +18,16 @@ import {createSupervisedProviders,supervisedModels} from './supervised-providers
 import {supervisedPhases} from './supervised-research.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {createSequentialProviders} from './sequential-providers.mjs';
+import {backgroundBhsEnabled,browserBhsJobStore} from './job-store.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
 const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
-const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:'v6';
-const researchModel=()=>supervisedPreview()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
+const sequentialProduction=()=>productionOffers()&&process.env.OFFER_BHS_RESEARCH_VERSION==='v8'&&process.env.OFFER_BHS_SEQUENTIAL_PRODUCTION_ENABLED==='true'&&backgroundBhsEnabled();
+const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:sequentialProduction()?'v8':'v6';
+const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -60,6 +62,15 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
    const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6','v7','v8'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
    if(job.researchModel&&!(['v7','v8'].includes(researchVersion)?job.researchModel===supervisedModels.manager:['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
    const activePhases=researchVersion==='v8'?sequentialPhases:researchVersion==='v7'?supervisedPhases:phases;
+   const queue=researchVersion==='v8'&&isBackgroundEnabled()?await getQueue(req,res):null;
+   if(queue&&action==='start'){
+    const existing=await queue.find(job.leadId,hash);
+    if(existing){
+     job.backgroundJobId=existing.id;
+     if(existing.researchRunId)job.researchRunId=existing.researchRunId;else delete job.researchRunId;
+     if(existing.sourceOfferId)job.sourceOfferId=existing.sourceOfferId;else delete job.sourceOfferId;
+    }
+   }
    const key=name=>stageKey(brief,name,researchVersion);
    const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
@@ -73,13 +84,22 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     const breakdown=ledger.describe?.(total);
     return {...total,...(breakdown?{breakdown}:{}),...(Number.isSafeInteger(job.attemptStartKurus)?{attemptChargedKurus:Math.max(0,total.chargedKurus-job.attemptStartKurus)}:{})};
    };readCost=cost;recoveryTicket=ticket;
-   if(action==='cancel')return res.status(200).json({status:'cancelled',cost:await cost()});
+   if(action==='cancel'){if(queue&&job.backgroundJobId)await queue.cancel(job);return res.status(200).json({status:'cancelled',cost:await cost()});}
    if(action==='preflight'){
     const providers=getProviders({ledger});
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
    if(!['start','status','advance','recover','continue'].includes(action))throw Error();
+   if(queue&&action!=='continue'){
+    if(!job.backgroundJobId){const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;}
+    const saved=await queue.read(job),updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
+    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if(saved.state!=='complete'){
+     if(['paused','cancelled'].includes(saved.state))return res.status(422).json({code:saved.diagnostic?.code||'stage_paused',error:'BHS araştırması durdu; aşamalar ve maliyet kayıtları korundu.',phase:saved.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:saved.state==='paused'});
+     return res.status(202).json({phase:saved.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background'});
+    }
+   }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const finish=async final=>{

@@ -1,3 +1,4 @@
+import {createBhsGatewayActions} from '../_shared/bhs-jobs.mjs';
 // Shared sales-team offers. Every real registered user has the same rights.
 // owner_id records authorship; it is never a team-access predicate.
 // No bootstrap, bulk save/delete, Auth modification, or Travis operations.
@@ -38,6 +39,7 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
    if(Number(req.headers.get('content-length'))>4200000)throw Error('Test girdisi çok büyük.');
    const raw=await req.text();if(raw.length>4200000)throw Error('Test girdisi çok büyük.');
    const body=JSON.parse(raw),{action}=body;
+   if(typeof action==='string'&&action.startsWith('bhs_job_'))return reply(await createBhsGatewayActions({mode:'production',env,db,user,validateLead:teamLead,cryptoImpl})(body));
    if(action==='health')return reply({ready:true,mode:'pipeline-production'});
    if(action==='authorize'){
     const who=await user(body.jwt);if(body.leadId)await teamLead(body.leadId);

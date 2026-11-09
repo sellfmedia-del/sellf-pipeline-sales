@@ -8,6 +8,7 @@ import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {localBudget} from '../test/fixtures/local-budget.mjs';
+import {fetchQaCheckpoint} from './qa-checkpoint.mjs';
 
 const project='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ';
 const allowed=()=>process.env.VERCEL_ENV==='preview'&&process.env.VERCEL_PROJECT_ID===project&&/^[a-f0-9]{40}$/.test(process.env.OFFER_BHS_QA_COMMIT||'')&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&process.env.OFFER_BHS_QA_CASE==='humm';
@@ -15,8 +16,9 @@ export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
  const brief=snapshotBrief({brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi',goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
- if(process.env.OFFER_BHS_QA_SEED){
-  const payload=JSON.parse(brotliDecompressSync(Buffer.from(process.env.OFFER_BHS_QA_SEED,'base64'),{maxOutputLength:12000000}).toString('utf8'));
+ const seedData=process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
+ if(seedData){
+  const payload=JSON.parse(brotliDecompressSync(Buffer.from(seedData,'base64'),{maxOutputLength:12000000}).toString('utf8'));
   if(payload.briefHash!==briefHash(brief)||payload.case!=='humm')throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
  }
  const db=await localBudget({lead:'public-humm-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});

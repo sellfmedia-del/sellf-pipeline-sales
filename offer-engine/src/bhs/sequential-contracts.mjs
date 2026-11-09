@@ -3,12 +3,12 @@ import {expertContext,expertSchema,expertModelInput} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 
 export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
-export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','synthesis','scope','complete']);
+export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_mechanism','sector_gate','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','synthesis','scope','complete']);
 export const logicalPhases=Object.freeze(['brand','sector','competition','swot','coverage','synthesis']);
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // A stage may spend only its share of the SAME 50 TRY account. The remainder
 // protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:1400,sector:2100,competition:2600,swot:2800,coverage:3000,synthesis:4400,scope:5000});
+export const stageCeilings=Object.freeze({brand:1400,sector:2100,sector_mechanism:2350,sector_gate:2350,competition:2600,swot:2800,coverage:3000,synthesis:4400,scope:5000});
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});

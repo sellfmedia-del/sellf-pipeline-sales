@@ -6,7 +6,7 @@ import {createApifyAdapter} from './apify-adapter.mjs';
 
 export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0}={}){
  if(!Number.isSafeInteger(infrastructureOffsetKurus)||infrastructureOffsetKurus<0||infrastructureOffsetKurus>500)throw new BudgetError('budget_limit','Altyapı rezervi geçersiz.');
- const baseCeiling=stageCeilings[phase.split('_')[0]],ceiling=baseCeiling?Math.min(baseCeiling+infrastructureOffsetKurus,phase==='scope'?5000:4400):null;
+ const baseCeiling=stageCeilings[phase]||stageCeilings[phase.split('_')[0]],ceiling=baseCeiling?Math.min(baseCeiling+infrastructureOffsetKurus,phase==='scope'?5000:4400):null;
  if(!ceiling)throw new BudgetError('invalid_phase','BHS aşama bütçesi geçersiz.');
  return {...ledger,once:async(key,input,amount,run,options={})=>{
   // Base quotes already contain a 20% envelope at <=60 TRY/USD. Keep that

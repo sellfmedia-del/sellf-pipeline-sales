@@ -31,6 +31,11 @@
     "api/offer-reuse.js": {
       "maxDuration": 300,
       "includeFiles": "offer-engine/src/bhs/**"
+    },
+    "api/bhs-worker.js": {
+      "maxDuration": 300,
+      "includeFiles": "{offer-engine/src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}",
+      "memory": 2048
     }
   },
   "headers": [

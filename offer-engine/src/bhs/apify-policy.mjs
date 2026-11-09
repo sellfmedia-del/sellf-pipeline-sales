@@ -36,11 +36,12 @@ export function matchedActorTasks(actorId,tasks){return tasks.filter(task=>task.
 
 // Read-only account inspection. No /runs endpoint, inputs, cookies or actor
 // execution is exposed by this adapter. Task options remain server-side.
-export async function inspectApifyPolicies({token,fetchImpl=fetch}={}){
+export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,deadline=now()+15000}={}){
  if(!token)return {configured:false,taskPolicies:0,complete:false};
  let offset=0;const tasks=[];
  while(offset<1000){
-  const r=await fetchImpl('https://api.apify.com/v2/actor-tasks?limit=100&offset='+offset,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000),redirect:'error'});
+  const remaining=deadline-now();if(remaining<=0)return {configured:true,authenticated:true,taskPolicies:0,complete:false,tasks:[]};
+  const r=await fetchImpl('https://api.apify.com/v2/actor-tasks?limit=100&offset='+offset,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(Math.min(15000,remaining)),redirect:'error'});
   if(!r.ok)return {configured:true,authenticated:false,taskPolicies:0,complete:false};
   const data=(await r.json()).data;if(!Array.isArray(data?.items))throw Error('Invalid task metadata.');
   tasks.push(...data.items);offset+=data.items.length;

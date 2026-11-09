@@ -57,6 +57,13 @@ test('an ambiguous Actor start holds its entire charge and is never replayed',as
  await assert.rejects(a.enrich(request,context()));const cost=await db.ledger.status();assert.equal(cost.chargedKurus,572);
  await assert.rejects(a.enrich(request,context()),e=>e.code==='budget_uncertain');assert.equal(t.calls.filter(c=>c.url.includes('/runs?')).length,1);assert.deepEqual(await db.ledger.status(),cost);
 });
+test('slow Actor polling has an absolute deadline and aborts without releasing the run commitment',async()=>{
+ const db=account(),t=transport();let clock=now();
+ const a=adapter(db,t,{now:()=>clock,delay:async ms=>{clock+=ms;},fetchImpl:async(url,options)=>{
+  if(url.includes('/actor-runs/')&&!url.includes('/abort')){clock+=11000;return json({data:{status:'RUNNING'}});}return t.fetchImpl(url,options);
+ }});
+ const result=await a.enrich(request,context());assert.equal(result.reason,'actor_time_limit');assert.ok(clock-now()<=85000);assert.equal(t.calls.filter(c=>c.url.includes('/abort')).length,1);assert.equal((await db.ledger.status()).chargedKurus,572);
+});
 test('missing Task policy, additional platform fees and insufficient overall budget prevent a paid start',async()=>{
  for(const mode of ['no-policy','extra-fees','no-budget']){
   const db=account(),t=transport({extraFees:mode==='extra-fees'}),a=adapter(db,t,mode==='no-policy'?{getTaskPolicies:async()=>[]}:{});

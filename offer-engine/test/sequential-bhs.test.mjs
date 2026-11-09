@@ -61,6 +61,14 @@ test('a limited brand understanding blocks sector search and every subsequent pa
   assert.equal(t.events.length,count);assert.deepEqual(await db.ledger.status(),cost);
  }finally{await db.close();}
 });
+test('a revenue topic label on historical growth cannot pass the industry-understanding gate',async()=>{
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>stage.startsWith('v8-sector-')&&data.facts?{...data,facts:data.facts.map(f=>f.topic==='revenue_drivers'?{...f,statement:'Management reported historical turnover growth.'}:f)}:data});
+ try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector')+1))await run(db,phase,t);
+  assert.equal((await db.ledger.get(stageKey(brief,'sector','v8'))).value.decision,'limited');
+  const count=t.events.length;await assert.rejects(run(db,'sector_mechanism',t),e=>e.code==='research_stage_incomplete');assert.equal(t.events.length,count);
+ }finally{await db.close();}
+});
 test('new process resumes the committed stage without duplicating model or search fees',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'bhs-restart-')),t=modelTransport();let db;
  try{
