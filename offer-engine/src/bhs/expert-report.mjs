@@ -100,11 +100,19 @@ export function qualifyExpertFinding(value,quotes){
  else if(/e-posta|e posta|email/.test(t)&&/alan ad|domain/.test(t)&&/seo|otorite|dmarc|spf|teslim edilebilir/.test(t))qualify('Web ve e-posta alan adlarının görevleri netleştirilerek marka iletişimi tercihlerinin gerekçesi anlaşılabilir.','Farklı e-posta alan adı; bölünmüş SEO otoritesi, güvenlik veya teslimat sorunu kanıtı değildir.','Hangi alan adları yalnız e-posta için, hangileri web sitesi veya yönlendirme için kullanılıyor?');
  else if(/shopify|wordpress|ideasoft|woocommerce|platformHints|e-turizm platform/i.test(quotes)&&/platform|altyapi/.test(t)&&/maliyet|hiz|kolay|esnek|olceklen|kontrol|avantaj|yuk|modern|yavas/.test(t))qualify('Mevcut platformun operasyon ve entegrasyon ihtiyaçlarına uyumu, somut süre/maliyet ve kullanım verileriyle değerlendirilebilir.','Platform adı veya HTML ipucu; performans, kolaylık, maliyet veya ölçeklenme üstünlüğü kanıtı değildir.','Platformun karşıladığı ihtiyaçları ve varsa entegrasyon/operasyon kısıtlarını hangi somut ölçümlerle değerlendiriyorsunuz?');
  else if(/followers|takipci/.test(q)&&/yeni oldug|aktif.*yonetil|yonetilmed|pasif/.test(t))qualify('İlgili kanalın hedef kitlesi ve ticari katkısı güncel yayın, etkileşim ve yönlendirme verileriyle değerlendirilebilir.','Takipçi sayısı tek başına kanalın aktif yönetilmediğini veya düşük performansı göstermez.','Bu kanal için hedefiniz, güncel yayın/etkileşim ölçümleriniz ve takip edilen ticari katkınız nedir?');
+ else if(/kurucu|kardes|founder/.test(t+' '+q)&&/bagiml|darbogaz|kilit.*sorumluluk/.test(t)){
+  f.observation=f.observation.replace(/kurulduğunu ve yönetildiğini/giu,'kurulduğunu');
+  qualify('Kuruluş hikâyesi ile işletmenin güncel rol, süreç ve karar yapısı ayrı bilgiler olarak değerlendirilebilir.','Kurucunun görünürlüğü veya kuruluş hikâyesi, kişi bağımlılığı ya da operasyonel darboğaz kanıtı değildir.','Güncel rol/sorumluluk dağılımı ve yazılı iş süreçleri, işletme büyüdükçe nasıl yönetiliyor?');
+ }else if(/basin|makale|yayin|food & wine|gzt|rehber/.test(t+' '+q)&&/marka algisi|urun kalitesi|guvenilir|prestij|otantiklik/.test(t)){
+  f.observation=f.observation.replace(/\s*Bu durum[^.?!]*(?:marka algısı|ürün kalitesi)[^.?!]*(?:göstermektedir|kanıtlamaktadır)[.?!]?/giu,'');
+  qualify('Dış yayın görünürlüğünün hedef kitleye erişim ve ticari katkısı, erişim/atıf ve müşteri araştırmasıyla doğrulanabilir.','Basın görünürlüğü veya yayın listesine girme, genel müşteri algısı veya ürün kalitesi ölçümü değildir.','Bu yayın görünürlüğünün hedef kitlenizdeki karşılığını ve ticari katkısını hangi erişim, müşteri araştırması veya atıf verileriyle değerlendiriyorsunuz?');
+ }
  return f;
 }
-export function labelUnconfirmedComparison(f){
- const statement='Doğrudan rakipliği doğrulanmamış karşılaştırma örneği: '+f.statement.replace(/doğrudan rakip olarak/giu,'karşılaştırma adayı olarak').replace(/doğrudan rakipler/giu,'karşılaştırma adayları').replace(/doğrudan rakip/giu,'karşılaştırma adayı');
- return {...f,statement,reportExcerpt:statement,impact:f.impact.replace(' Sınır: ',' Sınır: Karşılaştırılan işletmenin doğrudan rakipliği doğrulanmadı. ')};
+export function labelUnconfirmedComparison(f,{peerInStatement=true,peerInQuestion=false}={}){
+ const statement=peerInStatement?'Doğrudan rakipliği doğrulanmamış karşılaştırma örneği: '+f.statement.replace(/doğrudan rakip olarak/giu,'karşılaştırma adayı olarak').replace(/doğrudan rakipler/giu,'karşılaştırma adayları').replace(/doğrudan rakip/giu,'karşılaştırma adayı'):f.statement;
+ const limit=f.impact.includes(' Sınır: ')?f.impact.split(' Sınır: ').slice(1).join(' Sınır: '):'';
+ return {...f,statement,reportExcerpt:statement,impact:'Hipotez: Bu gözlemin karşılaştırmalı ticari anlamı, uygun işletmelerde eşdeğer ürün/teklif/kanal verileri doğrulandığında değerlendirilebilir. Sınır: Karşılaştırılan işletmenin doğrudan rakipliği ve atfedilen üstünlükleri doğrulanmadı. '+limit,...(peerInQuestion?{goalConnection:'Karşılaştırma yapılacak uygun işletme ve eşdeğer ürün/hizmet kapsamını hangi ölçütlerle belirliyorsunuz?'}:{})};
 }
 
 export function projectExpertReport(value,context){
@@ -141,7 +149,7 @@ export function projectExpertReport(value,context){
  // A rejected direct peer can still supply a factual comparison example,
  // but every derived section must preserve its unconfirmed relationship.
  const unconfirmed=entities.filter(e=>e.role==='competitor'&&!competitors.some(p=>p.id===e.id));
- for(const f of findings)if(unconfirmed.some(e=>fold([f.statement,f.impact,f.goalConnection].join(' ')).includes(fold(e.name))))Object.assign(f,labelUnconfirmedComparison(f));
+ for(const f of findings){const peers=unconfirmed.filter(e=>fold([f.statement,f.impact,f.goalConnection].join(' ')).includes(fold(e.name)));if(peers.length){Object.assign(f,labelUnconfirmedComparison(f,{peerInStatement:peers.some(e=>fold(f.statement).includes(fold(e.name))),peerInQuestion:peers.some(e=>fold(f.goalConnection).includes(fold(e.name)))}));stances.set(f.id,'neutral');signalOnly.add(f.id);}}
  const hasBrand=f=>f.sourceIds.some(id=>researchHost(cards.get(id).url)===brandHost);
  const relevantIds=(ids,dimension)=>unique(list(ids).filter(id=>findingById.has(id)&&(!dimension||findingById.get(id).dimension===dimension)));
  const researchCoverage=methodologyAreas.map(a=>{

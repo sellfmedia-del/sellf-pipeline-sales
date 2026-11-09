@@ -20,8 +20,9 @@ export async function runExpertAcceptance(){
  if(!acceptanceEnabled())return;
  const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY))throw Error('Isolated preview provider configuration is missing.');
  const recheck=String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_BLUM_RECHECK_20261109]');
+ const replayOnly=String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_REPLAY_ONLY_20261109]');
  const results=[];let index=0;
- if(recheck){const prior=JSON.parse(await readFile(new URL('../test/fixtures/expert-public-acceptance.json',import.meta.url),'utf8'));results.push(...prior.samples.map(sample=>replayPublicSample(sample,prior.commit)));}
+ if(recheck||replayOnly){const prior=JSON.parse(await readFile(new URL('../test/fixtures/expert-public-acceptance.json',import.meta.url),'utf8'));results.push(...prior.samples.filter(sample=>replayOnly||sample.summary.brandName!=='Blum Coffee House').map(sample=>replayPublicSample(sample,prior.commit)));}
  async function runBrand([brandName,website]){
   const rows=new Map();let charged=500,generations=0,searches=0,cookie;
   const host='expert-acceptance.example',leadId='isolated-expert-'+randomUUID(),brief={brandName,website,segment:'corporate',currency:'TRY',language:'tr',budget:null,goals:'Türkiye pazarında sürdürülebilir ve ölçülebilir büyüme fırsatlarını incelemek.',needs:'Ürün/teklif/kanal ve rakip farklarını dış kaynaklarla doğrulamak; gözlem ile iç veri gerektiren hipotezi ayırmak.',services:'Kullanıcının seçtiği hizmetler ayrıca hesaplanır.',meetingNotes:'Yalnız kamuya açık marka testi; müşteri görüşmesi, özel dosya veya iç performans verisi değildir. Türkiye pazarı. Ülke/domain yönlenmesini açıkça belirt.'};
@@ -75,7 +76,7 @@ export async function runExpertAcceptance(){
   console.info('BHS_EXPERT_ACCEPTANCE '+JSON.stringify(summary));
  }
  // Two independent public brands at a time; page reads are already bounded.
- const selected=recheck?brands.filter(([name])=>name==='Blum Coffee House'):brands;
+ const selected=replayOnly?[]:recheck?brands.filter(([name])=>name==='Blum Coffee House'):brands;
  await Promise.all(Array.from({length:2},async()=>{while(index<selected.length){const brand=selected[index++];await runBrand(brand);}}));
  const safe={generatedAt:new Date().toISOString(),commit:process.env.VERCEL_GIT_COMMIT_SHA,databaseWrites:0,mailSends:0,manualSemanticReview:'pending',results};
  await mkdir('public/expert-review',{recursive:true});await writeFile('public/expert-review/results.json',JSON.stringify(safe,null,2));

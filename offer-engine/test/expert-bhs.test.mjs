@@ -101,10 +101,12 @@ test('technical proxies retain observations but become neutral verification ques
   ['/en/ sayfasında Euro fiyat var.','Türkiye dönüşüm kaybı yaşar.','Euro prices','ülke'],
   ['Web ve e-posta alan adları farklı.','SEO otoritesi bölünüyor ve DMARC bozuluyor.','email domains','alan'],
   ['Agentis platformu kullanılıyor.','Platform maliyeti düşürür ve kontrol kısıtlar.','Agentis E-Turizm Platformu','platform'],
-  ['16 takipçi listeleniyor.','Yeni olduğu veya aktif yönetilmediği anlaşılıyor.','16 followers','kanal']
+  ['16 takipçi listeleniyor.','Yeni olduğu veya aktif yönetilmediği anlaşılıyor.','16 followers','kanal'],
+  ['İki kardeş tarafından kurulduğu biliniyor.','Kuruculara bağımlılık ve darboğaz riski var.','Two founders','rol'],
+  ['Bir basın makalesinde listeleniyor. Bu durum, marka algısının olumlu olduğunu göstermektedir.','Basın görünürlüğü güvenilirlik kanıtlar.','GZT article','yayın','Bir basın makalesinde listeleniyor.']
  ];
- for(const [observation,commercialHypothesis,quote,word]of cases){const f={observation,commercialHypothesis,limitation:'Ölçülmedi.',question:'Varsayım doğru mu?'};const qualified=qualifyExpertFinding(f,quote);assert.equal(qualified.observation,observation);assert.notEqual(qualified.commercialHypothesis,commercialHypothesis);assert.ok(qualified.question.toLocaleLowerCase('tr').includes(word.toLocaleLowerCase('tr')));assert.deepEqual(qualifyExpertFinding(qualified,quote),qualified);}
- const labeled=labelUnconfirmedComparison({statement:'Doğrudan rakip olarak incelenen Örnek.',impact:'Hipotez: Test. Sınır: Ölçülmedi.'});assert.match(labeled.statement,/rakipliği doğrulanmamış/);assert.match(labeled.impact,/doğrudan rakipliği doğrulanmadı/);
+ for(const [observation,commercialHypothesis,quote,word,expected=observation]of cases){const f={observation,commercialHypothesis,limitation:'Ölçülmedi.',question:'Varsayım doğru mu?'};const qualified=qualifyExpertFinding(f,quote);assert.equal(qualified.observation,expected);assert.notEqual(qualified.commercialHypothesis,commercialHypothesis);assert.ok(qualified.question.toLocaleLowerCase('tr').includes(word.toLocaleLowerCase('tr')));assert.deepEqual(qualifyExpertFinding(qualified,quote),qualified);}
+ const labeled=labelUnconfirmedComparison({statement:'Doğrudan rakip olarak incelenen Örnek.',impact:'Hipotez: Test. Sınır: Ölçülmedi.'});assert.match(labeled.statement,/rakipliği doğrulanmamış/);assert.match(labeled.impact,/doğrudan rakipliği.*doğrulanmadı/);
 });
 test('public paid samples replay without new calls, source changes, invented peers or misleading technical hypotheses',()=>{
  const fixture=JSON.parse(readFileSync(new URL('./fixtures/expert-public-acceptance.json',import.meta.url),'utf8'));
@@ -113,6 +115,9 @@ test('public paid samples replay without new calls, source changes, invented pee
  assert.equal(humm.findings.length,10);assert.equal(humm.competitors.length,0);assert.ok(humm.findings.filter(f=>f.statement.includes('Saf Nutrition')).every(f=>f.statement.startsWith('Doğrudan rakipliği doğrulanmamış')));
  const ie=humm.findings.find(f=>f.statement.includes('Internet Explorer'));assert.ok(!ie.impact.includes('teknik bir borç'));assert.match(ie.impact,/kanıtlamaz/);
  assert.ok(humm.dimensions.every(d=>[...d.gaps,...d.strengths].every(text=>!text.includes(ie.statement))));assert.notEqual(humm.criticalRiskFindingId,ie.id);
+ const blum=replayPublicSample(fixture.samples.find(x=>x.summary.brandName==='Blum Coffee House'),fixture.commit).audit.data;
+ const founder=blum.findings.find(f=>f.statement.includes('iki kardeş'));assert.ok(!founder.impact.includes('ölçeklenmesi önünde bir risk'));assert.ok(!blum.dimensions.flatMap(d=>d.gaps).some(text=>text.includes(founder.statement)));
+ assert.ok(!blum.findings.some(f=>f.statement.includes('marka algısının olumlu olduğunu göstermektedir')));assert.ok(!blum.findings.some(f=>f.impact.includes('yalnızca sağlıklı atıştırmalık satan (örn. ZAXE)')));
 });
 test('a same-name cup designer cannot be silently accepted as a burger competitor',()=>{
  const {context,value}=fixture(),p={...plan.entities[1],scope:'Burger restaurant',audienceReason:'Smash burger customers'};
