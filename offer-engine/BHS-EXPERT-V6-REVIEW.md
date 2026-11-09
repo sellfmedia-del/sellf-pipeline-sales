@@ -20,6 +20,10 @@ monthly/standard offers, logos, template, existing records and production data.
   verifier against original read segments; fabricated cleaned quotes still fail.
   Peer URLs bind to verified final hosts so www redirects do not discard peers.
   Scores also require a nonempty band reason.
+- Short proof IDs preserve the adjacent chunks of the same bounded paragraph,
+  so the evidence view does not cut off a supporting sentence. Numeric counts
+  also require the same unit: dates cannot become review counts or time slots
+  port counts. Platform hints cannot imply speed or cost advantages.
 - Findings contain observation, commercial hypothesis, limitation and question.
   Local guards address reviewed failure classes; they are not a general semantic
   truth guarantee. Current-model instructions, citations and human comparison

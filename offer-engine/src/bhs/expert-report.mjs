@@ -34,7 +34,7 @@ const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|grow
 // Paragraph-sized context is selected once; model only returns immutable IDs.
 // The complete original packet stays in the ledger, never in a public bundle.
 export function expertContext(brief,evidence){
- const cards=[],sources=[];let used=0;
+ const cards=[],sources=[],proofGroups=new Map();let used=0;
  for(const s of evidence.packet.sources||[]){
   const excerpts=list(s.excerpts).map(e=>e.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1'));
   const candidates=excerpts.flatMap(t=>t.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])/u).flatMap(p=>p.length>1000?Array.from({length:Math.ceil(p.length/800)},(_,i)=>p.slice(i*800,i*800+900)):[p])).map(t=>t.trim()).filter(t=>t.length>=24);
@@ -44,6 +44,7 @@ export function expertContext(brief,evidence){
   const sections=[];
   for(const paragraph of picked){if(used+paragraph.length>60000)continue;used+=paragraph.length;
    const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,scope:'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
+   for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
   }
   for(const quote of technicalCitations(s)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:'html-signals',scope:'Yalnız indirilen HTML sinyali; yokluk/çalışırlık/mobil hız testi değildir.'});sections.push({text:quote,proofIds:[id]});}
@@ -57,6 +58,7 @@ export function expertContext(brief,evidence){
   if(!names.some(n=>topicWords(n).some(w=>fold(s.title+' '+text).includes(w))))continue;
   snippets+=text.length;const proofIds=[];
   for(const quote of citationChunks(text)){const id='e'+(cards.length+1);cards.push({id,url:s.url,title:s.title,quote,method:'search-snippet',scope:'Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.'});proofIds.push(id);}
+  for(const id of proofIds)proofGroups.set(id,proofIds);
   sources.push({url:s.url,title:s.title,method:'search-snippet',sections:[{text,proofIds}]});
  }
  // Existing provenance verifier checks each short proof against this exact read
@@ -67,15 +69,21 @@ export function expertContext(brief,evidence){
  // against the original read segments before they can enter source records.
  packet.citationCards=cards.map(c=>({...c,id:'proof_'+hash({url:c.url,quote:c.quote}).slice(0,20)}));
  const known=new Map(cards.map(c=>[c.id,c]));
- return {packet,cards,known,input:{brief,asOf:evidence.packet.asOf,entities:evidence.packet.entities,areas:methodologyAreas,sources,unavailable:evidence.packet.unavailable||[]}};
+ return {packet,cards,known,proofGroups,input:{brief,asOf:evidence.packet.asOf,entities:evidence.packet.entities,areas:methodologyAreas,sources,unavailable:evidence.packet.unavailable||[]}};
 }
 
 export function unsafeExpertClaim(f,quotes){
- const t=fold([f.observation,f.commercialHypothesis].join(' ')),q=fold(quotes);
+ const t=fold([f.observation,f.commercialHypothesis,f.question].join(' ')),q=fold(quotes);
+ const countUnits=['sikayet|complaints?','yorum|reviews?','takipci|followers?','personel|calisan|employees?','franchise|sube|branches','magaza|stores?','liman|ports?'];
  if(/(?:olcum|roas|retarget|yeniden pazarlama|butce|donusum)[^.?!]{0,120}(?:imkansiz|yapilamaz|yapilamiyor|sifira|mahved|mahvol)/.test(t))return 'unmeasured_performance';
  if(/(?:403|ebusy|bot)/.test(q)&&/(?:seo|google|ziyaretci|musteri)[^.?!]{0,100}(?:bozuk|erisem|engell|kritik sorun)/.test(t))return 'reader_failure_not_brand_failure';
  if(/followers|takipci/.test(q)&&!/(?:employees|personel|calisan|team size)/.test(q)&&/(?:\d+[\s\S]{0,30}(?:personel|calisan)|(?:personel|calisan)[\s\S]{0,30}\d+)/.test(t))return 'followers_not_employees';
- if(/shopify|wordpress|ideasoft|woocommerce/.test(q)&&/(?:geride|mahrum|dezavantaj|ustun|sorunsuz|iki kat|2x|verimsiz)/.test(t))return 'platform_not_performance';
+ const countText=q.replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'');
+ for(const unit of countUnits)for(const match of t.matchAll(new RegExp('(?<![a-z0-9])([0-9]+(?:[.,][0-9]+)*)\\s*(?:adet\\s*)?(?:'+unit+')','g'))){
+  const literal=match[1].replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'').replace(/[.*+?^$()|[\]{}\\]/g,'\\$&'),bound='(?<![a-z0-9.,])'+literal+'(?![0-9.,])';
+  if(!new RegExp(bound+'\\s*(?:adet\\s*)?(?:'+unit+')|(?:'+unit+')[ :–-]*'+bound).test(countText))return 'quantity_unit_unconfirmed';
+ }
+ if(/shopify|wordpress|ideasoft|woocommerce/.test(q)&&/(?:geride|mahrum|avantaj|ustun|sorunsuz|iki kat|2x|verimsiz|daha eski|daha modern|yavaslat|hizli operasyon)/.test(t))return 'platform_not_performance';
  if(/(?:price|fiyat|traffic|trafik|followers|takipci)/.test(q)&&!/(?:profit|ebitda|net income|net kar|katki kar)/.test(q)&&/(?:kar marjini artir|yuksek kar marj|gelirde onemli.*artis|finansal olarak saglikli|gelir artisi.*guclu)/.test(t))return 'proxy_not_profit';
  if(/(?:bulten|newsletter|blog|crm|analitik|analytics|pixel|piksel)[^.?!]{0,70}(?:yoktur|yok\b|bulunmamaktadir|kurulu degil|kurulu olmadigi)/.test(t)&&!/(?:indirilen html|kaynak kesit|incelenen sayfa|gorusmede|dogrulan)/.test(t))return 'unproven_absence';
  return null;
@@ -84,13 +92,15 @@ export function unsafeExpertClaim(f,quotes){
 export function projectExpertReport(value,context){
  if(Array.isArray(value?.researchCoverage)&&value?.sources)return value; // safe provider partial projection
  const raw=value||{},cards=context.known,issues=[],sources=new Map();
- const refs=ids=>unique(list(ids).filter(id=>cards.has(id)));
+ // A model ID identifies a bounded paragraph, not a disconnected 200-char
+ // slice. Retain its adjacent proof chunks so a cited sentence stays readable.
+ const refs=ids=>unique(list(ids).filter(id=>cards.has(id)).flatMap(id=>context.proofGroups?.get(id)||[id]));
  const use=ids=>refs(ids).map(id=>{const c=cards.get(id);sources.set(id,{...c,publishedAt:null,period:null,sourceType:c.method==='search-snippet'?'secondary':'primary'});return id;});
  const findings=[],seenIds=new Set();
  for(const f of list(raw.findings).filter(f=>f&&typeof f==='object')){
   const sourceIds=refs(f.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n');
   const reason=unsafeExpertClaim(f,quotes);
-  if(typeof f.id!=='string'||seenIds.has(f.id)||typeof f.observation!=='string'||!f.observation.trim()||!sourceIds.length||sourceIds.length!==unique(list(f.sourceIds)).length||reason){issues.push({path:'findings.'+f.id,reason:reason||'unsupported_finding'});continue;}
+  if(typeof f.id!=='string'||seenIds.has(f.id)||typeof f.observation!=='string'||!f.observation.trim()||!sourceIds.length||list(f.sourceIds).some(id=>!cards.has(id))||reason){issues.push({path:'findings.'+f.id,reason:reason||'unsupported_finding'});continue;}
   seenIds.add(f.id);
   const locale=sourceIds.map(id=>cards.get(id).url).some(url=>/\/en(?:\/|$)|\.us(?:\/|$)/.test(url));
   if(locale&&/(?:turkiye.*(?:musteri|donusum|satin)|turk lira.*yerine|yurt ici.*(?:bozuk|engell))/i.test(fold(f.observation))){issues.push({path:'findings.'+f.id,reason:'market_scope_mismatch'});continue;}
@@ -129,7 +139,7 @@ export function projectExpertReport(value,context){
  for(const b of list(raw.benchmarks).filter(b=>b&&typeof b==='object')){
   if(!entityIds.has(b.entityId))continue;
   const sourceIds=refs(b.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n');
-  if(!sourceIds.length||!supportedNumbers([b.value,b.period].join(' '),quotes)||unsafeExpertClaim({observation:b.value},quotes))continue;
+  if(!sourceIds.length||!supportedNumbers([b.value,b.period].join(' '),quotes)||unsafeExpertClaim({observation:[b.value,b.unit].join(' ')},quotes))continue;
   const expected=entities.find(e=>e.id===b.entityId),identity=s=>fold(s).replace(/[^a-z0-9]/g,'');
   if(!expected||!sourceIds.some(id=>researchHost(cards.get(id).url)===researchHost(expected.website)||identity(cards.get(id).title+' '+cards.get(id).quote).includes(identity(expected.name))))continue;
   if(['webTraffic','domainAuthority','socialAudience','reviews'].includes(b.metric)&&(!/\d/.test(b.value)||!b.unit||!b.period))continue;

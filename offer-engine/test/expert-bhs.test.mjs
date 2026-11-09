@@ -62,12 +62,23 @@ test('verified www peer redirects preserve the competitor, while a missing score
  const report=projectExpertReport(value,context);assert.equal(report.competitors.length,1);assert.equal(new URL(report.competitors[0].website).hostname,new URL(proof.url).hostname);
  value.dimensions[0].bandReason='';assert.equal(projectExpertReport(value,context).dimensions.find(d=>d.id==='funnel').score,null);
 });
+test('a cited paragraph keeps adjacent verified proof chunks instead of cutting off the supporting sentence',()=>{
+ const {value}=fixture(),p=packet();p.sources[0].excerpts[0].text='Family planners '+('with reusable household planning pages and helpful delivery details '.repeat(5))+'cost $24.95 and include practical calendar pages';
+ const context=expertContext(brief,{packet:p,searches:[]});value.findings[0].sourceIds=[context.cards[0].id];
+ assert.ok(!context.cards[0].quote.includes('24.95'));assert.ok(projectExpertReport(value,context).findings.some(f=>f.id==='f1'));
+});
 test('past real failure classes are rejected without treating factual website signals as performance',()=>{
  assert.equal(unsafeExpertClaim({observation:'140 çalışan bulunmaktadır.'},'140 followers'),'followers_not_employees');
  assert.equal(unsafeExpertClaim({observation:'Shopify kullanmadığı için teknolojide geride.'},'Shopify platform'),'platform_not_performance');
  assert.equal(unsafeExpertClaim({observation:'Trafik artışı gelirde önemli bir artış göstergesidir.'},'Organic traffic rose'),'proxy_not_profit');
  assert.equal(unsafeExpertClaim({observation:'Bot hatası müşterilerin erişemediğini gösteriyor.'},'HTTP_403'),'reader_failure_not_brand_failure');
  assert.equal(unsafeExpertClaim({observation:'İndirilen HTML içinde analitik etiketi görülemedi.',commercialHypothesis:'Görüşmede ölçüm tercihleri doğrulanabilir.'},'analyticsTags:false'),null);
+ assert.equal(unsafeExpertClaim({observation:'Rakip Shopify kullanıyor.',commercialHypothesis:'Bu hız ve maliyet avantajı sağlayabilir.'},'platformHints: shopify'),'platform_not_performance');
+ assert.equal(unsafeExpertClaim({observation:'Toplam 11 şikayet listeleniyor.'},'11 Ağustos: Eksik ürün şikayeti'),'quantity_unit_unconfirmed');
+ assert.equal(unsafeExpertClaim({observation:'Toplam 11 şikayet listeleniyor.'},'11 şikayet listeleniyor'),null);
+ assert.equal(unsafeExpertClaim({observation:'16 takipçi bulunuyor.'},'16 followers'),null);
+ assert.equal(unsafeExpertClaim({observation:'2.585 takipçi bulunuyor.'},'2,585 followers'),null);
+ assert.equal(unsafeExpertClaim({observation:'12 limandan sefer var.'},'Alış Saati 12:00; Kuşadası, Bodrum'),'quantity_unit_unconfirmed');
 });
 test('a same-name cup designer cannot be silently accepted as a burger competitor',()=>{
  const {context,value}=fixture(),p={...plan.entities[1],scope:'Burger restaurant',audienceReason:'Smash burger customers'};

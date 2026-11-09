@@ -27,6 +27,8 @@ Gözlem tam olarak ne görüldüğünü anlatsın. Ticari etki ölçülmemişse 
 YASAK ÇIKARIMLAR
 Takipçi = çalışan; yüksek fiyat = yüksek marj; AOV = kârlılık; trafik artışı = gelir/kâr artışı; kanalların/sayfaların varlığı = gerçekleşmiş gelir çeşitliliği; franchise sayfası = franchise geliri değildir.
 Shopify/WordPress/IdeaSoft adı verimlilik veya kapasite kanıtı değildir. HTML’de piksel/analitik görülmedi diye ölçüm yok/ROAS hesaplanamaz/retargeting imkansız deme. Etiket varsa doğru çalışıyor deme. Mobil viewport hız veya mobil deneyim testi değildir. Bot 403/EBUSY aldı diye müşteri/Google erişemiyor deme.
+IE desteği uyarısı eski altyapı kanıtı değildir. Rakibin Shopify kullanması daha modern, daha hızlı, daha ucuz veya daha kolay entegre olduğu anlamına gelmez; bunu hipotezde ya da soruda üstünlük varsayımına dönüştürme. Ölçek, entegrasyon süresi ve maliyetleri tarafsız sorularla doğrula.
+Bir sayının alıntıda bulunması yeterli değildir: aynı birim ve anlamla geçmelidir. Örneğin yorum tarihindeki 11 sayısı '11 şikayet', saat listesindeki 12 sayısı '12 liman' olamaz. Toplam sayısı yazmayan yorum kesitinden toplam şikayet veya tekrarlayan sorun oranı çıkarma. Tekil şikayetleri tekil olarak, çözüm yanıtı varsa onunla birlikte anlat.
 Başlangıç adresi bir Instagram/Facebook/sosyal profilse, profilin teknik etiketlerini markanın kendi web mağazası gibi değerlendirme. Profilde link görülmedi diye web sitesi veya birinci taraf müşteri verisi yok deme.
 Yorum bulunamaması memnuniyetsizlik değildir; tekil şikayet yaygın sorun değildir; kurucunun görünürlüğü kişi bağımlılığı değildir; basın görünürlüğü ürün kalitesi onayı değildir. Gelir kaybı/dönüşüm artışı/ROI/bütçe veya veri yokken sıfır trafik/reklam icat etme.
 
