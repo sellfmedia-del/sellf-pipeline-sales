@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createSupervisedProviders,quoteSupervised,supervisedModels} from '../src/bhs/supervised-providers.mjs';
-import {actorChargeLimit,safeActorInput,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {actorChargeLimit,safeActorInput,matchedActorTasks,inspectApifyPolicies} from '../src/bhs/apify-policy.mjs';
 import {remapWorkerProofs,runSupervisedStage} from '../src/bhs/supervised-research.mjs';
 import {stageKey} from '../src/bhs/direct-research.mjs';
 import {createSupervisedReadiness} from '../src/bhs/supervised-readiness.mjs';
@@ -10,6 +10,7 @@ import {response} from './fixtures/offer.mjs';
 import {expertContext} from '../src/bhs/expert-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
+import {withProofIds,extractionSchema,validateProofRows} from '../src/bhs/sequential-contracts.mjs';
 const now=()=>Date.parse('2026-11-09T12:00:00Z');
 const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};
 const json=v=>new Response(JSON.stringify(v));
@@ -83,6 +84,24 @@ test('concurrent identical calls cannot duplicate paid work',async()=>{
  assert.ok(values.some(v=>v.status==='fulfilled'));
  assert.equal(t.calls.filter(c=>c.url.endsWith(':generateContent')).length,1);
 });
+test('344 original paragraph proofs survive Gemini grammar simplification and fabricated references still fail before review',async()=>{
+ const ids=Array.from({length:344},(_,i)=>'p_'+String(i).padStart(24,'0'));
+ const context={known:new Map(ids.map(id=>[id,{id,quote:'Original source paragraph '+id}]))};
+ const contract=withProofIds(extractionSchema,context);
+ assert.equal(contract.properties.facts.items.properties.sourceIds.items.enum,undefined);
+ assert.equal(context.known.size,344);
+ for(const fabricated of [false,true]){
+  const db=account(),t=transport({onGenerate:async(url,body)=>{
+   assert.equal(body.generationConfig.responseJsonSchema.properties.facts.items.properties.sourceIds.items.enum,undefined);
+   assert.deepEqual(JSON.parse(body.contents[0].parts[0].text).originalProofs,ids);
+   const data={facts:[{id:'fact1',topic:'sector',statement:'Supported public observation',sourceIds:[fabricated?'invented-proof':ids[343]],limitation:''}],unknowns:[]};
+   return json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,totalTokenCount:140},candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}]});
+  }});
+  const work=providers(db,t).worker('large-citations',{originalProofs:ids},contract,{maxOutputTokens:512,validateData:d=>validateProofRows(d.facts,context)});
+  if(fabricated)await assert.rejects(work,e=>e.code==='model_output_invalid');
+  else assert.deepEqual((await work).data.facts[0].sourceIds,[ids[343]]);
+ }
+});
 test('unverifiable usage stays reserved and model changes cannot pass as the selected manager',async()=>{
  const db=account(),t=transport({onGenerate:async()=>json({model:'unapproved',usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[]})});
  await assert.rejects(providers(db,t).manager('final',{},schema,{maxOutputTokens:512}),e=>e.code==='provider_accounting');
@@ -93,6 +112,17 @@ test('saved .03 actor limit is never raised to the .40 maximum',()=>{
  const result=actorChargeLimit(policy);assert.equal(result.maxTotalChargeUsd,.03);
  const limited=actorChargeLimit({...policy,remainingKurus:1650});assert.ok(limited.maxTotalChargeUsd<.03);assert.ok(limited.reservedKurus<=50);
  assert.equal(matchedActorTasks('actor1',[policy.task,{...policy.task,id:'cheaper',options:{maxTotalChargeUsd:.01}}])[0].id,'cheaper');
+});
+test('policy inspection resolves omitted list options from the exact saved Task without changing its lower cap',async()=>{
+ const task={id:'task12345678901',actId:'hGO9TU7F0OD97VxNC'},calls=[];
+ const result=await inspectApifyPolicies({token:'private-policy',fetchImpl:async(url,options)=>{
+  calls.push({url,method:options.method||'GET'});
+  return json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,options:{maxTotalChargeUsd:.03}}});
+ }});
+ assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,1);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
+ assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==='GET'&&!c.url.includes('/runs')));assert.ok(!JSON.stringify(result).includes('private-policy'));
+ const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'differentActor',options:{maxTotalChargeUsd:.03}}})});
+ assert.equal(invalid.taskPolicies,0);assert.equal(invalid.complete,false);
 });
 test('unverified console form, mismatched Task and excluded platform fees cannot start an actor',()=>{
  for(const patch of [{task:null},{task:{...policy.task,actId:'other'}},{task:{...policy.task,options:{maxTotalChargeUsd:.5}}},{pricing:{pricingModel:'FREE'}},{pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:true}}])assert.throws(()=>actorChargeLimit({...policy,...patch}));
