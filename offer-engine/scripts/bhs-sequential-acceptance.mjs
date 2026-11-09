@@ -20,7 +20,6 @@ export async function runSequentialAcceptance(){
   if(payload.briefHash!==briefHash(brief)||payload.case!=='humm')throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
  }
  const db=await localBudget({lead:'public-humm-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
- await db.ledger.once('qa:infrastructure-allowance',{case:'humm',scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
  const deadline=Date.now()+6*60000;
  let phase='not_started',result;
  async function save(){
@@ -32,15 +31,19 @@ export async function runSequentialAcceptance(){
  try{
   for(phase of sequentialPhases.slice(0,-2)){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
-   const providers=createSequentialProviders({ledger:db.ledger,phase});
+   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:seed?.some(r=>r.step_key==='qa:infrastructure-allowance')?500:0});
    await runBoundedStage({phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
    await save();
   }
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:'humm',status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
  }catch(error){
-  result={case:'humm',status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason}:{}),productionWrites:0};
+  result={case:'humm',status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
  }finally{
+  // Synthesis is capped at 44 TRY; the protected remaining 6 TRY can cover
+  // this build-only infrastructure allowance without starving early stages.
+  await db.ledger.once('qa:infrastructure-allowance',{case:'humm',scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
+  result.cost=await db.ledger.status();
   await save();await writeFile(path.join(output,'bhs-sequential-acceptance.json'),JSON.stringify(result));await db.close();
  }
  console.info(JSON.stringify({event:'bhs_v8_public_qa_finished',...Object.fromEntries(Object.entries(result).filter(([k])=>k!=='audit'))}));

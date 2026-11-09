@@ -1,5 +1,5 @@
 import {hash,BudgetError} from '../budget/ledger.mjs';
-import {expertContext,expertSchema} from './expert-report.mjs';
+import {expertContext,expertSchema,expertModelInput} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 
 export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
@@ -46,6 +46,20 @@ export function validateProofRows(rows,context){
   if(!row.id||seen.has(row.id)||!row.sourceIds?.length||row.sourceIds.some(id=>!context.known.has(id)))throw new BudgetError('model_output_invalid','Aşama bulgusunda kaynak kimliği eksik veya geçersiz.');
   seen.add(row.id);
  }
+}
+export function stageModelInput(context,{rows,sample=false,areas=false}={}){
+ const input=structuredClone(context.input);
+ if(!areas)delete input.areas;
+ if(rows){
+  const ids=new Set(rows.flatMap(r=>r.sourceIds||[]).flatMap(id=>context.proofGroups.get(id)||[id]));
+  input.sources=input.sources.map(s=>({...s,sections:s.sections.filter(p=>p.proofIds.some(id=>ids.has(id)))})).filter(s=>s.sections.length);
+  input.selectionScope='Original candidate-cited paragraphs; no whole-site absence claim is justified. Full source snapshots remain saved for the final audit.';
+ }
+ if(sample){
+  let used=0;input.sources=input.sources.slice(0,2).map(s=>({...s,sections:s.sections.filter(p=>{if(used+p.text.length>6000)return false;used+=p.text.length;return true;}).slice(0,6)}));
+  input.selectionScope='Planning sample only. Operators read the complete captured packet before conclusions.';
+ }
+ return expertModelInput({...context,input});
 }
 export function acceptedRows(rows,review){
  const ids=new Set(rows.map(f=>f.id)),accepted=new Set(review.acceptedIds);
