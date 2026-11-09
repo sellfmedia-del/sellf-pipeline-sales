@@ -64,7 +64,7 @@ technical proxies cannot reappear as critical risks. The v6 response omits
 redundant originalReport copies; all findings, quotes and source references
 remain in the response and immutable paid stage records.
 
-Local verification: 54 root tests + 359 engine tests passed (21 opt-in
+Local verification: 54 root tests + 361 engine tests passed (21 opt-in
 checks skipped), focused ESLint/module parsing and production build passed.
 Ten desktop/mobile browser tests passed for BHS continuation, both currencies,
 explicit costs, monthly variants, stored offers and both proposal languages.
@@ -72,9 +72,19 @@ No non-BHS production source, build script, config or dependency differs from ma
 
 A five-public-brand batch and a separate forced-primary-503 Humm acceptance
 are reviewed separately; build success alone is not quality acceptance.
-The forced 503 was a QA fixture. Its alternate call entered the unchanged cap
-but did not complete. That failure remains a release blocker, not a passing
-BHS. The final focused Humm run has no injected failure.
+The forced synthesis-503 fixture reached the alternate inside the unchanged cap,
+but its real alternate did not complete; this is recorded as a failed run.
+The final normal Humm run on 303fb9f did pass: ten findings, one verified
+peer, all 24 statuses, selected pricing and proposal handoff, 25.00 TRY including
+retained reservations and the virtual 5 TRY infrastructure allowance. It used
+14 searches, no database writes, and no paid proposal-scope calls. Its genuine
+source-plan 503 recovered through the Pro alternate. This is a measured sample,
+not an uptime guarantee or proof of inaccessible public metrics.
+
+The same saved public Humm evidence/model result is replayed after the final
+channel/review/certification claim guards. It preserves all ten grounded facts
+and one peer with zero new API calls. The fixture and browser checks retain
+source verification and existing request limits; absent data/scores stay null.
 
 Public-brand acceptance is restricted to the Pipeline project's preview build,
 the exact feature branch, a dated commit marker and an expiry. It runs a single focused
@@ -82,6 +92,9 @@ public brand with independent in-memory ledgers and no database writes, email
 or publishing. Paid calls cover BHS only; the unchanged proposal scope stage
 uses its existing fixture in this QA, with separate equality/browser tests. Each retains the same 50 TRY cap. Generated QA output is removed
 by the BHS test on every ordinary build and never generated in production.
+The final review commit on fix/bhs-quality-only can render the dated public
+Humm fixture only in Pipeline Preview; this replay makes zero API calls.
+Ordinary and production builds remove generated QA output.
 The shared build script is byte-identical to main; no project settings change.
 
 ## Release / rollback

@@ -6,7 +6,7 @@ import {plan as legacyPlan} from './fixtures/evidence.mjs';
 import {expertContext,expertModelInput,projectExpertReport,unsafeExpertClaim,qualifyExpertFinding,expertInstruction,expertVersion,expertSchema} from '../src/bhs/expert-report.mjs';
 import {validateExpertOutput,generateExpert,expertBrandQuery} from '../src/bhs/expert-research.mjs';
 import {recoverModelStage} from '../src/budget/model-recovery.mjs';
-import {runExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
+import {runExpertAcceptance,replayExpertAcceptance} from '../scripts/bhs-expert-acceptance.mjs';
 import {readFileSync} from 'node:fs';
 import {inflateRawSync} from 'node:zlib';
 import {createPricingHandler} from '../api/pricing.js';
@@ -260,4 +260,11 @@ test('new signed jobs use v6 while already signed v5 jobs retain their original 
 });
 test('BHS public acceptance is confined to its explicit preview commit; ordinary builds remove QA output',async()=>{
  await runExpertAcceptance();
+});
+test('the recorded real Humm research preserves ten facts while rejecting three unproven commercial conclusions',()=>{
+ const s=replayExpertAcceptance(),d=s.audit.data;assert.equal(d.findings.length,10);assert.equal(d.competitors.length,1);assert.ok(d.sources.every(s=>s.verification.status==='quote_matched'));assert.ok(JSON.stringify(s.audit).length<600000);
+ assert.match(d.findings.find(f=>f.id==='find-multichannel-distribution').impact,/listelenmesi.*kanıtlamaz/);
+ assert.match(d.findings.find(f=>f.id==='find-ceres-certification').impact,/uluslararası geçerliliği.*kanıtlamaz/);
+ assert.match(d.findings.find(f=>f.id==='find-no-reviews-on-site').impact,/yorum toplamadığını.*kanıtlamaz/);
+ assert.equal(s.summary.newPaidCalls,0);assert.equal(d.researchCoverage.length,24);
 });

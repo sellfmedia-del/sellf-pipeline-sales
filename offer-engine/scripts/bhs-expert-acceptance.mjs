@@ -1,6 +1,8 @@
 // Explicit branch/commit-gated public-brand QA. No database, user/customer
 // records, publication, mail, environment changes or external subscriptions.
 import {mkdir,writeFile,rm} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+import {inflateRawSync} from 'node:zlib';
 import {randomUUID} from 'node:crypto';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
@@ -10,16 +12,31 @@ import {createProposalHandler} from '../api/proposal.js';
 import {offerGeminiKey} from '../src/config.mjs';
 import {response,offerFixture} from '../test/fixtures/offer.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
-import {expertVersion} from '../src/bhs/expert-report.mjs';
+import {expertVersion,expertContext,projectExpertReport} from '../src/bhs/expert-report.mjs';
+import {snapshotBrief} from '../src/bhs/brief.mjs';
+import {directAuditResult} from '../src/bhs/direct-report.mjs';
 
 const branch='qa/bhs-recovery-final';
 export const acceptanceEnabled=()=>process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF===branch&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_ACCEPTANCE_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
 const brands=[['Humm Organic','https://www.humm.com.tr/']];
+export function replayExpertAcceptance(){
+ const fixture=JSON.parse(readFileSync(new URL('../test/fixtures/humm-expert-replay.json',import.meta.url),'utf8'));
+ const value=JSON.parse(inflateRawSync(Buffer.from(fixture.data,'base64'),{maxOutputLength:2000000}).toString('utf8'));
+ const brief=snapshotBrief(value.brief),context=expertContext(brief,value.evidence),report=projectExpertReport(value.generated,context);
+ const audit={stage:'audit',...directAuditResult(brief,{report,analysisPacket:context.packet,methodologyVersion:expertVersion})};
+ return {summary:{...value.provenance.summary,findings:audit.data.findings.length,peers:audit.data.competitors.length,auditSize:JSON.stringify(audit).length,manualSemanticReview:'reviewed_with_public_source_limits',originalProviderCommit:value.provenance.commit,offlineReplay:true,newPaidCalls:0},brief,audit};
+}
 export async function runExpertAcceptance(){
  if(!acceptanceEnabled()){
   // npm test also runs on ordinary/production builds. Remove only generated
   // BHS QA output so a reused build cache cannot publish old test reports.
   await rm(new URL('../public/expert-review/',import.meta.url),{recursive:true,force:true});
+  const replayEnabled=process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF==='fix/bhs-quality-only'&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_REPLAY_REVIEW_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
+  if(replayEnabled){
+   const result=replayExpertAcceptance();await mkdir('public/expert-review',{recursive:true});
+   await writeFile('public/expert-review/results.json',JSON.stringify({commit:process.env.VERCEL_GIT_COMMIT_SHA,offlineReplay:true,databaseWrites:0,mailSends:0,newPaidCalls:0,results:[result]},null,2));
+   await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS analiz örneği</title><style>body{font:16px/1.6 system-ui;max-width:1000px;margin:32px auto;padding:0 20px;background:#f7f6f3;color:#1a1917}article{background:white;padding:24px;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}</style><h1>BHS analiz örneği</h1><p>Humm Organic için gerçek API çağrısıyla elde edilen kamuya açık araştırma, güncel BHS kontrollerinden tekrar geçirildi. Bu ekranda yeni ücretli çağrı, müşteri kaydı veya yayınlama yapılmaz. 25 TL önceki testin rezerv ve altyapı payı dahil maliyet kaydıdır. Erişilemeyen alanlar ve puanlar açık bırakılmıştır.</p><article><h2>Humm Organic</h2><pre></pre></article><script>fetch("results.json").then(r=>r.json()).then(d=>{document.querySelector("pre").textContent=d.results[0].audit.data.rawReport})</script></html>');
+  }
   return;
  }
  const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY))throw Error('Isolated preview provider configuration is missing.');
