@@ -10,6 +10,7 @@ import {response} from './fixtures/offer.mjs';
 import {expertContext} from '../src/bhs/expert-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
+import {withProofIds,extractionSchema,validateProofRows} from '../src/bhs/sequential-contracts.mjs';
 const now=()=>Date.parse('2026-11-09T12:00:00Z');
 const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};
 const json=v=>new Response(JSON.stringify(v));
@@ -82,6 +83,24 @@ test('concurrent identical calls cannot duplicate paid work',async()=>{
  const values=await Promise.allSettled([p.worker('extract',{},schema,{maxOutputTokens:512}),p.worker('extract',{},schema,{maxOutputTokens:512})]);
  assert.ok(values.some(v=>v.status==='fulfilled'));
  assert.equal(t.calls.filter(c=>c.url.endsWith(':generateContent')).length,1);
+});
+test('344 original paragraph proofs survive Gemini grammar simplification and fabricated references still fail before review',async()=>{
+ const ids=Array.from({length:344},(_,i)=>'p_'+String(i).padStart(24,'0'));
+ const context={known:new Map(ids.map(id=>[id,{id,quote:'Original source paragraph '+id}]))};
+ const contract=withProofIds(extractionSchema,context);
+ assert.equal(contract.properties.facts.items.properties.sourceIds.items.enum,undefined);
+ assert.equal(context.known.size,344);
+ for(const fabricated of [false,true]){
+  const db=account(),t=transport({onGenerate:async(url,body)=>{
+   assert.equal(body.generationConfig.responseJsonSchema.properties.facts.items.properties.sourceIds.items.enum,undefined);
+   assert.deepEqual(JSON.parse(body.contents[0].parts[0].text).originalProofs,ids);
+   const data={facts:[{id:'fact1',topic:'sector',statement:'Supported public observation',sourceIds:[fabricated?'invented-proof':ids[343]],limitation:''}],unknowns:[]};
+   return json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,totalTokenCount:140},candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}]});
+  }});
+  const work=providers(db,t).worker('large-citations',{originalProofs:ids},contract,{maxOutputTokens:512,validateData:d=>validateProofRows(d.facts,context)});
+  if(fabricated)await assert.rejects(work,e=>e.code==='model_output_invalid');
+  else assert.deepEqual((await work).data.facts[0].sourceIds,[ids[343]]);
+ }
 });
 test('unverifiable usage stays reserved and model changes cannot pass as the selected manager',async()=>{
  const db=account(),t=transport({onGenerate:async()=>json({model:'unapproved',usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[]})});
