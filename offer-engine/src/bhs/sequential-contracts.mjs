@@ -50,6 +50,7 @@ export function validateProofRows(rows,context){
 export function stageModelInput(context,{rows,sample=false,areas=false}={}){
  const input=structuredClone(context.input);
  if(!areas)delete input.areas;
+ input.citationContract='sourceIds alanlarında URL, ev1 veya paragraf metni kullanma. Yalnız her kaynak kesitinin proofIds listesindeki p_ ile başlayan kimlikleri aynen kopyala. sharedParagraphId varsa metni sharedParagraphs içinden oku; atıf kimliği yine proofIds değeridir.';
  if(rows){
   const ids=new Set(rows.flatMap(r=>r.sourceIds||[]).flatMap(id=>context.proofGroups.get(id)||[id]));
   input.sources=input.sources.map(s=>({...s,sections:s.sections.filter(p=>p.proofIds.some(id=>ids.has(id)))})).filter(s=>s.sections.length);
@@ -60,6 +61,11 @@ export function stageModelInput(context,{rows,sample=false,areas=false}={}){
   input.selectionScope='Planning sample only. Operators read the complete captured packet before conclusions.';
  }
  return expertModelInput({...context,input});
+}
+export function withProofIds(schema,context){
+ const out=structuredClone(schema),ids=[...context.known.keys()];
+ const bind=s=>{if(s.properties)for(const [key,value]of Object.entries(s.properties)){if(key==='sourceIds')value.items={...value.items,enum:ids};else bind(value);}if(s.items)bind(s.items);};
+ bind(out);return out;
 }
 export function acceptedRows(rows,review){
  const ids=new Set(rows.map(f=>f.id)),accepted=new Set(review.acceptedIds);

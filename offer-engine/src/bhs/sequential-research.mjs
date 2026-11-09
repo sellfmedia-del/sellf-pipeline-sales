@@ -5,7 +5,7 @@ import {briefHash} from './brief.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
-import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,phaseExtractionSchema,reviewSchema,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,validateProofRows,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
+import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,reviewSchema,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,validateProofRows,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4});
@@ -58,7 +58,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   }
   if(!prior.repairNeeded)return finish({...prior});
   const context=sequentialContext(brief,prior),schema=family==='swot'?swotSchema:phaseExtractionSchema(family);
-  const worker=await providers.worker('v8-'+family+'-repair-extract',{instruction:'Yönetici düzeltme emri: '+prior.review.repairTask.instruction+'\nAynı aşamanın bütün adaylarını yeni kaynakları da kullanarak yeniden çıkar. Önceki reddedilen çıkarımı veya başka şirket bilgisini tekrarlama. Kaynak kimliklerini ve bütün gerekli konu alanlarını koru. '+scopeInstruction,...stageModelInput(context),missing:prior.review.missing,previouslyApproved:approved},schema,{maxOutputTokens:family==='swot'?6144:4096,validateData:d=>validateProofRows(d.facts||d.findings,context)});
+  const worker=await providers.worker('v8-'+family+'-repair-extract',{instruction:'Yönetici düzeltme emri: '+prior.review.repairTask.instruction+'\nAynı aşamanın bütün adaylarını yeni kaynakları da kullanarak yeniden çıkar. Önceki reddedilen çıkarımı veya başka şirket bilgisini tekrarlama. Kaynak kimliklerini ve bütün gerekli konu alanlarını koru. '+scopeInstruction,...stageModelInput(context),missing:prior.review.missing,previouslyApproved:approved},withProofIds(schema,context),{maxOutputTokens:family==='swot'?6144:4096,validateData:d=>validateProofRows(d.facts||d.findings,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='brand_plan'){
@@ -75,7 +75,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='brand_draft'){
   const context=sequentialContext(brief,prior);
-  const worker=await providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},phaseExtractionSchema('brand'),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
+  const worker=await providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},withProofIds(phaseExtractionSchema('brand'),context),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='brand'||phase==='brand_review'){
@@ -90,7 +90,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='sector_draft'){
   const context=sequentialContext(brief,prior),brand=await previous('brand');
-  const worker=await providers.worker('v8-sector-extract',{instruction:'Yöneticinin görevi: '+brand.review.nextTask.instruction+'\nMarka kimliği doğrulandı. Sektörün nasıl gelir ürettiğini, satış kanallarını, satın alma sıklığı/karar ölçütlerini, müşteri davranışını ve satış koşullarını araştır. Genel sektör bağlamı ile markanın gerçekleşmiş sonucunu ayır. Ülke, dönem ve yayıncı kapsamını koru; kaynaksız sektör klişesi üretme. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts},phaseExtractionSchema('sector'),{maxOutputTokens:4096,validateData:d=>validateProofRows(d.facts,context)});
+  const worker=await providers.worker('v8-sector-extract',{instruction:'Yöneticinin görevi: '+brand.review.nextTask.instruction+'\nMarka kimliği doğrulandı. Sektörün nasıl gelir ürettiğini, satış kanallarını, satın alma sıklığı/karar ölçütlerini, müşteri davranışını ve satış koşullarını araştır. Genel sektör bağlamı ile markanın gerçekleşmiş sonucunu ayır. Ülke, dönem ve yayıncı kapsamını koru; kaynaksız sektör klişesi üretme. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts},withProofIds(phaseExtractionSchema('sector'),context),{maxOutputTokens:4096,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='sector'||phase==='sector_review'){
@@ -110,7 +110,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='competition_draft'){
   const context=sequentialContext(brief,prior),brand=await previous('brand'),sector=await previous('sector');
-  const worker=await providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts,approvedSector:sector.facts},phaseExtractionSchema('competition'),{maxOutputTokens:4096,validateData:d=>validateProofRows(d.facts,context)});
+  const worker=await providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts,approvedSector:sector.facts},withProofIds(phaseExtractionSchema('competition'),context),{maxOutputTokens:4096,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='competition'||phase==='competition_review'){
@@ -130,7 +130,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='swot_draft'){
   const context=sequentialContext(brief,prior),competition=await previous('competition');
-  const worker=await providers.worker('v8-swot-draft',{instruction:'Yöneticinin görevi: '+competition.review.nextTask.instruction+'\nMarka, sektör ve rekabet onaylarından sonra kaynaklı SWOT TASLAĞI hazırla: strength, weakness, opportunity, threat. Darboğaz ve acı noktalarına öncelik ver; güçlü yönleri koru. Şikâyetlerde dönem, ülke ve örneklem sınırını belirt; bütün müşterilere memnuniyetsizlik oranı genelleme. Her madde gözlem, ticari hipotez, sınır ve görüşme sorusu içersin. Veri yokluğunu weakness diye yazma. Fırsat/tehdit çıkarımlarını kind=inference yap. '+scopeInstruction,...stageModelInput(context),approvedFacts:approved,approvedPeers:competition.peers},swotSchema,{maxOutputTokens:6144,validateData:d=>validateProofRows(d.findings,context)});
+  const worker=await providers.worker('v8-swot-draft',{instruction:'Yöneticinin görevi: '+competition.review.nextTask.instruction+'\nMarka, sektör ve rekabet onaylarından sonra kaynaklı SWOT TASLAĞI hazırla: strength, weakness, opportunity, threat. Darboğaz ve acı noktalarına öncelik ver; güçlü yönleri koru. Şikâyetlerde dönem, ülke ve örneklem sınırını belirt; bütün müşterilere memnuniyetsizlik oranı genelleme. Her madde gözlem, ticari hipotez, sınır ve görüşme sorusu içersin. Veri yokluğunu weakness diye yazma. Fırsat/tehdit çıkarımlarını kind=inference yap. '+scopeInstruction,...stageModelInput(context),approvedFacts:approved,approvedPeers:competition.peers},withProofIds(swotSchema,context),{maxOutputTokens:6144,validateData:d=>validateProofRows(d.findings,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='swot'||phase==='swot_review'){
@@ -166,7 +166,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='coverage'){
   const context=sequentialContext(brief,prior);
-  const worker=await providers.worker('v8-gap-extract',{instruction:'Yalnız ek araştırmanın getirdiği yeni veya düzeltilmiş olguları çıkar. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},phaseExtractionSchema('sector'),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
+  const worker=await providers.worker('v8-gap-extract',{instruction:'Yalnız ek araştırmanın getirdiği yeni veya düzeltilmiş olguları çıkar. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(phaseExtractionSchema('sector'),context),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,facts:[],correctionCandidates:worker.data.facts,unknowns:worker.data.unknowns,correctionRounds:1});
  }
  const context=sequentialContext(brief,prior),competition=await previous('competition');
