@@ -17,12 +17,12 @@ test('budgeted audit resumes durable completed stages across handlers and signs 
   const steps=new Map();let stages=0,begins=0;
   const ledger={begin:async()=>{begins++;},get:async k=>steps.get(k),status:async()=>({chargedKurus:900,capKurus:5000})};
   const dependencies={getSecret:()=>secret,getLedger:async(_req,_res,lead)=>{assert.equal(lead,'lead1');return ledger;},getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{},runStage:async({phase,brief,researchVersion})=>{stages++;assert.notEqual(phase,'semantic');assert.equal(researchVersion,'v5');steps.set(stageKey(brief,phase,researchVersion),{state:'complete',value:phase==='synthesis'?{report:context().report}:{}});}};
-  let handler=createBoundedAuditHandler(dependencies),res=response();
+  let handler=createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'}),res=response();
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1',spaceId:'space1'}};
   await handler(request(start),res);assert.equal(res.code,200);assert.equal(res.body.nextAction,'advance');
   const cookie=res.headers['Set-Cookie'].find(x=>x.startsWith('__Host-offer-research')).split(';')[0];let ticket=res.body.ticket;
   for(let i=0;i<phases.length-1;i++){
-   handler=createBoundedAuditHandler(dependencies);res=response();
+   handler=createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'});res=response();
    await handler(request({...start,action:'advance',ticket},cookie),res);
    if(i===phases.length-2){assert.equal(res.code,200);assert.equal(res.body.phase,'complete');assert.equal(res.body.result.status,'ready');assert.ok(res.body.pricingProof);}
    else{assert.equal(res.code,202);assert.notEqual(res.body.phase,'complete');ticket=res.body.ticket;}
@@ -37,7 +37,7 @@ test('reserved or uncertain stages cannot launch another paid worker',async()=>{
  const prior=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
   for(const state of ['reserved','uncertain']){
-   const h=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>({begin:async()=>{},status:async()=>({chargedKurus:5000,capKurus:5000}),get:async()=>({state})}),validateWebsite:async()=>{},getProviders:()=>({configured:()=>true}),runStage:()=>assert.fail('must not start'),logger:{}});
+   const h=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getLedger:async()=>({begin:async()=>{},status:async()=>({chargedKurus:5000,capKurus:5000}),get:async()=>({state})}),validateWebsite:async()=>{},getProviders:()=>({configured:()=>true}),runStage:()=>assert.fail('must not start'),logger:{}});
    const res=response();await h(request({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}}),res);
    assert.equal(res.code,state==='reserved'?200:422);if(state==='uncertain')assert.equal(res.body.code,'budget_uncertain');
   }
@@ -51,7 +51,7 @@ test('start recovers an EBUSY address check without repeating or starting paid r
  const before=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
   let lookups=0,begins=0;const lookup=createDnsLookup({resolve:async()=>{if(++lookups===1)throw Object.assign(Error('busy'),{code:'EBUSY'});return [{address:'8.8.8.8',family:4}];},wait:async()=>{}});
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>({begin:async()=>{begins++;},get:async()=>null,status:async()=>({chargedKurus:500,capKurus:5000})}),getProviders:()=>({configured:()=>true}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('start must not call a paid stage'),logger:{}});
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getLedger:async()=>({begin:async()=>{begins++;},get:async()=>null,status:async()=>({chargedKurus:500,capKurus:5000})}),getProviders:()=>({configured:()=>true}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('start must not call a paid stage'),logger:{}});
   const res=response();await handler(request({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}}),res);
   assert.equal(res.code,200);assert.equal(res.body.phase,'source_plan');assert.equal(res.body.nextAction,'advance');assert.equal(lookups,2);assert.equal(begins,1);
  }finally{if(before===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=before;}
@@ -60,7 +60,7 @@ test('exhausted DNS checks cannot reach the budget or providers and produce a pr
  const before=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
   const lookup=createDnsLookup({resolve:async()=>{throw Object.assign(Error('busy'),{code:'EBUSY',syscall:'getaddrinfo'});},wait:async()=>{}});
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>({begin:()=>assert.fail('no budget write')}),getProviders:()=>({}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('no paid stage'),logger:{}});
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getLedger:async()=>({begin:()=>assert.fail('no budget write')}),getProviders:()=>({}),validateWebsite:brief=>resolveTarget(brief.website,lookup),runStage:()=>assert.fail('no paid stage'),logger:{}});
   const res=response();await handler(request({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}}),res);
   assert.equal(res.code,503);assert.equal(res.body.code,'website_network_busy');assert.ok(res.body.error.includes('Ücretli BHS başlatılmadı'));
  }finally{if(before===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=before;}
@@ -73,14 +73,14 @@ test('new attempts reset only the display baseline, preserve cached research and
   const ledger={begin:async()=>{},get:async key=>key===stageKey(brief,'source_plan','v5')?cached:null,status:async()=>({chargedKurus:charged,capKurus:5000})};
   const dependencies={getSecret:()=>secret,getLedger:async()=>ledger,getProviders:()=>({configured:()=>true}),validateWebsite:async()=>{},logger:{},runStage:async({phase})=>{assert.equal(phase,'evidence');runs++;charged+=100;throw Object.assign(Error('Stopped'),{code:'budget_limit'});}};
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead1'}};
-  let res=response();await createBoundedAuditHandler(dependencies)(request(start),res);
+  let res=response();await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})(request(start),res);
   assert.equal(res.body.cost.attemptChargedKurus,0);assert.equal(res.body.cost.chargedKurus,3395);assert.equal(res.body.phase,'evidence');assert.equal(runs,0);
   const cookie=res.headers['Set-Cookie'][0].split(';')[0],ticket=res.body.ticket;
-  res=response();await createBoundedAuditHandler(dependencies)(request({...start,action:'advance',ticket},cookie),res);
+  res=response();await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})(request({...start,action:'advance',ticket},cookie),res);
   assert.equal(res.code,422);assert.equal(res.body.code,'budget_limit');assert.equal(res.body.cost.attemptChargedKurus,100);assert.equal(res.body.cost.chargedKurus,3495);assert.equal(res.body.cost.capKurus,5000);
-  res=response();await createBoundedAuditHandler(dependencies)(request({...start,action:'status',ticket},cookie),res);
+  res=response();await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})(request({...start,action:'status',ticket},cookie),res);
   assert.equal(res.body.cost.attemptChargedKurus,100);assert.equal(runs,1);
-  res=response();await createBoundedAuditHandler(dependencies)(request(start,cookie),res);
+  res=response();await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})(request(start,cookie),res);
   assert.equal(res.body.cost.attemptChargedKurus,0);assert.equal(res.body.cost.chargedKurus,3495);assert.equal(res.body.phase,'evidence');assert.equal(runs,1);assert.equal(cached.value.plan,'retained source plan');
  }finally{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;}
 });

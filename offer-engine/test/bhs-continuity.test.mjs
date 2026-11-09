@@ -45,7 +45,7 @@ test('a cached empty handoff restores completed same-brand research at an unchan
   const saved={step_key:'audit:synthesis:'+hash,created_at:new Date(time).toISOString(),value:{data:{findings:[]},originalModelData:c.report,originalModelStep:'model:synthesis:original',analysisPacket:c.packet,researchContext:{brief,briefHash:hash}}};
   db.rows.set(researchCacheKey(brief,time),{state:'complete',value:saved});
   const before=structuredClone([...db.rows]);
-  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no provider'),validateWebsite:async()=>{},runStage:()=>assert.fail('no research rerun'),now:()=>time,logger:{}}),call=client(handler);
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no provider'),validateWebsite:async()=>{},runStage:()=>assert.fail('no research rerun'),now:()=>time,logger:{}}),call=client(handler);
   const start={action:'start',requestId:'restore_saved_research_20261104',brief,context:{leadId:'lead',spaceId:'space'}};
   const done=await call(start);assert.equal(done.code,200);assert.equal(done.data.result.data.researchContinuity.status,'partial');assert.equal(done.data.result.data.researchContinuity.restoredFromSavedResearch,true);assert.ok(done.data.result.data.findings.length>0);assert.ok(done.data.result.data.sources.every(s=>s.verification.status==='quote_matched'));assert.equal(done.data.cost.chargedKurus,4621);assert.equal(done.data.cost.attemptChargedKurus,0);
   assert.deepEqual([...db.rows],before,'old handoff and research remain immutable');assert.equal((await call(start)).data.result.data.findings.length,done.data.result.data.findings.length);
@@ -90,7 +90,7 @@ test('two real provider-shaped 503 failures still reach signed pricing/proposal 
    if(url.endsWith(':countTokens'))return Response.json({totalTokens:100});
    generations++;return Response.json({error:{status:'UNAVAILABLE',message:'high demand'}},{status:503});
   }});
-  const handler=createBoundedAuditHandler({getLedger:async()=>db.ledger,getSecret:()=>secret,getProviders:provider,validateWebsite:async()=>{},now:()=>time,logger:{},runStage:runBoundedStage}),call=client(handler);
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getLedger:async()=>db.ledger,getSecret:()=>secret,getProviders:provider,validateWebsite:async()=>{},now:()=>time,logger:{},runStage:runBoundedStage}),call=client(handler);
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}};
   const started=await call(start),ticket=started.data.ticket;assert.equal(started.code,200);
   const premature=await call({...start,action:'continue',ticket});assert.equal(premature.code,422);
@@ -124,7 +124,7 @@ test('reopening paid research revalidates a scope referencing removed findings a
   const db=memory(),brief=snapshotBrief({...rawBrief,services:'Meta ve Google Ads'}),c=context();
   const stale=fallbackScope(brief);stale.services[0].findingIds=['removed-finding'];
   for(const phase of ['source_plan','evidence','synthesis','scope'])db.rows.set(stageKey(brief,phase,'v5'),{state:'complete',value:phase==='synthesis'?{report:c.report,analysisPacket:c.packet}:phase==='scope'?{scopePlan:stale,proposalCopy:{headline:'Stale claim'}}:{}});
-  const call=client(createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no new research'),validateWebsite:async()=>{},runStage:()=>assert.fail('no stage replay'),logger:{}}));
+  const call=client(createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getLedger:async()=>db.ledger,getProviders:()=>assert.fail('no new research'),validateWebsite:async()=>{},runStage:()=>assert.fail('no stage replay'),logger:{}}));
   const done=await call({action:'start',requestId:'cached_revalidation_20261104',brief,context:{leadId:'lead',spaceId:'space'}});
   assert.equal(done.code,200);assert.equal(done.data.result.data.scopePlan.fallback,true);assert.ok(done.data.result.data.scopePlan.services.every(s=>!s.findingIds.length));assert.deepEqual(done.data.result.data.scopePlan.services.map(s=>s.serviceId),['meta','google_ads']);assert.notEqual(done.data.result.data.proposalCopy.headline,'Stale claim');
   const priced=response();await createPricingHandler({getSecret:()=>secret})({method:'POST',headers:{host,origin:'https://'+host,cookie:done.cookie},body:{action:'start',brief,audit:done.data.result,pricingProof:done.data.pricingProof}},priced);
@@ -141,7 +141,7 @@ test('reopening an abandoned coordinator at the hard cap still permits only a ze
  try{
   const db=memory(5000),brief=snapshotBrief(rawBrief),phase='source_plan';
   db.rows.set(stageKey(brief,phase,'v5'),{state:'reserved',charge_kurus:0,input_hash:hash({brief,phase,version:'bounded-bhs-v1'}),created_at:new Date(time-360001).toISOString()});
-  const handler=createBoundedAuditHandler({getLedger:async()=>db.ledger,getSecret:()=>secret,getProviders:()=>assert.fail('no new provider'),validateWebsite:async()=>{},now:()=>time,logger:{}}),call=client(handler);
+  const handler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getLedger:async()=>db.ledger,getSecret:()=>secret,getProviders:()=>assert.fail('no new provider'),validateWebsite:async()=>{},now:()=>time,logger:{}}),call=client(handler);
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}};
   const stopped=await call(start);assert.equal(stopped.data.code,'stage_abandoned');assert.equal(stopped.data.continuationAvailable,true);assert.equal(stopped.data.recoveryAvailable,undefined);
   const result=await call({...start,action:'continue',ticket:stopped.data.ticket});assert.equal(result.code,200);assert.equal(result.data.result.data.researchContinuity.status,'unavailable');assert.equal(db.cost(),5000);

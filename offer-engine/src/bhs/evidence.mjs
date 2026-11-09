@@ -71,11 +71,12 @@ export function mergeExtractedEvidence(packet,extraction={}){
  }
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic}={}){
- return async function collect(brief,sourcePlan,{extraSources=[]}={}){
-  const plan=parseSourcePlan(sourcePlan),deadline=clock()+timeout;
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8}={}){
+ return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false}={}){
+  const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
-  const queue=[],seen=new Set(),expandedHosts=new Set(),sources=[],unavailable=[],renderCandidates=[];
+  const seed=initialPacket&&initialPacket.briefHash===briefHash(brief)?structuredClone(initialPacket):null;
+  const queue=[],seen=new Set((seed?.sources||[]).flatMap(s=>[researchUrl(s.url),researchUrl(s.finalUrl)]).filter(Boolean)),expandedHosts=new Set(),sources=seed?.sources||[],unavailable=seed?.unavailable||[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>host(e.website)).filter(Boolean));entityHosts.add(brandHost);
   function enqueue(url,front=false){const value=researchUrl(url);if(value&&!seen.has(value)&&seen.size<128){seen.add(value);front?queue.unshift(value):queue.push(value);}}
   enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));
@@ -106,8 +107,8 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    if(JSON.stringify(sources).length+JSON.stringify(record).length>180000)return false;
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
-  while(queue.length&&sources.length+renderCandidates.length<maxSources&&clock()<deadline-22000){
-   const batch=queue.splice(0,Math.min(8,maxSources-sources.length-renderCandidates.length));
+  while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:maxSources)&&clock()<deadline-(identityOnly?2000:22000)){
+   const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:maxSources)-sources.length-renderCandidates.length));
    const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:result.reason});continue;}
