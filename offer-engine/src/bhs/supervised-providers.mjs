@@ -114,7 +114,15 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const snapshot=await fx();
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
   const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
-  const count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey});
+  let count;
+  try{count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey});}
+  catch(error){
+   if(receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
+    await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected',operation:'countTokens'}));
+    return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
+   }
+   throw error;
+  }
   const tokens=anthropicRole?count.input_tokens:count.totalTokens;
   if(!integer(tokens,1))throw new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.');
   const upper=Math.ceil(tokens*1.2)+4096,amount=quoteSupervised(role,upper,maxOutputTokens,now());

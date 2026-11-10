@@ -37,6 +37,7 @@ export function reviewVerdictSchema(schema,rows,{phase}={}){
  delete result.properties.acceptedIds;delete result.properties.rejectedIds;
  result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
  result.required=result.required.filter(k=>!['acceptedIds','rejectedIds'].includes(k));result.required.push('verdicts');
+ if(phase==='brand'){result.properties.marketContext=obj({basis:{type:'string',enum:['source','brief_declared','unknown']},description:str(600),sourceIds:refs,briefQuote:str(600)});result.required.push('marketContext');}
  if(understandingTopics[phase]){delete result.properties.decision;result.required=result.required.filter(k=>k!=='decision');result.properties.fundamentals=obj(Object.fromEntries(understandingTopics[phase].map(topic=>[topic,{type:'string',enum:['confirmed','incomplete']}] )));result.required.push('fundamentals');}
  return result;
 }
@@ -52,12 +53,12 @@ export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peer
 export const swotFindingSchema=structuredClone(expertProperties.findings.items);
 swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness','opportunity','threat']};swotFindingSchema.required.push('quadrant');
 export const swotSchema=obj({findings:arr(swotFindingSchema),unknowns:arr(str(400))});
-export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500),6)});
+export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500))});
 export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80))])))});
 
 const patch=structuredClone(expertProperties.findings.items);
 for(const [field,limit]of Object.entries({observation:280,commercialHypothesis:260,limitation:220,question:180}))patch.properties[field].maxLength=limit;
-export const finalReviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),patches:arr(patch),rejectedPeerIds:arr(str(80),5),dimensions:expertProperties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertProperties.coverage.properties)[0])}),6),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(6000)});
+export const finalReviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),patches:arr(patch),rejectedPeerIds:arr(str(80),5),dimensions:expertProperties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertProperties.coverage.properties)[0])})),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(6000)});
 export function applyFinalReview(draft,review,context,peers=draft.peers){
  const selected=acceptedRows(draft.findings,review),ids=new Set(selected.map(f=>f.id)),patches=new Map();
  for(const p of review.patches){if(!ids.has(p.id)||patches.has(p.id))throw new BudgetError('model_output_invalid','Son denetim düzeltmesi kabul edilen bulguya bağlı değil.');patches.set(p.id,p);}

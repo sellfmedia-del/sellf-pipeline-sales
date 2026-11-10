@@ -35,6 +35,12 @@ The six logical stages remain brand → industry/market → competition/risk →
 
 There is no phase or final-report maximum finding count. Minimum brand/sector understanding, 12 distinct substantive final findings, six dimensions, three peers, four SWOT quadrants and the 24 fixed methodology areas remain. All extra source-backed findings and review corrections are allowed. The inherited v6/v7 contracts remain unchanged. v8 has no smaller phase budget allocations; the only monetary ceiling is the shared 50 TRY run ledger with atomic admission and conservative unknown-outcome accounting. Provider token/byte limits remain necessary cost/transport guards, not finding quotas.
 
+## Analysis market and expert corrections
+
+A review now reads the captured company paragraphs that the extractor omitted, may add independently checked facts, and keeps all raw paid responses unchanged. A declared analysis market is stored separately from sourced sales claims. An exact quote from the customer brief is required for brief_declared context; an invented quote is rejected. It does not certify actual sales, market share or a complete list of export countries. Unknown international footprint cannot add a hidden requirement after a valid analysis market and core brand facts are known.
+
+The original tadim_release development diagnostic is archived with ALL 30.10 TRY, including failed content and uncertain Google commitments. It did not produce a complete report. The separately named tadim_final account measures the corrected normal entry, with its own 50 TRY account and no inherited or refunded diagnostic costs. This is additional acceptance spending, not a reset of the earlier case.
+
 ## Scraper boundary
 
 Vercel's configured Apify account poetic_jumpstart previously exposed zero saved Tasks and no explicit per-Actor policies. The user has different individual caps, all <=0.40 USD. Those exact caps have not been recovered; no common 0.40 default may replace them. Console access timed out. Do not execute an Actor before its original lower cap, included fees, target identity and finite input are verified. Runtime enforcement already takes the smaller verified individual cap and remaining analysis budget. Real scraper acceptance remains blocked, not passed.

@@ -15,11 +15,11 @@ const caseName=process.env.OFFER_BHS_QA_CASE;
 const allowed=sequentialQaRequested;
 export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
- const selected={tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
+ const selected={tadim_final:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
  const brief=snapshotBrief({...selected,goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
- const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
+ const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_final:'tadim-final-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
  const allowedSnapshots=caseName==='tadim_release'?[snapshots[caseName],'tadim-release-market-retained-20261110','tadim-release-expert-retained-20261110']:[snapshots[caseName]];
  if(snapshot&&!allowedSnapshots.includes(snapshot))throw Error('Unapproved QA receipt snapshot.');
  const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshot+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;

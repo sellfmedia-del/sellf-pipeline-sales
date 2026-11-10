@@ -11,6 +11,7 @@ import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,seque
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
+import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
@@ -119,6 +120,22 @@ test('a reviewer can recover an operator-omitted market fact from the original c
   }finally{await db.close();}
  }
 });
+test('an exact client-declared analysis market is separate from sourced sales claims and a fabricated declaration cannot pass',async()=>{
+ const auditBrief=snapshotBrief({...brief,goals:'Türkiye pazarında sürdürülebilir büyüme.'});
+ for(const invalid of [false,true]){
+  const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>{
+   if(stage==='v8-brand-extract')return {...data,facts:data.facts.filter(f=>f.topic!=='market')};
+   if(stage==='v8-brand-review')return {...data,marketContext:{basis:'brief_declared',description:'Müşterinin beyan ettiği analiz pazarı Türkiye.',sourceIds:[],briefQuote:invalid?'ABD pazarında büyüme.':auditBrief.goals}};
+   return data;
+  }});
+  const advance=phase=>runBoundedStage({phase,brief:auditBrief,ledger:db.ledger,providers:providerFor(db,phase,t),collect:async()=>({...packet(),briefHash:briefHash(auditBrief)}),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+  try{
+   for(const phase of ['brand_plan','brand_sources','brand_draft'])await advance(phase);
+   if(invalid)await assert.rejects(advance('brand_review'),e=>e.code==='model_output_invalid');
+   else{const out=await advance('brand_review');assert.equal(out.understandingDecision,'accepted');assert.equal(out.review.marketContext.basis,'brief_declared');assert.equal(out.review.marketContext.validated,true);assert.ok(!out.facts.some(f=>f.topic==='market'));}
+  }finally{await db.close();}
+ }
+});
 test('Claude can order one targeted correction per stage within the same total account',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,context)=>stage==='v8-brand-review'&&!context.repairRound||stage==='v8-sector-review'?{...data,decision:'limited',missing:['Kaynaklı hedef davranış netleşmeli.']}:data});
  try{
@@ -158,7 +175,7 @@ test('phases share the run budget with no smaller phase ceiling, including concu
 test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
  assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
- assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r7:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r8:/);
 });
 
 test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{

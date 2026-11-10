@@ -180,6 +180,15 @@ test('explicit Gemini outage hands the same task to Claude once and reuses it af
  await p.manager('review',input,schema,{maxOutputTokens:512});assert.equal(operators,2);
 });
 
+
+test('a free token-count billing rejection routes to the priced fallback before any Google generation is reserved',async()=>{
+ const db=account();let googleGenerations=0;
+ const t=transport({onGenerate:async(url,body)=>{if(url.endsWith(':generateContent')){googleGenerations++;assert.fail('No Google generation');}return json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]});}});
+ const original=t.fetchImpl;t.fetchImpl=async(url,options)=>url.endsWith(':countTokens')?new Response(JSON.stringify({error:{message:'Billing required.'}}),{status:403}):original(url,options);
+ const out=await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});
+ assert.equal(out.model,supervisedModels.fallbackWorker);assert.equal(googleGenerations,0);assert.equal([...db.rows.values()].filter(r=>r.state==='uncertain').length,0);
+ const cost=await db.ledger.status(),calls=t.calls.length;await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});assert.deepEqual(await db.ledger.status(),cost);assert.equal(t.calls.length,calls);
+});
 test('a definitive Google billing rejection routes this job to Claude without retrying Google or discarding its commitment',async()=>{
  const db=account();let workers=0,operators=0;
  const t=transport({onGenerate:async (url,body)=>{
