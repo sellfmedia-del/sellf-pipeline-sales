@@ -18,6 +18,7 @@ test('Haiku fallback quotes both prompt-price tiers without borrowing the cheape
 });
 const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};
 const json=v=>new Response(JSON.stringify(v));
+const roleAnswer=(body,data)=>json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:body.tools?'tool_use':'end_turn',content:body.tools?[{type:'tool_use',id:'toolu_synthetic',name:'emit_bhs_stage',input:data}]:[{type:'text',text:JSON.stringify(data)}]});
 function account(initial=500){
  const rows=new Map();let charged=initial;
  return {rows,ledger:createLedger(async(op,a={})=>{
@@ -183,17 +184,33 @@ test('explicit Gemini outage hands the same task to Claude once and reuses it af
 
 test('a free token-count billing rejection routes to the priced fallback before any Google generation is reserved',async()=>{
  const db=account();let googleGenerations=0;
- const t=transport({onGenerate:async(url,body)=>{if(url.endsWith(':generateContent')){googleGenerations++;assert.fail('No Google generation');}return json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]});}});
+ const t=transport({onGenerate:async(url,body)=>{if(url.endsWith(':generateContent')){googleGenerations++;assert.fail('No Google generation');}return roleAnswer(body,{ok:true});}});
  const original=t.fetchImpl;t.fetchImpl=async(url,options)=>url.endsWith(':countTokens')?new Response(JSON.stringify({error:{message:'Billing required.'}}),{status:403}):original(url,options);
  const out=await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});
  assert.equal(out.model,supervisedModels.fallbackWorker);assert.equal(googleGenerations,0);assert.equal([...db.rows.values()].filter(r=>r.state==='uncertain').length,0);
  const cost=await db.ledger.status(),calls=t.calls.length;await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});assert.deepEqual(await db.ledger.status(),cost);assert.equal(t.calls.length,calls);
 });
+test('Haiku structured extraction requires exactly the named output tool and retains invalid paid replies',async()=>{
+ for(const kind of ['valid','wrong','duplicate','truncated']){
+  const db=account();let generated=0;
+  const t=transport({onGenerate:async(_url,body)=>{
+   generated++;assert.equal(body.thinking,undefined);assert.equal(body.max_tokens,512);assert.deepEqual(body.tool_choice,{type:'tool',name:'emit_bhs_stage'});
+   const call={type:'tool_use',id:'toolu_test',name:kind==='wrong'?'other':'emit_bhs_stage',input:{ok:true}};
+   return json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:kind==='truncated'?'max_tokens':'tool_use',content:kind==='duplicate'?[call,{...call,id:'toolu_duplicate'}]:[call]});
+  }});
+  const original=t.fetchImpl;t.fetchImpl=async(url,options)=>url.endsWith(':countTokens')?new Response(JSON.stringify({error:{message:'Billing required.'}}),{status:403}):original(url,options);
+  const run=()=>v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});
+  if(kind==='valid')assert.equal((await run()).data.ok,true);else await assert.rejects(run(),e=>e.code==='incomplete');
+  const cost=await db.ledger.status();assert.ok(cost.chargedKurus>500);
+  if(kind==='valid')await run();else await assert.rejects(run(),e=>e.code==='incomplete');
+  assert.equal(generated,1);assert.deepEqual(await db.ledger.status(),cost);
+ }
+});
 test('a definitive Google billing rejection routes this job to Claude without retrying Google or discarding its commitment',async()=>{
  const db=account();let workers=0,operators=0;
  const t=transport({onGenerate:async (url,body)=>{
   if(url.endsWith(':generateContent')){workers++;return new Response(JSON.stringify({error:{message:'Billing required for this project.'}}),{status:403});}
-  operators++;return json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]});
+  operators++;return roleAnswer(body,{ok:true});
  }});
  const p=v8Providers(db,t),answer=await p.worker('brand',{},schema,{maxOutputTokens:512});
  assert.equal(answer.model,supervisedModels.fallbackWorker);assert.equal(workers,1);assert.equal(operators,1);
@@ -210,7 +227,7 @@ test('a billing fallback cannot spend the protected reserve, bypass validation o
   const db=account(kind==='budget'?4390:500);let operators=0,workers=0;
   const t=transport({onGenerate:async (url,body)=>{
    if(url.endsWith(':generateContent')){workers++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{message:kind==='permission'?'Permission denied':'Billing required.'}}),{status:403});}
-   operators++;return json({model:body.model,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":false}'}]});
+   operators++;return roleAnswer(body,{ok:false});
   }});
   const run=()=>v8Providers(db,t).worker('brand',{},schema,{maxOutputTokens:512,validateData:d=>{if(!d.ok)throw Error('bad proof');}});
   await assert.rejects(run());const cost=await db.ledger.status();await assert.rejects(run());

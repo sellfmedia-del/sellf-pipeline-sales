@@ -47,7 +47,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // Gemini bills/counts hidden reasoning inside maxOutputTokens. Preserve the
   // caller's visible-report allowance and fund bounded LOW reasoning separately
   // before the request; otherwise a correct extraction gets cut mid-JSON.
-  const reasoningAllowance=receiptVersion==='v8'?(role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
+  const reasoningAllowance=receiptVersion==='v8'?(role==='fallbackWorker'?0:role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
   const maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
@@ -56,7 +56,11 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const system=instruction+'\n'+untrusted+(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':'');
   // Content reviews reason adaptively; only the short initial task omits
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
-  const rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  let rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  // Haiku 5.5 explicitly supports forced client tool output without an initial
+  // thinking block. This tool only returns data; it executes no action. Sonnet
+  // still independently reviews the original evidence and the final report.
+  if(receiptVersion==='v8'&&role==='fallbackWorker')rawBody={model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],tools:[{name:'emit_bhs_stage',description:'Return the complete source-grounded stage result in exactly one call. This returns data only and executes no action.',input_schema:providerSchema(schema),strict:true}],tool_choice:{type:'tool',name:'emit_bhs_stage'},output_config:{effort:'medium'}};
   // PostgreSQL jsonb reorders object keys. Canonicalise JSON context/schema
   // so a reconnect cannot turn identical research into another paid request.
   let body=rawBody;
@@ -75,7 +79,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // a vaguely similar answer or bypass current item/proof validation.
   if(receiptVersion==='v8'&&role==='fallbackWorker'&&stage==='v8-worker-billing-fallback:v8-brand-repair-extract'&&!await ledger.get(originalStep)){
    const oldSchema=structuredClone(schema);oldSchema.properties.facts.maxItems=10;oldSchema.properties.facts.items.properties.sourceIds.maxItems=12;oldSchema.properties.unknowns.maxItems=12;
-   const oldBody=structuredClone(body);oldBody.output_config.format.schema=providerSchema(oldSchema);
+   const oldBody=structuredClone(body);delete oldBody.tools;delete oldBody.tool_choice;oldBody.thinking={type:'adaptive'};oldBody.max_tokens=Math.min(16384,requestedOutputTokens+4096);oldBody.output_config={effort:'medium',format:{type:'json_schema',schema:providerSchema(oldSchema)}};
    const candidate=canonicalJson(oldBody),oldStep='model:bhs-v8:'+role+':'+stage+':'+hash(candidate);
    if(await ledger.get(oldStep)){originalStep=oldStep;body=candidate;}
   }
@@ -141,7 +145,11 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
     // cannot silently escape the reservation or be labelled verified usage.
     if((usage.cache_creation_input_tokens||0)!==0||(usage.cache_read_input_tokens||0)!==0||usage.server_tool_use&&Object.values(usage.server_tool_use).some(Number))throw new BudgetError('provider_accounting','Beklenmeyen Claude ücret kategorisi.');
     if(value.model!==model)throw new BudgetError('provider_accounting','Beklenen Claude modeli dönmedi.');
-    text=(value.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('');stopped=value.stop_reason==='end_turn';
+    if(role==='fallbackWorker'&&body.tools){
+     const calls=(value.content||[]).filter(x=>x.type==='tool_use');
+     stopped=value.stop_reason==='tool_use'&&calls.length===1&&calls[0].name==='emit_bhs_stage';
+     text=JSON.stringify(calls[0]?.input);
+    }else{text=(value.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('');stopped=value.stop_reason==='end_turn';}
    }else{
     usage=value.usageMetadata||{};inputTokens=usage.promptTokenCount;outputTokens=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     const cached=usage.cachedContentTokenCount||0;
