@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createLedger} from '../src/budget/ledger.mjs';
+import {createLedger,hash} from '../src/budget/ledger.mjs';
 import {createSupervisedProviders,quoteSupervised,supervisedModels} from '../src/bhs/supervised-providers.mjs';
 import {actorChargeLimit,safeActorInput,matchedActorTasks,inspectApifyPolicies} from '../src/bhs/apify-policy.mjs';
 import {remapWorkerProofs,runSupervisedStage} from '../src/bhs/supervised-research.mjs';
 import {stageKey} from '../src/bhs/direct-research.mjs';
 import {createSupervisedReadiness} from '../src/bhs/supervised-readiness.mjs';
+import {providerSchema} from '../src/bhs/schema.mjs';
 import {response} from './fixtures/offer.mjs';
 import {expertContext} from '../src/bhs/expert-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
@@ -94,7 +95,7 @@ test('unverifiable usage stays reserved and model changes cannot pass as the sel
  await assert.rejects(providers(db,t).manager('final',{},schema,{maxOutputTokens:512}),e=>e.code==='provider_accounting');
  assert.ok((await db.ledger.status()).chargedKurus>500);
 });
-const policy={actor:'apify/instagram-profile-scraper',actorId:'actor1',task:{id:'task1',actId:'actor1',options:{maxTotalChargeUsd:.03}},requestedUsd:.1,remainingKurus:3000,pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false}};
+const policy={actor:'apify/instagram-profile-scraper',actorId:'actor1',task:{id:'task1',actId:'actor1',options:{maxTotalChargeUsd:.03}},requestedUsd:.1,remainingKurus:3000,pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false,pricingPerEvent:{actorChargeEvents:{item:{eventPriceUsd:0}}}}};
 test('saved .03 actor limit is never raised to the .40 maximum',()=>{
  const result=actorChargeLimit(policy);assert.equal(result.maxTotalChargeUsd,.03);
  const limited=actorChargeLimit({...policy,remainingKurus:1650});assert.ok(limited.maxTotalChargeUsd<.03);assert.ok(limited.reservedKurus<=50);
@@ -322,4 +323,52 @@ test('historical scraper caps require exact account and actor ownership and neve
   return json({data:{actId,userId:actId===actorIds['apify/instagram-profile-scraper']?'ExactAccount':'DifferentAccount',id:'Run1234567890123',startedAt:'2026-11-10',meta:{origin:'WEB'},options:{maxTotalChargeUsd:.003,isMaxTotalChargeUsdSetByUser:true}}});
  }});
  assert.equal(calls,Object.keys(actorIds).length);assert.equal(out.length,1);assert.equal(out[0].maxTotalChargeUsd,.003);assert.equal(out[0].basis,'historical_explicit_run_option_not_active_policy');
+});
+
+test('Claude grammar omits unsupported numeric bounds while strict server validation still rejects out-of-range scores',async()=>{
+ const bounded={type:'object',properties:{score:{type:'number',minimum:0,maximum:100}},required:['score'],additionalProperties:false};
+ for(const score of [50,101]){
+  const t=transport({onGenerate:async(_url,body)=>{
+   assert.equal(body.output_config.format.schema.properties.score.minimum,undefined);assert.equal(body.output_config.format.schema.properties.score.maximum,undefined);
+   return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({score})}]});
+  }});
+  const work=v8Providers(account(),t).manager('bounded-score',{},bounded,{maxOutputTokens:512});
+  if(score===50)assert.equal((await work).data.score,50);else await assert.rejects(work,e=>e.code==='model_output_invalid');
+ }
+});
+
+test('Haiku tool grammar also omits numeric bounds and retains strict score validation',async()=>{
+ const bounded={type:'object',properties:{score:{type:'number',minimum:0,maximum:100}},required:['score'],additionalProperties:false};
+ for(const score of [50,101]){
+  const db=account(),t=transport({onGenerate:async(url,body)=>{
+   if(url.endsWith(':generateContent'))return new Response(JSON.stringify({error:{message:'Billing required'}}),{status:403});
+   assert.equal(body.model,supervisedModels.fallbackWorker);
+   assert.equal(body.tools[0].input_schema.properties.score.minimum,undefined);
+   assert.equal(body.tools[0].input_schema.properties.score.maximum,undefined);
+   return roleAnswer(body,{score});
+  }});
+  const run=()=>v8Providers(db,t).worker('bounded-score',{},bounded,{maxOutputTokens:512});
+  if(score===50)assert.equal((await run()).data.score,50);else await assert.rejects(run(),e=>e.code==='model_output_invalid');
+  const calls=t.calls.length,cost=await db.ledger.status();
+  if(score===50)await run();else await assert.rejects(run(),e=>e.code==='model_output_invalid');
+  assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+ }
+});
+
+test('exact prior numeric-grammar receipts remain reusable without any new model charge',async()=>{
+ const bounded={type:'object',properties:{score:{type:'number',minimum:0,maximum:100}},required:['score'],additionalProperties:false};
+ for(const version of ['v7','v8']){
+  const db=account(),t=transport({onGenerate:async(_url,body)=>roleAnswer(body,{score:50})});
+  const p=()=>createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl,receiptVersion:version});
+  const answer=await p().manager('prior-score',{},bounded,{maxOutputTokens:512});
+  const body=structuredClone(t.calls.find(c=>c.url.endsWith('/messages')).body);
+  body.output_config.format.schema=providerSchema(bounded);
+  const canonical=v=>JSON.parse(JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])):x));
+  const priorBody=version==='v8'?canonical(body):body;
+  const [key,row]=[...db.rows.entries()].find(([k])=>k.startsWith('model:'));
+  db.rows.delete(key);db.rows.set('model:bhs-'+version+':manager:prior-score:'+hash(priorBody),row);
+  const calls=t.calls.length,cost=await db.ledger.status();
+  assert.deepEqual(await p().manager('prior-score',{},bounded,{maxOutputTokens:512}),answer);
+  assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+ }
 });

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createApifyAdapter} from '../src/bhs/apify-adapter.mjs';
 import {actorIds,actorInput} from '../src/bhs/apify-inputs.mjs';
-import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks,actorChargeLimit} from '../src/bhs/apify-policy.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {brief,packet} from './fixtures/sequential.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z'),json=v=>new Response(JSON.stringify(v));
@@ -42,15 +42,15 @@ function account(){
   const step={...prior,state:op,value:a.value};rows.set(a.step,step);return step;
  });return {ledger,rows};
 }
-function transport({cap=.01,minimum=0,extraFees=false,timeout=false,echoCap=true,wrongIdentity=false,large=false}={}){
+function transport({cap=.01,minimum=0,eventPrice=0,usage=.0023,extraFees=false,timeout=false,echoCap=true,wrongIdentity=false,large=false}={}){
  const calls=[];
  const task={id:'Task1234567890123',actId:actorIds[actor],options:{maxTotalChargeUsd:cap}};
  const fetchImpl=async(url,options)=>{
   calls.push({url,body:options?.body?JSON.parse(options.body):null});
-  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees,minimalMaxTotalChargeUsd:minimum}]}});
+  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees,minimalMaxTotalChargeUsd:minimum,pricingPerEvent:{actorChargeEvents:{sample:{eventPriceUsd:eventPrice}}}}]}});
   if(url.includes('/runs?')){if(timeout)throw new DOMException('Timed out','TimeoutError');return json({data:{id:'Run12345678901234',options:echoCap?{maxTotalChargeUsd:Number(new URL(url).searchParams.get('maxTotalChargeUsd'))}:{}}});}
   if(url.includes('/abort'))return json({data:{status:'ABORTED'}});
-  if(url.includes('/actor-runs/'))return json({data:{status:'SUCCEEDED',defaultDatasetId:'Data1234567890123',usageTotalUsd:.0023}});
+  if(url.includes('/actor-runs/'))return json({data:{status:'SUCCEEDED',defaultDatasetId:'Data1234567890123',usageTotalUsd:usage}});
   if(url.includes('/datasets/'))return large?new Response('x',{headers:{'content-length':'1000001'}}):json([{username:wrongIdentity?'other-company':'acmeorganic',fullName:'Acme Organic',followersCount:123,postsCount:14,biography:'Acme Organic organik atıştırmalık ürünleri.',externalUrl:brief.website,privatePhone:'must not become evidence'}]);
   throw Error('Unexpected API request '+url);
  };
@@ -129,5 +129,25 @@ test('a verified Actor minimum fits only inside its saved individual cap and the
   const limited=account(),m=transport(settings);if(settings.prior)await limited.ledger.once('prior-model',{},settings.prior,async()=>({saved:true}));
   const before=await limited.ledger.status();await assert.rejects(adapter(limited,m).enrich(request,context()),e=>e.code==='budget_limit');
   assert.equal(m.calls.filter(c=>c.url.includes('/runs?')).length,0);assert.deepEqual(await limited.ledger.status(),before);
+ }
+});
+
+test('the final charged-item allowance stays inside the smaller saved Actor cap and the same overall budget',()=>{
+ const pricing={pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false,pricingPerEvent:{actorChargeEvents:{item:{eventPriceUsd:.006},dataset:{eventTieredPricingUsd:{FREE:{tieredEventPriceUsd:.004},GOLD:{tieredEventPriceUsd:.002}}}}}};
+ const input={actor,actorId:actorIds[actor],task:{id:'saved-policy',actId:actorIds[actor],options:{maxTotalChargeUsd:.03}},requestedUsd:.4,remainingKurus:3000,followingKurus:1400,pricing};
+ const quote=actorChargeLimit(input);assert.equal(quote.maxTotalChargeUsd,.02);assert.equal(quote.overrunAllowanceUsd,.01);assert.ok(quote.chargeUpperUsd<=.03);assert.equal(quote.reservedKurus,216);
+ assert.throws(()=>actorChargeLimit({...input,pricing:{...pricing,pricingPerEvent:undefined}}),e=>e.code==='actor_pricing_unverified');
+ assert.throws(()=>actorChargeLimit({...input,pricing:{...pricing,minimalMaxTotalChargeUsd:.025}}),e=>e.code==='budget_limit');
+});
+
+test('a final event can use only the pre-funded remainder and an excessive charge never becomes evidence or a new run',async()=>{
+ for(const usage of [.009,.011]){
+  const db=account(),t=transport({cap:.01,eventPrice:.002,usage}),a=adapter(db,t);
+  const run=()=>a.enrich(request,context());
+  if(usage<=.01)assert.equal((await run()).status,'complete');else await assert.rejects(run(),e=>e.code==='actor_accounting');
+  const start=t.calls.find(c=>c.url.includes('/runs?'));assert.equal(new URL(start.url).searchParams.get('maxTotalChargeUsd'),'0.008');
+  const cost=await db.ledger.status();assert.equal(cost.chargedKurus,usage<=.01?582:572);
+  if(usage<=.01)await run();else await assert.rejects(run(),e=>e.code==='actor_accounting');
+  assert.equal(t.calls.filter(c=>c.url.includes('/runs?')).length,1);assert.deepEqual(await db.ledger.status(),cost);
  }
 });
