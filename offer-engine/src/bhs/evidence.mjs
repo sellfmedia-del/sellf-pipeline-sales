@@ -46,7 +46,7 @@ export function evidenceExcerpts(text,{maxChunks=7,size=1800}={}){
  return [...selected].sort((a,b)=>a-b).map(i=>chunks[i]).filter(chunk=>chunk.text.length>=24);
 }
 export function assertEvidencePacket(packet,brief){
- if(packet?.version!=='sellf-evidence-v1'||packet.briefHash!==briefHash(brief)||!Array.isArray(packet.sources)||packet.sources.length>24||!packet.sources.length||JSON.stringify(packet).length>240000)throw Error('Kanıt paketi geçersiz.');
+ if(packet?.version!=='sellf-evidence-v1'||packet.briefHash!==briefHash(brief)||!Array.isArray(packet.sources)||packet.sources.length>24||!packet.sources.length||JSON.stringify(packet).length>(packet.evidenceTransportVersion==='sequential-v8-wide'?420000:240000)||Buffer.byteLength(JSON.stringify(packet))>1000000)throw Error('Kanıt paketi geçersiz.');
  const ids=new Set();
  for(const source of packet.sources){
   if(!/^ev\d+$/.test(source.id)||ids.has(source.id)||!publicUrl(source.url)||!publicUrl(source.finalUrl)||!['html','pdf','rendered','extracted'].includes(source.method)||!Array.isArray(source.excerpts)||!source.excerpts.length||source.excerpts.length>7)throw Error('Kanıt kaynağı geçersiz.');ids.add(source.id);
@@ -71,8 +71,9 @@ export function mergeExtractedEvidence(packet,extraction={}){
  }
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false}={}){
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000}={}){
  return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false,sourceLimit=maxSources}={}){
+  if(!Number.isSafeInteger(maxSourceChars)||maxSourceChars<180000||maxSourceChars>360000)throw Error('Kanıt taşıma sınırı geçersiz.');
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
@@ -113,7 +114,8 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    const excerpts=evidenceExcerpts(page.text);if(!excerpts.length||excerpts[0].text.length<24)return false;
    const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered')return false;
    const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.technicalSignals?{technicalSignals:page.technicalSignals}:{}),...(page.metadataOnly?{metadataOnly:true}:{}),...(page.pages?{pages:page.pages}:{})};
-   if(JSON.stringify(sources).length+JSON.stringify(record).length>180000)return false;
+   const nextChars=JSON.stringify(sources).length+JSON.stringify(record).length-(previous>=0?JSON.stringify(sources[previous]).length:0);
+   if(nextChars>maxSourceChars){unavailable.push({url:page.url,reason:'source_packet_capacity'});return false;}
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
   while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
@@ -134,7 +136,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<capacity)keep({...page,method:'rendered'});});
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<capacity)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<capacity)keep({...page,text:page.metadata,metadataOnly:true});}}
-  const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
+  const packet={version:'sellf-evidence-v1',...(maxSourceChars>180000?{evidenceTransportVersion:'sequential-v8-wide'}:{}),briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
   onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?host(x.url)||null:null,reason:x.reason}))});
   return assertEvidencePacket(packet,brief);
  };

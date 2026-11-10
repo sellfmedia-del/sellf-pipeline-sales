@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {localBudget} from './fixtures/local-budget.mjs';
-import {brief,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
+import {brief,plan,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {createSequentialProviders,stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
@@ -12,7 +12,7 @@ import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
-import {balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
+import {completePeerSources,requirePeerSources,capturedPeerHosts,balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
 function modelTransport({mutate,fail}={}){
@@ -337,4 +337,21 @@ test('Claude can dispatch an observed Actor during brand research before Gemini 
   assert.equal(sawExtraction,true);const receipt=(await db.ledger.get(stageKey(brief,'brand_sources','v8'))).value;
   assert.equal(receipt.actorResults[0].status,'complete');assert.ok(receipt.packet.sources.some(s=>s.provenance?.actor===actor));
  }finally{await db.close();}
+});
+
+test('missing official peer pages use one bounded extraction before any paid peer analysis',async()=>{
+ const evidence={plan,packet:packet(),searches:[]};evidence.packet.sources=evidence.packet.sources.filter(s=>!s.finalUrl.includes('peer'));let calls=0;
+ const read=await completePeerSources(evidence,{extract:async urls=>{calls++;assert.equal(urls.length,3);return{pages:urls.map((url,i)=>({url,text:'Organic '+['Alpha','Beta','Gamma'][i]+" sells organic oat bars in Türkiye through its public product catalogue. Delivery terms and listed prices are disclosed."}))};}});
+ assert.equal(calls,1);assert.equal(capturedPeerHosts(read).size,3);assert.doesNotThrow(()=>requirePeerSources(read));
+ await completePeerSources(read,{extract:()=>assert.fail('Complete sources need no new extraction')});
+ const unavailable=await completePeerSources(evidence,{extract:async()=>({pages:[],failed:[{reason:'unavailable'}]})});assert.throws(()=>requirePeerSources(unavailable),e=>e.code==='research_stage_incomplete');
+});
+
+test('competition extraction never buys a model response without three captured candidate domains',async()=>{
+ const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');
+ const prior={plan,packet:packet(),searches:[],facts:[],decision:'accepted',repairNeeded:true};
+ prior.packet.sources=prior.packet.sources.filter(s=>!s.finalUrl.includes('peer'));
+ for(const phase of ['competition_draft','competition_correction_draft']){
+  await assert.rejects(runSequentialStage({phase,brief,previous:async()=>prior,providers:{worker:()=>assert.fail('Missing source evidence must precede model purchase')}}),e=>e.code==='research_stage_incomplete');
+ }
 });
