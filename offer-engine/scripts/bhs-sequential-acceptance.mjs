@@ -20,8 +20,9 @@ export async function runSequentialAcceptance(){
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
  const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
- if(snapshot&&snapshot!==snapshots[caseName])throw Error('Unapproved QA receipt snapshot.');
- const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshots[caseName]+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
+ const allowedSnapshots=caseName==='tadim_release'?[snapshots[caseName],'tadim-release-market-retained-20261110']:[snapshots[caseName]];
+ if(snapshot&&!allowedSnapshots.includes(snapshot))throw Error('Unapproved QA receipt snapshot.');
+ const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshot+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
  if(seedData){
   const payload=JSON.parse(brotliDecompressSync(Buffer.from(seedData,'base64'),{maxOutputLength:12000000}).toString('utf8'));
   if(payload.briefHash!==briefHash(brief)||payload.case!==caseName)throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
