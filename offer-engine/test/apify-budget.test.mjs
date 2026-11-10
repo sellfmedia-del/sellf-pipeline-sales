@@ -2,19 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createApifyAdapter} from '../src/bhs/apify-adapter.mjs';
 import {actorIds,actorInput} from '../src/bhs/apify-inputs.mjs';
-import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks,eventOnlyPricing} from '../src/bhs/apify-policy.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {brief,packet} from './fixtures/sequential.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z'),json=v=>new Response(JSON.stringify(v));
 const actor='apify/instagram-profile-scraper',request={actor,url:'https://www.instagram.com/acmeorganic/',countryCode:'TR',language:'tr',purpose:'Doğru markanın profilini doğrula.'};
 const context=()=>({brief,packet:packet(),searches:[],geo:{countryCode:'TR',language:'tr'}});
 
-test('explicit server policies preserve different individual caps and unknown or malformed limits never acquire defaults',async()=>{
+test('the authorized 20-cent default fills missing policies while lower individual caps win',async()=>{
  const policyJson=JSON.stringify([{actor,maxTotalChargeUsd:.003},{actor:'apify/instagram-scraper',maxTotalChargeUsd:.01}]);
  const result=await inspectApifyPolicies({token:'synthetic',policyJson,fetchImpl:async()=>json({data:{items:[],total:0}})});
  assert.equal(result.complete,true);assert.equal(result.explicitPolicyCount,2);assert.equal(result.savedTaskCount,0);
  assert.equal(matchedActorTasks(actorIds[actor],result.tasks)[0].options.maxTotalChargeUsd,.003);
- assert.deepEqual(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks),[]);
+ assert.equal(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks)[0].options.maxTotalChargeUsd,.2);assert.equal(result.defaultPolicyCount,13);
  const lower={id:'lower-task',actId:actorIds[actor],options:{maxTotalChargeUsd:.001}};
  assert.equal(matchedActorTasks(actorIds[actor],[...result.tasks,lower])[0],lower);
  for(const invalid of ['invalid','{}',JSON.stringify([{actor,maxTotalChargeUsd:.41}]),JSON.stringify([{actor,maxTotalChargeUsd:'.01'}]),JSON.stringify([{actor,maxTotalChargeUsd:.01},{actor,maxTotalChargeUsd:.02}]),JSON.stringify([{actor:'unknown',maxTotalChargeUsd:.01}])])assert.throws(()=>explicitActorPolicies(invalid),e=>e.code==='actor_limit_unverified');
@@ -130,4 +130,18 @@ test('a verified Actor minimum fits only inside its saved individual cap and the
   const before=await limited.ledger.status();await assert.rejects(adapter(limited,m).enrich(request,context()),e=>e.code==='budget_limit');
   assert.equal(m.calls.filter(c=>c.url.includes('/runs?')).length,0);assert.deepEqual(await limited.ledger.status(),before);
  }
+});
+
+test('the universal ceiling clamps a higher saved cap and an identical request reuses its receipt',async()=>{
+ const db=account(),t=transport({cap:.4,minimum:.2}),a=adapter(db,t);
+ await a.enrich(request,context());
+ assert.equal(new URL(t.calls.find(c=>c.url.includes('/runs?')).url).searchParams.get('maxTotalChargeUsd'),'0.2');
+ const before=await db.ledger.status();await a.enrich(request,context());
+ assert.equal(t.calls.filter(c=>c.url.includes('/runs?')).length,1);assert.deepEqual(await db.ledger.status(),before);
+});
+
+test('live nullable PPE usage flags mean event-only billing; explicit extras and malformed flags are rejected',()=>{
+ for(const flag of [undefined,null,false])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),true);
+ for(const flag of [true,'false',0])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),false);
+ assert.equal(eventOnlyPricing({pricingModel:'FREE'}),false);
 });

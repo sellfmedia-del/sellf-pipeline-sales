@@ -8,6 +8,10 @@ export const approvedActors=Object.freeze([
  'jmlp/meta-ad-library-scraper','logiover/website-seo-audit-crawler','apify/website-content-crawler',
  'clockworks/tiktok-scraper','fatihtahta/trendyol-scraper','junglee/free-amazon-product-scraper','damilo/google-shopping-apify'
 ]);
+// User-authorized BHS ceiling (2026-11-10). Lower saved/server limits win.
+// This is a per-Actor ceiling, never an instruction to spend the whole amount.
+export const defaultActorMaxUsd=.2;
+export const defaultActorPolicies=()=>approvedActors.map(actor=>({id:'bhs-default:'+actorIds[actor],actId:actorIds[actor],options:{maxTotalChargeUsd:defaultActorMaxUsd},policySource:'user-authorized-default'}));
 // An explicitly provisioned server snapshot is useful when the Console keeps
 // per-Actor run options without saved Tasks. Never infer missing limits or
 // accept this configuration from an audit request/model/browser payload.
@@ -23,18 +27,22 @@ export function explicitActorPolicies(value){
  });
 }
 // A console form, a favourite, and an Actor's developer defaults are not a
-// verified account-specific spending policy. Use a saved Task or an explicit
-// server policy snapshot. Never fall back to .40 when a smaller cap is unknown.
+// verified account-specific spending policy. The explicit user-authorized
+// default is .20; saved Tasks/server policies may only reduce that ceiling.
+// Actor GET defines this nullable flag as extra usage only when true.
+// Current live PPE metadata omits it for standard event-only pricing.
+// https://docs.apify.com/api/v2/actor-get (reviewed 2026-11-10)
+export const eventOnlyPricing=p=>p?.pricingModel==='PAY_PER_EVENT'&&(p.isPPEPlatformUsagePaidByUser===false||p.isPPEPlatformUsagePaidByUser==null);
 export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus,followingKurus=1600,pricing}){
  if(!approvedActors.includes(actor))throw new BudgetError('actor_not_approved','Bu aktör normal BHS kapsamına alınmadı.');
  const cap=task?.options?.maxTotalChargeUsd;
  if(task?.actId!==actorId||!Number.isFinite(cap)||cap<=0||cap>.4)throw new BudgetError('actor_limit_unverified','Aktörün hesapta kaydedilmiş özel harcama limiti doğrulanamadı.');
- // REST and MCP documents differ on other pricing types. Until verified in a
-// real bounded run, only PPE with explicitly included platform usage is safe.
- if(pricing?.pricingModel!=='PAY_PER_EVENT'||pricing.isPPEPlatformUsagePaidByUser!==false)throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
+ // Only standard event-only PPE is supported; usage-priced/rental Actors
+ // and explicit extra-platform-usage pricing are never admitted.
+ if(!eventOnlyPricing(pricing))throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
  if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<600||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
  const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
- const maxTotalChargeUsd=Math.min(cap,.4,requestedUsd,remainingUsd);
+ const maxTotalChargeUsd=Math.min(cap,defaultActorMaxUsd,requestedUsd,remainingUsd);
  if(maxTotalChargeUsd<=0||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&maxTotalChargeUsd<pricing.minimalMaxTotalChargeUsd)throw new BudgetError('budget_limit','Aktörün minimum ücreti kalan bütçeye sığmıyor.');
  return {maxTotalChargeUsd,reservedKurus:Math.ceil(maxTotalChargeUsd*tariff.usdTry*tariff.overhead*100),capSource:task.policySource||'saved-task',taskId:task.id,actorId};
 }
@@ -78,6 +86,6 @@ export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,d
   }));
   for(const r of batch)if(r.status==='fulfilled')resolved.push(r.value);else complete=false;
  }
- const policies=[...resolved,...explicit];
- return {configured:true,authenticated:true,savedTaskCount:tasks.length,explicitPolicyCount:explicit.length,taskPolicies:policies.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:policies};
+ const policies=[...resolved,...explicit,...defaultActorPolicies()];
+ return {configured:true,authenticated:true,savedTaskCount:tasks.length,explicitPolicyCount:explicit.length,defaultPolicyCount:approvedActors.length,defaultMaxTotalChargeUsd:defaultActorMaxUsd,taskPolicies:policies.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:policies};
 }

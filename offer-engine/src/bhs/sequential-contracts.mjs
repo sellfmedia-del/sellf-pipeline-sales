@@ -24,7 +24,8 @@ export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400))}
 // Keep a finite transport bound without rejecting an otherwise valid 1,622-char
 // task or cutting away the manager's evidence instructions. Generation still
 // has its existing token/account cap; public findings keep their tighter bounds.
-export const taskSchema=obj({instruction:str(6000),queries:arr(str(500),2)});
+export const actorRequestsSchema=arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2);
+export const taskSchema=obj({instruction:str(6000),queries:arr(str(500),2),actorRequests:actorRequestsSchema});
 const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'];conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
 export const understandingSchema=obj({facts:arr(conciseFact),unknowns:arr(str(200)),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400)),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
@@ -53,7 +54,7 @@ export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peer
 export const swotFindingSchema=structuredClone(expertProperties.findings.items);
 swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness','opportunity','threat']};swotFindingSchema.required.push('quadrant');
 export const swotSchema=obj({findings:arr(swotFindingSchema),unknowns:arr(str(400))});
-export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500))});
+export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:actorRequestsSchema,priorities:arr(str(500))});
 export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80))])))});
 
 const patch=structuredClone(expertProperties.findings.items);
