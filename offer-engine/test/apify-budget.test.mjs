@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createApifyAdapter} from '../src/bhs/apify-adapter.mjs';
 import {actorIds,actorInput} from '../src/bhs/apify-inputs.mjs';
-import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks,actorChargeLimit} from '../src/bhs/apify-policy.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {brief,packet} from './fixtures/sequential.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z'),json=v=>new Response(JSON.stringify(v));
@@ -47,7 +47,7 @@ function transport({cap=.01,minimum=0,extraFees=false,timeout=false,echoCap=true
  const task={id:'Task1234567890123',actId:actorIds[actor],options:{maxTotalChargeUsd:cap}};
  const fetchImpl=async(url,options)=>{
   calls.push({url,body:options?.body?JSON.parse(options.body):null});
-  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees,minimalMaxTotalChargeUsd:minimum}]}});
+  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees,minimalMaxTotalChargeUsd:minimum,pricingPerEvent:{actorChargeEvents:{sample:{eventPriceUsd:0}}}}]}});
   if(url.includes('/runs?')){if(timeout)throw new DOMException('Timed out','TimeoutError');return json({data:{id:'Run12345678901234',options:echoCap?{maxTotalChargeUsd:Number(new URL(url).searchParams.get('maxTotalChargeUsd'))}:{}}});}
   if(url.includes('/abort'))return json({data:{status:'ABORTED'}});
   if(url.includes('/actor-runs/'))return json({data:{status:'SUCCEEDED',defaultDatasetId:'Data1234567890123',usageTotalUsd:.0023}});
@@ -130,4 +130,12 @@ test('a verified Actor minimum fits only inside its saved individual cap and the
   const before=await limited.ledger.status();await assert.rejects(adapter(limited,m).enrich(request,context()),e=>e.code==='budget_limit');
   assert.equal(m.calls.filter(c=>c.url.includes('/runs?')).length,0);assert.deepEqual(await limited.ledger.status(),before);
  }
+});
+
+test('the final charged-item allowance stays inside the smaller saved Actor cap and the same overall budget',()=>{
+ const pricing={pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false,pricingPerEvent:{actorChargeEvents:{item:{eventPriceUsd:.006},dataset:{eventTieredPricingUsd:{FREE:{tieredEventPriceUsd:.004},GOLD:{tieredEventPriceUsd:.002}}}}}};
+ const input={actor,actorId:actorIds[actor],task:{id:'saved-policy',actId:actorIds[actor],options:{maxTotalChargeUsd:.03}},requestedUsd:.4,remainingKurus:3000,followingKurus:1400,pricing};
+ const quote=actorChargeLimit(input);assert.equal(quote.maxTotalChargeUsd,.02);assert.equal(quote.overrunAllowanceUsd,.01);assert.ok(quote.chargeUpperUsd<=.03);assert.equal(quote.reservedKurus,216);
+ assert.throws(()=>actorChargeLimit({...input,pricing:{...pricing,pricingPerEvent:undefined}}),e=>e.code==='actor_pricing_unverified');
+ assert.throws(()=>actorChargeLimit({...input,pricing:{...pricing,minimalMaxTotalChargeUsd:.025}}),e=>e.code==='budget_limit');
 });

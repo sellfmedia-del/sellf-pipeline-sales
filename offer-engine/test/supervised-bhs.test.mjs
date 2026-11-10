@@ -89,7 +89,7 @@ test('unverifiable usage stays reserved and model changes cannot pass as the sel
  await assert.rejects(providers(db,t).manager('final',{},schema,{maxOutputTokens:512}),e=>e.code==='provider_accounting');
  assert.ok((await db.ledger.status()).chargedKurus>500);
 });
-const policy={actor:'apify/instagram-profile-scraper',actorId:'actor1',task:{id:'task1',actId:'actor1',options:{maxTotalChargeUsd:.03}},requestedUsd:.1,remainingKurus:3000,pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false}};
+const policy={actor:'apify/instagram-profile-scraper',actorId:'actor1',task:{id:'task1',actId:'actor1',options:{maxTotalChargeUsd:.03}},requestedUsd:.1,remainingKurus:3000,pricing:{pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:false,pricingPerEvent:{actorChargeEvents:{sample:{eventPriceUsd:0}}}}};
 test('saved .03 actor limit is never raised to the .40 maximum',()=>{
  const result=actorChargeLimit(policy);assert.equal(result.maxTotalChargeUsd,.03);
  const limited=actorChargeLimit({...policy,remainingKurus:1650});assert.ok(limited.maxTotalChargeUsd<.03);assert.ok(limited.reservedKurus<=50);
@@ -254,5 +254,17 @@ test('v8 content supervisors think adaptively inside the same quoted output cap 
   const body=t.calls.find(c=>c.url.endsWith('/messages')).body;
   assert.equal(body.thinking.type,stage==='v8-brand-plan'?'between_tools':'adaptive');assert.equal(body.output_config.effort,['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium');assert.equal(body.max_tokens,stage==='v8-brand-plan'?4096:stage==='v8-final-report'?12288:8192);
   assert.ok((await db.ledger.status()).chargedKurus<5000);
+ }
+});
+
+test('Claude grammar omits unsupported numeric bounds while strict server validation still rejects out-of-range scores',async()=>{
+ const bounded={type:'object',properties:{score:{type:'number',minimum:0,maximum:100}},required:['score'],additionalProperties:false};
+ for(const score of [50,101]){
+  const t=transport({onGenerate:async(_url,body)=>{
+   assert.equal(body.output_config.format.schema.properties.score.minimum,undefined);assert.equal(body.output_config.format.schema.properties.score.maximum,undefined);
+   return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({score})}]});
+  }});
+  const work=v8Providers(account(),t).manager('bounded-score',{},bounded,{maxOutputTokens:512});
+  if(score===50)assert.equal((await work).data.score,50);else await assert.rejects(work,e=>e.code==='model_output_invalid');
  }
 });

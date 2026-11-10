@@ -113,7 +113,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     return ledger.once(step,identity,limit.reservedKurus,async()=>{
      const run=(await json('acts/'+actorId+'/runs?'+query,{body:target.input,deadline})).data;
      if(!identifier(run?.id)||!Number.isFinite(run.options?.maxTotalChargeUsd)||run.options.maxTotalChargeUsd>limit.maxTotalChargeUsd){if(identifier(run?.id))await json('actor-runs/'+run.id+'/abort',{body:{}}).catch(()=>{});throw new BudgetError('actor_limit_unverified','Apify çalışma sınırı doğrulanamadı; durdurma istendi.');}
-     return {runId:run.id,actorId,capUsd:run.options.maxTotalChargeUsd,reservedKurus:limit.reservedKurus,accounting:'capped_run_commitment',startedAt:new Date(now()).toISOString()};
+     return {runId:run.id,actorId,capUsd:run.options.maxTotalChargeUsd,chargeUpperUsd:limit.chargeUpperUsd,overrunAllowanceUsd:limit.overrunAllowanceUsd,reservedKurus:limit.reservedKurus,accounting:'capped_run_with_final_event_allowance',startedAt:new Date(now()).toISOString()};
     });
    })();
    // .0004 USD/1000 reads + .20 USD/GB external transfer, reviewed 2026-11-10.
@@ -128,7 +128,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     await delay(Math.min(4000,Math.max(0,deadline-now())));
    }
    if(run.status!=='SUCCEEDED'||!identifier(run.defaultDatasetId))return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_'+String(run.status).toLowerCase(),reservedKurus:start.reservedKurus};
-   if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>start.capUsd+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
+   if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>(start.chargeUpperUsd??start.capUsd)+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
    const output=await ledger.once('apify:v8:dataset:'+start.runId,{runId:start.runId,maxItems:target.maxItems,maxBytes:1000000},datasetAllowanceKurus,async()=>{
     const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems,{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
