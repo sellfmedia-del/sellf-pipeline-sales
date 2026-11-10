@@ -8,7 +8,7 @@ export const logicalPhases=Object.freeze(['brand','sector','competition','swot',
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // A stage may spend only its share of the SAME 50 TRY account. The remainder
 // protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:1900,sector:2600,sector_validation:3600,competition:3500,swot:3700,coverage:3900,report_draft:4100,synthesis:5000,scope:5000});
+export const stageCeilings=Object.freeze({brand:1900,sector:2800,sector_validation:3600,competition:3500,swot:3700,coverage:3900,report_draft:4100,synthesis:5000,scope:5000});
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
