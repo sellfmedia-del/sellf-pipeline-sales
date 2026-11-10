@@ -214,3 +214,13 @@ test('a long internal review explanation preserves the verdict and original word
  assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,4096);
  const calls=t.calls.length;await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096});assert.equal(t.calls.length,calls);
 });
+
+test('jsonb key reordering cannot change the v8 paid request or its receipt after reconnect',async()=>{
+ for(const role of ['manager','worker']){
+  const db=account(),t=transport(),first={instruction:'Read only the supplied sources.',facts:[{id:'a',source:{url:'https://example.test/',quote:'Original public evidence.'}}],brief:{brand:'Public',market:'TR'}};
+  const reordered={brief:{market:'TR',brand:'Public'},facts:[{source:{quote:'Original public evidence.',url:'https://example.test/'},id:'a'}],instruction:first.instruction};
+  const answer=await v8Providers(db,t)[role]('stable-jsonb',first,schema,{maxOutputTokens:512}),calls=t.calls.length,cost=await db.ledger.status();
+  assert.deepEqual(await v8Providers(db,t)[role]('stable-jsonb',reordered,schema,{maxOutputTokens:512}),answer);
+  assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+ }
+});

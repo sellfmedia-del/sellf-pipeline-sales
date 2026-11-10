@@ -187,3 +187,22 @@ test('a peer-only plan restores the confirmed subject and schedules original pee
  assert.deepEqual(parsed.sources.slice(0,4).map(s=>s.url),[brief.website,...data.entities.map(e=>e.website)]);
  assert.throws(()=>parseSequentialPeerPlan({...data,entities:[...plan.entities,plan.entities[0]]},brief));
 });
+
+test('competition review reads omitted peer sources and preserves honestly unconfirmed peers without fabricated proof',async()=>{
+ const db=await localBudget();let inspected=false;
+ const t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-peer-candidates')return {...data,entities:[...data.entities,{...data.entities[1],id:'unknownpeer',name:'Unknown candidate',website:'https://unknownpeer.example/'}]};
+  if(stage==='v8-competition-extract')return {...data,facts:data.facts.slice(0,2)};
+  if(stage==='v8-competition-review'){
+   inspected=true;assert.ok(input.sources.some(s=>s.url==='https://peer2.example/'));
+   return {...data,peers:[...data.peers,{entityId:'unknownpeer',sourceIds:[],relationship:'unconfirmed',reason:'No original page could be read.'}]};
+  }
+  return data;
+ }});
+ try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('competition')+1))await run(db,phase,t);
+  const result=(await db.ledger.get(stageKey(brief,'competition','v8'))).value;
+  assert.equal(inspected,true);assert.equal(result.decision,'accepted');assert.equal(result.peers.filter(p=>p.relationship==='direct').length,3);
+  assert.deepEqual(result.peers.find(p=>p.entityId==='unknownpeer').sourceIds,[]);
+ }finally{await db.close();}
+});

@@ -175,3 +175,25 @@ secret or environment variable was changed. A local Chromium UI rerun failed
 before page load because socket() is denied by this environment; it is not a
 passing browser result. The 54 + 423 ordinary tests passed on d26954b; subsequent
 planner/policy tests and builds are recorded separately.
+
+The next retained run reached competition_review at 3,400 kurus. It exposed two
+coordinator defects: original pages for peers omitted by the extractor were
+missing from the review selection, and an honestly unconfirmed peer with no
+source IDs was rejected as a transport error. Peer review now receives every
+candidate's captured official-page paragraphs; only direct peers require a
+nonempty own-domain proof. The three-independent-peer acceptance gate is not
+lowered. competition_review is append-only r2. Market-share/private financial
+unknowns are not grounds to reject otherwise source-backed product competition.
+
+The v8 provider now canonicalizes JSON context/schema before request hashing,
+preventing jsonb key reordering from allocating a second identical paid request.
+Exact legacy receipts are still read before making a canonical request. Tests
+verify manager and operator reconnects preserve their total and perform no new
+network call, plus original peer evidence omitted by the worker and unconfirmed
+peers without fabricated proof. Focused regression: 51 passed. The full suite
+on 6b25446 passed 54 root + 426 engine tests (21 optional skipped); local build
+and syntax checks pass. Actual remaining-stage quality/cost is still pending.
+
+Live read-only readiness authenticated Claude, Gemini, Tavily configuration and
+Apify account poetic_jumpstart. That account has zero saved Tasks and zero
+explicit policies. Storage/background readiness is false on this Preview.
