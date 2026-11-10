@@ -24,14 +24,14 @@ grant select,insert,update on public.pipeline_bhs_jobs to service_role;
 
 -- Only a fully committed current-phase receipt permits automatic acknowledgement recovery.
 create function public.pipeline_bhs_checkpoint_committed(p_mode text,p_budget uuid,p_phase text,p_hash text)
-returns boolean language plpgsql security invoker set search_path='' as $
+returns boolean language plpgsql security invoker set search_path='' as $$
 declare receipt_state text;checkpoint_key text:='audit:'||p_phase||':'||p_phase||'-v8'||case when p_phase in ('sector_correction_sources','sector_correction_draft','sector','sector_validation') then '-r2' else '' end||':'||p_hash;
 begin
  if current_user<>'service_role' or p_mode not in ('preview','production') then raise exception 'private BHS worker required';end if;
  if p_mode='preview' then select state into receipt_state from public.pipeline_offer_preview_budget_steps where budget_id=p_budget and step_key=checkpoint_key;
  else select state into receipt_state from public.pipeline_offer_budget_steps where budget_id=p_budget and step_key=checkpoint_key;end if;
  return coalesce(receipt_state='complete',false);
-end $;
+end $$;
 revoke all on function public.pipeline_bhs_checkpoint_committed(text,uuid,text,text) from public,anon,authenticated;
 grant execute on function public.pipeline_bhs_checkpoint_committed(text,uuid,text,text) to service_role;
 

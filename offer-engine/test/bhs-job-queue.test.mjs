@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {webcrypto} from 'node:crypto';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,fakeCollector,packet,modelAnswer,plan} from './fixtures/sequential.mjs';
-import {sequentialContext,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialContext,stageModelInput,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
 import {projectExpertReport} from '../src/bhs/expert-report.mjs';
 import {briefHash} from '../src/bhs/brief.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
@@ -165,7 +165,7 @@ test('completed research requiring content review exposes explicit zero-cost off
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';try{
   const context=sequentialContext(brief,{packet:packet(),searches:[]});
   const input={...stageModelInput(context),peerReview:plan.entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',sourceIds:[[...context.known.keys()].find(id=>context.known.get(id).url===e.website)],reason:'Same product and market.'}))};
-  const report=projectExpertReport(modelAnswer('v8-report-draft',input),context),synthesis={report,analysisPacket:packet(),model:'claude-sonnet-5-5',supervision:{acceptance:{passed:false},finalDecision:'limited',stageDecisions:[],swot:[]}};
+  const report=projectExpertReport(modelAnswer('v8-report-draft',input),context),synthesis={report,methodologyVersion:sequentialVersion,analysisPacket:packet(),model:'claude-sonnet-5-5',supervision:{acceptance:{passed:false},finalDecision:'limited',stageDecisions:[],swot:[]}};
   const job={id:other,leadId:'lead1',budgetId:token,briefHash:hash,state:'complete',phase:'complete'};
   const scope={scopePlan:{},proposalCopy:{}},ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:2200}),get:async key=>({state:'complete',value:key===stageKey(brief,'synthesis','v8')?synthesis:scope}),once:async(key,input,amount,run)=>{assert.equal(amount,0);return run();}};
   const h=createBoundedAuditHandler({getQueue:async()=>({find:async()=>job,read:async()=>job}),isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('no paid provider'),logger:{}});
