@@ -97,6 +97,21 @@ export function validateProofRows(rows,context){
   seen.add(row.id);
  }
 }
+// A bad operator candidate is rejected before review; it cannot erase other
+// candidates or prevent the independent expert from reading original sources.
+// This is candidate admission only. The logical-stage/final gates stay strict.
+export function selectReviewableFacts(rows,context){
+ const counts=new Map();for(const row of rows)counts.set(row.id,(counts.get(row.id)||0)+1);
+ const facts=[],rejected=[];
+ for(const row of rows){
+  let reason;
+  if(!row.statement.trim())reason='empty_statement';
+  else if(counts.get(row.id)!==1)reason='duplicate_id';
+  else try{validateProofRows([row],context);}catch{reason='missing_or_unknown_proof';}
+  if(reason)rejected.push({id:row.id,reason});else facts.push(row);
+ }
+ return {facts,rejected};
+}
 export function stageModelInput(context,{rows,sample=false,areas=false}={}){
  const input=structuredClone(context.input);
  if(!areas)delete input.areas;

@@ -280,3 +280,20 @@ test('core understanding has an explicit supervisor verdict for each required to
  assert.throws(()=>normalizeVerdictReview({...reply,fundamentals:{identity:'confirmed'}},rows,{phase:'brand'}),e=>e.code==='model_output_invalid');
  assert.throws(()=>normalizeVerdictReview({...reply,fundamentals:{...reply.fundamentals,private_revenue:'incomplete'}},rows,{phase:'brand'}),e=>e.code==='model_output_invalid');
 });
+test('blank operator candidates are rejected while the expert must establish core facts from original sources',async()=>{
+ const db=await localBudget();let reviewed=false;
+ const t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-brand-extract')return {...data,facts:[{...data.facts[0],statement:'',sourceIds:[]}]};
+  if(stage==='v8-brand-review'){
+   reviewed=true;assert.deepEqual(input.candidates,[]);assert.ok(input.sources.some(s=>s.url===brief.website));
+   return {...data,additionalFacts:modelAnswer('v8-brand-extract',input).facts};
+  }return data;
+ }});
+ try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand')+1))await run(db,phase,t);
+  const draft=(await db.ledger.get(stageKey(brief,'brand_draft','v8'))).value;
+  assert.equal(draft.workerData.facts.length,0);assert.equal(draft.operatorValidation.rejectedCandidates[0].reason,'empty_statement');
+  const accepted=(await db.ledger.get(stageKey(brief,'brand','v8'))).value;
+  assert.equal(reviewed,true);assert.equal(accepted.decision,'accepted');assert.ok(accepted.facts.length>=4);assert.ok(accepted.facts.every(f=>f.sourceIds.length&&f.statement));
+ }finally{await db.close();}
+});

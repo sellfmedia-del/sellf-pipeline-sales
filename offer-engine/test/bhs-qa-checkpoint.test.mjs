@@ -80,3 +80,16 @@ test('the real paid repair resumes its PostgreSQL stage after removing count cei
   assert.equal(out.workerData.facts.length,15);assert.equal(networkCalls,0);assert.equal((await db.ledger.status()).chargedKurus,before.chargedKurus);
  }finally{await db.close();}
 });
+
+test('the actual empty paid operator reply is rejected without another purchase and stays available for expert correction',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const {localBudget}=await import('./fixtures/local-budget.mjs');const {snapshotBrief}=await import('../src/bhs/brief.mjs');
+ const {createSequentialProviders}=await import('../src/bhs/sequential-providers.mjs');const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');
+ const brief=snapshotBrief({brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate',goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
+ const p=JSON.parse(brotliDecompressSync(Buffer.from(JSON.parse(await readFile(new URL('./fixtures/tadim-final-retained-20261110.json',import.meta.url),'utf8')).data,'base64'))),db=await localBudget({seed:p.receipts});let calls=0;
+ try{
+  const cost=await db.ledger.status(),providers=createSequentialProviders({ledger:db.ledger,phase:'brand_draft',anthropicKey:'synthetic',geminiKey:'synthetic',fetchImpl:async()=>{calls++;assert.fail('Already paid');}});
+  const out=await runSequentialStage({phase:'brand_draft',brief,providers,previous:async name=>p.receipts.find(r=>r.step_key.startsWith('audit:'+name+':')).value});
+  assert.equal(calls,0);assert.deepEqual(out.workerData.facts,[]);assert.equal(out.operatorValidation.rejectedCandidates[0].reason,'empty_statement');assert.equal((await db.ledger.status()).chargedKurus,cost.chargedKurus);
+ }finally{await db.close();}
+});
