@@ -252,3 +252,21 @@ and wrong-directory attempts are not passing checks; those were corrected for
 this successful run. Deployed production/preview gateway sources were compared
 read-only and exactly match main v4/v8, so the reviewed additions have an exact
 rollback baseline. Production remains unchanged.
+
+The next Tadım response was rejected by the old usage-accounting validator;
+13.55 TRY is retained, including its FULL 105-kurus uncertain commitment. The
+response body was not archived by that older implementation, so its exact
+metadata cannot be retroactively classified or refunded. No completed result
+is claimed. A new source-focused extraction revision is being funded within
+this same account, preserving that earlier amount.
+
+Google's current primary documentation confirms implicit caching is automatic.
+Cached input is now validated as an integer subset of prompt tokens rather than
+rejected. It is conservatively priced at the FULL uncached input rate; no
+unverified discount or storage saving is used to enlarge the budget. Raw v8
+provider replies are now stored in a request-bound zero-cost subreceipt BEFORE
+local usage/proof validation. Thus later accounting/validator defects no longer
+throw away the paid content needed for a zero-network forensic replay. Rejected
+metadata logs contain only numeric token counters, never keys or source text.
+Unknown outcomes still keep their complete reservations and are not auto-retried.
+Provider/sequential/queue regression: 54 passed; snapshot checks: 4 passed.

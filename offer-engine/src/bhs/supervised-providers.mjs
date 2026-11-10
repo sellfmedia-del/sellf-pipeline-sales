@@ -98,7 +98,11 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const limit=tariff.capKurus-reserveForFollowingKurus;
   if(!integer(reserveForFollowingKurus)||limit<0||amount+(await ledger.status()).chargedKurus>limit)throw new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const value=await json(role==='manager'?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey},role==='manager'?160000:90000);
+   const request=()=>json(role==='manager'?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey},role==='manager'?160000:90000);
+   // Preserve the received content/usage before local accounting/proof checks.
+   // This zero-cost subreceipt contains no request headers or credentials and
+   // lets a reviewer inspect/revalidate a paid reply without buying it again.
+   const value=receiptVersion==='v8'?await ledger.once('wire:bhs-v8:'+hash({step})+':response',{requestHash:hash(body)},0,request):await request();
    let usage,inputTokens,outputTokens,text,stopped;
    if(role==='manager'){
     usage=value.usage||{};inputTokens=usage.input_tokens;outputTokens=usage.output_tokens;
@@ -109,14 +113,18 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
     text=(value.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('');stopped=value.stop_reason==='end_turn';
    }else{
     usage=value.usageMetadata||{};inputTokens=usage.promptTokenCount;outputTokens=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
-    if(!integer(usage.candidatesTokenCount,1)||!integer(usage.thoughtsTokenCount||0)||usage.totalTokenCount!==inputTokens+outputTokens||(usage.cachedContentTokenCount||0)!==0)throw new BudgetError('provider_accounting','Gemini kullanım kaydı geçersiz.');
+    const cached=usage.cachedContentTokenCount||0;
+    if(!integer(usage.candidatesTokenCount,1)||!integer(usage.thoughtsTokenCount||0)||usage.totalTokenCount!==inputTokens+outputTokens||!integer(cached)||cached>inputTokens){
+     console.error(JSON.stringify({event:'bhs_worker_usage_rejected',model,counts:Object.fromEntries(['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','totalTokenCount','cachedContentTokenCount'].filter(k=>Number.isFinite(usage[k])).map(k=>[k,usage[k]]))}));
+     throw new BudgetError('provider_accounting','Gemini kullanım kaydı geçersiz.');
+    }
     if(value.modelVersion&&value.modelVersion!==model&&!value.modelVersion.startsWith(model+'-'))throw new BudgetError('provider_accounting','Beklenen Gemini modeli dönmedi.');
     text=(value.candidates?.[0]?.content?.parts||[]).filter(x=>!x.thought&&typeof x.text==='string').map(x=>x.text).join('');stopped=value.candidates?.[0]?.finishReason==='STOP';
    }
    if(!integer(inputTokens,1)||inputTokens>upper||!integer(outputTokens,1)||outputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS kullanımı ayrılan üst sınırla eşleşmiyor.');
    const rate=supervisedRates[role],accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
    let data,rejectedOutput;try{data=JSON.parse(text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
-   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
+   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
   catch(error){if(receiptVersion==='v8'&&transientStatus(error.providerStatus)&&(step===originalStep||role==='worker'))return generateRole(role,stage,input,schema,opts);throw error;}
   return validate(result);

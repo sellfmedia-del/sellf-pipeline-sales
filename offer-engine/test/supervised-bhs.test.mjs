@@ -145,7 +145,7 @@ test('one explicit transient rejection receives a separately funded retry while 
  const db=account();let generated=0;
  const t=transport({onGenerate:async()=>++generated===1?new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503}):validWorker()});
  const p=v8Providers(db,t),answer=await p.worker('extract',{},schema,{maxOutputTokens:512});assert.equal(answer.data.ok,true);assert.equal(generated,2);
- const rows=[...db.rows.values()];assert.equal(rows.filter(r=>r.state==='uncertain').length,1);assert.ok(rows.find(r=>r.state==='uncertain').charge_kurus>0);
+ const rows=[...db.rows.values()];assert.equal(rows.filter(r=>r.state==='uncertain'&&r.charge_kurus>0).length,1);assert.ok(rows.find(r=>r.state==='uncertain').charge_kurus>0);
  const cost=await db.ledger.status();await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});assert.equal(generated,2);assert.deepEqual(await db.ledger.status(),cost);
 });
 test('repeated service errors, ambiguous timeouts and insufficient budget cannot buy an unbounded attempt',async()=>{
@@ -167,7 +167,7 @@ test('explicit Gemini outage hands the same task to Claude once and reuses it af
  const input={instruction:'Extract only the cited source.',proofIds:['p_original']},p=v8Providers(db,t);
  const answer=await p.worker('extract',input,schema,{maxOutputTokens:512});
  assert.equal(answer.model,supervisedModels.manager);assert.equal(workers,2);assert.equal(operators,1);
- assert.equal([...db.rows.values()].filter(r=>r.state==='uncertain').length,2);
+ assert.equal([...db.rows.values()].filter(r=>r.state==='uncertain'&&r.charge_kurus>0).length,2);
  const call=t.calls.find(c=>c.url.endsWith('/messages'));assert.deepEqual(JSON.parse(call.body.messages[0].content),{proofIds:['p_original']});
  assert.ok(call.body.system.startsWith(input.instruction));
  const cost=await db.ledger.status(),calls=t.calls.length;
@@ -233,4 +233,17 @@ test('v8 evidence operators use low reasoning without consuming the caller visib
   assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,version==='v8'?'LOW':'MINIMAL');assert.equal(body.generationConfig.maxOutputTokens,version==='v8'?3584:512);
   assert.ok((await db.ledger.status()).chargedKurus<5000);
  }
+});
+
+test('implicit cached input is part of the prompt and is conservatively funded without an assumed discount',async()=>{
+ const db=account(),t=transport({onGenerate:async()=>json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,cachedContentTokenCount:80,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:150},candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}]})});
+ const p=v8Providers(db,t),answer=await p.worker('cached-extract',{},schema,{maxOutputTokens:512});assert.equal(answer.data.ok,true);assert.equal(answer.billingBasis,'implicit-cache-undiscounted-upper-bound');
+ const calls=t.calls.length,cost=await db.ledger.status();await p.worker('cached-extract',{},schema,{maxOutputTokens:512});assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+});
+
+test('a rejected provider usage result retains its raw response and full paid commitment without another generation',async()=>{
+ const db=account(),t=transport({onGenerate:async()=>json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:999},candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}]})});
+ await assert.rejects(v8Providers(db,t).worker('bad-usage',{},schema,{maxOutputTokens:512}),e=>e.code==='provider_accounting');
+ const wire=[...db.rows.entries()].find(([key,row])=>key.endsWith(':response')&&row.state==='complete');assert.equal(wire[1].value.usageMetadata.totalTokenCount,999);assert.equal(wire[1].charge_kurus,0);
+ const calls=t.calls.length,cost=await db.ledger.status();await assert.rejects(v8Providers(db,t).worker('bad-usage',{},schema,{maxOutputTokens:512}),e=>e.code==='budget_uncertain');assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
 });

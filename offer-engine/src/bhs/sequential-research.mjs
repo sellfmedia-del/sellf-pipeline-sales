@@ -110,7 +110,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='brand_draft'){
   const context=sequentialContext(brief,prior);
-  const worker=await providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},withProofIds(phaseExtractionSchema('brand'),context),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
+  const worker=await providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. 6–8 kısa fact yeterlidir; her statement yaklaşık 200 karakter olsun. Önce en somut ürün/kanal ve şirket kimliği bilgisini seç, aynı bilgiyi tekrar etme. Kaynakta gördüğün mevcut hizmet veya ürün, hedef veya gerçekleşmiş ticari başarı değildir. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},withProofIds(phaseExtractionSchema('brand'),context),{maxOutputTokens:3072,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,workerData:worker.data});
  }
  if(phase==='brand'||phase==='brand_review'){
