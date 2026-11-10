@@ -8,7 +8,7 @@ import {requireGroundedResearch} from './research-content.mjs';
 import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
-const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4});
+const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true});
 const queryBrand=b=>'"'+b.brandName.replace(/["\n\r]/g,' ').trim()+'"';
 async function search(providers,queries){
  const rows=[];for(const q of queries.slice(0,3)){
@@ -40,7 +40,7 @@ export function parseSequentialPeerPlan(value,brief){
  const entities=value.entities?.some(e=>e.role==='brand')?value.entities:[brandPlan(brief).entities[0],...(value.entities||[])];
  const parsed=parseSourcePlan({...value,entities},{allowPartial:true});
  parsed.entities=parsed.entities.map(e=>e.role==='brand'?{...e,name:brief.brandName,website:brief.website}:e);
- const sources=[...parsed.entities.map(e=>({url:researchUrl(e.website),purpose:e.role==='brand'?'Doğrulanmış marka kaynağı.':'Rakip ADAYININ resmî sitesini okuyarak ürün/kitle/coğrafyayı doğrula.'})).filter(s=>s.url),...parsed.sources];
+ const sources=[...parsed.entities.map(e=>({url:researchUrl(e.website),purpose:e.role==='brand'?'Doğrulanmış marka kaynağı.':'Rakip ADAYININ resmî sitesini okuyarak ürün/kitle/coğrafyayı doğrula.'})).filter(s=>s.url),...parsed.entities.filter(e=>e.role==='competitor').map(e=>({url:researchUrl(e.website)?new URL(researchUrl(e.website)).origin+'/':'',purpose:'Gözlenen rakip domaininin ana sayfasından gerçek ürün bağlantılarını keşfet.'})).filter(s=>s.url),...parsed.sources];
  parsed.sources=[...new Map(sources.map(s=>[s.url,s])).values()];
  if(parsed.sources.length>24)parsed.sources=parsed.sources.slice(0,24);
  return parsed;

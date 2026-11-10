@@ -1,6 +1,45 @@
+# BHS doğrulama ve kurulum incelemesi - 10 Kasım 2026
+
+**DURUM: BEKLEMEDE. Nihai ön BHS raporu tamamlanmadı. Canlıya kurulum onayı için hazır olduğu iddia edilmemektedir.**
+
+| Gerçek Tadım çalıştırması | Sonuç |
+| --- | --- |
+| Marka kimliği, ürünler, iş modeli ve analiz pazarı | Kaynaklı uzman kabulü var |
+| Sektör, gelir mekanizması, müşteri davranışı | Kaynaklı uzman kabulü var |
+| Doğrudan rekabet | Üç marka için yeterli ürün/kitle/coğrafya kanıtı henüz tamamlanmadı |
+| SWOT, şikâyetler ve darboğazlar | Bu çalıştırmada tamamlanmadı |
+| 24 alan ve eksik araştırması | Bu çalıştırmada tamamlanmadı |
+| Nihai uzman denetimi ve rapor | Bu çalıştırmada tamamlanmadı |
+
+## Güncel ölçüm ve açık engeller
+
+- Aynı `tadim_final` hesabının tüm çağrı/başarısızlıkları korunarak toplam taahhüdü **36,29 TL**. Bunun 25,17 TL'si doğrulanmış sağlayıcı kullanımı için kur/vergi paylı muhasebe, 1,12 TL'si sonucu ücret açısından belirsiz Google taahhüdü, 10,00 TL'si altyapı/QA payıdır. Actor çalıştırılmadı. Bu bir tamamlanmış rapor fiyatı veya fatura toplamı değildir.
+- 50 TL atomik toplam sınırı korunuyor. Bağımsız aşama tahsisleri ve bulgu adedi üst sınırları kaldırıldı. Her ücretli çağrının tam çıktı/girdi üst tutarı önceden karşılanır; sonraki işler için sağlayıcı çağrısında korunan tutar da kabul hesabına dahildir. Son rekabet denetimi bu kabul hesabına sığmadığı için yeni çağrı yapılmadı.
+- Preview `GEMINI_API_KEY` üretim isteği `billing_required` (403) döndü. Catalog 200 sonucu üretimin çalıştığını kanıtlamadı. Bu QA'daki operatör çağrıları Haiku 5.5'e devredildi; uzman Sonnet 5.5 kaldı. **Gerçek Gemini operatörüyle altı aşama tamamlandı denemez.**
+- Vercel'de Production ve Preview anahtarları ayrı değişkenlerdir. Production anahtarının değeri okunmadı/değiştirilmedi; onun üretim erişimi bu oturumda denenmedi. Preview hatası Production anahtarının da bozuk olduğunu kanıtlamaz.
+- Apify hesabı `poetic_jumpstart`: kayıtlı Task 0, açık sunucu politikası 0, hesap/Actor kimliği ve açık kullanıcı tercihi doğrulanabilen son çalışma limiti 0. Ayrı Actor limitleri bulunamadığı için gerçek scraper maliyeti doğrulanmadı; ortak 0,40 USD varsayımı uygulanmadı.
+- Rakip kaynak toplamasında ürün kategorisi bağlantıları eksikti: `kuruyemiş/urun/nuts/kategori` etiketleri eklenip v8'de ürün bağlantıları gizlilik/iletişim sayfalarından önce okunacak şekilde düzenlendi. Yalnız gerçekten gözlenen bağlantılar izlenir; mevcut paketlerdeki gözlenen menü bağlantıları da yeniden araştırmaya katılır. Kurumsal alt sayfa verilen aday için aynı domainin ana sayfası keşfe eklenir. Bu düzeltme teknik kontrolden geçti; yeni gerçek kabul çalıştırması henüz yapılmadı.
+
+## Somut Preview anahtar işlemi - ayrıca kullanıcı kararı bekliyor
+
+Önerilen işlem, mevcut Production `GEMINI_API_KEY` kaydının **değerini, anahtar adını, tipini ve Production hedefini koruyarak** yalnız `fix/bhs-release-acceptance` Preview branch'ine de erişim eklemektir. İncelenen API `value` göndermeden `target` ve `gitBranch` güncellenmesine izin veriyor; çoklu hedef/branch birleşiminin sunucuda kabulü henüz denenmedi. Production kaydının erişim kapsamı değişeceğinden, kullanıcının canlı kontrolü talimatı uyarınca bu işlem yapılmadı.
+
+- Önerilen alanlar: `target=[production,preview]`, `gitBranch=fix/bhs-release-acceptance`; `value/key/type` gönderilmez.
+- Geri dönüş: önceki `target=[production]`, `gitBranch=null`. Mevcut genel Preview anahtarı korunur.
+- Anahtarın değeri açığa çıkarılmaz. Bu bir merge, canlı deployment, Google faturalandırma açma veya ödeme işlemi değildir.
+- Önce sınırlı bir gerçek Gemini üretim kontrolü; başarılı olursa düzeltilmiş motorla ayrı isimli, açıkça ek geliştirme harcaması olarak kaydedilen yeni kabul çalıştırması gerekir. Eski 36,29 TL veya eski 30,10 TL geliştirme hesabı sıfırlanmaz/geri alınmış gösterilmez.
+
+## Kanıt ve sürüm
+
+Son tamamlanan tüm kontroller: **54 ana uygulama + 455 motor testi başarılı; 21 isteğe bağlı motor kontrolü atlandı**. Son ürün bağlantısı düzeltmesi: **40 ilgili kontrol başarılı; 1 tarayıcı kontrolü isteğe bağlı atlandı**. Kod sözdizimi ve diff kontrolleri başarılı. Yeni ordinary Preview build'i tam kontrolleri yeniden çalıştıracak; ücretli QA giriş anahtarı boşaltıldı.
+
+Production yeniden salt okunur doğrulandı: `30c0c139cf05f41d275ffd9f9747dfca21345fa5`, READY `dpl_emoskTtF3z4Y7VUFGeGe4zQmJvPU`. Main, domainler, mevcut müşteri verileri, Supabase şeması, RLS ve Edge fonksiyonları değiştirilmedi. Aşağıdaki kurulum/geri dönüş planı inceleme içindir; uygulanmadı.
+
+---
+
 # BHS release review — 10 November 2026
 
-Status: HOLD. This is a concrete preparation package, not permission to deploy.
+Status: HOLD. The current evidence and blockers are described above; the following sections retain the installation and rollback plan.
 
 ## Verified target and production baseline
 

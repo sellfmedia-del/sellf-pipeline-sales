@@ -129,3 +129,9 @@ test('competitor data absence may be scoped to the cited source, but not to an u
   peer.scaleReason=reason;assert.ok(interpretationIssues(report).some(x=>x.includes(peer.id)));
  }
 });
+
+test('v8 peer discovery prioritizes observed nut product pages over earlier privacy links',async()=>{
+ const read=async url=>({status:200,headers:{'content-type':'text/html'},body:Buffer.from('<title>Public product company</title><p>'+quote.repeat(20)+'</p>'+(!new URL(url).pathname.includes('kuruyemis')?'<a href="/privacy-policy">Privacy policy</a><a href="/contact">Contact</a><a href="/cig-kuruyemis">Çiğ Kuruyemiş</a><a href="/kavrulmus-kuruyemis">Kavrulmuş Kuruyemiş</a>':''))});
+ const packet=await createEvidenceCollector({read,preferProductLinks:true,maxSources:12})(snapshotBrief(brief),plan);
+ for(const peer of plan.entities.filter(e=>e.role==='competitor'))assert.ok(packet.sources.some(s=>new URL(s.finalUrl).hostname===new URL(peer.website).hostname&&s.finalUrl.includes('kuruyemis')));
+});

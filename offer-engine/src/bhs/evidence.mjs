@@ -10,7 +10,7 @@ import {researchUrl,researchHost as host} from './research-url.mjs';
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const evidenceHash=packet=>digest(packet);
 const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment|bir hata oluştu!|beklenmedik bir hata meydana geldi/i.test(text.slice(0,1500));
-const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial|product|ürün|shop|store|pricing|price|fiyat|review|yorum|career|kariyer|job|contact|iletişim|shipping|delivery|return|iade|subscription|subscribe|blog|faq/i;
+const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial|product|ürün|urun|kuruyem|nuts|snack|category|kategori|catalog|shop|store|pricing|price|fiyat|review|yorum|career|kariyer|job|contact|iletişim|shipping|delivery|return|iade|subscription|subscribe|blog|faq/i;
 export const evidenceTopics=[/revenue|profit|growth|funding|investment|ciro|büyüme|yatırım|fiyat|price|finans/gi,/team|employee|career|hiring|job|logistic|shipping|return|support|ekip|çalışan|kargo|iade|destek/gi,/cart|checkout|subscribe|subscription|newsletter|appointment|sepete|satın|randevu|abone|payment|trial/gi,/seo|search|traffic|website|social|instagram|tiktok|advert|reklam|takipçi|organic|content|içerik/gi,/review|rating|complaint|trustpilot|şikayet|yorum|puan|customer|müşteri/gi,/competitor|different|premium|market|rakip|farklı|pazar|position|konum/gi];
 export function publicMetadata(html){
  const values=[];
@@ -71,7 +71,7 @@ export function mergeExtractedEvidence(packet,extraction={}){
  }
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8}={}){
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false}={}){
  return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false,sourceLimit=maxSources}={}){
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
@@ -80,7 +80,15 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   const queue=[],seen=new Set((seed?.sources||[]).flatMap(s=>[researchUrl(s.url),researchUrl(s.finalUrl)]).filter(Boolean)),expandedHosts=new Set(),sources=seed?.sources||[],unavailable=seed?.unavailable||[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>host(e.website)).filter(Boolean));entityHosts.add(brandHost);
   function enqueue(url,front=false){const value=researchUrl(url);if(value&&!seen.has(value)&&seen.size<128){seen.add(value);front?queue.unshift(value):queue.push(value);}}
+  const rankedPeerLinks=links=>links.slice().sort((a,b)=>{
+   const score=l=>/product|ürün|urun|kuruyem|nuts|snack|category|kategori|catalog|shop|store/i.test(l.label+' '+l.url)?2:/privacy|gizlilik|cookie|çerez|kvkk|policy/i.test(l.label+' '+l.url)?-1:0;
+   return score(b)-score(a);
+  });
   enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));
+  if(preferProductLinks)for(const source of seed?.sources||[]){
+   const sourceHost=host(source.finalUrl||source.url);if(sourceHost===brandHost||!entityHosts.has(sourceHost))continue;
+   for(const link of rankedPeerLinks(source.technicalSignals?.navigation||[]).filter(l=>host(l.url)===sourceHost).slice(0,2).reverse())enqueue(link.url,true);
+  }
   // Interleave the planner and every search topic, rather than reading only
   // the first twelve discovery links (which mostly repeat corporate pages).
   for(let i=0;i<Math.max(plan.sources.length,extraSources.length);i++){if(plan.sources[i])enqueue(plan.sources[i].url);if(extraSources[i])enqueue(extraSources[i]);}
@@ -117,7 +125,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
     if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push({...page,requiresRender:/kap\.org\.tr$/.test(host(page.finalUrl))});}
     else keep(page);
     const pageHost=host(page.finalUrl);
-    if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);const links=page.links.filter(l=>entityHosts.has(host(l.url))).slice(0,pageHost===brandHost?4:2);for(const link of pageHost===brandHost?links.reverse():links)enqueue(link.url,pageHost===brandHost);}
+    if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);const candidates=page.links.filter(l=>entityHosts.has(host(l.url))),links=(preferProductLinks&&pageHost!==brandHost?rankedPeerLinks(candidates):candidates).slice(0,pageHost===brandHost?4:2),priority=pageHost===brandHost||preferProductLinks;for(const link of priority?links.reverse():links)enqueue(link.url,priority);}
    }
   }
   if(renderCandidates.length&&clock()<deadline-3000){
