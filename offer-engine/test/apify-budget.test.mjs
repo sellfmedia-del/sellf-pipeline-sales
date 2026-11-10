@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createApifyAdapter} from '../src/bhs/apify-adapter.mjs';
 import {actorIds,actorInput} from '../src/bhs/apify-inputs.mjs';
-import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {explicitActorPolicies,inspectApifyPolicies,matchedActorTasks,eventOnlyPricing} from '../src/bhs/apify-policy.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {brief,packet} from './fixtures/sequential.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z'),json=v=>new Response(JSON.stringify(v));
@@ -138,4 +138,10 @@ test('the universal ceiling clamps a higher saved cap and an identical request r
  assert.equal(new URL(t.calls.find(c=>c.url.includes('/runs?')).url).searchParams.get('maxTotalChargeUsd'),'0.2');
  const before=await db.ledger.status();await a.enrich(request,context());
  assert.equal(t.calls.filter(c=>c.url.includes('/runs?')).length,1);assert.deepEqual(await db.ledger.status(),before);
+});
+
+test('live nullable PPE usage flags mean event-only billing; explicit extras and malformed flags are rejected',()=>{
+ for(const flag of [undefined,null,false])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),true);
+ for(const flag of [true,'false',0])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),false);
+ assert.equal(eventOnlyPricing({pricingModel:'FREE'}),false);
 });

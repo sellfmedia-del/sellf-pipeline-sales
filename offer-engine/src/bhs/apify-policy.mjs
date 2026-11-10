@@ -29,13 +29,17 @@ export function explicitActorPolicies(value){
 // A console form, a favourite, and an Actor's developer defaults are not a
 // verified account-specific spending policy. The explicit user-authorized
 // default is .20; saved Tasks/server policies may only reduce that ceiling.
+// Actor GET defines this nullable flag as extra usage only when true.
+// Current live PPE metadata omits it for standard event-only pricing.
+// https://docs.apify.com/api/v2/actor-get (reviewed 2026-11-10)
+export const eventOnlyPricing=p=>p?.pricingModel==='PAY_PER_EVENT'&&(p.isPPEPlatformUsagePaidByUser===false||p.isPPEPlatformUsagePaidByUser==null);
 export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus,followingKurus=1600,pricing}){
  if(!approvedActors.includes(actor))throw new BudgetError('actor_not_approved','Bu aktör normal BHS kapsamına alınmadı.');
  const cap=task?.options?.maxTotalChargeUsd;
  if(task?.actId!==actorId||!Number.isFinite(cap)||cap<=0||cap>.4)throw new BudgetError('actor_limit_unverified','Aktörün hesapta kaydedilmiş özel harcama limiti doğrulanamadı.');
- // REST and MCP documents differ on other pricing types. Until verified in a
-// real bounded run, only PPE with explicitly included platform usage is safe.
- if(pricing?.pricingModel!=='PAY_PER_EVENT'||pricing.isPPEPlatformUsagePaidByUser!==false)throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
+ // Only standard event-only PPE is supported; usage-priced/rental Actors
+ // and explicit extra-platform-usage pricing are never admitted.
+ if(!eventOnlyPricing(pricing))throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
  if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<600||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
  const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
  const maxTotalChargeUsd=Math.min(cap,defaultActorMaxUsd,requestedUsd,remainingUsd);
