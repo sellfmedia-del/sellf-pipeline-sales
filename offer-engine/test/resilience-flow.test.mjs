@@ -31,6 +31,8 @@ test('source-plan failure, scope outage and original-logo recovery still reach s
    assert.equal(prior.claim_token,a.token);if(op==='complete')charged-=prior.charge_kurus-a.amount;
    rows.set(a.step,{...prior,state:op,value:a.value,charge_kurus:op==='complete'?a.amount:prior.charge_kurus});return rows.get(a.step);
   });
+  // The mocked FX publication is dated. Pin provider time so this regression
+  // keeps exercising outages rather than wall-clock expiry of its fixture.
   const fetchImpl=async(url,init)=>{
    if(url.includes('tcmb'))return new Response('<Tarih_Date Tarih="03.11.2026"><Currency CurrencyCode="USD"><ForexSelling>40</ForexSelling></Currency></Tarih_Date>');
    if(url.endsWith('/search'))return Response.json({results:[]});if(url.endsWith('/extract'))return Response.json({results:[]});
@@ -40,7 +42,7 @@ test('source-plan failure, scope outage and original-logo recovery still reach s
    if(stage==='scope')throw new DOMException('The operation was aborted due to timeout','TimeoutError');
    return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(stage==='synthesis'?evidence.report:plan)}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:20,totalTokenCount:120}});
   };
-  const auditHandler=createBoundedAuditHandler({getSecret:()=>secret,getResearchModel:()=> 'gemini-3.1-pro-preview',getLedger:async()=>ledger,getProviders:()=>createBoundedProviders({ledger,geminiKey:secret,tavilyKey:'test',fetchImpl,validateUrl:async url=>({url:new URL(url)})}),validateWebsite:async()=>{},runStage:options=>runBoundedStage({...options,collect:async()=>evidence.packet}),logger:{error:value=>console.log(value)}});
+  const auditHandler=createBoundedAuditHandler({getResearchVersion:()=>'v5',getSecret:()=>secret,getResearchModel:()=> 'gemini-3.1-pro-preview',getLedger:async()=>ledger,getProviders:()=>createBoundedProviders({ledger,geminiKey:secret,tavilyKey:'test',fetchImpl,now:()=>Date.parse('2026-11-05T12:00:00Z'),validateUrl:async url=>({url:new URL(url)})}),validateWebsite:async()=>{},runStage:options=>runBoundedStage({...options,collect:async()=>evidence.packet}),logger:{error:value=>console.log(value)}});
   let cookie,ticket,audit,pricingProof;const req=body=>({method:'POST',headers:{host,origin:'https://'+host,cookie},body});
   let res=response();await auditHandler(req({action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}}),res);assert.equal(res.code,200);
   cookie=res.headers['Set-Cookie'][0].split(';')[0];ticket=res.data.ticket;

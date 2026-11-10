@@ -1,5 +1,5 @@
 import {hasGroundedResearch} from './research-content.mjs';
-import {offersEnabled} from '../runtime.mjs';
+import {offersEnabled,productionOffers} from '../runtime.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
@@ -14,12 +14,27 @@ import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recover
 import {canContinue,abandonedStage,continuationAudit,restoreContinuation} from './continuity.mjs';
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
+import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
+import {supervisedPhases} from './supervised-research.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
+import {createSequentialProviders} from './sequential-providers.mjs';
+import {backgroundBhsEnabled,browserBhsJobStore} from './job-store.mjs';
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=options=>createBoundedProviders(options),getSecret=offerGeminiKey,getResearchModel=()=>process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro',validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+// Preview opt-in only. Production activation remains a separate reviewed change.
+const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
+const sequentialProduction=()=>productionOffers()&&process.env.OFFER_BHS_RESEARCH_VERSION==='v8'&&process.env.OFFER_BHS_SEQUENTIAL_PRODUCTION_ENABLED==='true'&&backgroundBhsEnabled();
+const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:sequentialProduction()?'v8':'v6';
+const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
+const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
+
+export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
-  if(req.method==='GET')return res.status(200).json({configured:Boolean(getSecret()&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:'Tavily + Gemini Pro',costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
+  if(req.method==='GET'){
+   const supervised=['v7','v8'].includes(getResearchVersion());
+   return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:getResearchVersion()==='v8'&&isBackgroundEnabled()?'background':'browser',costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
+  }
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
@@ -32,7 +47,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
    let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1],job;
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
-    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:'v5',researchModel:getResearchModel()};
+    job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:getResearchVersion(),researchModel:getResearchModel()};
     if(body.context?.researchRunId!==undefined){
      if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(body.context.researchRunId))throw new BudgetError('budget_context','Teklif çalışması geçersiz.');
      job.researchRunId=body.context.researchRunId;
@@ -47,10 +62,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     if(!session)throw new BudgetError('invalid_job','Araştırma oturumu bulunamadı.');
     job=codec.decode(body.ticket,session,host,now());if(job.kind!=='bounded_audit'||job.briefHash!==hash)throw new BudgetError('changed_brief','Brief araştırma kaydıyla eşleşmiyor.');
    }
-   if(job.researchModel&&!['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
-   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
+   const researchVersion=job.researchVersion||'v3';if(!['v3','v4','v5','v6','v7','v8'].includes(researchVersion))throw new BudgetError('invalid_job','Araştırma sürümü geçersiz.');activeResearchVersion=researchVersion;
+   if(job.researchModel&&!(['v7','v8'].includes(researchVersion)?job.researchModel===supervisedModels.manager:['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(job.researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+   const activePhases=researchVersion==='v8'?sequentialPhases:researchVersion==='v7'?supervisedPhases:phases;
+   const queue=researchVersion==='v8'&&isBackgroundEnabled()?await getQueue(req,res):null;
+   if(queue&&action==='start'){
+    const existing=await queue.find(job.leadId,hash);
+    if(existing){
+     job.backgroundJobId=existing.id;
+     if(existing.researchRunId)job.researchRunId=existing.researchRunId;else delete job.researchRunId;
+     if(existing.sourceOfferId)job.sourceOfferId=existing.sourceOfferId;else delete job.sourceOfferId;
+    }
+   }
    const key=name=>stageKey(brief,name,researchVersion);
-   const ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
+   let ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
     phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
@@ -62,20 +87,46 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
     const breakdown=ledger.describe?.(total);
     return {...total,...(breakdown?{breakdown}:{}),...(Number.isSafeInteger(job.attemptStartKurus)?{attemptChargedKurus:Math.max(0,total.chargedKurus-job.attemptStartKurus)}:{})};
    };readCost=cost;recoveryTicket=ticket;
-   if(action==='cancel')return res.status(200).json({status:'cancelled',cost:await cost()});
+   if(action==='cancel'){if(queue&&job.backgroundJobId)await queue.cancel(job);return res.status(200).json({status:'cancelled',cost:await cost()});}
    if(action==='preflight'){
     const providers=getProviders({ledger});
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
    if(!['start','status','advance','recover','continue'].includes(action))throw Error();
-   const pendingPhases=phases.filter(x=>x!=='complete');
+   if(queue&&action!=='continue'){
+    if(!job.backgroundJobId){
+     const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;
+     // A concurrent start may have won after find(). Bind to its original account.
+     if(saved.budgetId!==(await ledger.status()).id){
+      if(saved.researchRunId)job.researchRunId=saved.researchRunId;else delete job.researchRunId;
+      if(saved.sourceOfferId)job.sourceOfferId=saved.sourceOfferId;else delete job.sourceOfferId;
+      ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;
+      job.attemptStartKurus=(await ledger.status()).chargedKurus;
+     }
+    }
+    const saved=await queue.read(job),updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
+    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if(saved.state!=='complete'){
+     if(['paused','cancelled'].includes(saved.state))return res.status(422).json({code:saved.diagnostic?.code||'stage_paused',error:'BHS araştırması durdu; aşamalar ve maliyet kayıtları korundu.',phase:saved.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:saved.state==='paused'});
+     return res.status(202).json({phase:saved.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background'});
+    }
+   }
+   const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const finish=async final=>{
+    if(queue&&action!=='continue'&&final.status!=='ready')return res.status(422).json({code:'quality_review',error:'BHS son kalite kontrolünü tamamlayamadı; mevcut bilgilerle teklif hazırlamaya devam edebilirsin.',phase:'complete',ticket:recoveryTicket,cost:await cost(),continuationAvailable:true});
     const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
    };
+   if(queue&&action==='continue'){
+    const saved=await queue.read(job);
+    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id||!['paused','complete'].includes(saved.state))throw new BudgetError('continuation_unavailable','Araştırma sürerken mevcut bilgilerle devam edilemez.');
+    const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=saved.phase;
+    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason:saved.diagnostic?.code||'quality_review'}));
+    return await finish(partial);
+   }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
    if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){
     const chosen=await ledger.get('audit:continuation:v1:'+pendingPhases[stoppedIndex]+':'+hash);
@@ -117,12 +168,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=opti
      if(manualRecoveryRound<=failedRound)throw new BudgetError(step.value.code,'Bu aşama önceki denemede tamamlanamadı. Kayıtlar ve maliyetler korundu; yeniden deneme veya mevcut bilgilerle devam et seçeneklerini kullanabilirsin.');
     }
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
-    const providers=getProviders({ledger,manualRecoveryRound});
+    const providers=getProviders({ledger,manualRecoveryRound,researchVersion,phase});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
     await runStage({phase,brief,ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
-    const nextPhase=phases[phases.indexOf(phase)+1];
+    const nextPhase=activePhases[activePhases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     break;
    }

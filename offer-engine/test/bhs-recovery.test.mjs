@@ -72,7 +72,7 @@ test('signed explicit recovery claims a single extra phase batch; concurrent cli
   const dependencies={getLedger:async()=>db.ledger(),getSecret:()=>secret,validateWebsite:async()=>{},logger:{},getProviders:options=>{round=options.manualRecoveryRound;return {configured:()=>true};},runStage:async({phase,ledger})=>ledger.once(stageKey(brief,phase,'v5'),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{runs++;if(!round)throw Object.assign(Error('unavailable'),{code:'model_temporarily_unavailable'});return {plan:'retained'};})};
   const response=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(value){this.data=value;return this;}});
   let cookie;const request=body=>({method:'POST',headers:{host,origin:'https://'+host,cookie},body});
-  const call=async body=>{const res=response();await createBoundedAuditHandler(dependencies)(request(body),res);return res;};
+  const call=async body=>{const res=response();await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})(request(body),res);return res;};
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}};
   const started=await call(start);cookie=started.headers['Set-Cookie'][0].split(';')[0];const ticket=started.data.ticket;
   const failed=await call({...start,action:'advance',ticket});assert.equal(failed.code,422);assert.equal(failed.data.recoveryAvailable,true);assert.ok(failed.data.ticket);assert.equal(runs,1);
@@ -93,7 +93,7 @@ test('an exhausted explicit batch stays exhausted after closing/reopening; arbit
  try{
   const db=recoveryStore(),brief=snapshotBrief(base),host='preview.vercel.app';let cookie,runs=0;
   const dependencies={getLedger:async()=>db.ledger(),getSecret:()=>'test-exhaustion-secret',validateWebsite:async()=>{},logger:{},getProviders:()=>({configured:()=>true}),runStage:async({phase,ledger})=>ledger.once(stageKey(brief,phase,'v5'),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{runs++;throw Object.assign(Error('unavailable'),{code:'model_temporarily_unavailable'});})};
-  const call=async body=>{const res={headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(value){this.data=value;return this;}};await createBoundedAuditHandler(dependencies)({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];return res;};
+  const call=async body=>{const res={headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(value){this.data=value;return this;}};await createBoundedAuditHandler({...dependencies,getResearchVersion:()=>'v5'})({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];return res;};
   const start={action:'start',requestId:'request_1234567890',brief,context:{leadId:'lead',spaceId:'space'}};
   let ticket=(await call(start)).data.ticket;
   await call({...start,action:'advance',ticket});ticket=(await call({...start,action:'recover',ticket})).data.ticket;

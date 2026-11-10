@@ -1,0 +1,108 @@
+// Explicit branch/commit-gated public-brand QA. No database, user/customer
+// records, publication, mail, environment changes or external subscriptions.
+import {mkdir,writeFile,rm} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+import {inflateRawSync} from 'node:zlib';
+import {randomUUID} from 'node:crypto';
+import {createLedger} from '../src/budget/ledger.mjs';
+import {createBoundedProviders} from '../src/budget/providers.mjs';
+import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
+import {createPricingHandler} from '../api/pricing.js';
+import {createProposalHandler} from '../api/proposal.js';
+import {offerGeminiKey} from '../src/config.mjs';
+import {response,offerFixture} from '../test/fixtures/offer.mjs';
+import {logoProof} from '../src/proposal/logo-proof.mjs';
+import {expertVersion,expertContext,projectExpertReport} from '../src/bhs/expert-report.mjs';
+import {snapshotBrief} from '../src/bhs/brief.mjs';
+import {directAuditResult} from '../src/bhs/direct-report.mjs';
+
+const branch='qa/bhs-recovery-final';
+export const acceptanceEnabled=()=>process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF===branch&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_EXPERT_ACCEPTANCE_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
+const brands=[['Humm Organic','https://www.humm.com.tr/']];
+export function replayExpertAcceptance(){
+ const fixture=JSON.parse(readFileSync(new URL('../test/fixtures/humm-expert-replay.json',import.meta.url),'utf8'));
+ const value=JSON.parse(inflateRawSync(Buffer.from(fixture.data,'base64'),{maxOutputLength:2000000}).toString('utf8'));
+ const brief=snapshotBrief(value.brief),context=expertContext(brief,value.evidence),report=projectExpertReport(value.generated,context);
+ const audit={stage:'audit',...directAuditResult(brief,{report,analysisPacket:context.packet,methodologyVersion:expertVersion})};
+ return {summary:{...value.provenance.summary,findings:audit.data.findings.length,peers:audit.data.competitors.length,auditSize:JSON.stringify(audit).length,manualSemanticReview:'reviewed_with_public_source_limits',originalProviderCommit:value.provenance.commit,offlineReplay:true,newPaidCalls:0},brief,audit};
+}
+export async function runExpertAcceptance(){
+ if(!acceptanceEnabled()){
+  // npm test also runs on ordinary/production builds. Remove only generated
+  // BHS QA output so a reused build cache cannot publish old test reports.
+  await rm(new URL('../public/expert-review/',import.meta.url),{recursive:true,force:true});
+  const replayEnabled=process.env.VERCEL_ENV==='preview'&&(process.env.VERCEL_PROJECT_ID==='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ'||/^sellf-pipeline-sales-[a-z0-9]+-yigit-konuks-projects\.vercel\.app$/.test(process.env.VERCEL_URL||''))&&process.env.VERCEL_GIT_COMMIT_REF==='fix/bhs-quality-only'&&String(process.env.VERCEL_GIT_COMMIT_MESSAGE||'').includes('[BHS_REPLAY_REVIEW_20261109]')&&Date.now()<Date.parse('2026-11-13T00:00:00Z');
+  if(replayEnabled){
+   const result=replayExpertAcceptance();await mkdir('public/expert-review',{recursive:true});
+   await writeFile('public/expert-review/results.json',JSON.stringify({commit:process.env.VERCEL_GIT_COMMIT_SHA,offlineReplay:true,databaseWrites:0,mailSends:0,newPaidCalls:0,results:[result]},null,2));
+   await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS analiz örneği</title><style>body{font:16px/1.6 system-ui;max-width:1000px;margin:32px auto;padding:0 20px;background:#f7f6f3;color:#1a1917}article{background:white;padding:24px;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}</style><h1>BHS analiz örneği</h1><p>Humm Organic için gerçek API çağrısıyla elde edilen kamuya açık araştırma, güncel BHS kontrollerinden tekrar geçirildi. Bu ekranda yeni ücretli çağrı, müşteri kaydı veya yayınlama yapılmaz. 25 TL önceki testin rezerv ve altyapı payı dahil maliyet kaydıdır. Erişilemeyen alanlar ve puanlar açık bırakılmıştır.</p><article><h2>Humm Organic</h2><pre></pre></article><script>fetch("results.json").then(r=>r.json()).then(d=>{document.querySelector("pre").textContent=d.results[0].audit.data.rawReport})</script></html>');
+  }
+  return;
+ }
+ const secret=offerGeminiKey();if(!secret||!(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY))throw Error('Isolated preview provider configuration is missing.');
+ const results=[];let index=0;
+ async function runBrand([brandName,website]){
+  const rows=new Map();let charged=500,generations=0,searches=0,cookie;
+  const host='expert-acceptance.example',leadId='isolated-expert-'+randomUUID(),brief={brandName,website,segment:'corporate',currency:'TRY',language:'tr',budget:null,goals:'Türkiye pazarında sürdürülebilir ve ölçülebilir büyüme fırsatlarını incelemek.',needs:'Ürün/teklif/kanal ve rakip farklarını dış kaynaklarla doğrulamak; gözlem ile iç veri gerektiren hipotezi ayırmak.',services:'Kullanıcının seçtiği hizmetler ayrıca hesaplanır.',meetingNotes:'Yalnız kamuya açık marka testi; müşteri görüşmesi, özel dosya veya iç performans verisi değildir. Türkiye pazarı. Ülke/domain yönlenmesini açıkça belirt.'};
+  const ledger=createLedger(async(op,a={})=>{
+   if(['begin','status'].includes(op))return {chargedKurus:charged,capKurus:5000};
+   if(op==='get')return rows.get(a.step)||null;
+   const old=rows.get(a.step);
+   if(op==='reserve'){
+    if(old){if(old.input_hash!==a.hash)throw Error('Changed isolated receipt');return {claimed:false,step:old};}
+    if(charged+a.amount>5000)return {blocked:true};charged+=a.amount;
+    rows.set(a.step,{state:'reserved',input_hash:a.hash,claim_token:a.token,charge_kurus:a.amount,created_at:new Date().toISOString()});return {claimed:true};
+   }
+   if(old?.claim_token!==a.token)throw Error('Changed isolated claim');if(old.state==='complete')return old;
+   if(op==='complete')charged-=old.charge_kurus-a.amount;
+   const row={...old,state:op,value:a.value,charge_kurus:op==='complete'?a.amount:old.charge_kurus};rows.set(a.step,row);return row;
+  });
+  // Paid acceptance covers BHS only. The existing scope/copy stage already has
+  // equality and browser regressions; use its ordinary fixture here instead of
+  // purchasing non-BHS model calls while reviewing research quality.
+  const scopeFixture=await offerFixture();
+  const handler=createBoundedAuditHandler({getSecret:()=>secret,getLedger:async()=>ledger,getProviders:options=>{const providers=createBoundedProviders({...options,fetchImpl:async(url,init)=>{if(url.endsWith(':generateContent'))generations++;if(url==='https://api.tavily.com/search')searches++;return fetch(url,init);}});return {...providers,generate:async(stage,...args)=>stage==='scope'?{data:{scope:scopeFixture.scope,copy:scopeFixture.copy},isolatedScopeFixture:true}:providers.generate(stage,...args)};},logger:{info:v=>{if(v.includes('bhs_model_attempts'))console.info('BHS_EXPERT_MODEL_ATTEMPTS '+v);},error:v=>console.info('BHS_EXPERT_STAGE_ERROR '+v)}});
+  async function call(h,body){const res=response();await h({method:'POST',headers:{host,origin:'https://'+host,cookie},body},res);const cookies=res.headers['Set-Cookie'];if(cookies)cookie=(Array.isArray(cookies)?cookies:[cookies]).find(c=>c.startsWith('__Host-offer-research')).split(';')[0];return res;}
+  const summary={brandName,website,passed:false,databaseWrites:0,mailSends:0,capKurus:5000,researchVersion:expertVersion,manualSemanticReview:'pending',stages:[]};
+  let audit,replay;
+  try{
+   const started=await call(handler,{action:'start',requestId:randomUUID(),brief,context:{leadId,spaceId:'isolated-expert'}});
+   if(started.code!==200)throw Object.assign(Error('Start failed'),{code:started.data.code});let ticket=started.data.ticket,finished;
+   for(let step=0;step<4;step++){
+    let res=await call(handler,{action:'advance',brief,ticket});ticket=res.data.ticket||ticket;
+    summary.stages.push({phase:res.data.phase,status:res.code,costKurus:charged});
+    console.info('BHS_EXPERT_PROGRESS '+JSON.stringify({brandName,...summary.stages.at(-1)}));
+    if(res.code>=400){summary.failureCode=res.data.code;if(res.data.budgetDetail)summary.budgetDetail=res.data.budgetDetail;if(!res.data.continuationAvailable)throw Object.assign(Error('Research stage failed'),{code:res.data.code});res=await call(handler,{action:'continue',brief,ticket});summary.explicitZeroCostHandoff=true;}
+    if(res.data.result){finished=res.data;break;}
+   }
+   if(!finished)throw Error('No research result');audit=finished.result;
+   const d=audit.data;Object.assign(summary,{findings:d.findings.length,sources:d.sources.length,peers:d.competitors.length,availableAreas:d.researchCoverage.filter(c=>c.status!=='unavailable').length,coverage:d.researchCoverage.length,fullResearch:!d.researchContinuity&&d.methodologyVersion===expertVersion});
+   const entries=[...rows.entries()],synthesis=entries.find(([key,row])=>key.startsWith('audit:synthesis:')&&row.state==='complete')?.[1].value,planning=entries.find(([key,row])=>key.startsWith('audit:source_plan:')&&row.state==='complete')?.[1].value;
+   const generated=entries.filter(([key,row])=>key.startsWith('model:synthesis:')&&row.state==='complete').map(([,row])=>row.value.data).filter(v=>Array.isArray(v?.findings)).at(-1);
+   const evidence=entries.find(([key,row])=>key.startsWith('audit:evidence:')&&row.state==='complete')?.[1].value;
+   if(evidence)replay={evidence,...(generated?{generated}:{})};
+   summary.scoredDimensions=d.dimensions.filter(x=>x.score!==null).length;
+   summary.totalScore=d.scoring?.total??null;
+   summary.nonBhsModelCalls=0;summary.proposalScopeFixture=true;summary.auditSize=JSON.stringify(audit).length;summary.forcedPrimary503=false;summary.finalResearchModel=synthesis?.model;
+   summary.rawFindings=generated?.findings.length;summary.rawCoverageKeys=Object.keys(generated?.coverage||{}).length;
+   summary.projectionIssues=Object.fromEntries([...new Set((synthesis?.report?.transfer?.issues||[]).map(i=>i.reason))].map(reason=>[reason,synthesis.report.transfer.issues.filter(i=>i.reason===reason).length]));
+   summary.peerDiagnostics=(planning?.plan?.entities||[]).filter(e=>e.role==='competitor').map(e=>({name:e.name,website:e.website,relationship:generated?.peers?.find(p=>p.entityId===e.id)?.relationship||'unconfirmed',accepted:d.competitors.some(p=>p.id===e.id)}));
+   const priced=await call(createPricingHandler({getSecret:()=>secret}),{action:'start',brief,audit,pricingProof:finished.pricingProof,serviceSelection:{services:[{serviceId:'onsite_seo'}],projects:[]}});
+   if(priced.code!==200)throw Object.assign(Error('Selected pricing failed'),{code:priced.data.code});
+   const f=await offerFixture(),logo={...f.logo.data,logoProof:logoProof(secret,host,f.logo.data)};
+   const proposal=await call(createProposalHandler({getSecret:()=>secret}),{action:'start',brief,audit,pricing:priced.data.result,proposalProof:priced.data.proposalProof,logo,context:{leadId,spaceId:'isolated-expert'}});
+   if(proposal.code!==200)throw Object.assign(Error('Proposal composition failed'),{code:proposal.data.code});
+   summary.offerFlowPassed=Boolean(proposal.data.saveProof)&&proposal.data.result.data.alternatives.length===2;
+   summary.passed=summary.fullResearch&&d.findings.length>0&&d.dimensions.length===6&&d.researchCoverage.length===24&&d.sources.every(s=>s.verification?.status==='quote_matched')&&summary.offerFlowPassed;
+  }catch(error){summary.code=error.code||'acceptance_failed';summary.error=String(error.message||'Acceptance failed').replaceAll(secret,'[credential]').slice(0,180);}
+  Object.assign(summary,{chargedKurus:charged,generations,searches,uncertainReservationsKurus:[...rows.values()].filter(r=>r.state==='uncertain').reduce((n,r)=>n+r.charge_kurus,0),costNote:'Verified provider usage plus retained uncertain reservations and a virtual 5 TRY infrastructure allowance; not a provider invoice.'});
+  if(charged>5000||searches>14)throw Error('Isolated acceptance exceeded the existing ceiling');
+  const value={summary,brief,...(audit?{audit}:{}),...(replay?{replay}:{})};results.push(value);
+  console.info('BHS_EXPERT_ACCEPTANCE '+JSON.stringify(summary));
+ }
+ // Two independent public brands at a time; page reads are already bounded.
+ await Promise.all(Array.from({length:2},async()=>{while(index<brands.length){const brand=brands[index++];await runBrand(brand);}}));
+ const safe={generatedAt:new Date().toISOString(),commit:process.env.VERCEL_GIT_COMMIT_SHA,databaseWrites:0,mailSends:0,manualSemanticReview:'pending',results};
+ await mkdir('public/expert-review',{recursive:true});await writeFile('public/expert-review/results.json',JSON.stringify(safe,null,2));
+ await writeFile('public/expert-review/index.html','<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BHS uzman akışı — izole karşılaştırma</title><style>body{font:16px/1.6 system-ui;max-width:1050px;margin:40px auto;padding:0 20px;background:#f5f6fa;color:#202532}article{background:white;padding:24px;margin:20px 0;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{line-height:1.2}small{color:#596274}</style><h1>BHS uzman akışı</h1><p>İzole kamuya açık marka testleri. Müşteri kaydı, yayınlama veya e-posta işlemi yapılmadı. Maliyet gösterimi sağlayıcı tüketimi ve altyapı rezervini içerir. Kaynak araştırması ve BHS analiz çağrıları gerçektir; hata enjeksiyonu uygulanmaz. Teklif kapsamı bu izole testte mevcut test verisiyle kontrol edilir.</p><main></main><script>fetch("results.json").then(r=>r.json()).then(data=>{for(const x of data.results){const a=document.createElement("article"),h=document.createElement("h2"),s=document.createElement("p"),p=document.createElement("pre");h.textContent=x.summary.brandName;s.textContent=(x.summary.passed?"Teknik akış geçti":"İnceleme gerekli")+" · "+(x.summary.chargedKurus/100).toFixed(2)+" TL · "+(x.summary.findings||0)+" bulgu · "+(x.summary.peers||0)+" rakip";p.textContent=x.audit?.data?.rawReport||x.summary.error||"Araştırma tamamlanamadı";a.append(h,s,p);document.querySelector("main").append(a);}})</script></html>');
+}

@@ -4,12 +4,13 @@ import path from 'node:path';
 import sharp from 'sharp';
 import {writeTemplateExample} from './scripts/template-example.mjs';
 import {buildPipelinePreview} from './src/preview/build-pipeline.mjs';
+import {sequentialQaRequested} from './scripts/qa-acceptance-gate.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,'..');
 await mkdir(path.join(here,'public'),{recursive:true});
 // Provider acceptance files are generated only by an explicit QA command after
 // this build. Do not carry stale diagnostics across branch/build-cache restores.
-for(const name of ['bhs-quality-acceptance.json','bhs-quality-audit.json','bhs-quality-checkpoint.json','bhs-recovery-acceptance.json','model-comparison'])await rm(path.join(here,'public',name),{force:true,recursive:true});
+for(const name of ['bhs-quality-acceptance.json','bhs-quality-audit.json','bhs-quality-checkpoint.json','bhs-recovery-acceptance.json','bhs-sequential-acceptance.json','bhs-sequential-checkpoint.json','model-comparison'])await rm(path.join(here,'public',name),{force:true,recursive:true});
 await mkdir(path.join(here,'public/examples'),{recursive:true});
 const examples={
   white:'<rect width="760" height="210" fill="#191919"/><text x="44" y="132" fill="white" font-family="Arial,sans-serif" font-size="68" font-weight="bold">ORNEK MARKA</text>',
@@ -55,3 +56,7 @@ const {buildRecoveryReview}=await import('./src/preview/recovery-build.mjs');
 await buildRecoveryReview(path.join(here,'public'),{production});
 const {buildMonthlyReview}=await import('./src/preview/monthly-build.mjs');
 await buildMonthlyReview(path.join(here,'public'),{production});
+
+// Explicit, single-commit public-brand QA only. No Supabase or production write.
+// Ordinary builds never call models, search providers or Actors.
+if(sequentialQaRequested())await import('./scripts/bhs-sequential-acceptance.mjs');

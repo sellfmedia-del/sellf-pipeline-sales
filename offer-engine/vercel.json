@@ -28,6 +28,13 @@
     "api/offer-reuse.js": {
       "maxDuration": 300,
       "includeFiles": "src/bhs/**"
+    },
+    "api/bhs-worker.js": {
+      "maxDuration": 300,
+      "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}",
+      "regions": [
+        "iad1"
+      ]
     }
   },
   "headers": [

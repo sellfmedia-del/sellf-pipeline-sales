@@ -1,3 +1,4 @@
+import {createBhsGatewayActions} from '../_shared/bhs-jobs.mjs';
 // This endpoint can access only dedicated pre-release tables. It never queries
 // or mutates public.leads, public.spaces, or any Travis table.
 const tables={leads:'pipeline_offer_preview_leads',versions:'pipeline_offer_preview_versions',requests:'pipeline_offer_preview_requests'};
@@ -36,6 +37,7 @@ export function createPreviewGateway({env,fetchImpl=fetch,cryptoImpl=crypto}={})
    if(Number(req.headers.get('content-length'))>4200000)throw Error('Test girdisi çok büyük.');
    const raw=await req.text();if(raw.length>4200000)throw Error('Test girdisi çok büyük.');
    const body=JSON.parse(raw),{action}=body;
+   if(typeof action==='string'&&action.startsWith('bhs_job_'))return reply(await createBhsGatewayActions({mode:'preview',env,db,user,cryptoImpl,validateLead:async(id,owner)=>{const rows=await db('/rest/v1/'+tables.leads+'?id=eq.'+encodeURIComponent(id)+'&owner_id=eq.'+owner+'&select=id&limit=1');if(rows?.length!==1)throw Error('Preview BHS lead required.');}})(body));
    if(action==='health')return reply({ready:true,mode:'isolated-preview',productionDataAccess:false});
    if(action==='bootstrap'){
     const id=cryptoImpl.randomUUID(),password=cryptoImpl.randomUUID()+cryptoImpl.randomUUID();
