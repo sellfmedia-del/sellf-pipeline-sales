@@ -42,15 +42,41 @@ test('Tadım continuation keeps the paid truncated response and thought usage in
  const incomplete=payload.receipts.find(r=>r.value?.rejectedOutput==='incomplete');
  assert.equal(incomplete.charge_kurus,48);assert.equal(incomplete.value.usage.thoughtsTokenCount,2343);assert.equal(incomplete.value.usage.candidatesTokenCount,715);
 });
-test('the release continuation retains the complete 15.78 TRY baseline, the failed Sonnet output and its 403 commitment',async()=>{
+test('the release continuation retains the complete 19.65 TRY baseline, the failed Sonnet output and its 403 commitment',async()=>{
  const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
  const w=JSON.parse(await readFile(new URL('./fixtures/tadim-release-retained-20261110.json',import.meta.url),'utf8'));
  const payload=JSON.parse(brotliDecompressSync(Buffer.from(w.data,'base64')));
- assert.equal(payload.case,'tadim_release');assert.equal(500+payload.receipts.reduce((n,r)=>n+r.charge_kurus,0),1578);
+ assert.equal(payload.case,'tadim_release');assert.equal(500+payload.receipts.reduce((n,r)=>n+r.charge_kurus,0),1965);
  const route=payload.receipts.find(r=>r.step_key==='routing:bhs-v8:worker-billing');
  assert.equal(route.charge_kurus,0);assert.equal(route.value.recoveredDiagnostic.providerReason,'billing_required');
  const paid=payload.receipts.find(r=>r.step_key===route.value.recoveredDiagnostic.failedStep);
  assert.equal(paid.state,'uncertain');assert.equal(paid.value.providerStatus,403);assert.equal(paid.charge_kurus,108);
  const invalid=payload.receipts.find(r=>r.step_key.startsWith('model:bhs-v8:manager:v8-worker-billing-fallback:'));
  assert.equal(invalid.charge_kurus,269);assert.deepEqual(invalid.value.data.facts[0].sourceIds,[]);
+});
+test('all eleven actual paid repair facts replay under the finite extraction contract without a network call or lost proof',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const {sequentialContext,phaseExtractionSchema,withProofIds,validateProofRows}=await import('../src/bhs/sequential-contracts.mjs');
+ const {assertSchema}=await import('../src/bhs/schema.mjs');
+ const p=JSON.parse(brotliDecompressSync(Buffer.from(JSON.parse(await readFile(new URL('./fixtures/tadim-release-retained-20261110.json',import.meta.url),'utf8')).data,'base64')));
+ const row=p.receipts.find(r=>r.step_key.startsWith('model:bhs-v8:fallbackWorker:')&&r.step_key.includes('repair-extract:'));
+ const stage=p.receipts.find(r=>r.step_key.startsWith('audit:brand_correction_sources:')).value;
+ const c=sequentialContext({brandName:'Tadım',website:'https://www.tadim.com.tr/'},stage);
+ assert.equal(row.value.data.facts.length,11);assert.equal(row.charge_kurus,42);
+ assertSchema(row.value.data,withProofIds(phaseExtractionSchema('brand'),c));validateProofRows(row.value.data.facts,c);
+ for(const topic of ['identity','products','business_model','market'])assert.ok(row.value.data.facts.some(f=>f.topic===topic));
+ const expanded=Array.from({length:75},(_,i)=>({...row.value.data.facts[i%11],id:'additional_'+i}));
+ assertSchema({...row.value.data,facts:expanded},withProofIds(phaseExtractionSchema('brand'),c));validateProofRows(expanded,c);
+});
+test('the real paid repair resumes its PostgreSQL stage after removing count ceilings with zero additional provider calls',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const {localBudget}=await import('./fixtures/local-budget.mjs');const {snapshotBrief,briefHash}=await import('../src/bhs/brief.mjs');
+ const {createSequentialProviders}=await import('../src/bhs/sequential-providers.mjs');const {runBoundedStage}=await import('../src/bhs/direct-research.mjs');
+ const brief=snapshotBrief({brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate',goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
+ const p=JSON.parse(brotliDecompressSync(Buffer.from(JSON.parse(await readFile(new URL('./fixtures/tadim-release-retained-20261110.json',import.meta.url),'utf8')).data,'base64')));
+ assert.equal(briefHash(brief),p.briefHash);const db=await localBudget({seed:p.receipts});let networkCalls=0;
+ try{const before=await db.ledger.status(),providers=createSequentialProviders({ledger:db.ledger,phase:'brand_correction_draft',anthropicKey:'synthetic',geminiKey:'synthetic',fetchImpl:async()=>{networkCalls++;assert.fail('Paid reply must be reused');}});
+  const out=await runBoundedStage({phase:'brand_correction_draft',brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+  assert.equal(out.workerData.facts.length,15);assert.equal(networkCalls,0);assert.equal((await db.ledger.status()).chargedKurus,before.chargedKurus);
+ }finally{await db.close();}
 });

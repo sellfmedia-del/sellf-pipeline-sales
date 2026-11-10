@@ -1,12 +1,12 @@
 import {createSupervisedProviders} from './supervised-providers.mjs';
 import {createRuntimeProviders} from '../budget/providers.mjs';
-import {stageCeilings} from './sequential-contracts.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
 import {BudgetError,tariff,hash} from '../budget/ledger.mjs';
 import {createApifyAdapter} from './apify-adapter.mjs';
 
 export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0}={}){
  if(!Number.isSafeInteger(infrastructureOffsetKurus)||infrastructureOffsetKurus<0||infrastructureOffsetKurus>500)throw new BudgetError('budget_limit','Altyapı rezervi geçersiz.');
- const baseCeiling=stageCeilings[phase]||stageCeilings[phase.split('_')[0]],ceiling=baseCeiling?Math.min(baseCeiling+infrastructureOffsetKurus,['scope','synthesis'].includes(phase)?5000:phase==='report_draft'?4600:4400):null;
+ const ceiling=sequentialPhases.includes(phase)&&phase!=='complete'?tariff.capKurus:null;
  if(!ceiling)throw new BudgetError('invalid_phase','BHS aşama bütçesi geçersiz.');
  return {...ledger,once:async(key,input,amount,run,options={})=>{
   // Base quotes already contain a 20% envelope at <=60 TRY/USD. Keep that
@@ -14,7 +14,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0}={})
   // rounding headroom. Releasing the tax portion would break an all-in cap.
   const reserved=amount?Math.ceil(amount*1.03)+2:0;
   const limit=Math.min(ceiling,options.limitKurus??tariff.capKurus),prior=await ledger.get(key);
-  if(amount&&!prior){const status=await ledger.status();if(status.chargedKurus+reserved>limit){const error=new BudgetError('budget_limit','Bu aşamanın bütçesi sonraki araştırma ve raporlamayı korumak için sınırlandı; yeni ücretli çağrı başlatılmadı.');error.budgetDiagnostic={phase,requiredKurus:reserved,availableKurus:Math.max(0,limit-status.chargedKurus),stageLimitKurus:limit,remainingKurus:status.capKurus-status.chargedKurus};throw error;}}
+  if(amount&&!prior){const status=await ledger.status();if(status.chargedKurus+reserved>limit){const error=new BudgetError('budget_limit','Bu çağrı run genelindeki kalan bütçeye sığmıyor; yeni ücretli çağrı başlatılmadı.');error.budgetDiagnostic={phase,requiredKurus:reserved,availableKurus:Math.max(0,limit-status.chargedKurus),runLimitKurus:limit,remainingKurus:status.capKurus-status.chargedKurus};throw error;}}
   return ledger.once(key,input,reserved,async()=>{
    const value=await run();if(!amount)return value;
    if(options.settle){

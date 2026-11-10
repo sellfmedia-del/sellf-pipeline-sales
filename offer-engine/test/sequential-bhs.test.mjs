@@ -126,12 +126,14 @@ test('quality acceptance rejects shallow dimensions, missing peers, missing SWOT
  for(const args of [{stages:stages.slice(0,4),swot,budget},{stages,swot:swot.slice(0,3),budget},{stages,swot,budget:{chargedKurus:5001,capKurus:5000}}])assert.equal(qualityAcceptance(report,args).passed,false);
  assert.equal(qualityAcceptance({...report,competitors:[{}]},{stages,swot,budget}).passed,false);
  assert.equal(qualityAcceptance({...report,findings:report.findings.slice(0,3)},{stages,swot,budget}).passed,false);
+ const many=Array.from({length:120},(_,i)=>({...report.findings[i%12],id:'many_'+i,statement:'Distinct grounded finding '+i}));
+ assert.equal(qualityAcceptance({...report,findings:many},{stages,swot,budget}).passed,true);
 });
-test('stage tools cannot spend final-report headroom even through parallel reservations',async()=>{
+test('phases share the run budget with no smaller phase ceiling, including concurrent reservations',async()=>{
  const db=await localBudget();try{
   const l=stageBudgetLedger(db.ledger,'coverage_actors');let calls=0;
-  await Promise.allSettled(Array.from({length:8},(_,i)=>l.once('tool:'+i,{i},400,async()=>{calls++;return {receipt:hash(i)};})));
-  assert.ok((await db.ledger.status()).chargedKurus<=3900);assert.ok(calls<=8);
+  await Promise.allSettled(Array.from({length:14},(_,i)=>l.once('tool:'+i,{i},400,async()=>{calls++;return {receipt:hash(i)};})));
+  const cost=await db.ledger.status();assert.ok(cost.chargedKurus>3900);assert.ok(cost.chargedKurus<=5000);assert.ok(calls>8);assert.ok(calls<14);
  }finally{await db.close();}
 });
 

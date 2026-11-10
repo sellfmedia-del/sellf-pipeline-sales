@@ -70,6 +70,15 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   let originalStep='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(body);
   const legacyStep='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(rawBody);
   if(legacyStep!==originalStep&&!await ledger.get(originalStep)&&await ledger.get(legacyStep)){originalStep=legacyStep;body=rawBody;}
+  // Read the already-paid brand repair across the removal of quantity-only
+  // schema limits. Reconstruct its EXACT older request hash; never search for
+  // a vaguely similar answer or bypass current item/proof validation.
+  if(receiptVersion==='v8'&&role==='fallbackWorker'&&stage==='v8-worker-billing-fallback:v8-brand-repair-extract'&&!await ledger.get(originalStep)){
+   const oldSchema=structuredClone(schema);oldSchema.properties.facts.maxItems=10;oldSchema.properties.facts.items.properties.sourceIds.maxItems=12;oldSchema.properties.unknowns.maxItems=12;
+   const oldBody=structuredClone(body);oldBody.output_config.format.schema=providerSchema(oldSchema);
+   const candidate=canonicalJson(oldBody),oldStep='model:bhs-v8:'+role+':'+stage+':'+hash(candidate);
+   if(await ledger.get(oldStep)){originalStep=oldStep;body=candidate;}
+  }
   let step=originalStep;
   const validate=value=>{
    if(value.rejectedOutput)throw new BudgetError(value.rejectedOutput,'BHS model yanıtı tamamlanmadı; kullanım kaydı korundu.');

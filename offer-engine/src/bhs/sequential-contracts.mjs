@@ -6,27 +6,32 @@ export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
 export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete']);
 export const logicalPhases=Object.freeze(['brand','sector','competition','swot','coverage','synthesis']);
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
-// A stage may spend only its share of the SAME 50 TRY account. The remainder
-// protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:2000,sector:2800,sector_validation:3600,competition:3700,swot:3700,coverage:3900,report_draft:4100,synthesis:5000,scope:5000});
+// Every phase shares the same run-level 50 TRY account; no phase allocation.
 export const str=(maxLength=600)=>({type:'string',maxLength});
-export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
+export const arr=(items,maxItems)=>({type:'array',items,...(maxItems===undefined?{}:{maxItems})});
+const findingArrayKeys=new Set(['facts','findings','sourceIds','findingIds','comparisonFindingIds','acceptedIds','rejectedIds','patches','missing','unknowns','strength','weakness','opportunity','threat']);
+export function withoutFindingCeilings(schema){
+ const copy=structuredClone(schema);
+ const walk=(node,key)=>{if(node.type==='array'&&findingArrayKeys.has(key))delete node.maxItems;if(node.properties)for(const [name,value]of Object.entries(node.properties))walk(value,name);if(node.items)walk(node.items,key);if(node.anyOf)for(const value of node.anyOf)walk(value,key);};
+ walk(copy);return copy;
+}
+const expertProperties=withoutFindingCeilings(expertSchema).properties;
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
-export const refs=arr(str(80),12);
+export const refs=arr(str(80));
 export const factSchema=obj({id:str(80),kind:{type:'string',enum:['observation','inference']},topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
-export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400),12)});
+export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400))});
 // Internal operator tasks carry source/identity safeguards as well as the brief.
 // Keep a finite transport bound without rejecting an otherwise valid 1,622-char
 // task or cutting away the manager's evidence instructions. Generation still
 // has its existing token/account cap; public findings keep their tighter bounds.
 export const taskSchema=obj({instruction:str(6000),queries:arr(str(500),2)});
 const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'];conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
-export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
-export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
-export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema,4)});
+export const understandingSchema=obj({facts:arr(conciseFact),unknowns:arr(str(200)),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
+export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400)),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
+export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema)});
 export const understandingTopics=Object.freeze({brand:['identity','products','business_model','market'],sector:['sector','revenue_drivers','customer_behavior']});
 export function reviewVerdictSchema(schema,rows,{phase}={}){
- const result=structuredClone(schema),ids=rows.map(r=>r.id);
+ const result=withoutFindingCeilings(schema),ids=rows.map(r=>r.id);
  if(new Set(ids).size!==ids.length)throw new BudgetError('model_output_invalid','Denetim aday kimlikleri yineleniyor.');
  delete result.properties.acceptedIds;delete result.properties.rejectedIds;
  result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
@@ -41,17 +46,17 @@ export function normalizeVerdictReview(data,rows,{phase}={}){
  if(topics&&(!data.fundamentals||Object.keys(data.fundamentals).sort().join('|')!==[...topics].sort().join('|')||topics.some(t=>!['confirmed','incomplete'].includes(data.fundamentals[t]))))throw new BudgetError('model_output_invalid','Temel anlayış kararları eksik.');
  return {...review,...(topics?{decision:topics.every(t=>data.fundamentals[t]==='confirmed')?'accepted':'limited'}:{}),acceptedIds:ids.filter(id=>verdicts[id]==='accepted'),rejectedIds:ids.filter(id=>verdicts[id]==='rejected')};
 }
-export const peerSchema=expertSchema.properties.peers.items;
+export const peerSchema=expertProperties.peers.items;
 export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peerSchema,5)});
-export const swotFindingSchema=structuredClone(expertSchema.properties.findings.items);
+export const swotFindingSchema=structuredClone(expertProperties.findings.items);
 swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness','opportunity','threat']};swotFindingSchema.required.push('quadrant');
-export const swotSchema=obj({findings:arr(swotFindingSchema,24),unknowns:arr(str(400),12)});
-export const coverageSchema=obj({coverage:expertSchema.properties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500),6)});
-export const finalSchema=obj({...expertSchema.properties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80),12)])))});
+export const swotSchema=obj({findings:arr(swotFindingSchema),unknowns:arr(str(400))});
+export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:arr(obj({actor:str(120),url:str(2048),purpose:str(400),countryCode:str(2),language:str(2)}),2),priorities:arr(str(500),6)});
+export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80))])))});
 
-const patch=structuredClone(expertSchema.properties.findings.items);
+const patch=structuredClone(expertProperties.findings.items);
 for(const [field,limit]of Object.entries({observation:280,commercialHypothesis:260,limitation:220,question:180}))patch.properties[field].maxLength=limit;
-export const finalReviewSchema=obj({acceptedIds:arr(str(80),24),rejectedIds:arr(str(80),24),patches:arr(patch,4),rejectedPeerIds:arr(str(80),5),dimensions:expertSchema.properties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertSchema.properties.coverage.properties)[0])}),6),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(6000)});
+export const finalReviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),patches:arr(patch),rejectedPeerIds:arr(str(80),5),dimensions:expertProperties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertProperties.coverage.properties)[0])}),6),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(6000)});
 export function applyFinalReview(draft,review,context,peers=draft.peers){
  const selected=acceptedRows(draft.findings,review),ids=new Set(selected.map(f=>f.id)),patches=new Map();
  for(const p of review.patches){if(!ids.has(p.id)||patches.has(p.id))throw new BudgetError('model_output_invalid','Son denetim düzeltmesi kabul edilen bulguya bağlı değil.');patches.set(p.id,p);}
@@ -66,7 +71,9 @@ export function applyFinalReview(draft,review,context,peers=draft.peers){
  return {...draft,findings,peers:peers.filter(p=>!review.rejectedPeerIds.includes(p.entityId)),dimensions:review.dimensions,coverage,benchmarks:[...new Set(review.approvedBenchmarkIndices)].map(i=>draft.benchmarks[i]),swot:review.swot,overviewIds:draft.overviewIds.filter(id=>ids.has(id)),opportunityId:ids.has(draft.opportunityId)?draft.opportunityId:null,riskId:ids.has(draft.riskId)?draft.riskId:null};
 }
 export const factTopics=Object.freeze({brand:['identity','products','business_model','market','scale','ownership'],sector:['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'],competition:['product_overlap','audience_overlap','geography','price','differentiation','competitive_risk']});
-export function phaseExtractionSchema(phase){const s=structuredClone(extractionSchema);s.properties.facts.maxItems=phase==='competition'?12:10;s.properties.facts.items.properties.topic.enum=factTopics[phase];return s;}
+// Finding quantity has no artificial ceiling. Topic/proof validation, minimum
+// understanding requirements and the one run-level cost cap still apply.
+export function phaseExtractionSchema(phase){const s=structuredClone(extractionSchema);s.properties.facts.items.properties.topic.enum=factTopics[phase];return s;}
 
 // A proof remains the same after collection order, snippets or enrichment change.
 // Stable IDs are a v8 adapter; historical v6/v7 paragraph IDs remain untouched.
@@ -104,7 +111,7 @@ export function stageModelInput(context,{rows,sample=false,areas=false}={}){
  return expertModelInput({...context,input});
 }
 export function withProofIds(schema,context){
- const out=structuredClone(schema),ids=[...context.known.keys()];
+ const out=withoutFindingCeilings(schema),ids=[...context.known.keys()];
  // Gemini rejects large enum grammars. Larger packets use the explicit
  // citation contract and the identical server-side membership validation.
  const bind=s=>{if(s.properties)for(const [key,value]of Object.entries(s.properties)){if(key==='sourceIds'&&ids.length<=128)value.items={...value.items,enum:ids};else bind(value);}if(s.items)bind(s.items);};
