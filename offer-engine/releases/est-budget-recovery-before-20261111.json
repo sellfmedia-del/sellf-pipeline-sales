@@ -1,0 +1,35 @@
+{
+  "capturedFor": "User-approved existing-job recovery; original brief and all paid receipts remain in the database unchanged",
+  "productionBase": "07378cf5ae59e32b2f641c5478d77bc1038f555c",
+  "job": {
+    "id": "2ea4abc0-a587-4573-bb11-fedcefb0cdfb",
+    "mode": "production",
+    "spec": {
+      "researchModel": "claude-sonnet-5-5",
+      "researchRunId": "564f98e6-6d12-425a-99bc-dd018b1659a2",
+      "sourceOfferId": "07f9b450-5ef3-4cd9-b8ff-41593fc88812",
+      "researchVersion": "v8"
+    },
+    "phase": "competition_review",
+    "state": "paused",
+    "claims": 18,
+    "lead_id": "id_yjkqgpqlwm9muz7wgza",
+    "owner_id": "d60433ad-55e4-40a9-a43d-aa9f248fdedc",
+    "budget_id": "b5ea241d-7587-49a8-8b17-a8e81f7e30fe",
+    "brief_hash": "b6f459b36bf2f15a74920353b1950886425db15235c605f3e26d2b03bfbefebb",
+    "created_at": "2026-11-10T22:02:04.196836+00:00",
+    "diagnostic": {
+      "code": "budget_limit"
+    },
+    "updated_at": "2026-11-10T22:13:56.121593+00:00",
+    "budget_lead": "id_yjkqgpqlwm9muz7wgza:audit:564f98e6-6d12-425a-99bc-dd018b1659a2",
+    "lease_token": null,
+    "lease_until": null,
+    "cancel_requested": false
+  },
+  "budget": {
+    "id": "b5ea241d-7587-49a8-8b17-a8e81f7e30fe",
+    "cap_kurus": 5000,
+    "charged_kurus": 3837
+  }
+}
