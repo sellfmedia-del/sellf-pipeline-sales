@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLedger} from '../src/budget/ledger.mjs';
+import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {createSupervisedProviders,quoteSupervised,supervisedModels} from '../src/bhs/supervised-providers.mjs';
 import {actorChargeLimit,safeActorInput,matchedActorTasks,inspectApifyPolicies} from '../src/bhs/apify-policy.mjs';
 import {remapWorkerProofs,runSupervisedStage} from '../src/bhs/supervised-research.mjs';
@@ -155,7 +156,7 @@ test('one explicit transient rejection receives a separately funded retry while 
 });
 test('repeated service errors, ambiguous timeouts and insufficient budget cannot buy an unbounded attempt',async()=>{
  for(const kind of ['twice','timeout','budget']){
-  const db=account(kind==='budget'?4335:500);let generated=0;
+  const db=account(kind==='budget'?4935:500);let generated=0;
   const t=transport({onGenerate:async()=>{generated++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503});}});
   await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));
   assert.equal(generated,kind==='twice'?4:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
@@ -229,7 +230,7 @@ test('a billing fallback cannot spend the protected reserve, bypass validation o
    if(url.endsWith(':generateContent')){workers++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{message:kind==='permission'?'Permission denied':'Billing required.'}}),{status:403});}
    operators++;return roleAnswer(body,{ok:false});
   }});
-  const run=()=>v8Providers(db,t).worker('brand',{},schema,{maxOutputTokens:512,validateData:d=>{if(!d.ok)throw Error('bad proof');}});
+  const run=()=>v8Providers(db,t).worker('brand',{},schema,{maxOutputTokens:512,reserveForFollowingKurus:600,validateData:d=>{if(!d.ok)throw Error('bad proof');}});
   await assert.rejects(run());const cost=await db.ledger.status();await assert.rejects(run());
   assert.equal(workers,kind==='budget'?0:1);assert.equal(operators,kind==='invalid'?1:0);assert.deepEqual(await db.ledger.status(),cost);assert.ok(cost.chargedKurus<=4400);
  }
@@ -241,10 +242,10 @@ test('Claude operator fallback keeps output validation and cannot consume protec
    if(url.endsWith(':generateContent')){workers++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{message:'Unavailable'}}),{status:kind==='quota'?429:503});}
    operators++;return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":false}'}]});
   }});
-  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,reserveForFollowingKurus:600,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
   assert.equal(operators,kind==='invalid'?1:0);assert.equal(workers,['timeout','quota'].includes(kind)?1:2);
   const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=4400);
-  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,reserveForFollowingKurus:600,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
   // A blocked admission may repeat a free token count, never a paid generation.
   assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,operators);assert.deepEqual(await db.ledger.status(),cost);
  }
@@ -322,4 +323,30 @@ test('historical scraper caps require exact account and actor ownership and neve
   return json({data:{actId,userId:actId===actorIds['apify/instagram-profile-scraper']?'ExactAccount':'DifferentAccount',id:'Run1234567890123',startedAt:'2026-11-10',meta:{origin:'WEB'},options:{maxTotalChargeUsd:.003,isMaxTotalChargeUsdSetByUser:true}}});
  }});
  assert.equal(calls,Object.keys(actorIds).length);assert.equal(out.length,1);assert.equal(out[0].maxTotalChargeUsd,.003);assert.equal(out[0].basis,'historical_explicit_run_option_not_active_policy');
+});
+
+test('the live 3837-kurus failure admits the same review under the shared cap without a hidden next-stage allocation',async()=>{
+ const db=account(3837),t=transport(),p=v8Providers({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')},t);
+ const result=await p.manager('v8-competition-review',{},schema,{maxOutputTokens:4096});
+ assert.equal(result.data.ok,true);assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,8192);assert.ok((await db.ledger.status()).chargedKurus<=5000);
+});
+test('a smaller affordable thinking envelope keeps all visible output and is immutable after settlement and reconnect',async()=>{
+ const db=account(4400),t=transport(),scoped=()=>({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')});
+ const answer=await v8Providers(scoped(),t).manager('v8-competition-review',{},schema,{maxOutputTokens:4096});
+ const body=t.calls.find(c=>c.url.endsWith('/messages')).body;assert.ok(body.max_tokens>=4096&&body.max_tokens<8192);
+ assert.ok([...db.rows.keys()].some(k=>k.startsWith('admission:')));const status=await db.ledger.status();
+ assert.ok(status.chargedKurus<=5000);const calls=t.calls.length;
+ assert.deepEqual(await v8Providers(scoped(),t).manager('v8-competition-review',{},schema,{maxOutputTokens:4096}),answer);
+ assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),status);
+});
+test('a clipped-envelope timeout is never bought again under a different balance or maximum',async()=>{
+ const db=account(4400),t=transport({onGenerate:async()=>{throw new DOMException('Timed out','TimeoutError');}}),scoped=()=>({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')});
+ const call=()=>v8Providers(scoped(),t).manager('v8-competition-review',{},schema,{maxOutputTokens:4096});
+ await assert.rejects(call());const status=await db.ledger.status(),calls=t.calls.length;
+ await assert.rejects(call(),e=>e.code==='budget_uncertain');assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),status);assert.ok(status.chargedKurus<=5000);
+});
+test('an account that cannot fund the full visible contract rejects before any paid call and preserves all prior charges',async()=>{
+ const db=account(4900),t=transport(),p=v8Providers({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')},t);
+ await assert.rejects(p.manager('v8-competition-review',{},schema,{maxOutputTokens:4096}),e=>e.code==='budget_limit'&&e.budgetDiagnostic.followingReserveKurus===0);
+ assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);assert.equal((await db.ledger.status()).chargedKurus,4900);
 });

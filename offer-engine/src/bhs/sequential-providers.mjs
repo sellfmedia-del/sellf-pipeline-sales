@@ -8,7 +8,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0}={})
  if(!Number.isSafeInteger(infrastructureOffsetKurus)||infrastructureOffsetKurus<0||infrastructureOffsetKurus>500)throw new BudgetError('budget_limit','Altyapı rezervi geçersiz.');
  const ceiling=sequentialPhases.includes(phase)&&phase!=='complete'?tariff.capKurus:null;
  if(!ceiling)throw new BudgetError('invalid_phase','BHS aşama bütçesi geçersiz.');
- return {...ledger,once:async(key,input,amount,run,options={})=>{
+ return {...ledger,quoteReservation:amount=>amount?Math.ceil(amount*1.03)+2:0,once:async(key,input,amount,run,options={})=>{
   // Base quotes already contain a 20% envelope at <=60 TRY/USD. Keep that
   // envelope as a tax allowance when settling, plus 3% conversion and integer
   // rounding headroom. Releasing the tax portion would break an all-in cap.

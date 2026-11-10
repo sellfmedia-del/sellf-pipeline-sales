@@ -42,13 +42,13 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
  const anthHeaders={'x-api-key':anthropicKey,'anthropic-version':'2023-06-01'};
  const transientStatus=status=>[500,502,503,529].includes(status);
  async function generateRole(role,stage,input,schema,opts={}){
-  const {maxOutputTokens:requestedOutputTokens=4096,reserveForFollowingKurus=600,validateData}=opts;
+  const {maxOutputTokens:requestedOutputTokens=4096,reserveForFollowingKurus=receiptVersion==='v8'?0:600,validateData}=opts;
   if(!integer(requestedOutputTokens,1)||requestedOutputTokens>16384)throw new BudgetError('input_budget','BHS çıktı sınırı geçersiz.');
   // Gemini bills/counts hidden reasoning inside maxOutputTokens. Preserve the
   // caller's visible-report allowance and fund bounded LOW reasoning separately
   // before the request; otherwise a correct extraction gets cut mid-JSON.
   const reasoningAllowance=receiptVersion==='v8'?(role==='fallbackWorker'?0:role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
-  const maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
+  let maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
   quoteSupervised(role,1,maxOutputTokens,now());
@@ -71,6 +71,18 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    body=canonicalJson(body);
   }
   if(Buffer.byteLength(JSON.stringify(body))>600000)throw new BudgetError('input_budget','BHS aşamasının kaynak paketi çok büyük.');
+  // Persist any smaller affordable envelope BEFORE buying the response. The
+  // desired request is the stable identity; reconnects must not buy the same
+  // answer again just because the account balance changed after settlement.
+  const admissionKey='admission:bhs-v8:'+role+':'+stage+':'+hash(body);
+  const admission=receiptVersion==='v8'?await ledger.get(admissionKey):null;
+  if(admission){
+   if(admission.state!=='complete')throw new BudgetError('budget_pending','BHS çağrı bütçesi kaydı korunuyor.');
+   const funded=admission.value?.maxOutputTokens;
+   if(!integer(funded,requestedOutputTokens)||funded>maxOutputTokens)throw new BudgetError('provider_accounting','Kaydedilmiş BHS çağrı bütçesi geçersiz.');
+   maxOutputTokens=funded;
+   if(anthropicRole)body={...body,max_tokens:funded};else body={...body,generationConfig:{...body.generationConfig,maxOutputTokens:funded}};
+  }
   let originalStep='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(body);
   const legacyStep='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(rawBody);
   if(legacyStep!==originalStep&&!await ledger.get(originalStep)&&await ledger.get(legacyStep)){originalStep=legacyStep;body=rawBody;}
@@ -129,9 +141,27 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   const tokens=anthropicRole?count.input_tokens:count.totalTokens;
   if(!integer(tokens,1))throw new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.');
-  const upper=Math.ceil(tokens*1.2)+4096,amount=quoteSupervised(role,upper,maxOutputTokens,now());
-  const limit=tariff.capKurus-reserveForFollowingKurus;
-  if(!integer(reserveForFollowingKurus)||limit<0||amount+(await ledger.status()).chargedKurus>limit)throw new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
+  const upper=Math.ceil(tokens*1.2)+4096;
+  const limit=tariff.capKurus-reserveForFollowingKurus,status=await ledger.status();
+  if(!integer(reserveForFollowingKurus)||limit<0)throw new BudgetError('budget_limit','BHS çağrı bütçesi geçersiz.');
+  const reservation=amount=>ledger.quoteReservation?ledger.quoteReservation(amount):amount;
+  const fits=output=>status.chargedKurus+reservation(quoteSupervised(role,upper,output,now()))<=limit;
+  if(!fits(maxOutputTokens)&&receiptVersion==='v8'&&!admission&&step===originalStep&&fits(requestedOutputTokens)){
+   // Keep the entire caller-visible result allowance. Only optional reasoning
+   // headroom is reduced; source/schema/quality validation stays unchanged.
+   let low=requestedOutputTokens,high=maxOutputTokens;
+   while(low<high){const middle=Math.ceil((low+high)/2);if(fits(middle))low=middle;else high=middle-1;}
+   const plan=await ledger.once(admissionKey,{desiredRequestHash:hash(body)},0,async()=>({maxOutputTokens:low,minimumOutputTokens:requestedOutputTokens,capKurus:tariff.capKurus}));
+   if(!integer(plan.maxOutputTokens,requestedOutputTokens)||plan.maxOutputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS çağrı bütçesi doğrulanamadı.');
+   maxOutputTokens=plan.maxOutputTokens;
+   if(anthropicRole)body={...body,max_tokens:maxOutputTokens};else body={...body,generationConfig:{...body.generationConfig,maxOutputTokens}};
+   step=originalStep='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(body);
+  }
+  const amount=quoteSupervised(role,upper,maxOutputTokens,now());
+  if(!fits(maxOutputTokens)){
+   const error=new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
+   error.budgetDiagnostic={role,stage,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:reservation(amount),availableKurus:Math.max(0,limit-status.chargedKurus),followingReserveKurus:reserveForFollowingKurus,limitKurus:limit};throw error;
+  }
   let result;try{result=await ledger.once(step,body,amount,async()=>{
    const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},anthropicRole?240000:90000);
    // Preserve the received content/usage before local accounting/proof checks.

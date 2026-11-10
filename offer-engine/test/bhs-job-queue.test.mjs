@@ -93,13 +93,17 @@ test('worker endpoint denies unauthenticated or disabled calls before touching j
  r=res();await handler({method:'POST',headers:{authorization:'Bearer '+secret}},r);assert.equal(r.body.status,'idle');assert.equal(claims,1);
  r=res();await createBhsWorkerHandler({enabled:()=>false,secret:()=>secret,getQueue:()=>assert.fail()})({method:'POST',headers:{authorization:'Bearer '+secret}},r);assert.equal(r.code,503);
 });
-test('worker compute reserves its worst-case envelope in the same account, settles usage and retains uncertain cost',async()=>{
+test('worker compute settles measured failures and retains the ceiling only when measurement is unknown',async()=>{
  const f=await localBudget();try{
   let time=0,calls=0;const job={id:other,phase:'brand_plan',briefHash:hash},options={job,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:arg=>arg?{user:600000000,system:0}:{user:0,system:0},run:async()=>{calls++;time+=300000;}};
   const result=await meteredBhsStage(options);assert.ok(result.accountedKurus>0&&result.accountedKurus<workerInfraReservationKurus);assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus);
   await meteredBhsStage(options);assert.equal(calls,1);
   await assert.rejects(meteredBhsStage({...options,region:'unknown'}),e=>e.code==='infra_tariff_unverified');
-  await assert.rejects(meteredBhsStage({...options,job:{...job,phase:'sector_sources'},run:async()=>{throw Error('lost worker');}}));assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus+workerInfraReservationKurus);
+  await assert.rejects(meteredBhsStage({...options,job:{...job,phase:'sector_sources'},run:async()=>{time+=10000;throw Object.assign(Error('admission blocked'),{code:'budget_limit'});}}),e=>e.code==='budget_limit');
+  const failed=await f.ledger.get('infra:v8:sector_sources:'+hash);assert.equal(failed.state,'complete');assert.equal(failed.value.failed,true);assert.ok(failed.charge_kurus>0&&failed.charge_kurus<workerInfraReservationKurus);
+  assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus+failed.charge_kurus);
+  await assert.rejects(meteredBhsStage({...options,job:{...job,phase:'swot_sources'},cpu:()=>({user:NaN,system:0}),run:async()=>{throw Error('unmeasured failure');}}),e=>e.code==='infra_accounting');
+  assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus+failed.charge_kurus+workerInfraReservationKurus);
  }finally{await f.close();}
 });
 
@@ -201,4 +205,27 @@ test('private production readiness cannot claim a job and requires the same work
  const h=createBhsWorkerHandler({enabled:()=>true,secret:()=>secret,getQueue:()=>assert.fail('No job may be claimed'),readiness:()=>async(_req,r)=>r.status(200).json({paidCalls:0,configured:true})});
  const r=res();await h({method:'POST',headers:{authorization:'Bearer '+secret},body:{action:'readiness'}},r);assert.equal(r.code,200);assert.equal(r.body.paidCalls,0);
  const denied=res();await h({method:'POST',headers:{authorization:'Bearer '+'x'.repeat(43)},body:{action:'readiness'}},denied);assert.equal(denied.code,401);
+});
+
+test('an explicit phase-bound budget recovery resumes only the free coordinator and reuses earlier paid work',async()=>{
+ const f=await fixture();try{
+  await f.enqueue();const job=await f.queue.claim(),ledger=await f.queue.getLedger(job),key=stageKey(brief,job.phase,'v8');let purchases=0;
+  const execute=opts=>opts.ledger.once(key,{brief,phase:job.phase,version:'bounded-bhs-v1'},0,async()=>{await opts.ledger.once('already-paid',{},100,async()=>{purchases++;return {saved:true};});return {phase:job.phase};});
+  await assert.rejects(ledger.once(key,{brief,phase:job.phase,version:'bounded-bhs-v1'},0,async()=>{await ledger.once('already-paid',{},100,async()=>{purchases++;return {saved:true};});throw Object.assign(Error('preflight blocked'),{code:'budget_limit'});}));
+  await assert.rejects(runClaimedBhsStage({job,queue:f.queue,getLedger:f.queue.getLedger,getProviders:async()=>({}),runStage:execute}),e=>e.code==='stage_paused');
+  const before=await f.ledger.status();
+  await f.db.query("update public.pipeline_bhs_jobs set state='queued',spec=spec||$2::jsonb where id=$1",[job.id,JSON.stringify({budgetRecoveryVersion:'shared-budget-v1',budgetRecoveryPhase:job.phase})]);
+  const authorized=await f.queue.claim();await runClaimedBhsStage({job:authorized,queue:f.queue,getLedger:f.queue.getLedger,getProviders:async()=>({}),runStage:execute});
+  assert.equal(purchases,1);assert.deepEqual(await f.ledger.status(),before);assert.equal((await f.queue.read(authorized)).phase,'brand_sources');
+ }finally{await f.close();}
+});
+test('recovering measured compute never erases an older unmeasured commitment',async()=>{
+ const f=await localBudget();try{
+  const job={id:other,phase:'competition_review',briefHash:hash};
+  await assert.rejects(f.ledger.once('infra:v8:competition_review:'+hash,{jobId:other,phase:job.phase,region:'iad1'},400,async()=>{throw Object.assign(Error('old admission failure'),{code:'budget_limit'});}));
+  const before=await f.ledger.status();let time=0;
+  const recovered={...job,budgetRecoveryVersion:'shared-budget-v1',budgetRecoveryPhase:job.phase};
+  const result=await meteredBhsStage({job:recovered,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:()=>({user:0,system:0}),run:async()=>{time+=1000;}});
+  assert.equal((await f.ledger.get('infra:v8:competition_review:'+hash)).state,'uncertain');assert.equal((await f.ledger.status()).chargedKurus,before.chargedKurus+result.accountedKurus);assert.ok(result.accountedKurus>0);
+ }finally{await f.close();}
 });

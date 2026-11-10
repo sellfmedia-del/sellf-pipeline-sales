@@ -179,14 +179,21 @@ test('source reading balances independent manager questions and sector revisions
  assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r8:/);
 });
 
-test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{
+test('a source-backed product-sales inference passes the sector review without a third paid validation',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>{
-  if(stage==='v8-sector-review')return {...data,decision:'limited'};
-  if(stage==='v8-sector-validation')return {...data,facts:data.facts.map(f=>f.topic==='revenue_drivers'?{...f,kind:'inference',statement:'Gelir, kaynakta satışa sunulan ürünlerin satışından oluşuyor olabilir; gerçekleşmiş fiyat, hacim ve ciro bilinmiyor.'}:f)};
+  if(stage==='v8-sector-extract')return {...data,facts:data.facts.map(f=>f.topic==='revenue_drivers'?{...f,kind:'inference',statement:'Gelir, kaynakta satışa sunulan ürünlerin satışından oluşuyor olabilir; gerçekleşmiş fiyat, hacim ve ciro bilinmiyor.'}:f)};
   return data;
  }});
  try{for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_validation')+1))await run(db,phase,t);
   const row=await db.ledger.get(stageKey(brief,'sector_validation','v8'));assert.equal(row.value.decision,'accepted');assert.ok(row.value.facts.some(f=>f.kind==='inference'));assert.ok((await db.ledger.status()).chargedKurus<=5000);
+  assert.ok(!t.events.some(e=>e.stage==='v8-sector-validation'));
+ }finally{await db.close();}
+});
+test('a modern limited sector remains limited without buying a third verdict to override it',async()=>{
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>stage==='v8-sector-review'?{...data,decision:'limited'}:data});
+ try{for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_validation')+1))await run(db,phase,t);
+  assert.equal((await db.ledger.get(stageKey(brief,'sector_validation','v8'))).value.decision,'limited');assert.ok(!t.events.some(e=>e.stage==='v8-sector-validation'));
+  await assert.rejects(run(db,'competition_plan',t),e=>e.code==='research_stage_incomplete');
  }finally{await db.close();}
 });
 
