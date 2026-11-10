@@ -5,14 +5,23 @@ import {BudgetError} from '../budget/ledger.mjs';
 export const workerInfraReservationKurus=400;
 export async function meteredBhsStage({job,ledger,run,region=process.env.VERCEL_REGION,clock=Date.now,cpu=process.cpuUsage}){
  if(region!=='iad1')throw new BudgetError('infra_tariff_unverified','BHS çalışanının bölge maliyeti doğrulanmalı.');
- const key='infra:v8:'+job.phase+':'+job.briefHash;
- return ledger.once(key,{jobId:job.id,phase:job.phase,region},workerInfraReservationKurus,async()=>{
-  const started=clock(),usage=cpu();await run();
+ const recovery=job.budgetRecoveryVersion==='shared-budget-v1'&&job.budgetRecoveryPhase===job.phase;
+ // An explicitly authorized recovery keeps the old unmeasured commitment.
+ // The new attempt has its own once-only receipt in the SAME capped account.
+ const key='infra:v8:'+job.phase+':'+job.briefHash+(recovery?':shared-budget-v1':'');
+ let failure;
+ const result=await ledger.once(key,{jobId:job.id,phase:job.phase,region},workerInfraReservationKurus,async()=>{
+  const started=clock(),usage=cpu();
+  try{await run();}catch(error){failure=error;}
   const elapsedMs=clock()-started,active=cpu(usage),cpuMs=(active.user+active.system)/1000;
   if(!Number.isFinite(elapsedMs)||elapsedMs<0||elapsedMs>300000||!Number.isFinite(cpuMs)||cpuMs<0||cpuMs>600000)throw new BudgetError('infra_accounting','BHS çalışma süresi ayrılan maliyetle eşleşmiyor.');
   // Child renderers are outside process.cpuUsage(); use the full two-vCPU
   // wall-time ceiling so their CPU cannot disappear from the cost envelope.
   const usd=Math.max(cpuMs,elapsedMs*2)/3600000*.256+elapsedMs/3600000*4*.0212;
-  return {accountedKurus:Math.max(1,Math.ceil(usd*60*1.2*1.03*100)),elapsedMs,cpuMs,region,accountingVersion:'bhs-worker-envelope-2026-11-10',reservedKurus:workerInfraReservationKurus};
+  return {...(failure?{failed:true,code:failure.code||'stage_failed'}:{}),accountedKurus:Math.max(1,Math.ceil(usd*60*1.2*1.03*100)),elapsedMs,cpuMs,region,accountingVersion:'bhs-worker-envelope-2026-11-10',reservedKurus:workerInfraReservationKurus};
  },{settle:value=>value.accountedKurus});
+ // Provider receipts keep their own paid/uncertain commitments. A caught
+ // failure does not make this invocation's measured compute cost unknowable.
+ if(result.failed)throw failure||new BudgetError(result.code,'BHS aşamasının hata kaydı ve altyapı kullanımı korundu.');
+ return result;
 }
