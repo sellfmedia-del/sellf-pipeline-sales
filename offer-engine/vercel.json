@@ -31,8 +31,7 @@
     },
     "api/bhs-worker.js": {
       "maxDuration": 300,
-      "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}",
-      "memory": 2048
+      "includeFiles": "{src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}"
     }
   },
   "headers": [

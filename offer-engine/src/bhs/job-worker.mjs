@@ -4,6 +4,19 @@ import {createSequentialProviders} from './sequential-providers.mjs';
 import {runClaimedBhsStage} from './background-runner.mjs';
 import {runBoundedStage} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {BudgetError} from '../budget/ledger.mjs';
+
+export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
+ if(job.phase==='scope'){
+  const cost=await options.ledger.status();
+  if(cost.capKurus-cost.chargedKurus<workerInfraReservationKurus){
+   // The existing deterministic scope fallback uses no provider and fits the
+   // fixed gateway/template reserve. A finished BHS must not wait for a model.
+   return runStage({...options,providers:{...options.providers,generate:async()=>{throw new BudgetError('budget_limit','Kalan bütçe için mevcut sıfır maliyetli kapsam şablonu kullanılacak.');}}});
+  }
+ }
+ return meter({job,ledger:options.ledger,run:()=>runStage(options)});
+}
 
 export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>process.env.BHS_WORKER_SECRET,getQueue=()=>createBhsJobStore(),getProviders=createSequentialProviders,run=runClaimedBhsStage,logger=console}={}){
  return async(req,res)=>{
@@ -15,7 +28,7 @@ export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>
   let job;
   try{
    const queue=await getQueue();job=await queue.claim();if(!job)return res.status(200).json({status:'idle'});
-   const result=await run({job,queue,getLedger:queue.getLedger,getProviders:opts=>getProviders({...opts,infrastructureOffsetKurus:workerInfraReservationKurus}),runStage:opts=>meteredBhsStage({job,ledger:opts.ledger,run:()=>runBoundedStage(opts)})});
+   const result=await run({job,queue,getLedger:queue.getLedger,getProviders:opts=>getProviders({...opts,infrastructureOffsetKurus:workerInfraReservationKurus}),runStage:opts=>runMeteredBhsPhase(job,opts)});
    logger.info?.(JSON.stringify({event:'bhs_background_stage',jobId:job.id,phase:job.phase,status:result.status}));
    return res.status(200).json(result);
   }catch(error){

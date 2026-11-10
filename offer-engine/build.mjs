@@ -58,4 +58,4 @@ await buildMonthlyReview(path.join(here,'public'),{production});
 
 // Explicit, single-commit public-brand QA only. No Supabase or production write.
 // Ordinary builds never call models, search providers or Actors.
-if(!production&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&process.env.OFFER_BHS_QA_CASE==='humm')await import('./scripts/bhs-sequential-acceptance.mjs');
+if(!production&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&['humm','muratbey'].includes(process.env.OFFER_BHS_QA_CASE))await import('./scripts/bhs-sequential-acceptance.mjs');

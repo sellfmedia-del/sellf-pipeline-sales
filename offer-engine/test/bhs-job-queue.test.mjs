@@ -9,7 +9,7 @@ import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {runClaimedBhsStage} from '../src/bhs/background-runner.mjs';
 import {createBhsJobStore} from '../src/bhs/job-store.mjs';
 import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs.mjs';
-import {createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
+import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',token='33333333-3333-4333-8333-333333333333',secret='s'.repeat(43),hash=briefHash(brief);
@@ -93,11 +93,21 @@ test('worker endpoint denies unauthenticated or disabled calls before touching j
 });
 test('worker compute reserves its worst-case envelope in the same account, settles usage and retains uncertain cost',async()=>{
  const f=await localBudget();try{
-  let time=0,calls=0;const job={id:other,phase:'brand_plan',briefHash:hash},options={job,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:arg=>arg?{user:100000,system:100000}:{user:0,system:0},run:async()=>{calls++;time+=100000;}};
+  let time=0,calls=0;const job={id:other,phase:'brand_plan',briefHash:hash},options={job,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:arg=>arg?{user:600000000,system:0}:{user:0,system:0},run:async()=>{calls++;time+=300000;}};
   const result=await meteredBhsStage(options);assert.ok(result.accountedKurus>0&&result.accountedKurus<workerInfraReservationKurus);assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus);
   await meteredBhsStage(options);assert.equal(calls,1);
   await assert.rejects(meteredBhsStage({...options,region:'unknown'}),e=>e.code==='infra_tariff_unverified');
   await assert.rejects(meteredBhsStage({...options,job:{...job,phase:'sector_sources'},run:async()=>{throw Error('lost worker');}}));assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus+workerInfraReservationKurus);
+ }finally{await f.close();}
+});
+
+test('a completed BHS can reach the deterministic scope fallback even below one worker reservation',async()=>{
+ const f=await localBudget();try{
+  await f.ledger.once('prior-public-research',{},4200,async()=>({retained:true}));
+  await f.ledger.once(stageKey(brief,'synthesis','v8'),{brief,phase:'synthesis',version:'bounded-bhs-v1'},0,async()=>({report:{summary:'',sources:[],findings:[]}}));
+  const cost=await f.ledger.status(),job={id:other,phase:'scope',briefHash:hash};
+  const result=await runMeteredBhsPhase(job,{phase:'scope',brief,ledger:f.ledger,researchVersion:'v8',researchModel:'claude-sonnet-5-5',providers:{generate:()=>assert.fail('no paid scope call')}});
+  assert.equal(result.costFallback,true);assert.equal(result.scopePlan.fallback,true);assert.deepEqual(await f.ledger.status(),cost);
  }finally{await f.close();}
 });
 test('existing audit endpoint queues v8 and reconnects to the original budget without running a browser-paid phase',async()=>{
