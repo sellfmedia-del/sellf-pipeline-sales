@@ -25,6 +25,20 @@ export function explicitActorPolicies(value){
 // A console form, a favourite, and an Actor's developer defaults are not a
 // verified account-specific spending policy. Use a saved Task or an explicit
 // server policy snapshot. Never fall back to .40 when a smaller cap is unknown.
+export function actorEventOverrunUsd(pricing){
+ const events=Object.values(pricing?.pricingPerEvent?.actorChargeEvents||{});
+ if(!events.length||events.length>100)throw new BudgetError('actor_pricing_unverified','Aktörün olay ücretleri doğrulanamadı.');
+ let total=0;
+ for(const event of events){
+  const prices=event.eventPriceUsd!==undefined&&event.eventTieredPricingUsd===undefined?[event.eventPriceUsd]:event.eventPriceUsd===undefined&&event.eventTieredPricingUsd&&typeof event.eventTieredPricingUsd==='object'?Object.values(event.eventTieredPricingUsd).map(p=>p?.tieredEventPriceUsd):[];
+  if(!prices.length||prices.some(p=>!Number.isFinite(p)||p<0))throw new BudgetError('actor_pricing_unverified','Aktörün tüm olay ücretleri doğrulanmalı.');
+  total+=Math.max(...prices);
+ }
+ // Apify can admit one final item beyond the run budget. One item can charge
+ // both its explicit event and the synthetic dataset event. Sum all known
+ // event maxima (across tiers) as a conservative, finite final-item allowance.
+ return Math.ceil(total*1e9)/1e9;
+}
 export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus,followingKurus=1600,pricing}){
  if(!approvedActors.includes(actor))throw new BudgetError('actor_not_approved','Bu aktör normal BHS kapsamına alınmadı.');
  const cap=task?.options?.maxTotalChargeUsd;
@@ -33,10 +47,12 @@ export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus
 // real bounded run, only PPE with explicitly included platform usage is safe.
  if(pricing?.pricingModel!=='PAY_PER_EVENT'||pricing.isPPEPlatformUsagePaidByUser!==false)throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
  if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<600||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
- const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
- const maxTotalChargeUsd=Math.min(cap,.4,requestedUsd,remainingUsd);
+ const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6,overrunAllowanceUsd=actorEventOverrunUsd(pricing);
+ // The user's individual limit includes that allowance; it is never raised.
+ const maxTotalChargeUsd=Math.floor(Math.min(cap-overrunAllowanceUsd,.4-overrunAllowanceUsd,requestedUsd,remainingUsd-overrunAllowanceUsd)*1e6+1e-9)/1e6;
  if(maxTotalChargeUsd<=0||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&maxTotalChargeUsd<pricing.minimalMaxTotalChargeUsd)throw new BudgetError('budget_limit','Aktörün minimum ücreti kalan bütçeye sığmıyor.');
- return {maxTotalChargeUsd,reservedKurus:Math.ceil(maxTotalChargeUsd*tariff.usdTry*tariff.overhead*100),capSource:task.policySource||'saved-task',taskId:task.id,actorId};
+ const chargeUpperUsd=maxTotalChargeUsd+overrunAllowanceUsd;
+ return {maxTotalChargeUsd,chargeUpperUsd,overrunAllowanceUsd,reservedKurus:Math.ceil(chargeUpperUsd*tariff.usdTry*tariff.overhead*100),capSource:task.policySource||'saved-task',taskId:task.id,actorId};
 }
 export function safeActorInput(actor,url){
  const safe=researchUrl(url);if(!safe)throw new BudgetError('actor_source_unverified','Aktör kaynağı geçersiz.');
