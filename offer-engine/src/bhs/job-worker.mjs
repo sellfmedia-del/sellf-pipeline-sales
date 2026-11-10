@@ -37,7 +37,7 @@ export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>
    logger.info?.(JSON.stringify({event:'bhs_background_stage',jobId:job.id,phase:job.phase,status:result.status}));
    return res.status(200).json(result);
   }catch(error){
-   logger.error?.(JSON.stringify({event:'bhs_background_paused',...(job?{jobId:job.id,phase:job.phase}:{}),code:error.code||'worker_unavailable'}));
+   logger.error?.(JSON.stringify({event:'bhs_background_paused',...(job?{jobId:job.id,phase:job.phase}:{}),code:error.code||'worker_unavailable',...(error.budgetDiagnostic?{budgetDiagnostic:error.budgetDiagnostic}:{})}));
    // No provider message, brief, token or gateway credential leaves this endpoint.
    return res.status(200).json({status:'paused',code:error.code||'worker_unavailable'});
   }

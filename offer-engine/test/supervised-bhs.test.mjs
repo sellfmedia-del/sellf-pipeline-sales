@@ -350,3 +350,22 @@ test('an account that cannot fund the full visible contract rejects before any p
  await assert.rejects(p.manager('v8-competition-review',{},schema,{maxOutputTokens:4096}),e=>e.code==='budget_limit'&&e.budgetDiagnostic.followingReserveKurus===0);
  assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);assert.equal((await db.ledger.status()).chargedKurus,4900);
 });
+
+test('a large counted review can use a complete smaller response instead of reserving an arbitrary 4096-token minimum',async()=>{
+ const db=account(4264),t=transport({onGenerate:async(_url,b)=>json({model:b.model,usage:{input_tokens:30000,output_tokens:1000},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]})});
+ const counted={...t,fetchImpl:(url,options)=>url.endsWith('/count_tokens')?Promise.resolve(json({input_tokens:30000})):t.fetchImpl(url,options)};
+ const scoped=()=>({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')});
+ const result=await v8Providers(scoped(),counted).manager('v8-competition-review',{},schema,{maxOutputTokens:4096});
+ assert.equal(result.data.ok,true);const request=t.calls.find(c=>c.url.endsWith('/messages'));assert.ok(request.body.max_tokens>=1024&&request.body.max_tokens<4096);assert.ok((await db.ledger.status()).chargedKurus<=5000);
+ const cost=await db.ledger.status(),calls=t.calls.length;await v8Providers(scoped(),counted).manager('v8-competition-review',{},schema,{maxOutputTokens:4096});assert.deepEqual(await db.ledger.status(),cost);assert.equal(t.calls.length,calls);
+});
+test('a short response allowance cannot accept truncated JSON or bypass source/content validation',async()=>{
+ for(const mode of ['truncated','unsupported']){
+  const db=account(4264),t=transport({onGenerate:async(_url,b)=>json({model:b.model,usage:{input_tokens:30000,output_tokens:1000},stop_reason:mode==='truncated'?'max_tokens':'end_turn',content:[{type:'text',text:'{"ok":true}'}]})});
+  const counted={...t,fetchImpl:(url,options)=>url.endsWith('/count_tokens')?Promise.resolve(json({input_tokens:30000})):t.fetchImpl(url,options)};
+  const scoped=()=>({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')});
+  const call=()=>v8Providers(scoped(),counted).manager('v8-competition-review',{},schema,{maxOutputTokens:4096,validateData:()=>{throw Error('Unknown proof');}});
+  await assert.rejects(call(),e=>e.code===(mode==='truncated'?'incomplete':'model_output_invalid'));const status=await db.ledger.status(),calls=t.calls.length;
+  await assert.rejects(call());assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),status);assert.ok(status.chargedKurus<=5000);
+ }
+});
