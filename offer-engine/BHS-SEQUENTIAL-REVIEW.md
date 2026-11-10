@@ -207,3 +207,11 @@ loads it during opt-in QA only. Tests verify the exact sum and reject key-like
 content; the sole tvly-YOUR_API_KEY occurrence is a literal public documentation
 placeholder retained inside the original captured excerpt. Ordinary builds do
 not execute QA or publish these test fixtures.
+
+The cca0c63 retained continuation made no paid generation: the complete peer
+review required a 721-kurus maximum reservation while the competition phase had
+600 kurus left, despite 1,600 kurus remaining in the aggregate. The competition
+allocation is now 3,700 instead of 3,500 kurus (same as SWOT); the stage wrapper
+still caps pre-final research at 4,400 and the account remains 5,000. No token,
+source or output requirement was reduced. The zero-cost coordinator advances
+to competition_review r3. All paid amounts remain at 3,400 kurus.
