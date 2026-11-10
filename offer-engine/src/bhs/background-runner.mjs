@@ -19,7 +19,7 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
   const step=await ledger.get(key);
   if(step?.state!=='complete'){
    if(step?.state==='reserved')throw new BudgetError('stage_abandoned','Önceki çalışanın aşama kaydı açık kaldı; ücretli iş tekrarlanmadı.');
-   const authorizedBudgetRecovery=job.budgetRecoveryVersion==='shared-budget-v1'&&job.budgetRecoveryPhase===job.phase&&step?.charge_kurus===0&&step?.value?.code==='budget_limit';
+   const authorizedBudgetRecovery=['shared-budget-v1','shared-budget-v2'].includes(job.budgetRecoveryVersion)&&job.budgetRecoveryPhase===job.phase&&step?.charge_kurus===0&&step?.value?.code==='budget_limit';
    if(step?.state==='uncertain'&&!authorizedBudgetRecovery)throw new BudgetError('stage_paused','Önceki aşama durdu; kayıtlar korunuyor.');
    const providers=await getProviders({ledger,researchVersion:job.researchVersion,phase:job.phase});
    await runStage({phase:job.phase,brief,ledger,providers,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
