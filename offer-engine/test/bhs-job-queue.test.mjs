@@ -188,3 +188,17 @@ test('every queue phase acknowledges the same versioned key as the research jour
   assert.equal((await f.queue.read(job)).state,'complete');
  }finally{await f.close();}
 });
+
+test('Vault authorization never exposes the worker credential and denies jobs when the private RPC rejects it',async()=>{
+ for(const authorized of [true,false]){
+  const paths=[];const gateway=createBhsGatewayActions({mode:'production',env:()=>undefined,db:async(path,{body})=>{paths.push(path);if(path.endsWith('pipeline_bhs_worker_authorized')){assert.equal(body.p_secret,secret);return authorized;}return null;},user:async()=>assert.fail('Worker has no browser user'),validateLead:async()=>assert.fail('Worker has no browser lead')});
+  const run=()=>gateway({action:'bhs_job_claim',workerSecret:secret,leaseToken:token});
+  if(authorized){assert.equal(await run(),null);assert.equal(paths.length,2);}else{await assert.rejects(run(),/authorization/);assert.equal(paths.length,1);}
+ }
+});
+
+test('private production readiness cannot claim a job and requires the same worker authorization',async()=>{
+ const h=createBhsWorkerHandler({enabled:()=>true,secret:()=>secret,getQueue:()=>assert.fail('No job may be claimed'),readiness:()=>async(_req,r)=>r.status(200).json({paidCalls:0,configured:true})});
+ const r=res();await h({method:'POST',headers:{authorization:'Bearer '+secret},body:{action:'readiness'}},r);assert.equal(r.code,200);assert.equal(r.body.paidCalls,0);
+ const denied=res();await h({method:'POST',headers:{authorization:'Bearer '+'x'.repeat(43)},body:{action:'readiness'}},denied);assert.equal(denied.code,401);
+});

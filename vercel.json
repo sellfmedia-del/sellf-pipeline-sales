@@ -34,7 +34,10 @@
     },
     "api/bhs-worker.js": {
       "maxDuration": 300,
-      "includeFiles": "{offer-engine/src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}"
+      "includeFiles": "{offer-engine/src/bhs/**,node_modules/unpdf/**,node_modules/@sparticuz/chromium/bin/**}",
+      "regions": [
+        "iad1"
+      ]
     }
   },
   "headers": [

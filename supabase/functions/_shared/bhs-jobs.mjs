@@ -6,9 +6,13 @@ export function createBhsGatewayActions({mode,env,db,user,validateLead,cryptoImp
   const op=body.action.slice('bhs_job_'.length),worker=['claim','budget','advance','pause'].includes(op);
   let owner=null;
   if(worker){
-   const secret=env('BHS_WORKER_SECRET');if(!/^[A-Za-z0-9_-]{43}$/.test(secret||'')||typeof body.workerSecret!=='string')throw Error('BHS worker unavailable.');
-   const digest=async value=>new Uint8Array(await cryptoImpl.subtle.digest('SHA-256',new TextEncoder().encode(value)));
-   const [a,b]=await Promise.all([digest(secret),digest(body.workerSecret)]);let diff=0;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];if(diff)throw Error('BHS worker authorization failed.');
+   if(!/^[A-Za-z0-9_-]{43}$/.test(body.workerSecret||''))throw Error('BHS worker unavailable.');
+   const secret=env('BHS_WORKER_SECRET');
+   if(secret){
+    if(!/^[A-Za-z0-9_-]{43}$/.test(secret))throw Error('BHS worker unavailable.');
+    const digest=async value=>new Uint8Array(await cryptoImpl.subtle.digest('SHA-256',new TextEncoder().encode(value)));
+    const [a,b]=await Promise.all([digest(secret),digest(body.workerSecret)]);let diff=0;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];if(diff)throw Error('BHS worker authorization failed.');
+   }else if(await db('/rest/v1/rpc/pipeline_bhs_worker_authorized',{method:'POST',body:{p_secret:body.workerSecret}})!==true)throw Error('BHS worker authorization failed.');
   }else{
    if(!['find','enqueue','read','cancel'].includes(op))throw Error('Invalid BHS operation.');
    const who=await user(body.jwt);owner=who.id;
