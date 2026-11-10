@@ -164,3 +164,15 @@ test('a targeted brand repair retains omitted accepted topics and rechecks repla
   assert.equal(new Set(saved.facts.map(f=>f.id)).size,saved.facts.length);
  }finally{await db.close();}
 });
+
+test('a manager source correction changes the accepted fact itself, while a fabricated patch cannot pass',async()=>{
+ for(const fabricated of [false,true]){
+  const db=await localBudget();
+  const t=modelTransport({mutate:(stage,data,input)=>stage==='v8-brand-review'?{...data,patches:[{...input.candidates[0],statement:'Acme Organic organik atıştırmalık ürünleri üreten bir markadır.',...(fabricated?{sourceIds:['invented-paragraph']}:{})}]}:data});
+  try{
+   const work=async()=>{for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand_review')+1))await run(db,phase,t);};
+   if(fabricated)await assert.rejects(work,e=>e.code==='model_output_invalid');
+   else{await work();const saved=(await db.ledger.get(stageKey(brief,'brand_review','v8'))).value;assert.equal(saved.facts[0].statement,'Acme Organic organik atıştırmalık ürünleri üreten bir markadır.');assert.equal(saved.facts[0].id,'identity');}
+  }finally{await db.close();}
+ }
+});

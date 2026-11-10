@@ -91,3 +91,24 @@ not used as a claim of live v8 background operation.
   separate lint/typecheck script exists; syntax and build checks pass.
 - No complete public-brand quality/cost acceptance is claimed yet. Keep all
   prior receipts when continuing; do not start this same QA case at zero cost.
+
+The next retained Sütaş review used 255 kurus and returned a 1,687-character
+explanation; its 1,400-char internal note bound rejected it. The case remains
+paused at 2,180 kurus and its immutable checkpoint is at
+`https://sellf-pipeline-sales-6vd91lndj-yigit-konuks-projects.vercel.app/bhs-sequential-checkpoint.json`.
+No charge or receipt has been removed. Internal review explanations now have
+the same finite 6,000-char transport allowance as tasks, with all existing
+token/rate/aggregate caps preserved. Public findings retain their strict bounds.
+
+Fact reviewers can apply up to four complete source-backed patches to accepted
+candidate IDs inside the existing review call. Notes alone cannot change a fact.
+Unknown proof IDs, duplicate patches and patches to rejected IDs fail validation.
+The entire amended set must still meet the same topic and evidence gates.
+
+A new independent Duru Bulgur case measures the corrected flow from its normal
+entry, without inheriting another brand's earlier implementation-error charges.
+This is a separate brand/case; the paused Sütaş, Humm and Muratbey receipts remain
+intact and are not evidence of completed acceptance. Results are pending.
+Corrected live read-only readiness confirms the configured Apify account has
+zero saved Tasks. The user's DIFFERENT per-Actor limits (all <=0.40 USD) must be
+resolved without raising lower limits; no Actor has been started.

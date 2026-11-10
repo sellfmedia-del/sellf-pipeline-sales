@@ -10,7 +10,7 @@ import {response} from './fixtures/offer.mjs';
 import {expertContext} from '../src/bhs/expert-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
-import {taskSchema} from '../src/bhs/sequential-contracts.mjs';
+import {taskSchema,reviewSchema} from '../src/bhs/sequential-contracts.mjs';
 const now=()=>Date.parse('2026-11-09T12:00:00Z');
 const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};
 const json=v=>new Response(JSON.stringify(v));
@@ -169,4 +169,14 @@ test('saved scraper caps are read from matching Task details without exposing in
  assert.ok(!JSON.stringify(result).includes('privateSession'));
  const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'anotherActor',options:{maxTotalChargeUsd:.03}}})});
  assert.equal(invalid.taskPolicies,0);assert.equal(invalid.complete,false);
+});
+
+test('a long internal review explanation preserves the verdict and original wording within the existing generation budget',async()=>{
+ const notes='Kaynak eşleşmesi ile ticari çıkarım ayrı değerlendirilir. '.repeat(32);
+ assert.ok(notes.length>1400&&notes.length<6000);
+ const data={acceptedIds:[],rejectedIds:[],decision:'limited',missing:[],notes,nextTask:{instruction:'Sektörü incele.',queries:[]},repairTask:{instruction:'Kaynak eşleşmesini düzelt.',queries:[]}};
+ const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:700},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(data)}]})}),p=v8Providers(db,t);
+ assert.deepEqual((await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096})).data,data);
+ assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,4096);
+ const calls=t.calls.length;await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096});assert.equal(t.calls.length,calls);
 });
