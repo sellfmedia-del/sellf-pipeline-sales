@@ -85,8 +85,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   let step=originalStep;
   const validate=value=>{
-   if(value.rejectedOutput)throw new BudgetError(value.rejectedOutput,'BHS model yanıtı tamamlanmadı; kullanım kaydı korundu.');
-   try{assertSchema(value.data,schema);validateData?.(value.data);}catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
+   if(value.rejectedOutput)throw Object.assign(new BudgetError(value.rejectedOutput,'BHS model yanıtı tamamlanmadı; kullanım kaydı korundu.'),{paidResponseRetained:true});
+   try{assertSchema(value.data,schema);validateData?.(value.data);}catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.paidResponseRetained=true;failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
    return value;
   };
   let saved=await ledger.get(step);

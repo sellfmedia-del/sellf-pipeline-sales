@@ -95,11 +95,12 @@ test('new process resumes the committed stage without duplicating model or searc
   await run(db,'brand_sources',t);assert.equal((await db.ledger.get(stageKey(brief,'brand_sources','v8'))).state,'complete');
  }finally{await db?.close();await rm(dir,{recursive:true,force:true});}
 });
-test('fabricated evidence in a worker response cannot reach a manager approval',async()=>{
+test('fabricated operator evidence is discarded and cannot satisfy expert understanding',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>stage==='v8-brand-extract'?{...data,facts:data.facts.map(f=>({...f,sourceIds:['invented-proof']}))}:data});
  try{
   await run(db,'brand_plan',t);await run(db,'brand_sources',t);
-  await assert.rejects(run(db,'brand_draft',t),e=>e.code==='model_output_invalid');assert.ok(!t.events.some(e=>e.stage==='v8-brand-review'));
+  const draft=await run(db,'brand_draft',t);assert.deepEqual(draft.workerData.facts,[]);
+  const review=await run(db,'brand_review',t);assert.deepEqual(review.facts,[]);assert.equal(review.understandingDecision,'limited');
  }finally{await db.close();}
 });
 test('a reviewer can recover an operator-omitted market fact from the original company source without another extraction',async()=>{

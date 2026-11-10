@@ -50,13 +50,19 @@ function validateStage(phase,facts,review){
  if(phase==='sector'&&(!topics.has('sector')||!facts.some(revenueMechanism)||!topics.has('customer_behavior')))decision='limited';
  return {...review,decision};
 }
+async function reviewableOperator(call){
+ try{return await call();}catch(error){
+  if(!error.paidResponseRetained||!['incomplete','invalid_report','model_output_invalid'].includes(error.code))throw error;
+  return {data:{facts:[],unknowns:[]},rejectedOperator:{code:error.code,paidResponseRetained:true}};
+ }
+}
 async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==='swot'?reviewSchema:factReviewSchema,extra={},maxOutputTokens=4096}={}){
  const context=sequentialContext(brief,evidence),candidates=worker.facts||worker.findings;
  // Peer assessments need each candidate's original product pages even when
  // the worker omitted that peer from its facts. Omission is not absent proof.
  const peerHosts=phase==='competition'?new Set(evidence.plan.entities.filter(e=>e.role==='competitor').map(e=>researchHost(e.website))):new Set();
  const peerRows=context.cards.filter(c=>peerHosts.has(researchHost(c.url))).map(c=>({sourceIds:[c.id]}));
- const primaryRows=['brand','sector'].includes(phase)?context.cards.filter(c=>researchHost(c.url)===researchHost(brief.website)).map(c=>({sourceIds:[c.id]})):[];
+ const primaryRows=['brand','sector'].includes(phase)?context.cards.filter(c=>phase==='sector'&&!candidates.length||researchHost(c.url)===researchHost(brief.website)).map(c=>({sourceIds:[c.id]})):[];
  const input=stageModelInput(context,{rows:[...candidates,...peerRows,...primaryRows]});
  const next=logicalPhases[logicalPhases.indexOf(phase)+1];
  const gateInstruction=['brand','sector'].includes(phase)?'fundamentals içinde HER temel başlığı ayrı confirmed/incomplete değerlendir. Yalnız kabul edilen veya patches ile açıkça düzeltilen kaynaklı facts yeterliyse confirmed seç. Kimlik, ürün, iş modeli ve HEDEF PAZAR anlaşılmalı; Liderlik söylemini ölçülmüş liderlik sayma; açık ülke/faaliyet beyanını diğer kurumsal, ürün ve teslimat kanıtlarıyla birlikte değerlendir. Kamuya kapalı ölçek/sahiplik/ciro/kanal payı ayrıntılarını unknowns/missing içinde tut; bunlar temel başlık değildir ve tek başına incomplete gerekçesi olamaz. Gerçek kaynak/kimlik/ürün/gelir mekanizması/müşteri veya hedef pazar boşluğu varsa ilgili temel başlığı incomplete bırak.':'Temel anlayış sonraki aşamaya yetecek kadar net değilse limited seç.';
@@ -124,9 +130,9 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='brand_draft'){
   const context=sequentialContext(brief,prior);
-  const worker=await providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. Önce dört temel konunun her birini en az bir somut kaynaklı fact ile tamamla; sonra kimlik, ürün, iş modeli, pazar, ölçek veya sahiplik anlayışını gerçekten değiştiren diğer farklı olguları ekle. Bulgu sayısına üst sınır koyma. Her statement bir kısa cümle olsun; aynı katalogdaki benzer ürün çeşitlerini veya aynı olguyu farklı kaynaklarla ayrı bulgu diye tekrarlama. Önce en somut ürün/kanal ve şirket kimliği bilgisini seç, aynı bilgiyi tekrar etme. Kaynakta gördüğün mevcut hizmet veya ürün, hedef veya gerçekleşmiş ticari başarı değildir. Kimlik ve sahiplik için resmî şirket/sicil veya güvenilir kurumsal haber kaynaklarını öncele; kaynaksız boykot/sosyal listelerini sahiplik kanıtı yapma. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},withProofIds(phaseExtractionSchema('brand'),context),{maxOutputTokens:8192});
+  const worker=await reviewableOperator(()=>providers.worker('v8-brand-extract',{instruction:'Yöneticinin görevi: '+prior.managerPlan.instruction+'\nMarkayı anlamak için facts içinde identity, products, business_model ve market konularını kaynakla açıkla. Önce dört temel konunun her birini en az bir somut kaynaklı fact ile tamamla; sonra kimlik, ürün, iş modeli, pazar, ölçek veya sahiplik anlayışını gerçekten değiştiren diğer farklı olguları ekle. Bulgu sayısına üst sınır koyma. Her statement bir kısa cümle olsun; aynı katalogdaki benzer ürün çeşitlerini veya aynı olguyu farklı kaynaklarla ayrı bulgu diye tekrarlama. Önce en somut ürün/kanal ve şirket kimliği bilgisini seç, aynı bilgiyi tekrar etme. Kaynakta gördüğün mevcut hizmet veya ürün, hedef veya gerçekleşmiş ticari başarı değildir. Kimlik ve sahiplik için resmî şirket/sicil veya güvenilir kurumsal haber kaynaklarını öncele; kaynaksız boykot/sosyal listelerini sahiplik kanıtı yapma. scale ve ownership doğrulanıyorsa ekle; doğrulanamayanları unknowns olarak kaydet. Hedefleri brief beyanı olarak ayrı değerlendir; kaynak bulgusu yapma. Rakip, SWOT veya puan üretme. '+scopeInstruction,...stageModelInput(context)},withProofIds(phaseExtractionSchema('brand'),context),{maxOutputTokens:8192}));
   const selected=selectReviewableFacts(worker.data.facts,context);
-  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,independentSourceReviewRequired:!selected.facts.length}});
+  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
  if(phase==='brand'||phase==='brand_review'){
   if(phase==='brand'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);
@@ -140,9 +146,9 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='sector_draft'){
   const context=sequentialContext(brief,prior),brand=await previous('brand');
-  const worker=await providers.worker('v8-sector-extract',{instruction:'Yöneticinin görevi: '+brand.review.nextTask.instruction+'\nMarka kimliği doğrulandı. Sektörün nasıl gelir ürettiğini, satış kanallarını, satın alma sıklığı/karar ölçütlerini, müşteri davranışını ve satış koşullarını araştır. Genel sektör bağlamı ile markanın gerçekleşmiş sonucunu ayır. Ülke, dönem ve yayıncı kapsamını koru; kaynaksız sektör klişesi üretme. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts},withProofIds(phaseExtractionSchema('sector'),context),{maxOutputTokens:4096});
+  const worker=await reviewableOperator(()=>providers.worker('v8-sector-extract',{instruction:'Yöneticinin görevi: '+brand.review.nextTask.instruction+'\nMarka kimliği doğrulandı. Sektörün nasıl gelir ürettiğini, satış kanallarını, satın alma sıklığı/karar ölçütlerini, müşteri davranışını ve satış koşullarını araştır. Genel sektör bağlamı ile markanın gerçekleşmiş sonucunu ayır. Ülke, dönem ve yayıncı kapsamını koru; kaynaksız sektör klişesi üretme. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts},withProofIds(phaseExtractionSchema('sector'),context),{maxOutputTokens:4096}));
   const selected=selectReviewableFacts(worker.data.facts,context);
-  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,independentSourceReviewRequired:!selected.facts.length}});
+  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
  if(phase==='sector'||phase==='sector_review'){
   if(phase==='sector'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);
@@ -171,9 +177,9 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='competition_draft'){
   const context=sequentialContext(brief,prior),brand=await previous('brand'),sector=await previous('sector_validation');
-  const worker=await providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts,approvedSector:sector.facts},withProofIds(phaseExtractionSchema('competition'),context),{maxOutputTokens:4096});
+  const worker=await reviewableOperator(()=>providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts,approvedSector:sector.facts},withProofIds(phaseExtractionSchema('competition'),context),{maxOutputTokens:4096}));
   const selected=selectReviewableFacts(worker.data.facts,context);
-  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,independentSourceReviewRequired:!selected.facts.length}});
+  return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
  if(phase==='competition'||phase==='competition_review'){
   if(phase==='competition'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);

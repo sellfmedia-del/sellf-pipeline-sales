@@ -29,7 +29,10 @@ export async function runSequentialAcceptance(){
  }
  const db=await localBudget({lead:'public-'+caseName+'-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
  await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
- const deadline=Date.now()+6*60000;
+ // One build may complete the real sequential report. Individual provider
+ // timeouts and the shared 50 TRY ledger still bind every operation; there is
+ // no need to rebuild/retest merely because several valid reviews took 6 min.
+ const deadline=Date.now()+20*60000;
  let phase='not_started',result;
  async function save(){
   const receipts=await db.receipts(),cost=await db.ledger.status(),payload={case:caseName,briefHash:briefHash(brief),phase,cost,receipts};
