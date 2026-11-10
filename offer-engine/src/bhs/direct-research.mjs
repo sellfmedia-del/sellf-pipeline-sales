@@ -16,11 +16,16 @@ import {researchUrl,researchHost} from './research-url.mjs';
 import {recoverableModelFailure} from '../budget/model-recovery.mjs';
 import {validateGroundedOutput} from './source-gate.mjs';
 import {runExpertStage} from './expert-research.mjs';
+import {runSupervisedStage} from './supervised-research.mjs';
+import {runSequentialStage} from './sequential-research.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
 // old paid results and their charges are never overwritten or reset.
-export const stageKey=(brief,phase,version='v4')=>'audit:'+phase+':'+(version==='v6'?phase+'-v6:':version==='v3'?(phase==='scope'?'report-v3-format2:':phase==='synthesis'?'report-v3:':''):phase+'-'+(version==='v5'&&['synthesis','scope'].includes(phase)?'v5':'v4')+':')+hash(brief);
+// Sector repair revision preserves legacy skipped correction receipts and fees.
+const stageRevisions={brand_plan:'r2',brand_draft:'r3',brand_correction_draft:'r3',brand:'r5',sector_sources:'r2',sector_review:'r2',sector_correction_sources:'r2',sector_correction_draft:'r3',sector:'r3',sector_validation:'r4',competition_plan:'r3',competition_draft:'r2',competition_review:'r3'};
+const sectorRepairRevision=phase=>stageRevisions[phase]?'-'+stageRevisions[phase]:'';
+export const stageKey=(brief,phase,version='v4')=>'audit:'+phase+':'+(['v7','v8'].includes(version)?phase+'-'+version+(version==='v8'?sectorRepairRevision(phase):'')+':':version==='v6'?phase+'-v6:':version==='v3'?(phase==='scope'?'report-v3-format2:':phase==='synthesis'?'report-v3:':''):phase+'-'+(version==='v5'&&['synthesis','scope'].includes(phase)?'v5':'v4')+':')+hash(brief);
 export function seedQueries(brief){const brand='"'+brief.brandName.replace(/"/g,'')+'"',domain=new URL(brief.website).hostname;return [
  `site:${domain} ${brand} products pricing about shop subscription ürün fiyat`,
  `${brand} direct competitors alternatives same product target market rakip`,
@@ -62,11 +67,13 @@ async function searchTogether(providers,queries,options){
  return results.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'unavailable'});
 }
 export async function runBoundedStage({phase,brief,ledger,providers,collect,researchVersion='v4',freshResearch=false,researchModel='gemini-3.1-pro-preview'}){
- if(!['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(researchModel))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
+ if(!(['v7','v8'].includes(researchVersion)?researchModel==='claude-sonnet-5-5':['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
  const key=name=>stageKey(brief,name,researchVersion);
  return ledger.once(key(phase),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   try{
   const previous=async name=>{const row=await ledger.get(key(name));if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');return row.value;};
+  if(researchVersion==='v8'&&phase!=='scope')return await runSequentialStage({phase,brief,providers,previous,collect});
+  if(researchVersion==='v7'&&phase!=='scope')return await runSupervisedStage({phase,brief,providers,previous,collect});
   if(researchVersion==='v6'&&phase!=='scope')return await runExpertStage({phase,brief,providers,previous,collect,researchModel});
   collect??=collector();
   if(phase==='source_plan'){
