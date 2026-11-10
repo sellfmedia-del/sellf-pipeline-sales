@@ -15,3 +15,11 @@ Worker iad1 bölgesine sabitlendi; hesaplama maliyet zarfı bu bölgeye bağlıd
 Dağıtım, zamanlayıcı aktivasyonu ve son kontrollerin sonuçları PR #33 kapanış kaydına eklenecek. Scraperlar yalnız doğrulanmış özgün Actor limitleri varsa çalışır; eksik limitlere ortak varsayım atanmaz.
 
 Geri dönüş: önce sellf-bhs-sequential-worker zamanlayıcısını durdur, BHS aktivasyon bayraklarını kapat; sonra başlangıç Vercel sürümünü ve iki gateway'in Git baseline kaynaklarını özgün JWT ayarlarıyla geri yükle. Yeni queue/receipt/maliyet kayıtlarını silme ve bütçeleri sıfırlama. Ortak eklentileri kaldırma. Vault doğrulama fonksiyonunun izinleri yalnız servis rolünde kalır.
+
+## Actor activation follow-up — 2026-11-10
+
+The user explicitly authorized a default maximum of USD 0.20 per Actor run. BHS now supplies that server-side policy for all 13 approved adapters; a lower saved Task/server policy takes precedence, and the shared 5,000-kurus account remains authoritative. The actual request may use a smaller limit. Actors with additional unbounded platform fees or a minimum above the admitted limit remain unavailable; they are never started by readiness checks.
+
+Claude can include Actor requests in its initial brand plan, next-stage tasks and targeted correction tasks, as well as the coverage plan. Source phases execute those requests against observed URLs only, save extraction provenance with the phase receipt, then give the resulting evidence to Gemini and Claude for source review. No logical stage, final quality threshold, pricing, logo, offer UI, database schema or production credentials changed.
+
+Rollback this follow-up by restoring production commit f0bc4c483e45a69dff8e2e14fdba1620b3ba28ce (deployment dpl_9YsoTsNSpco5Q224SyiG6kUgeoRn). Preserve all existing paid receipts. The shared tariff expiry remains 2026-11-15T00:00:00Z; this follow-up does not silently extend a pricing review.

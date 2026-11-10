@@ -35,8 +35,8 @@ function modelTransport({mutate,fail}={}){
  };
  return {events,fetchImpl};
 }
-function providerFor(db,phase,transport){
- const p=createSequentialProviders({ledger:db.ledger,phase,geminiKey:'test-worker',anthropicKey:'test-manager',tavilyKey:'test-search',fetchImpl:transport.fetchImpl,now,apify:{availableActors:async()=>[],enrich:async()=>{throw Error('Unexpected actor');},mergeEvidence:p=>p}});
+function providerFor(db,phase,transport,apify){
+ const p=createSequentialProviders({ledger:db.ledger,phase,geminiKey:'test-worker',anthropicKey:'test-manager',tavilyKey:'test-search',fetchImpl:transport.fetchImpl,now,apify:apify||{availableActors:async()=>[],enrich:async()=>{throw Error('Unexpected actor');},mergeEvidence:p=>p}});
  return {...p,manager:(stage,input,schema,opts)=>p.manager(stage,{...input,qaStage:stage},schema,opts),worker:(stage,input,schema,opts)=>p.worker(stage,{...input,qaStage:stage},schema,opts)};
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
@@ -314,4 +314,20 @@ test('gap research accepts every BHS dimension and still rejects an invented sou
   const run=()=>runSequentialStage({phase:'coverage',brief,previous:async()=>prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
   if(invented)await assert.rejects(run());else assert.equal((await run()).correctionCandidates.length,6);
  }
+});
+
+test('Claude can dispatch an observed Actor during brand research before Gemini and retain the result in the stage receipt',async()=>{
+ const db=await localBudget(),actor='apify/instagram-profile-scraper';let sawExtraction=false;
+ const request={actor,url:'https://www.instagram.com/acmeorganic/',purpose:'Marka profilini doğrula.',countryCode:'',language:''};
+ const t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-brand-plan'){assert.ok(input.availableActors.includes(actor));assert.ok(input.observedActorUrls.includes(request.url));data.actorRequests=[request];}
+  if(stage==='v8-brand-extract'){sawExtraction=true;assert.ok(JSON.stringify(input.sources).includes('SCRAPER VERIFIED PROFILE'));assert.ok(t.events.some(e=>e.type==='actor'));}
+  return data;
+ }});
+ const apify={availableActors:async()=>[actor],enrich:async(r,c)=>{assert.deepEqual(r,request);assert.equal(c.brief.brandName,brief.brandName);t.events.push({type:'actor'});return {actor,status:'complete'};},mergeEvidence:(p,results)=>({...p,sources:[...p.sources,{...p.sources[0],id:'ev99',url:request.url,finalUrl:request.url,contentHash:hash('actor'),excerpts:[{text:'SCRAPER VERIFIED PROFILE: Acme Organic publishes its organic oat snack product range.'}],provenance:{actor,runId:'SyntheticRun'}}]})};
+ try{
+  for(const phase of ['brand_plan','brand_sources','brand_draft'])await runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,t,apify),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+  assert.equal(sawExtraction,true);const receipt=(await db.ledger.get(stageKey(brief,'brand_sources','v8'))).value;
+  assert.equal(receipt.actorResults[0].status,'complete');assert.ok(receipt.packet.sources.some(s=>s.provenance?.actor===actor));
+ }finally{await db.close();}
 });

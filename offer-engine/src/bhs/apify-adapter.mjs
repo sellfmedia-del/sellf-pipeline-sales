@@ -89,7 +89,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
  const pricingFor=info=>(info.pricingInfos||[]).filter(p=>Date.parse(p.startedAt)<=now()).sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt))[0];
  return {async availableActors(){
    const saved=await tasks(),names=Object.keys(actorIds).filter(a=>matchedActorTasks(actorIds[a],saved).length);
-   const checks=await Promise.allSettled(names.map(async name=>{const p=pricingFor(await infoFor(actorIds[name]));return p?.pricingModel==='PAY_PER_EVENT'&&p.isPPEPlatformUsagePaidByUser===false?name:null;}));
+   const checks=await Promise.allSettled(names.map(async name=>{const p=pricingFor(await infoFor(actorIds[name]));const cap=Math.min(.2,matchedActorTasks(actorIds[name],saved)[0].options.maxTotalChargeUsd);return p?.pricingModel==='PAY_PER_EVENT'&&p.isPPEPlatformUsagePaidByUser===false&&(!Number.isFinite(p.minimalMaxTotalChargeUsd)||p.minimalMaxTotalChargeUsd<=cap)?name:null;}));
    return checks.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
   },
   async enrich(request,context){

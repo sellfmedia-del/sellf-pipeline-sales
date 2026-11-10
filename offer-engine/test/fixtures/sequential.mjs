@@ -26,7 +26,7 @@ function fact(input,id,topic,pattern){const p=section(input,pattern);return {id,
 function finding(input,id,dimension,pattern,quadrant='strength'){
  const p=section(input,pattern);return {id,dimension,kind:['opportunity','threat'].includes(quadrant)?'inference':'observation',stance:quadrant==='strength'?'positive':quadrant==='weakness'||quadrant==='threat'?'risk':'neutral',observation:p.text,sourceIds:[p.id],commercialHypothesis:'Bu gözlemin satın alma kararına ve operasyon maliyetine etkisi iç verilerle değerlendirilebilir.',limitation:'Kaynak kapsamı sınırlı; gerçekleşmiş ticari etki ölçülmedi.',question:'Bu gözlemin iş sonuçlarına etkisini hangi güncel verilerle değerlendiriyorsunuz?',priority:'high',quadrant};
 }
-export function modelAnswer(stage,input){
+function fixtureAnswer(stage,input){
  if(stage.endsWith('-repair-extract'))return modelAnswer(stage.replace('-repair-extract','-extract').replace('v8-swot-extract','v8-swot-draft'),input);
  if(stage==='v8-brand-plan')return {instruction:'Markanın ürününü, iş modelini ve pazarını kaynakla açıkla; sahipliği ve ölçeği doğrula.',queries:['Acme Organic products market','Acme Organic ownership team']};
  if(stage==='v8-brand-extract')return {facts:[fact(input,'identity','identity',/üreten bir markadır/),fact(input,'products','products',/üreten bir markadır/),fact(input,'business_model','business_model',/doğrudan tüketiciye/),fact(input,'market','market',/Türkiye pazarına/),fact(input,'scale','scale',/ekip büyüklüğü/),fact(input,'ownership','ownership',/şirketine bağlıdır/)],unknowns:['Gerçekleşmiş ciro kamuya açıklanmadı.']};
@@ -48,4 +48,11 @@ export function modelAnswer(stage,input){
   return {findings,peers:input.peerReview,dimensions:dimensions.map(d=>({id:d.id,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonFindingIds:['f10','f12'],bandReason:'Kapsamlı puan için iç veriler görüşmede doğrulanacak.'})),coverage:Object.fromEntries(methodologyAreas.map(a=>[a.key,{status:'partial',findingIds:findings.filter(f=>f.dimension===a.dimension).map(f=>f.id),note:'Kaynaklı kamu sinyalleri; özel metrikler görüşmede doğrulanacak.'}])),benchmarks:[],overviewIds:['f0','f2','f8'],opportunityId:'f1',riskId:'f11',swot:Object.fromEntries(['strength','weakness','opportunity','threat'].map(q=>[q,raw.filter(f=>f.quadrant===q).map(f=>f.id)]))};
  }
  throw Error('Unexpected fixture stage '+stage);
+}
+
+export function modelAnswer(stage,input){
+ const data=fixtureAnswer(stage,input);
+ if(stage==='v8-brand-plan')data.actorRequests=[];
+ for(const key of ['nextTask','repairTask'])if(data[key])data[key].actorRequests=[];
+ return data;
 }

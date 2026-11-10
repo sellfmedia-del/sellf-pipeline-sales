@@ -128,7 +128,7 @@ test('readiness is preview-only and probes catalogues without paid endpoints or 
  const calls=[],env={VERCEL_ENV:'preview',ANTHROPIC_API_KEY:'private-a',GEMINI_API_KEY:'private-g',APIFY_API_TOKEN:'private-p'};
  const fetchImpl=async url=>{calls.push(url);return json(url.endsWith('/users/me')?{data:{username:'synthetic-owner',email:'private-email@example.invalid'}}:url.includes('actor-tasks')?{data:{items:[],total:0}}:{});};
  const h=createSupervisedReadiness({env,fetchImpl}),res=response();await h({method:'GET'},res);
- assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.taskPolicies,0);assert.equal(res.data.apify.accountUsername,'synthetic-owner');
+ assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.defaultPolicyCount,13);assert.equal(res.data.apify.accountUsername,'synthetic-owner');
  assert.ok(calls.every(u=>!u.includes('/runs')&&!u.includes('/messages')&&!u.includes(':generateContent')));assert.ok(!JSON.stringify(res.data).includes('private-'));
  const prod=response();await createSupervisedReadiness({env:{VERCEL_ENV:'production'},fetchImpl})({method:'GET'},prod);assert.equal(prod.code,404);
 });
@@ -138,12 +138,12 @@ const v8Providers=(db,t)=>createSupervisedProviders({ledger:db.ledger,anthropicK
 test('a source-qualified operator task longer than 1200 characters is preserved and reused without another paid call',async()=>{
  const instruction='Kaynağı doğrula. '.repeat(100)+'Son sınır: doğrulanamayan sahiplik ve ciroyu olgu olarak sunma.';
  assert.ok(instruction.length>1200&&instruction.length<2048);
- const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction,queries:[]})}]})});
+ const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction,queries:[],actorRequests:[]})}]})});
  const p=v8Providers(db,t),first=await p.manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048});
  assert.equal(first.data.instruction,instruction);const n=t.calls.length,cost=await db.ledger.status();
  assert.deepEqual(await p.manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048}),first);
  assert.equal(t.calls.length,n);assert.deepEqual(await db.ledger.status(),cost);
- const invalid=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:1600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction:'x'.repeat(6001),queries:[]})}]})});
+ const invalid=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:1600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction:'x'.repeat(6001),queries:[],actorRequests:[]})}]})});
  await assert.rejects(v8Providers(account(),invalid).manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048}),e=>e.code==='model_output_invalid');
 });
 test('one explicit transient rejection receives a separately funded retry while its original commitment stays charged',async()=>{
@@ -256,17 +256,17 @@ test('saved scraper caps are read from matching Task details without exposing in
   calls.push({url,method:options.method||'GET'});
   return json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,options:{maxTotalChargeUsd:.03},input:{privateSession:'must-not-leak'}}});
  }});
- assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,1);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
+ assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,14);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
  assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==='GET'&&!c.url.includes('/runs')));
  assert.ok(!JSON.stringify(result).includes('privateSession'));
  const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'anotherActor',options:{maxTotalChargeUsd:.03}}})});
- assert.equal(invalid.taskPolicies,0);assert.equal(invalid.complete,false);
+ assert.equal(invalid.taskPolicies,13);assert.equal(invalid.complete,false);
 });
 
 test('a long internal review explanation preserves the verdict and original wording within the existing generation budget',async()=>{
  const notes='Kaynak eşleşmesi ile ticari çıkarım ayrı değerlendirilir. '.repeat(32);
  assert.ok(notes.length>1400&&notes.length<6000);
- const data={acceptedIds:[],rejectedIds:[],decision:'limited',missing:[],notes,nextTask:{instruction:'Sektörü incele.',queries:[]},repairTask:{instruction:'Kaynak eşleşmesini düzelt.',queries:[]}};
+ const data={acceptedIds:[],rejectedIds:[],decision:'limited',missing:[],notes,nextTask:{instruction:'Sektörü incele.',queries:[],actorRequests:[]},repairTask:{instruction:'Kaynak eşleşmesini düzelt.',queries:[],actorRequests:[]}};
  const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:700},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(data)}]})}),p=v8Providers(db,t);
  assert.deepEqual((await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096})).data,data);
  assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,8192);

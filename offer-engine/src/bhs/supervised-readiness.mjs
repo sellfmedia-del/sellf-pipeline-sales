@@ -1,5 +1,6 @@
 import {supervisedModels} from './supervised-providers.mjs';
 import {inspectApifyPolicies} from './apify-policy.mjs';
+import {createApifyAdapter} from './apify-adapter.mjs';
 import {actorIds} from './apify-inputs.mjs';
 
 export async function historicalApifyLimits({token,userId,fetchImpl=fetch}={}){
@@ -28,7 +29,8 @@ export function createSupervisedReadiness({env=process.env,fetchImpl=fetch}={}){
     (env.OFFER_GEMINI_API_KEY||env.GEMINI_API_KEY)?probe('https://generativelanguage.googleapis.com/v1beta/models/'+supervisedModels.worker,{'x-goog-api-key':env.OFFER_GEMINI_API_KEY||env.GEMINI_API_KEY}):{authenticated:false,status:'missing_key'},
     inspectApifyPolicies({token:env.APIFY_API_TOKEN,fetchImpl,policyJson:env.OFFER_BHS_ACTOR_LIMITS_JSON}).catch(()=>({configured:Boolean(env.APIFY_API_TOKEN),complete:false})),identity()
    ]);
-   return {manager:{model:supervisedModels.manager,...manager},worker:{model:supervisedModels.worker,...worker},apify:{configured:apify.configured,authenticated:apify.authenticated||false,savedTaskCount:apify.savedTaskCount||0,explicitPolicyCount:apify.explicitPolicyCount||0,taskPolicies:apify.taskPolicies||0,complete:apify.complete,accountUsername:account?.username||null,historicalRunLimits:await historicalApifyLimits({token:env.APIFY_API_TOKEN,userId:account?.id,fetchImpl})},tavilyConfigured:Boolean(env.OFFER_TAVILY_API_KEY||env.TAVILY_API_KEY),storageConfigured:Boolean(env.OFFER_STORAGE_GATEWAY_URL&&env.OFFER_STORAGE_GATEWAY_KEY&&env.OFFER_PORTAL_SECRET),backgroundWorkerReady:false,paidCalls:0};
+   const executableActors=await createApifyAdapter({token:env.APIFY_API_TOKEN,fetchImpl,getTaskPolicies:async()=>apify}).availableActors();
+   return {manager:{model:supervisedModels.manager,...manager},worker:{model:supervisedModels.worker,...worker},apify:{configured:apify.configured,authenticated:apify.authenticated||false,savedTaskCount:apify.savedTaskCount||0,explicitPolicyCount:apify.explicitPolicyCount||0,defaultPolicyCount:apify.defaultPolicyCount||0,defaultMaxTotalChargeUsd:apify.defaultMaxTotalChargeUsd||null,executableActors,taskPolicies:apify.taskPolicies||0,complete:apify.complete,accountUsername:account?.username||null,historicalRunLimits:await historicalApifyLimits({token:env.APIFY_API_TOKEN,userId:account?.id,fetchImpl})},tavilyConfigured:Boolean(env.OFFER_TAVILY_API_KEY||env.TAVILY_API_KEY),storageConfigured:Boolean(env.OFFER_STORAGE_GATEWAY_URL&&env.OFFER_STORAGE_GATEWAY_KEY&&env.OFFER_PORTAL_SECRET),backgroundWorkerReady:false,paidCalls:0};
   })();
   return res.status(200).json(await pending);
  };
