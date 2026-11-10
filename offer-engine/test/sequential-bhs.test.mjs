@@ -176,3 +176,14 @@ test('a manager source correction changes the accepted fact itself, while a fabr
   }finally{await db.close();}
  }
 });
+
+
+test('a peer-only plan restores the confirmed subject and schedules original peer sites before contextual reports',async()=>{
+ const {parseSequentialPeerPlan}=await import('../src/bhs/sequential-research.mjs');
+ const {plan}=await import('./fixtures/sequential.mjs');
+ const data={entities:plan.entities.filter(e=>e.role==='competitor'),sources:[{url:'https://industry.example/report',purpose:'Sector context.'}]};
+ const parsed=parseSequentialPeerPlan(data,brief);
+ assert.equal(parsed.entities.filter(e=>e.role==='brand').length,1);assert.equal(parsed.entities[0].website,brief.website);
+ assert.deepEqual(parsed.sources.slice(0,4).map(s=>s.url),[brief.website,...data.entities.map(e=>e.website)]);
+ assert.throws(()=>parseSequentialPeerPlan({...data,entities:[...plan.entities,plan.entities[0]]},brief));
+});

@@ -20,6 +20,18 @@ async function search(providers,queries){
 export const balancedSequentialUrls=searches=>{const rows=[];for(let i=0;i<8;i++)for(const s of searches){const url=researchUrl(s.results?.[i]?.url);if(url)rows.push(url);}return [...new Set(rows)];};
 const urls=balancedSequentialUrls;
 function peerPlanSchema(){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;return s;}
+export function parseSequentialPeerPlan(value,brief){
+ // The already-confirmed subject is supplied by the server, not rediscovered
+ // by the operator. A peer-only answer is valid; duplicate brand identities
+ // are still rejected. Candidate addresses remain discovery until read.
+ const entities=value.entities?.some(e=>e.role==='brand')?value.entities:[brandPlan(brief).entities[0],...(value.entities||[])];
+ const parsed=parseSourcePlan({...value,entities},{allowPartial:true});
+ parsed.entities=parsed.entities.map(e=>e.role==='brand'?{...e,name:brief.brandName,website:brief.website}:e);
+ const sources=[...parsed.entities.map(e=>({url:researchUrl(e.website),purpose:e.role==='brand'?'Doğrulanmış marka kaynağı.':'Rakip ADAYININ resmî sitesini okuyarak ürün/kitle/coğrafyayı doğrula.'})).filter(s=>s.url),...parsed.sources];
+ parsed.sources=[...new Map(sources.map(s=>[s.url,s])).values()];
+ if(parsed.sources.length>24)parsed.sources=parsed.sources.slice(0,24);
+ return parsed;
+}
 async function enrichReading(brief,prior,plan,searches,limit,collect){
  const packet=await collect(brief,plan,{initialPacket:prior?.packet,extraSources:urls(searches),sourceLimit:limit});
  return {packet,searches:[...(prior?.searches||[]),...searches]};
@@ -129,8 +141,8 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='competition_plan'){
   const brand=await previous('brand'),queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} alternatives competitors same products target market`,`${brand.facts.filter(f=>['products','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,250)} doğrudan rakip alternatif markalar`];
   const searches=await search(providers,queries),discovered=[brief.website,...urls(searches),...prior.packet.sources.map(s=>s.finalUrl)];
-  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\nOnaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(),{maxOutputTokens:3072,validateData:d=>{const p=parseSourcePlan(d,{allowPartial:true});if(p.entities.some(e=>!researchUrl(e.website)))throw Error('Invalid candidate URL.');}});
-  const plan=parseSourcePlan(planned.data,{allowPartial:true});plan.entities=plan.entities.map(e=>e.role==='brand'?{...e,website:brief.website}:e);
+  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\nOnaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(),{maxOutputTokens:3072,validateData:d=>{const p=parseSequentialPeerPlan(d,brief);if(p.entities.some(e=>!researchUrl(e.website)))throw Error('Invalid candidate URL.');}});
+  const plan=parseSequentialPeerPlan(planned.data,brief);
   return finish({...prior,plan,searches:[...prior.searches,...searches],peerSearches:searches});
  }
  if(phase==='competition_sources'){

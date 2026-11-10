@@ -148,3 +148,30 @@ the Console requires sign-in. No guessed/common .40 USD cap is substituted and
 no Actor has been started. Pipeline project gxngmqewskhrbxqmnpps and organization
 pvpknoqioxgyerinoecv (Sellf Toolları ve Aunce) were verified read-only. Queue,
 gateway and scheduler deployment require the user's specific SQL/Edge approval.
+
+The protected continuation on d26954b successfully used the Claude operator for
+sector repair and the independent manager accepted sector understanding. Total
+commitment was 3,021 kurus including the retained 232-kurus service rejections.
+It then exposed a peer-plan transport mismatch: a valid peer-only candidate list
+was rejected because the generic source planner required a brand entity. The
+sequential parser now injects the already-confirmed brief subject, keeps exactly
+one brand, and prioritizes candidate homepages for actual reading. Candidate
+URLs/scale rationales are not evidence and still require original-source review.
+The actual paid peer answer replays successfully with ZERO new network calls.
+Only competition_plan advances to append-only r3; prior charges remain intact.
+
+Explicit per-Actor server snapshots are supported via the BHS-only
+OFFER_BHS_ACTOR_LIMITS_JSON: an array of {actor,maxTotalChargeUsd}. Missing,
+malformed, duplicate, unapproved, nonnumeric or >.40 entries are rejected. No
+cap default exists. Readable saved Task caps and server snapshots are combined;
+the smaller matching cap wins. An incomplete Task lookup still fails closed.
+No snapshot has been provisioned because the user's exact limits are unavailable.
+
+Read-only deployment preflight found that the Pipeline database has budget
+functions and Vault but no BHS queue, pg_cron or pg_net. Those prerequisites,
+the private queue, gateway code, worker secret, reviewed scheduler and activation
+flags therefore need a separately approved release. No production SQL, function,
+secret or environment variable was changed. A local Chromium UI rerun failed
+before page load because socket() is denied by this environment; it is not a
+passing browser result. The 54 + 423 ordinary tests passed on d26954b; subsequent
+planner/policy tests and builds are recorded separately.

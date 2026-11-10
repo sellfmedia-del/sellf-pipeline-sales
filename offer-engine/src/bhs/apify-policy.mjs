@@ -8,6 +8,20 @@ export const approvedActors=Object.freeze([
  'jmlp/meta-ad-library-scraper','logiover/website-seo-audit-crawler','apify/website-content-crawler',
  'clockworks/tiktok-scraper','fatihtahta/trendyol-scraper','junglee/free-amazon-product-scraper','damilo/google-shopping-apify'
 ]);
+// An explicitly provisioned server snapshot is useful when the Console keeps
+// per-Actor run options without saved Tasks. Never infer missing limits or
+// accept this configuration from an audit request/model/browser payload.
+export function explicitActorPolicies(value){
+ if(!value)return [];
+ let rows;try{if(typeof value!=='string'||value.length>6000)throw Error();rows=JSON.parse(value);}catch{throw new BudgetError('actor_limit_unverified','Sunucu aktör limitleri okunamadı.');}
+ const seen=new Set();
+ if(!Array.isArray(rows)||rows.length>approvedActors.length)throw new BudgetError('actor_limit_unverified','Sunucu aktör limit listesi geçersiz.');
+ return rows.map(row=>{
+  if(!row||typeof row!=='object'||Object.keys(row).sort().join('|')!=='actor|maxTotalChargeUsd'||!approvedActors.includes(row.actor)||seen.has(row.actor)||!Number.isFinite(row.maxTotalChargeUsd)||row.maxTotalChargeUsd<=0||row.maxTotalChargeUsd>.4)throw new BudgetError('actor_limit_unverified','Aktörün özel sunucu harcama limiti geçersiz.');
+  seen.add(row.actor);const actId=actorIds[row.actor];
+  return {id:'server-policy:'+actId,actId,options:{maxTotalChargeUsd:row.maxTotalChargeUsd},policySource:'explicit-server-policy'};
+ });
+}
 // A console form, a favourite, and an Actor's developer defaults are not a
 // verified account-specific spending policy. Use a saved Task or an explicit
 // server policy snapshot. Never fall back to .40 when a smaller cap is unknown.
@@ -22,7 +36,7 @@ export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus
  const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
  const maxTotalChargeUsd=Math.min(cap,.4,requestedUsd,remainingUsd);
  if(maxTotalChargeUsd<=0||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&maxTotalChargeUsd<pricing.minimalMaxTotalChargeUsd)throw new BudgetError('budget_limit','Aktörün minimum ücreti kalan bütçeye sığmıyor.');
- return {maxTotalChargeUsd,reservedKurus:Math.ceil(maxTotalChargeUsd*tariff.usdTry*tariff.overhead*100),capSource:'saved-task',taskId:task.id,actorId};
+ return {maxTotalChargeUsd,reservedKurus:Math.ceil(maxTotalChargeUsd*tariff.usdTry*tariff.overhead*100),capSource:task.policySource||'saved-task',taskId:task.id,actorId};
 }
 export function safeActorInput(actor,url){
  const safe=researchUrl(url);if(!safe)throw new BudgetError('actor_source_unverified','Aktör kaynağı geçersiz.');
@@ -37,7 +51,8 @@ export function matchedActorTasks(actorId,tasks){return tasks.filter(task=>task.
 
 // Read-only account inspection. No /runs endpoint, inputs, cookies or actor
 // execution is exposed by this adapter. Task options remain server-side.
-export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,deadline=now()+15000}={}){
+export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,deadline=now()+15000,policyJson=process.env.OFFER_BHS_ACTOR_LIMITS_JSON}={}){
+ const explicit=explicitActorPolicies(policyJson);
  if(!token)return {configured:false,taskPolicies:0,complete:false};
  let offset=0;const tasks=[];
  while(offset<1000){
@@ -63,5 +78,6 @@ export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,d
   }));
   for(const r of batch)if(r.status==='fulfilled')resolved.push(r.value);else complete=false;
  }
- return {configured:true,authenticated:true,savedTaskCount:tasks.length,taskPolicies:resolved.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:resolved};
+ const policies=[...resolved,...explicit];
+ return {configured:true,authenticated:true,savedTaskCount:tasks.length,explicitPolicyCount:explicit.length,taskPolicies:policies.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:policies};
 }
