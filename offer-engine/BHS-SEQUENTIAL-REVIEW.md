@@ -270,3 +270,15 @@ throw away the paid content needed for a zero-network forensic replay. Rejected
 metadata logs contain only numeric token counters, never keys or source text.
 Unknown outcomes still keep their complete reservations and are not auto-retried.
 Provider/sequential/queue regression: 54 passed; snapshot checks: 4 passed.
+
+Tadım continuation retained 27 receipts / 1,874 kurus including all earlier
+truncation and uncertain commitments. Brand research found two implementation
+failures: a repair keyed by topic could displace an independently valid product
+fact, and a supervisor omitted one candidate from its decision arrays. Neither
+was treated as a quality pass. Repairs now replace by stable fact ID, and the
+supervisor schema requires an accepted/rejected verdict for EVERY candidate ID.
+The normalization adapter preserves the original paid response unchanged. The
+same exhaustive verdict contract covers final review. Stage journal revisions
+are append-only and all earlier spending remains charged. Targeted sequential
+and queue checks: 32 passed; checkpoint checks: 4 passed; production build passed.
+Real acceptance of the six-stage report remains pending.

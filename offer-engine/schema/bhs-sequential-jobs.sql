@@ -25,7 +25,7 @@ grant select,insert,update on public.pipeline_bhs_jobs to service_role;
 -- Only a fully committed current-phase receipt permits automatic acknowledgement recovery.
 create function public.pipeline_bhs_checkpoint_committed(p_mode text,p_budget uuid,p_phase text,p_hash text)
 returns boolean language plpgsql security invoker set search_path='' as $$
-declare receipt_state text;checkpoint_key text:='audit:'||p_phase||':'||p_phase||'-v8'||case when p_phase in ('brand','brand_draft','sector','sector_correction_draft','competition_plan','competition_review') then '-r3' when p_phase='sector_validation' then '-r4' when p_phase in ('brand_plan','brand_correction_draft','sector_sources','sector_review','sector_correction_sources','competition_draft') then '-r2' else '' end||':'||p_hash;
+declare receipt_state text;checkpoint_key text:='audit:'||p_phase||':'||p_phase||'-v8'||case when p_phase in ('brand_draft','brand_correction_draft','sector','sector_correction_draft','competition_plan','competition_review') then '-r3' when p_phase in ('brand','sector_validation') then '-r4' when p_phase in ('brand_plan','sector_sources','sector_review','sector_correction_sources','competition_draft') then '-r2' else '' end||':'||p_hash;
 begin
  if current_user<>'service_role' or p_mode not in ('preview','production') then raise exception 'private BHS worker required';end if;
  if p_mode='preview' then select state into receipt_state from public.pipeline_offer_preview_budget_steps where budget_id=p_budget and step_key=checkpoint_key;
@@ -86,7 +86,7 @@ begin
  end if;
  if p_op='advance' then
   expected:=phases[array_position(phases,j.phase)+1];
-  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from ('audit:'||j.phase||':'||j.phase||'-v8'||case when j.phase in ('brand','brand_draft','sector','sector_correction_draft','competition_plan','competition_review') then '-r3' when j.phase='sector_validation' then '-r4' when j.phase in ('brand_plan','brand_correction_draft','sector_sources','sector_review','sector_correction_sources','competition_draft') then '-r2' else '' end||':'||j.brief_hash) then raise exception 'BHS checkpoint mismatch';end if;
+  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from ('audit:'||j.phase||':'||j.phase||'-v8'||case when j.phase in ('brand_draft','brand_correction_draft','sector','sector_correction_draft','competition_plan','competition_review') then '-r3' when j.phase in ('brand','sector_validation') then '-r4' when j.phase in ('brand_plan','sector_sources','sector_review','sector_correction_sources','competition_draft') then '-r2' else '' end||':'||j.brief_hash) then raise exception 'BHS checkpoint mismatch';end if;
   if p_mode='preview' then select to_jsonb(s) into receipt from public.pipeline_offer_preview_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';
   else select to_jsonb(s) into receipt from public.pipeline_offer_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';end if;
   if receipt->>'state' is distinct from 'complete' then raise exception 'BHS checkpoint not committed';end if;

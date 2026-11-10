@@ -25,7 +25,9 @@ function modelTransport({mutate,fail}={}){
   if(url.includes('count_tokens'))return json({input_tokens:inputTokens});if(url.endsWith(':countTokens'))return json({totalTokens:inputTokens});
   const stage=context.qaStage;events.push({type:manager?'manager':'worker',stage});
   if(fail?.(stage))throw new DOMException('Synthetic provider timeout','TimeoutError');
-  const answer=modelAnswer(stage,context),data=mutate?mutate(stage,answer,context):answer,text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
+  const answer=modelAnswer(stage,context);let data=mutate?mutate(stage,answer,context):answer;
+  if(manager&&b.output_config.format.schema.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;data={...rest,verdicts:Object.fromEntries([...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])])};}
+  const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
   if(manager)return json({model:'claude-sonnet-5-5',stop_reason:'end_turn',usage:{input_tokens:inputTokens,output_tokens:outputTokens},content:[{type:'text',text}]});
   return json({modelVersion:'gemini-3.1-flash-lite',usageMetadata:{promptTokenCount:inputTokens,candidatesTokenCount:outputTokens,thoughtsTokenCount:0,totalTokenCount:inputTokens+outputTokens},candidates:[{finishReason:'STOP',content:{parts:[{text}]}}]});
  };
@@ -135,7 +137,7 @@ test('stage tools cannot spend final-report headroom even through parallel reser
 test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
  assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
- assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r3:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r4:/);
 });
 
 test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{
@@ -204,5 +206,28 @@ test('competition review reads omitted peer sources and preserves honestly uncon
   const result=(await db.ledger.get(stageKey(brief,'competition','v8'))).value;
   assert.equal(inspected,true);assert.equal(result.decision,'accepted');assert.equal(result.peers.filter(p=>p.relationship==='direct').length,3);
   assert.deepEqual(result.peers.find(p=>p.entityId==='unknownpeer').sourceIds,[]);
+ }finally{await db.close();}
+});
+
+test('every verdict is schema-required and normalization does not mutate a paid manager reply',async()=>{
+ const {reviewVerdictSchema,normalizeVerdictReview,factReviewSchema}=await import('../src/bhs/sequential-contracts.mjs');
+ const rows=[{id:'product'},{id:'market'}],schema=reviewVerdictSchema(factReviewSchema,rows);
+ assert.deepEqual(schema.properties.verdicts.required,['product','market']);assert.equal(schema.properties.acceptedIds,undefined);
+ const reply={verdicts:{product:'accepted',market:'rejected'},notes:'Original paid reply'},before=JSON.stringify(reply);
+ assert.deepEqual(normalizeVerdictReview(reply,rows).acceptedIds,['product']);assert.deepEqual(normalizeVerdictReview(reply,rows).rejectedIds,['market']);assert.equal(JSON.stringify(reply),before);
+ assert.throws(()=>normalizeVerdictReview({verdicts:{product:'accepted'}},rows),e=>e.code==='model_output_invalid');
+});
+
+test('a mislabeled repair cannot replace an independently accepted product fact merely by sharing its topic',async()=>{
+ const db=await localBudget();
+ const t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-brand-review'&&!input.repairRound)return {...data,decision:'limited',missing:['One detail requires correction.']};
+  if(stage==='v8-brand-repair-extract')return {...data,facts:[{...data.facts.find(f=>f.topic==='scale'),id:'new-location',topic:'products'}]};
+  if(stage==='v8-brand-review'&&input.repairRound){assert.ok(input.candidates.some(f=>f.id==='products'));return {...data,acceptedIds:data.acceptedIds.filter(id=>id!=='new-location'),rejectedIds:['new-location']};}
+  return data;
+ }});
+ try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand')+1))await run(db,phase,t);
+  const result=(await db.ledger.get(stageKey(brief,'brand','v8'))).value;assert.equal(result.decision,'accepted');assert.ok(result.facts.some(f=>f.id==='products'));assert.ok(!result.facts.some(f=>f.id==='new-location'));
  }finally{await db.close();}
 });

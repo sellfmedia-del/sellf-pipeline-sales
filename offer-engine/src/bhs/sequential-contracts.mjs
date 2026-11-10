@@ -24,6 +24,19 @@ const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=
 export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
 export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema,4)});
+export function reviewVerdictSchema(schema,rows){
+ const result=structuredClone(schema),ids=rows.map(r=>r.id);
+ if(new Set(ids).size!==ids.length)throw new BudgetError('model_output_invalid','Denetim aday kimlikleri yineleniyor.');
+ delete result.properties.acceptedIds;delete result.properties.rejectedIds;
+ result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
+ result.required=result.required.filter(k=>!['acceptedIds','rejectedIds'].includes(k));result.required.push('verdicts');
+ return result;
+}
+export function normalizeVerdictReview(data,rows){
+ const {verdicts,...review}=data,ids=rows.map(r=>r.id);
+ if(!verdicts||Object.keys(verdicts).length!==ids.length||ids.some(id=>!['accepted','rejected'].includes(verdicts[id])))throw new BudgetError('model_output_invalid','Her aday için ayrı ve eksiksiz denetim kararı gerekli.');
+ return {...review,acceptedIds:ids.filter(id=>verdicts[id]==='accepted'),rejectedIds:ids.filter(id=>verdicts[id]==='rejected')};
+}
 export const peerSchema=expertSchema.properties.peers.items;
 export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peerSchema,5)});
 export const swotFindingSchema=structuredClone(expertSchema.properties.findings.items);
