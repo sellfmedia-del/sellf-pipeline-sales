@@ -12,10 +12,10 @@ import {fetchQaCheckpoint} from './qa-checkpoint.mjs';
 
 const project='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ';
 const caseName=process.env.OFFER_BHS_QA_CASE;
-const allowed=()=>process.env.VERCEL_ENV==='preview'&&process.env.VERCEL_PROJECT_ID===project&&/^[a-f0-9]{40}$/.test(process.env.OFFER_BHS_QA_COMMIT||'')&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&['humm','muratbey'].includes(caseName);
+const allowed=()=>process.env.VERCEL_ENV==='preview'&&process.env.VERCEL_PROJECT_ID===project&&/^[a-f0-9]{40}$/.test(process.env.OFFER_BHS_QA_COMMIT||'')&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&['humm','muratbey','sutas'].includes(caseName);
 export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
- const selected=caseName==='muratbey'?{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'}:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'};
+ const selected={humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'}}[caseName];
  const brief=snapshotBrief({...selected,goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
  const seedData=process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;

@@ -23,12 +23,12 @@ function account(){
   const step={...prior,state:op,value:a.value};rows.set(a.step,step);return step;
  });return {ledger,rows};
 }
-function transport({cap=.01,extraFees=false,timeout=false,echoCap=true,wrongIdentity=false,large=false}={}){
+function transport({cap=.01,minimum=0,extraFees=false,timeout=false,echoCap=true,wrongIdentity=false,large=false}={}){
  const calls=[];
  const task={id:'Task1234567890123',actId:actorIds[actor],options:{maxTotalChargeUsd:cap}};
  const fetchImpl=async(url,options)=>{
   calls.push({url,body:options?.body?JSON.parse(options.body):null});
-  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees}]}});
+  if(url.includes('/acts/')&&!url.includes('/runs?'))return json({data:{pricingInfos:[{startedAt:'2026-01-01',pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:extraFees,minimalMaxTotalChargeUsd:minimum}]}});
   if(url.includes('/runs?')){if(timeout)throw new DOMException('Timed out','TimeoutError');return json({data:{id:'Run12345678901234',options:echoCap?{maxTotalChargeUsd:Number(new URL(url).searchParams.get('maxTotalChargeUsd'))}:{}}});}
   if(url.includes('/abort'))return json({data:{status:'ABORTED'}});
   if(url.includes('/actor-runs/'))return json({data:{status:'SUCCEEDED',defaultDatasetId:'Data1234567890123',usageTotalUsd:.0023}});
@@ -101,4 +101,14 @@ test('every recommended Actor has a finite schema-specific input; geography and 
  assert.throws(()=>actorInput({...request,url:'https://www.instagram.com/unknown/'},c),e=>e.code==='actor_source_unverified');
  const seo=actorInput({...request,actor:'logiover/website-seo-audit-crawler',url:brief.website},c);assert.equal(seo.input.maxPagesToCrawl,5);
  const video=actorInput({...request,actor:'clockworks/tiktok-scraper',url:targets['clockworks/tiktok-scraper']},c);assert.equal(video.input.aiVideoDescription,false);assert.equal(video.input.downloadSubtitlesOptions,'NEVER_DOWNLOAD_SUBTITLES');
+});
+
+test('a verified Actor minimum fits only inside its saved individual cap and the unchanged aggregate account',async()=>{
+ const db=account(),t=transport({cap:.1,minimum:.06});await adapter(db,t).enrich(request,context());
+ assert.equal(new URL(t.calls.find(c=>c.url.includes('/runs?')).url).searchParams.get('maxTotalChargeUsd'),'0.06');assert.ok((await db.ledger.status()).chargedKurus<5000);
+ for(const settings of [{cap:.03,minimum:.06},{cap:.4,minimum:.5},{cap:.4,minimum:.2,prior:3000}]){
+  const limited=account(),m=transport(settings);if(settings.prior)await limited.ledger.once('prior-model',{},settings.prior,async()=>({saved:true}));
+  const before=await limited.ledger.status();await assert.rejects(adapter(limited,m).enrich(request,context()),e=>e.code==='budget_limit');
+  assert.equal(m.calls.filter(c=>c.url.includes('/runs?')).length,0);assert.deepEqual(await limited.ledger.status(),before);
+ }
 });

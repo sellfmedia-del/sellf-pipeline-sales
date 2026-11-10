@@ -126,3 +126,22 @@ test('readiness is preview-only and probes catalogues without paid endpoints or 
  assert.ok(calls.every(u=>!u.includes('/runs')&&!u.includes('/messages')&&!u.includes(':generateContent')));assert.ok(!JSON.stringify(res.data).includes('private-'));
  const prod=response();await createSupervisedReadiness({env:{VERCEL_ENV:'production'},fetchImpl})({method:'GET'},prod);assert.equal(prod.code,404);
 });
+
+const validWorker=()=>json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:150},candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}]});
+const v8Providers=(db,t)=>createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl,receiptVersion:'v8',delay:async()=>{}});
+test('one explicit transient rejection receives a separately funded retry while its original commitment stays charged',async()=>{
+ const db=account();let generated=0;
+ const t=transport({onGenerate:async()=>++generated===1?new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503}):validWorker()});
+ const p=v8Providers(db,t),answer=await p.worker('extract',{},schema,{maxOutputTokens:512});assert.equal(answer.data.ok,true);assert.equal(generated,2);
+ const rows=[...db.rows.values()];assert.equal(rows.filter(r=>r.state==='uncertain').length,1);assert.ok(rows.find(r=>r.state==='uncertain').charge_kurus>0);
+ const cost=await db.ledger.status();await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});assert.equal(generated,2);assert.deepEqual(await db.ledger.status(),cost);
+});
+test('a second transient error, an ambiguous timeout and insufficient retry budget cannot buy another unbounded attempt',async()=>{
+ for(const kind of ['twice','timeout','budget']){
+  const db=account(kind==='budget'?4380:500);let generated=0;
+  const t=transport({onGenerate:async()=>{generated++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503});}});
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));
+  assert.equal(generated,kind==='twice'?2:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));assert.equal(generated,kind==='twice'?2:1);assert.deepEqual(await db.ledger.status(),cost);
+ }
+});

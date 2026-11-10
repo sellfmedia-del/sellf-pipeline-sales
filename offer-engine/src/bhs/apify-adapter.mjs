@@ -105,7 +105,9 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     const info=await infoFor(actorId),pricing=pricingFor(info);
     const datasetAllowanceKurus=10;
     const status=await ledger.status();
-    const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd:.04,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus:1400,pricing});
+    // Meet a verified minimum only inside the saved individual cap and total account.
+    const requestedUsd=Math.min(.4,Math.max(.04,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0));
+    const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus:1400,pricing});
     const query=new URLSearchParams({maxTotalChargeUsd:String(limit.maxTotalChargeUsd),maxItems:String(target.maxItems),timeout:'60',waitForFinish:'0'});
     const identity={actorId,input:target.input,capUsd:limit.maxTotalChargeUsd,maxItems:target.maxItems,timeout:60};
     return ledger.once(step,identity,limit.reservedKurus,async()=>{
