@@ -6,12 +6,16 @@ import {failureReason} from './provider.mjs';
 
 // BHS-only routing. Pricing, logos and the scope writer keep their existing
 // provider, tariff and receipts. Reviewed against first-party prices 2026-11-09.
-export const supervisedModels=Object.freeze({manager:'claude-sonnet-5-5',worker:'gemini-3.1-flash-lite'});
-export const supervisedRates=Object.freeze({manager:{input:2,output:10},worker:{input:.25,output:1.5}});
+export const supervisedModels=Object.freeze({manager:'claude-sonnet-5-5',worker:'gemini-3.1-flash-lite',fallbackWorker:'claude-haiku-5-5'});
+export const supervisedRates=Object.freeze({manager:{input:2,output:10},worker:{input:.25,output:1.5},fallbackWorker:{input:.5,output:2.5}});
+// First-party Haiku 5.5 rates checked 2026-11-10: the prompt tier applies to
+// both input and output. Quote from the conservative input bound, settle from
+// verified actual input; do not assume the cheaper tier across 100k tokens.
+const rateFor=(role,input)=>role==='fallbackWorker'&&input<=100000?{input:.1,output:.5}:supervisedRates[role];
 export function quoteSupervised(role,input,output,now=Date.now()){
  if(!supervisedRates[role]||now>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','BHS model tarifesi doğrulanmalı.');
  if(!Number.isSafeInteger(input)||input<1||input>150000||!Number.isSafeInteger(output)||output<1||output>16384)throw new BudgetError('input_budget','BHS model girdisi sınırı aşıyor.');
- const rate=supervisedRates[role];return Math.ceil((input*rate.input+output*rate.output)/1e6*tariff.usdTry*tariff.overhead*100);
+ const rate=rateFor(role,input);return Math.ceil((input*rate.input+output*rate.output)/1e6*tariff.usdTry*tariff.overhead*100);
 }
 const integer=(n,min=0)=>Number.isSafeInteger(n)&&n>=min;
 const canonicalJson=value=>JSON.parse(JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v));
@@ -45,20 +49,20 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // before the request; otherwise a correct extraction gets cut mid-JSON.
   const reasoningAllowance=receiptVersion==='v8'?(role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
   const maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
-  const model=supervisedModels[role],secret=role==='manager'?anthropicKey:geminiKey;
+  const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
   quoteSupervised(role,1,maxOutputTokens,now());
   const {instruction='',...context}=input;
   const system=instruction+'\n'+untrusted+(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':'');
   // Content reviews reason adaptively; only the short initial task omits
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
-  const rawBody=role==='manager'?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  const rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
   // PostgreSQL jsonb reorders object keys. Canonicalise JSON context/schema
   // so a reconnect cannot turn identical research into another paid request.
   let body=rawBody;
   if(receiptVersion==='v8'){
    body=structuredClone(rawBody);
-   if(role==='manager')body.messages[0].content=JSON.stringify(canonicalJson(context));
+   if(anthropicRole)body.messages[0].content=JSON.stringify(canonicalJson(context));
    else body.contents[0].parts[0].text=JSON.stringify(canonicalJson(context));
    body=canonicalJson(body);
   }
@@ -86,7 +90,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(receiptVersion==='v8'&&role==='worker'){
    const route=await ledger.get('routing:bhs-v8:worker-billing');
    if(route?.state==='complete'&&(!saved||saved.state==='uncertain'&&saved.value?.providerStatus===403)){
-    return generateRole('manager','v8-worker-billing-fallback:'+stage,input,schema,opts);
+    return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
    }
   }
   // Two explicit Gemini service rejections permit one bounded Claude operator
@@ -100,21 +104,21 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(saved)throw new BudgetError(saved.state==='reserved'?'budget_pending':'budget_uncertain','Önceki BHS model isteğinin kaydı korunuyor; tekrar ücretli çağrı yapılmadı.');
   const snapshot=await fx();
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
-  const countBody=role==='manager'?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
-  const count=await json(role==='manager'?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey});
-  const tokens=role==='manager'?count.input_tokens:count.totalTokens;
+  const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
+  const count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey});
+  const tokens=anthropicRole?count.input_tokens:count.totalTokens;
   if(!integer(tokens,1))throw new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.');
   const upper=Math.ceil(tokens*1.2)+4096,amount=quoteSupervised(role,upper,maxOutputTokens,now());
   const limit=tariff.capKurus-reserveForFollowingKurus;
   if(!integer(reserveForFollowingKurus)||limit<0||amount+(await ledger.status()).chargedKurus>limit)throw new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const request=()=>json(role==='manager'?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey},role==='manager'?240000:90000);
+   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},anthropicRole?240000:90000);
    // Preserve the received content/usage before local accounting/proof checks.
    // This zero-cost subreceipt contains no request headers or credentials and
    // lets a reviewer inspect/revalidate a paid reply without buying it again.
    const value=receiptVersion==='v8'?await ledger.once('wire:bhs-v8:'+hash({step})+':response',{requestHash:hash(body)},0,request):await request();
    let usage,inputTokens,outputTokens,text,stopped;
-   if(role==='manager'){
+   if(anthropicRole){
     usage=value.usage||{};inputTokens=usage.input_tokens;outputTokens=usage.output_tokens;
     // No prompt caching or server tools are enabled. Unknown billed categories
     // cannot silently escape the reservation or be labelled verified usage.
@@ -132,14 +136,14 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
     text=(value.candidates?.[0]?.content?.parts||[]).filter(x=>!x.thought&&typeof x.text==='string').map(x=>x.text).join('');stopped=value.candidates?.[0]?.finishReason==='STOP';
    }
    if(!integer(inputTokens,1)||inputTokens>upper||!integer(outputTokens,1)||outputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS kullanımı ayrılan üst sınırla eşleşmiyor.');
-   const rate=supervisedRates[role],accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
+   const rate=rateFor(role,inputTokens),accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
    let data,rejectedOutput;try{data=JSON.parse(text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
    return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
   catch(error){
    if(receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
     await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected'}));
-    return generateRole('manager','v8-worker-billing-fallback:'+stage,input,schema,opts);
+    return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
    }
    if(receiptVersion==='v8'&&transientStatus(error.providerStatus)&&(step===originalStep||role==='worker'))return generateRole(role,stage,input,schema,opts);throw error;
   }
