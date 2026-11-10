@@ -14,3 +14,16 @@ test('the independent Sütaş case can resume its retained spending checkpoint',
  const host='https://sellf-pipeline-sales-synthetic-yigit-konuks-projects.vercel.app';
  assert.equal(await fetchQaCheckpoint(host,{fetchImpl:async()=>new Response(JSON.stringify({case:'sutas',encoding:'br-base64',data:'retained-sutas-receipts'}))}),'retained-sutas-receipts');
 });
+
+test('the archived public Duru checkpoint preserves every previous charge including both service rejections',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const wrapper=JSON.parse(await readFile(new URL('./fixtures/duru-retained-20261110.json',import.meta.url),'utf8'));
+ const payload=JSON.parse(brotliDecompressSync(Buffer.from(wrapper.data,'base64')));
+ assert.equal(payload.case,'duru');assert.equal(payload.phase,'competition_review');assert.equal(payload.receipts.length,45);
+ assert.equal(500+payload.receipts.reduce((n,r)=>n+r.charge_kurus,0),3400);
+ const rejected=payload.receipts.filter(r=>r.value?.providerStatus===503);assert.equal(rejected.length,2);assert.equal(rejected.reduce((n,r)=>n+r.charge_kurus,0),232);
+ assert.ok(payload.receipts.every(r=>r.charge_kurus>=0));
+ // A captured public Tavily documentation page contains its literal example
+ // placeholder. Keep original evidence immutable; reject actual key patterns.
+ assert.ok(!/AIza|sk-ant-|apify_api_|tvly-/.test(JSON.stringify(payload).replaceAll('tvly-YOUR_API_KEY','PUBLIC_DOCUMENTATION_PLACEHOLDER')));
+});

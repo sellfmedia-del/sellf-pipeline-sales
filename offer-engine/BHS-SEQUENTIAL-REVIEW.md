@@ -197,3 +197,13 @@ and syntax checks pass. Actual remaining-stage quality/cost is still pending.
 Live read-only readiness authenticated Claude, Gemini, Tavily configuration and
 Apify account poetic_jumpstart. That account has zero saved Tasks and zero
 explicit policies. Storage/background readiness is false on this Preview.
+
+The 68,528-character retained checkpoint no longer fits the Preview environment
+transport. The attempted continuation deployment was cancelled before paid QA
+and its gate cleared; older receipts must never be substituted. A compressed,
+public-brand-only fixture now archives all 45 receipts and the full 3,400-kurus
+commitment, including both 503 amounts. An explicit case-bound snapshot selector
+loads it during opt-in QA only. Tests verify the exact sum and reject key-like
+content; the sole tvly-YOUR_API_KEY occurrence is a literal public documentation
+placeholder retained inside the original captured excerpt. Ordinary builds do
+not execute QA or publish these test fixtures.
