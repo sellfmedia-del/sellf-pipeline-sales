@@ -40,11 +40,11 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
   quoteSupervised(role,1,maxOutputTokens,now());
   const {instruction='',...context}=input;
-  const system=instruction+'\n'+untrusted+(receiptVersion==='v8'&&role==='manager'?'\nThink the problem through before you answer.':'');
-  // Sonnet 5.5 can exhaust max_tokens in structured-output thinking at low or
-  // medium. First-party guidance recommends high for these reasoning tasks.
-  // The same exact token/TRY reservation still caps the whole response.
-  const body=role==='manager'?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:'adaptive'},output_config:{effort:receiptVersion==='v8'?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  const system=instruction+'\n'+untrusted+(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':'');
+  // Routine evidence matching emits an auditable verdict without up-front
+  // thinking. Final multi-step source/numeric assessment retains adaptive high
+  // reasoning. Both modes have the same pre-call token/TRY accounting.
+  const body=role==='manager'?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage!=='v8-final-report'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
   if(Buffer.byteLength(JSON.stringify(body))>600000)throw new BudgetError('input_budget','BHS aşamasının kaynak paketi çok büyük.');
   const step='model:bhs-'+receiptVersion+':'+role+':'+stage+':'+hash(body);
   const validate=value=>{
