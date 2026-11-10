@@ -22,6 +22,19 @@ alter table public.pipeline_bhs_jobs enable row level security;
 revoke all on public.pipeline_bhs_jobs from public,anon,authenticated;
 grant select,insert,update on public.pipeline_bhs_jobs to service_role;
 
+-- Only a fully committed current-phase receipt permits automatic acknowledgement recovery.
+create function public.pipeline_bhs_checkpoint_committed(p_mode text,p_budget uuid,p_phase text,p_hash text)
+returns boolean language plpgsql security invoker set search_path='' as $
+declare receipt_state text;checkpoint_key text:='audit:'||p_phase||':'||p_phase||'-v8'||case when p_phase in ('sector_correction_sources','sector_correction_draft','sector','sector_validation') then '-r2' else '' end||':'||p_hash;
+begin
+ if current_user<>'service_role' or p_mode not in ('preview','production') then raise exception 'private BHS worker required';end if;
+ if p_mode='preview' then select state into receipt_state from public.pipeline_offer_preview_budget_steps where budget_id=p_budget and step_key=checkpoint_key;
+ else select state into receipt_state from public.pipeline_offer_budget_steps where budget_id=p_budget and step_key=checkpoint_key;end if;
+ return coalesce(receipt_state='complete',false);
+end $;
+revoke all on function public.pipeline_bhs_checkpoint_committed(text,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.pipeline_bhs_checkpoint_committed(text,uuid,text,text) to service_role;
+
 create function public.pipeline_bhs_job_op(p_mode text,p_op text,p_owner uuid default null,p_lead text default null,p_id uuid default null,p_token uuid default null,p_data jsonb default '{}')
 returns jsonb language plpgsql security invoker set search_path='' as $$
 declare j public.pipeline_bhs_jobs;b jsonb;receipt jsonb;budget_lead text;expected text;phases text[]:=array['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete'];
@@ -44,8 +57,8 @@ begin
  end if;
  if p_op='claim' then
   if p_token is null then raise exception 'BHS lease required';end if;
-  -- A killed worker is paused. Its paid reservations are never refunded/replayed.
-  update public.pipeline_bhs_jobs set state=case when cancel_requested then 'cancelled' else 'paused' end,diagnostic='{"code":"lease_expired"}',updated_at=now() where mode=p_mode and state='running' and lease_until<=now();
+  -- Recover the ack only when the phase is already committed; uncertain paid work stays paused.
+  update public.pipeline_bhs_jobs set state=case when cancel_requested then 'cancelled' when public.pipeline_bhs_checkpoint_committed(mode,budget_id,phase,brief_hash) then 'queued' else 'paused' end,diagnostic='{"code":"lease_expired"}',lease_token=null,lease_until=null,updated_at=now() where mode=p_mode and state='running' and lease_until<=now();
   update public.pipeline_bhs_jobs set state='paused',diagnostic='{"code":"job_execution_limit"}',updated_at=now() where mode=p_mode and state='queued' and (claims>=40 or created_at<now()-interval '2 hours');
   select * into j from public.pipeline_bhs_jobs where mode=p_mode and state='queued' order by created_at for update skip locked limit 1;
   if not found then return null;end if;
@@ -62,7 +75,7 @@ begin
  end if;
  if j.state<>'running' or j.lease_token is distinct from p_token or j.lease_until<=now() then raise exception 'BHS lease mismatch';end if;
  if p_op='pause' then
-  update public.pipeline_bhs_jobs set state=case when cancel_requested then 'cancelled' else 'paused' end,diagnostic=jsonb_build_object('code',left(coalesce(p_data->>'code','worker_unavailable'),80)),lease_token=null,lease_until=null,updated_at=now() where id=j.id returning * into j;return to_jsonb(j);
+  update public.pipeline_bhs_jobs set state=case when cancel_requested then 'cancelled' when public.pipeline_bhs_checkpoint_committed(mode,budget_id,phase,brief_hash) then 'queued' else 'paused' end,diagnostic=jsonb_build_object('code',left(coalesce(p_data->>'code','worker_unavailable'),80)),lease_token=null,lease_until=null,updated_at=now() where id=j.id returning * into j;return to_jsonb(j);
  end if;
  if p_op='budget' then
   if p_data->>'op' not in ('status','get','reserve','complete','uncertain') then raise exception 'invalid BHS budget operation';end if;
@@ -73,7 +86,7 @@ begin
  end if;
  if p_op='advance' then
   expected:=phases[array_position(phases,j.phase)+1];
-  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from 'audit:'||j.phase||':'||j.phase||'-v8'||case when j.phase in ('sector_correction_sources','sector_correction_draft','sector','sector_validation') then '-r2' else '' end||':'||j.brief_hash then raise exception 'BHS checkpoint mismatch';end if;
+  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from ('audit:'||j.phase||':'||j.phase||'-v8'||case when j.phase in ('sector_correction_sources','sector_correction_draft','sector','sector_validation') then '-r2' else '' end||':'||j.brief_hash) then raise exception 'BHS checkpoint mismatch';end if;
   if p_mode='preview' then select to_jsonb(s) into receipt from public.pipeline_offer_preview_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';
   else select to_jsonb(s) into receipt from public.pipeline_offer_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';end if;
   if receipt->>'state' is distinct from 'complete' then raise exception 'BHS checkpoint not committed';end if;
@@ -87,4 +100,5 @@ commit;
 -- Rollback: disable BHS worker/scheduler first; export new job rows.
 -- drop function public.pipeline_bhs_job_op(text,text,uuid,text,uuid,uuid,jsonb);
 -- drop table public.pipeline_bhs_jobs;
+-- drop function public.pipeline_bhs_checkpoint_committed(text,uuid,text,text);
 -- Existing BHS results, paid receipts, offers and all CRM data remain intact.
