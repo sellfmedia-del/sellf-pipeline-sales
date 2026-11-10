@@ -19,8 +19,9 @@ export async function runSequentialAcceptance(){
  const brief=snapshotBrief({...selected,goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
- if(snapshot&&!(snapshot==='duru-retained-20261110'&&caseName==='duru'))throw Error('Unapproved QA receipt snapshot.');
- const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/duru-retained-20261110.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
+ const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110'};
+ if(snapshot&&snapshot!==snapshots[caseName])throw Error('Unapproved QA receipt snapshot.');
+ const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshots[caseName]+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
  if(seedData){
   const payload=JSON.parse(brotliDecompressSync(Buffer.from(seedData,'base64'),{maxOutputLength:12000000}).toString('utf8'));
   if(payload.briefHash!==briefHash(brief)||payload.case!==caseName)throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;

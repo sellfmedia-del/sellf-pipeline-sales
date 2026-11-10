@@ -27,3 +27,12 @@ test('the archived public Duru checkpoint preserves every previous charge includ
  // placeholder. Keep original evidence immutable; reject actual key patterns.
  assert.ok(!/AIza|sk-ant-|apify_api_|tvly-/.test(JSON.stringify(payload).replaceAll('tvly-YOUR_API_KEY','PUBLIC_DOCUMENTATION_PLACEHOLDER')));
 });
+
+test('Tadım continuation keeps the paid truncated response and thought usage in its original account',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const wrapper=JSON.parse(await readFile(new URL('./fixtures/tadim-retained-20261110.json',import.meta.url),'utf8'));
+ const payload=JSON.parse(brotliDecompressSync(Buffer.from(wrapper.data,'base64')));
+ assert.equal(payload.case,'tadim');assert.equal(500+payload.receipts.reduce((n,r)=>n+r.charge_kurus,0),1250);
+ const incomplete=payload.receipts.find(r=>r.value?.rejectedOutput==='incomplete');
+ assert.equal(incomplete.charge_kurus,48);assert.equal(incomplete.value.usage.thoughtsTokenCount,2343);assert.equal(incomplete.value.usage.candidatesTokenCount,715);
+});

@@ -150,7 +150,7 @@ test('one explicit transient rejection receives a separately funded retry while 
 });
 test('repeated service errors, ambiguous timeouts and insufficient budget cannot buy an unbounded attempt',async()=>{
  for(const kind of ['twice','timeout','budget']){
-  const db=account(kind==='budget'?4380:500);let generated=0;
+  const db=account(kind==='budget'?4335:500);let generated=0;
   const t=transport({onGenerate:async()=>{generated++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503});}});
   await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));
   assert.equal(generated,kind==='twice'?4:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
@@ -225,12 +225,12 @@ test('jsonb key reordering cannot change the v8 paid request or its receipt afte
  }
 });
 
-test('v8 evidence operators use low reasoning inside the same combined thinking/output envelope; v7 routing is unchanged',async()=>{
+test('v8 evidence operators use low reasoning without consuming the caller visible-output allowance; v7 routing is unchanged',async()=>{
  for(const version of ['v7','v8']){
   const db=account(),t=transport(),p=createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl,receiptVersion:version});
   await p.worker('single-source-extract',{},schema,{maxOutputTokens:512});
   const body=t.calls.find(c=>c.url.endsWith(':generateContent')).body;
-  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,version==='v8'?'LOW':'MINIMAL');assert.equal(body.generationConfig.maxOutputTokens,512);
+  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,version==='v8'?'LOW':'MINIMAL');assert.equal(body.generationConfig.maxOutputTokens,version==='v8'?3584:512);
   assert.ok((await db.ledger.status()).chargedKurus<5000);
  }
 });

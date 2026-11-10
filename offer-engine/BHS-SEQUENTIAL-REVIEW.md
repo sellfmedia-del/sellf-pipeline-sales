@@ -233,3 +233,22 @@ A separate Tadım public-brand/synthetic-brief case measures the corrected norma
 entry flow. Its verified official origin is https://www.tadim.com.tr/. It has
 its own capped account; none of Duru's costs are removed or transferred. The
 Duru snapshot selector is cleared for this new case. Acceptance remains pending.
+
+Tadım first attempt stopped at brand extraction with verified usage (12.50 TRY,
+including QA/infrastructure). Gemini LOW used 2,343 thought tokens plus 715 text
+tokens inside the old 3,072 total output cap and returned an incomplete JSON.
+That paid 48-kurus reply is archived intact. The worker now reserves a separate
+bounded 3,072-token reasoning allowance in addition to the caller's existing
+visible-output allowance (combined maximum 16,384). BOTH thought and text tokens
+are counted/settled against the quoted combined bound, the same stage ceiling
+and the same aggregate 50 TRY account. Claude/v7 limits do not change. This
+corrects the earlier same-total-envelope approach rather than concealing its
+truncation. brand_draft is append-only r2; continuation retains all prior costs.
+
+Focused provider/sequential/queue regression: 52 passed. Five existing BHS UI
+scenarios passed on both desktop/mobile using the bundled headless Chromium and
+the correct engine test working directory. The earlier Chromium/socket failure
+and wrong-directory attempts are not passing checks; those were corrected for
+this successful run. Deployed production/preview gateway sources were compared
+read-only and exactly match main v4/v8, so the reviewed additions have an exact
+rollback baseline. Production remains unchanged.

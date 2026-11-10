@@ -38,7 +38,12 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
  const anthHeaders={'x-api-key':anthropicKey,'anthropic-version':'2023-06-01'};
  const transientStatus=status=>[500,502,503,529].includes(status);
  async function generateRole(role,stage,input,schema,opts={}){
-  const {maxOutputTokens=4096,reserveForFollowingKurus=600,validateData}=opts;
+  const {maxOutputTokens:requestedOutputTokens=4096,reserveForFollowingKurus=600,validateData}=opts;
+  if(!integer(requestedOutputTokens,1)||requestedOutputTokens>16384)throw new BudgetError('input_budget','BHS çıktı sınırı geçersiz.');
+  // Gemini bills/counts hidden reasoning inside maxOutputTokens. Preserve the
+  // caller's visible-report allowance and fund bounded LOW reasoning separately
+  // before the request; otherwise a correct extraction gets cut mid-JSON.
+  const maxOutputTokens=receiptVersion==='v8'&&role==='worker'?Math.min(16384,requestedOutputTokens+3072):requestedOutputTokens;
   const model=supervisedModels[role],secret=role==='manager'?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
   quoteSupervised(role,1,maxOutputTokens,now());
