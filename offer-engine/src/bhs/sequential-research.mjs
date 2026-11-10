@@ -19,7 +19,20 @@ async function search(providers,queries){
 // Read across all manager questions before taking another result from one query.
 export const balancedSequentialUrls=searches=>{const rows=[];for(let i=0;i<8;i++)for(const s of searches){const url=researchUrl(s.results?.[i]?.url);if(url)rows.push(url);}return [...new Set(rows)];};
 const urls=balancedSequentialUrls;
-function peerPlanSchema(){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;return s;}
+function peerPlanSchema(){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;s.properties.entities.items.properties.website.minLength=0;return s;}
+const domainName=value=>String(value||'').toLocaleLowerCase('tr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
+export async function resolvePeerAddresses(value,providers){
+ const entities=structuredClone(value.entities),missing=entities.filter(e=>e.role==='competitor'&&!researchUrl(e.website));
+ const searches=await search(providers,missing.map(e=>'"'+e.name.replace(/["\n\r]/g,' ')+'" official website ürünler kurumsal'));
+ const results=searches.flatMap(s=>s.results||[]),sources=[...value.sources],unresolved=[];
+ for(const entity of entities){
+  if(researchUrl(entity.website)||entity.role!=='competitor')continue;
+  const key=domainName(entity.name),match=key.length>=4&&results.find(r=>{const host=researchHost(r.url);return host&&domainName(host.split('.')[0])===key;});
+  if(match){entity.website=researchUrl(match.url);sources.push({url:entity.website,purpose:'Hedefli aramada bulunan rakip ADAYI domaini; ürün, kitle ve ülke henüz doğrulanmadı.'});}
+  else unresolved.push({id:entity.id,name:entity.name,reason:'official_candidate_address_not_found'});
+ }
+ return {data:{...value,entities:entities.filter(e=>e.role!=='competitor'||researchUrl(e.website)),sources},searches,unresolved};
+}
 export function parseSequentialPeerPlan(value,brief){
  // The already-confirmed subject is supplied by the server, not rediscovered
  // by the operator. A peer-only answer is valid; duplicate brand identities
@@ -168,9 +181,9 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='competition_plan'){
   const brand=await previous('brand'),queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} alternatives competitors same products target market`,`${brand.facts.filter(f=>['products','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,250)} doğrudan rakip alternatif markalar`];
   const searches=await search(providers,queries),discovered=[brief.website,...urls(searches),...prior.packet.sources.map(s=>s.finalUrl)];
-  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\nOnaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(),{maxOutputTokens:3072,validateData:d=>{const p=parseSequentialPeerPlan(d,brief);if(p.entities.some(e=>!researchUrl(e.website)))throw Error('Invalid candidate URL.');}});
-  const plan=parseSequentialPeerPlan(planned.data,brief);
-  return finish({...prior,plan,searches:[...prior.searches,...searches],peerSearches:searches});
+  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\nOnaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(),{maxOutputTokens:3072});
+  const resolved=await resolvePeerAddresses(planned.data,providers),plan=parseSequentialPeerPlan(resolved.data,brief),peerSearches=[...searches,...resolved.searches];
+  return finish({...prior,plan,searches:[...prior.searches,...peerSearches],peerSearches,unresolvedPeers:resolved.unresolved});
  }
  if(phase==='competition_sources'){
   return finish({...prior,...await enrichReading(brief,{...prior,searches:prior.searches.filter(s=>!prior.peerSearches.some(p=>p.query===s.query))},prior.plan,prior.peerSearches,20,collect)});

@@ -106,3 +106,18 @@ test('a real paid truncated sector reply advances only its empty draft, preservi
   assert.equal(calls,0);assert.deepEqual(out.workerData.facts,[]);assert.equal(out.operatorValidation.rejectedOutput.code,'incomplete');assert.equal(out.operatorValidation.independentSourceReviewRequired,true);assert.equal((await db.ledger.status()).chargedKurus,cost.chargedKurus);
  }finally{await db.close();}
 });
+
+test('the paid peer plan with unknown websites is reused and only the missing addresses need discovery',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const {localBudget}=await import('./fixtures/local-budget.mjs');const {snapshotBrief}=await import('../src/bhs/brief.mjs');
+ const {createSequentialProviders}=await import('../src/bhs/sequential-providers.mjs');const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');
+ const brief=snapshotBrief({brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate',goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
+ const p=JSON.parse(brotliDecompressSync(Buffer.from(JSON.parse(await readFile(new URL('./fixtures/tadim-final-retained-20261110.json',import.meta.url),'utf8')).data,'base64'))),db=await localBudget({seed:p.receipts});
+ try{
+  const cost=await db.ledger.status(),providers=createSequentialProviders({ledger:db.ledger,phase:'competition_plan',anthropicKey:'synthetic',geminiKey:'synthetic',tavilyKey:'synthetic',fetchImpl:async url=>{if(url.includes('tcmb.gov.tr'))return new Response('<Tarih_Date Tarih="10.11.2026"><Currency CurrencyCode="USD"><ForexSelling>44</ForexSelling></Currency></Tarih_Date>');assert.fail('Already-paid request cannot execute again');}});
+  const sector=p.receipts.find(r=>r.value?.phase==='sector_validation'&&r.state==='complete').value,queries=sector.review.nextTask.queries;
+  const supplied={...providers,search:(q,opts)=>queries.includes(q)?providers.search(q,opts):Promise.resolve({query:q,results:['koska','tugbakuruyemis','leblebicioglu'].map(name=>({url:'https://www.'+name+'.com.tr/'}))})};
+  const out=await runSequentialStage({phase:'competition_plan',brief,providers:supplied,previous:async name=>p.receipts.find(r=>r.step_key.startsWith('audit:'+name+':')&&r.state==='complete').value});
+  assert.equal(out.plan.entities.filter(e=>e.role==='competitor').length,4);assert.equal((await db.ledger.status()).chargedKurus,cost.chargedKurus);assert.ok(out.plan.entities.every(e=>e.website));
+ }finally{await db.close();}
+});

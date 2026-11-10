@@ -314,3 +314,12 @@ test('v8 content supervisors think adaptively inside the same quoted output cap 
   assert.ok((await db.ledger.status()).chargedKurus<5000);
  }
 });
+
+test('historical scraper caps require exact account and actor ownership and never become active policies',async()=>{
+ const {historicalApifyLimits}=await import('../src/bhs/supervised-readiness.mjs');const {actorIds}=await import('../src/bhs/apify-inputs.mjs');let calls=0;
+ const out=await historicalApifyLimits({token:'private-test',userId:'ExactAccount',fetchImpl:async(url,options)=>{
+  calls++;assert.ok(url.endsWith('/runs/last'));assert.equal(options.method,undefined);const actId=url.split('/acts/')[1].split('/')[0];
+  return json({data:{actId,userId:actId===actorIds['apify/instagram-profile-scraper']?'ExactAccount':'DifferentAccount',id:'Run1234567890123',startedAt:'2026-11-10',meta:{origin:'WEB'},options:{maxTotalChargeUsd:.003,isMaxTotalChargeUsdSetByUser:true}}});
+ }});
+ assert.equal(calls,Object.keys(actorIds).length);assert.equal(out.length,1);assert.equal(out[0].maxTotalChargeUsd,.003);assert.equal(out[0].basis,'historical_explicit_run_option_not_active_policy');
+});

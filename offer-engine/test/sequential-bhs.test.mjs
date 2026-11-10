@@ -298,3 +298,10 @@ test('blank operator candidates are rejected while the expert must establish cor
   assert.equal(reviewed,true);assert.equal(accepted.decision,'accepted');assert.ok(accepted.facts.length>=4);assert.ok(accepted.facts.every(f=>f.sourceIds.length&&f.statement));
  }finally{await db.close();}
 });
+
+test('missing candidate addresses use observed exact-name domains and unresolved peers remain unconfirmed',async()=>{
+ const {resolvePeerAddresses}=await import('../src/bhs/sequential-research.mjs');
+ const queries=[],peers=[{id:'known',name:'Known',role:'competitor',website:'https://known.example/'},{id:'new',name:'Tuğba Kuruyemiş',role:'competitor',website:''},{id:'unresolved',name:'Missing Company',role:'competitor',website:''}];
+ const result=await resolvePeerAddresses({entities:peers,sources:[]},{search:async q=>{queries.push(q);return {results:[{url:'https://news.example/tugba'},{url:'https://tugbakuruyemis-fake.example/'},{url:'https://www.tugbakuruyemis.com.tr/urunler'}]};}});
+ assert.equal(queries.length,2);assert.equal(result.data.entities.find(e=>e.id==='new').website,'https://www.tugbakuruyemis.com.tr/urunler');assert.equal(result.data.entities.length,2);assert.deepEqual(result.unresolved.map(e=>e.id),['unresolved']);assert.equal(peers[1].website,'');
+});
