@@ -135,7 +135,7 @@ test('stage tools cannot spend final-report headroom even through parallel reser
 test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
  assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
- assert.match(stageKey(brief,'brand','v8'),/:brand-v8:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r2:/);
 });
 
 test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{
@@ -146,5 +146,21 @@ test('a source-backed product-sales inference can explain revenue without privat
  }});
  try{for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_validation')+1))await run(db,phase,t);
   const row=await db.ledger.get(stageKey(brief,'sector_validation','v8'));assert.equal(row.value.decision,'accepted');assert.ok(row.value.facts.some(f=>f.kind==='inference'));assert.ok((await db.ledger.status()).chargedKurus<=5000);
+ }finally{await db.close();}
+});
+
+test('a targeted brand repair retains omitted accepted topics and rechecks replacements against original sources',async()=>{
+ const db=await localBudget();let reviews=0;
+ const t=modelTransport({mutate:(stage,data)=>{
+  if(stage==='v8-brand-review'&&++reviews===1)return {...data,decision:'limited',acceptedIds:['products','business_model','scale','ownership'],rejectedIds:['identity','market'],missing:['Kimlik ve pazar açıklamasını düzelt.']};
+  if(stage==='v8-brand-repair-extract')return {...data,facts:data.facts.filter(f=>['identity','market'].includes(f.topic))};
+  return data;
+ }});
+ try{
+  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand')+1))await run(db,phase,t);
+  const saved=(await db.ledger.get(stageKey(brief,'brand','v8'))).value;
+  assert.equal(saved.decision,'accepted');assert.equal(reviews,2);
+  assert.ok(['identity','products','business_model','market'].every(topic=>saved.facts.some(f=>f.topic===topic)));
+  assert.equal(new Set(saved.facts.map(f=>f.id)).size,saved.facts.length);
  }finally{await db.close();}
 });

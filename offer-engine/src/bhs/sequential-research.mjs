@@ -66,8 +66,13 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   }
   if(!prior.repairNeeded)return finish({...prior});
   const context=sequentialContext(brief,prior),schema=family==='swot'?swotSchema:phaseExtractionSchema(family);
-  const worker=await providers.worker('v8-'+family+'-repair-extract',{instruction:'Yönetici düzeltme emri: '+prior.review.repairTask.instruction+'\nAynı aşamanın bütün adaylarını yeni kaynakları da kullanarak yeniden çıkar. Önceki reddedilen çıkarımı veya başka şirket bilgisini tekrarlama. Kaynak kimliklerini ve bütün gerekli konu alanlarını koru. '+scopeInstruction,...stageModelInput(context),missing:prior.review.missing,previouslyApproved:approved},withProofIds(schema,context),{maxOutputTokens:family==='swot'?6144:4096,validateData:d=>validateProofRows(d.facts||d.findings,context)});
-  return finish({...prior,workerData:worker.data});
+  const required=family==='brand'?'Kimlik, ürünler, iş modeli ve hedef pazar için identity, products, business_model ve market konularının her birini ayrı kısa facts olarak yeniden doğrula. Sahiplik/ölçek düzeltmesi yaparken bu dört temel konuyu düşürme.':family==='sector'?'sector, revenue_drivers ve customer_behavior konularını ayrı kaynaklı facts olarak koru.':'';
+  const worker=await providers.worker('v8-'+family+'-repair-extract',{instruction:'Yönetici düzeltme emri: '+prior.review.repairTask.instruction+'\nAynı aşamanın bütün adaylarını yeni kaynakları da kullanarak yeniden çıkar. Önceki reddedilen çıkarımı veya başka şirket bilgisini tekrarlama. Kaynak kimliklerini ve bütün gerekli konu alanlarını koru. Önceki kabul notunda bir cümlenin düzeltilmesi istendiyse eski metni aynen alma; özgün paragrafın söylediğiyle yeniden yaz. '+required+' '+scopeInstruction,...stageModelInput(context),missing:prior.review.missing,previouslyApproved:approved,currentStageCandidates:prior.facts||prior.swot||[]},withProofIds(schema,context),{maxOutputTokens:family==='swot'?6144:4096,validateData:d=>validateProofRows(d.facts||d.findings,context)});
+  // Targeted repairs often return only the missing topics. Preserve previously
+  // accepted candidates for omitted topics, then re-review the WHOLE set. New
+  // candidates replace their topic rather than silently retaining an old error.
+  const workerData=worker.data.facts?{...worker.data,facts:[...(prior.facts||[]).filter(f=>!worker.data.facts.some(n=>n.topic===f.topic)),...worker.data.facts]}:worker.data;
+  return finish({...prior,workerData});
  }
  if(phase==='brand_plan'){
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
