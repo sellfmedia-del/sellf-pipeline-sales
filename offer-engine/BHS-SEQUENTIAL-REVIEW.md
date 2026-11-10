@@ -215,3 +215,21 @@ allocation is now 3,700 instead of 3,500 kurus (same as SWOT); the stage wrapper
 still caps pre-final research at 4,400 and the account remains 5,000. No token,
 source or output requirement was reduced. The zero-cost coordinator advances
 to competition_review r3. All paid amounts remain at 3,400 kurus.
+
+The final Duru diagnostic is archived with ALL 54 receipts and 3,943 kurus.
+Competition repair was still blocked by its funding envelope; this run has not
+completed SWOT, coverage or final review and is NOT a passing quality/cost test.
+Do not restart this case at zero or discard its 232-kurus outage commitments.
+
+To address the observed multi-company/citation errors, v8 operators now use LOW
+reasoning rather than MINIMAL, while keeping the SAME total output+thinking
+ceiling, rates, model and 5,000-kurus account. Instructions require one company
+and one source-supported claim per fact; product existence, export, audience
+behaviour and performance must be separate. v7 remains unchanged. Google primary
+thinking/model documentation confirms LOW is supported; hidden thought tokens
+remain included in the existing strict usage/accounting checks.
+
+A separate Tadım public-brand/synthetic-brief case measures the corrected normal
+entry flow. Its verified official origin is https://www.tadim.com.tr/. It has
+its own capped account; none of Duru's costs are removed or transferred. The
+Duru snapshot selector is cleared for this new case. Acceptance remains pending.
