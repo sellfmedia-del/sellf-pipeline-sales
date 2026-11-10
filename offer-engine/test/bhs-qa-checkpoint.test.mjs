@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fetchQaCheckpoint} from '../scripts/qa-checkpoint.mjs';
+import {sequentialQaRequested} from '../scripts/qa-acceptance-gate.mjs';
+test('the release acceptance runs only on its exact opted-in Preview commit and Pipeline project',()=>{
+ const env={VERCEL_ENV:'preview',VERCEL_PROJECT_ID:'prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ',OFFER_BHS_QA_COMMIT:'a'.repeat(40),VERCEL_GIT_COMMIT_SHA:'a'.repeat(40),OFFER_BHS_QA_CASE:'tadim_release'};
+ assert.equal(sequentialQaRequested(env),true);
+ for(const change of [{VERCEL_ENV:'production'},{VERCEL_ENV:'development'},{VERCEL_PROJECT_ID:'other-project'},{OFFER_BHS_QA_COMMIT:'b'.repeat(40)},{OFFER_BHS_QA_CASE:'unknown'},{OFFER_BHS_QA_COMMIT:''}])assert.equal(sequentialQaRequested({...env,...change}),false);
+});
 test('QA checkpoint follows only same-origin authentication redirects and retains all receipt payload bytes',async()=>{
  let calls=0;const host='https://sellf-pipeline-sales-synthetic-yigit-konuks-projects.vercel.app';
  const data=await fetchQaCheckpoint(host+'/?_vercel_share=synthetic',{fetchImpl:async(url,options)=>{

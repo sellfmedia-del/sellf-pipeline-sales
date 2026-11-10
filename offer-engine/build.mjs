@@ -4,6 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import {writeTemplateExample} from './scripts/template-example.mjs';
 import {buildPipelinePreview} from './src/preview/build-pipeline.mjs';
+import {sequentialQaRequested} from './scripts/qa-acceptance-gate.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,'..');
 await mkdir(path.join(here,'public'),{recursive:true});
@@ -58,4 +59,4 @@ await buildMonthlyReview(path.join(here,'public'),{production});
 
 // Explicit, single-commit public-brand QA only. No Supabase or production write.
 // Ordinary builds never call models, search providers or Actors.
-if(!production&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&['humm','muratbey','sutas','duru','tadim'].includes(process.env.OFFER_BHS_QA_CASE))await import('./scripts/bhs-sequential-acceptance.mjs');
+if(sequentialQaRequested())await import('./scripts/bhs-sequential-acceptance.mjs');

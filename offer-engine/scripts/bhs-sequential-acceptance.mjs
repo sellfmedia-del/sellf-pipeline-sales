@@ -9,10 +9,10 @@ import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {localBudget} from '../test/fixtures/local-budget.mjs';
 import {fetchQaCheckpoint} from './qa-checkpoint.mjs';
+import {sequentialQaRequested} from './qa-acceptance-gate.mjs';
 
-const project='prj_B6Q6FIgq9NjbBlb6ga03cn6PD3jJ';
 const caseName=process.env.OFFER_BHS_QA_CASE;
-const allowed=()=>process.env.VERCEL_ENV==='preview'&&process.env.VERCEL_PROJECT_ID===project&&/^[a-f0-9]{40}$/.test(process.env.OFFER_BHS_QA_COMMIT||'')&&process.env.OFFER_BHS_QA_COMMIT===process.env.VERCEL_GIT_COMMIT_SHA&&['humm','muratbey','sutas','duru','tadim','tadim_release'].includes(caseName);
+const allowed=sequentialQaRequested;
 export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
  const selected={tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
