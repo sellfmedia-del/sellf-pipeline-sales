@@ -10,3 +10,7 @@ test('QA checkpoint follows only same-origin authentication redirects and retain
  await assert.rejects(fetchQaCheckpoint('https://other.example/',{fetchImpl:()=>assert.fail()}));
  await assert.rejects(fetchQaCheckpoint(host,{fetchImpl:async()=>new Response(null,{status:307,headers:{location:'https://other.example/'}})}));
 });
+test('the independent Sütaş case can resume its retained spending checkpoint',async()=>{
+ const host='https://sellf-pipeline-sales-synthetic-yigit-konuks-projects.vercel.app';
+ assert.equal(await fetchQaCheckpoint(host,{fetchImpl:async()=>new Response(JSON.stringify({case:'sutas',encoding:'br-base64',data:'retained-sutas-receipts'}))}),'retained-sutas-receipts');
+});

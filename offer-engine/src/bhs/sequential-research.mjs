@@ -72,7 +72,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='brand_plan'){
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
   const packet=providers.checkpoint?await providers.checkpoint('identity-input',brief,read):await read();
-  const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true})},taskSchema,{maxOutputTokens:2048});
+  const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true})},taskSchema,{maxOutputTokens:2048});
   return finish({packet,searches:[],plan,managerPlan:task.data});
  }
  if(phase==='brand_sources'){

@@ -10,6 +10,7 @@ import {response} from './fixtures/offer.mjs';
 import {expertContext} from '../src/bhs/expert-report.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {brief as raw} from './fixtures/bhs.mjs';
+import {taskSchema} from '../src/bhs/sequential-contracts.mjs';
 const now=()=>Date.parse('2026-11-09T12:00:00Z');
 const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};
 const json=v=>new Response(JSON.stringify(v));
@@ -129,6 +130,17 @@ test('readiness is preview-only and probes catalogues without paid endpoints or 
 
 const validWorker=()=>json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:150},candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}]});
 const v8Providers=(db,t)=>createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl,receiptVersion:'v8',delay:async()=>{}});
+test('a source-qualified operator task longer than 1200 characters is preserved and reused without another paid call',async()=>{
+ const instruction='Kaynağı doğrula. '.repeat(100)+'Son sınır: doğrulanamayan sahiplik ve ciroyu olgu olarak sunma.';
+ assert.ok(instruction.length>1200&&instruction.length<2048);
+ const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction,queries:[]})}]})});
+ const p=v8Providers(db,t),first=await p.manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048});
+ assert.equal(first.data.instruction,instruction);const n=t.calls.length,cost=await db.ledger.status();
+ assert.deepEqual(await p.manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048}),first);
+ assert.equal(t.calls.length,n);assert.deepEqual(await db.ledger.status(),cost);
+ const invalid=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:1600},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({instruction:'x'.repeat(6001),queries:[]})}]})});
+ await assert.rejects(v8Providers(account(),invalid).manager('v8-brand-plan',{},taskSchema,{maxOutputTokens:2048}),e=>e.code==='model_output_invalid');
+});
 test('one explicit transient rejection receives a separately funded retry while its original commitment stays charged',async()=>{
  const db=account();let generated=0;
  const t=transport({onGenerate:async()=>++generated===1?new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503}):validWorker()});

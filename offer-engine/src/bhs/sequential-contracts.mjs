@@ -15,7 +15,11 @@ export const obj=properties=>({type:'object',properties,required:Object.keys(pro
 export const refs=arr(str(80),12);
 export const factSchema=obj({id:str(80),kind:{type:'string',enum:['observation','inference']},topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
 export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400),12)});
-export const taskSchema=obj({instruction:str(1200),queries:arr(str(500),2)});
+// Internal operator tasks carry source/identity safeguards as well as the brief.
+// Keep a finite transport bound without rejecting an otherwise valid 1,622-char
+// task or cutting away the manager's evidence instructions. Generation still
+// has its existing token/account cap; public findings keep their tighter bounds.
+export const taskSchema=obj({instruction:str(6000),queries:arr(str(500),2)});
 const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'];conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
 export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(400),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(1400),nextTask:taskSchema,repairTask:taskSchema});
