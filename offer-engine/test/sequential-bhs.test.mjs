@@ -135,7 +135,7 @@ test('stage tools cannot spend final-report headroom even through parallel reser
 test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
  assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
- assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r2:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r3:/);
 });
 
 test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{

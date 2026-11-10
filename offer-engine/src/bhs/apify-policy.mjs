@@ -1,5 +1,6 @@
 import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {researchUrl} from './research-url.mjs';
+import {actorIds} from './apify-inputs.mjs';
 
 export const approvedActors=Object.freeze([
  'harvestapi/linkedin-company-search','harvestapi/linkedin-post-search','curious_coder/linkedin-jobs-scraper',
@@ -47,5 +48,20 @@ export async function inspectApifyPolicies({token,fetchImpl=fetch,now=Date.now,d
   tasks.push(...data.items);offset+=data.items.length;
   if(offset>=data.total||data.items.length<100)break;
  }
- return {configured:true,authenticated:true,taskPolicies:tasks.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete:offset<1000,tasks};
+ // Task lists omit options. Verify the exact saved Task before interpreting
+ // an omitted cap as a missing policy; never read inputs or start an Actor.
+ const known=new Set(Object.values(actorIds)),relevant=tasks.filter(t=>known.has(t.actId)&&/^[a-zA-Z0-9]{10,30}$/.test(t.id)),resolved=[];
+ let complete=offset<1000&&relevant.length<=40;
+ for(let start=0;start<Math.min(relevant.length,40);start+=4){
+  const batch=await Promise.allSettled(relevant.slice(start,Math.min(start+4,40)).map(async task=>{
+   if(task.options)return {id:task.id,actId:task.actId,options:task.options};
+   const remaining=deadline-now();if(remaining<=0)throw Error('Task policy deadline');
+   const r=await fetchImpl('https://api.apify.com/v2/actor-tasks/'+task.id,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(Math.min(5000,remaining)),redirect:'error'});
+   if(!r.ok)throw Error('Task policy unavailable');const detail=(await r.json()).data;
+   if(detail?.id!==task.id||detail.actId!==task.actId)throw Error('Task policy identity mismatch');
+   return {id:detail.id,actId:detail.actId,options:detail.options};
+  }));
+  for(const r of batch)if(r.status==='fulfilled')resolved.push(r.value);else complete=false;
+ }
+ return {configured:true,authenticated:true,savedTaskCount:tasks.length,taskPolicies:resolved.filter(t=>Number.isFinite(t.options?.maxTotalChargeUsd)&&t.options.maxTotalChargeUsd>0&&t.options.maxTotalChargeUsd<=.4).length,complete,tasks:resolved};
 }

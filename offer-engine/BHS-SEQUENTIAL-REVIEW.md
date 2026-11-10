@@ -20,7 +20,7 @@ The production opt-in remains disabled. No Supabase schema or data has been chan
 
 Every source/worker/review substep has a durable receipt. Claude issues the initial
 operator task and subsequent tasks. A limited understanding can request one
-targeted correction across the entire audit; it cannot cause an unbounded loop.
+targeted correction per logical research stage; it cannot cause an unbounded loop.
 If that correction remains insufficient, later paid stages stop. Such research
 is not labelled a completed high-quality report.
 
@@ -63,3 +63,31 @@ Current live blockers remain explicit: saved account-specific Actor limits must
 be readable; the private background gateway/scheduler needs production-approved
 deployment. The existing v7 Preview queue proposal has not been applied and is
 not used as a claim of live v8 background operation.
+
+## Continuation checkpoint — 2026-11-10
+
+- Production remains at `30c0c139`; no migration, production flag, release,
+  customer record, pricing, service selector, logo or offer layout was changed.
+- `f18bb133`: a real 1,622-character manager instruction exposed an internal
+  1,200-character transport bound. Internal tasks now have a finite 6,000-char
+  bound with the same generation tokens, model rates and strict public finding
+  limits. The original paid reply also validates locally with zero new calls.
+  The independent Sütaş checkpoint transport now accepts that case.
+- `e4fd7d33`: a targeted repair was replacing all candidates and dropping earlier
+  accepted product/business-model topics. Repaired topics now replace their old
+  candidates; untouched accepted topics are retained and the whole set is
+  reviewed again. The real case produced all four core topics after the fix.
+- The retained Sütaş case currently commits 1,925 kurus, including all earlier
+  failed calls and 1,000 kurus of infrastructure/QA allowance. It stopped before
+  another paid review because the brand stage had 475 kurus left but the review
+  required 501. The aggregate still had 3,075 kurus. The brand allocation is now
+  2,000 rather than 1,900 kurus; aggregate 5,000, downstream phase limits, model
+  output tokens and rates stay unchanged. The next versioned review is pending.
+- Read-only scraper readiness resolves omitted Task options from the matching
+  Task detail, verifies identity, keeps the lower saved cap and exposes only the
+  number of saved/verified policies. No Task or Actor is created by this check.
+- Local regression before the last allocation update: 54 root + 419 engine
+  passed, 21 opt-in skipped. Later queue/revision checks are being rerun. No
+  separate lint/typecheck script exists; syntax and build checks pass.
+- No complete public-brand quality/cost acceptance is claimed yet. Keep all
+  prior receipts when continuing; do not start this same QA case at zero cost.

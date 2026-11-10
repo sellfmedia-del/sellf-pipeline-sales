@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createSupervisedProviders,quoteSupervised,supervisedModels} from '../src/bhs/supervised-providers.mjs';
-import {actorChargeLimit,safeActorInput,matchedActorTasks} from '../src/bhs/apify-policy.mjs';
+import {actorChargeLimit,safeActorInput,matchedActorTasks,inspectApifyPolicies} from '../src/bhs/apify-policy.mjs';
 import {remapWorkerProofs,runSupervisedStage} from '../src/bhs/supervised-research.mjs';
 import {stageKey} from '../src/bhs/direct-research.mjs';
 import {createSupervisedReadiness} from '../src/bhs/supervised-readiness.mjs';
@@ -156,4 +156,17 @@ test('a second transient error, an ambiguous timeout and insufficient retry budg
   assert.equal(generated,kind==='twice'?2:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
   await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));assert.equal(generated,kind==='twice'?2:1);assert.deepEqual(await db.ledger.status(),cost);
  }
+});
+
+test('saved scraper caps are read from matching Task details without exposing inputs or executing Actors',async()=>{
+ const task={id:'task12345678901',actId:'hGO9TU7F0OD97VxNC'},calls=[];
+ const result=await inspectApifyPolicies({token:'private-policy',fetchImpl:async(url,options)=>{
+  calls.push({url,method:options.method||'GET'});
+  return json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,options:{maxTotalChargeUsd:.03},input:{privateSession:'must-not-leak'}}});
+ }});
+ assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,1);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
+ assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==='GET'&&!c.url.includes('/runs')));
+ assert.ok(!JSON.stringify(result).includes('privateSession'));
+ const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'anotherActor',options:{maxTotalChargeUsd:.03}}})});
+ assert.equal(invalid.taskPolicies,0);assert.equal(invalid.complete,false);
 });
