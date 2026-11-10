@@ -102,7 +102,7 @@ token/rate/aggregate caps preserved. Public findings retain their strict bounds.
 
 Fact reviewers can apply up to four complete source-backed patches to accepted
 candidate IDs inside the existing review call. Notes alone cannot change a fact.
-Unknown proof IDs, duplicate patches and patches to rejected IDs fail validation.
+Unknown proof IDs, duplicate patches and patches to unknown IDs fail validation. Corrected replacements supersede the rejected original wording.
 The entire amended set must still meet the same topic and evidence gates.
 
 A new independent Duru Bulgur case measures the corrected flow from its normal
@@ -112,3 +112,15 @@ intact and are not evidence of completed acceptance. Results are pending.
 Corrected live read-only readiness confirms the configured Apify account has
 zero saved Tasks. The user's DIFFERENT per-Actor limits (all <=0.40 USD) must be
 resolved without raising lower limits; no Actor has been started.
+
+Duru's first corrected-flow run accepted the brand stage and reached sector
+review at 1,653 kurus including its own 1,000-kurus infrastructure/QA allowance.
+The manager rejected the original distribution wording and supplied a correct
+replacement (6 depots, not 6 regional offices); the coordinator incorrectly
+required that replacement ID to be in acceptedIds. Replacements now supersede
+an original whether it was accepted or rejected, with the same proof/type/ID
+checks. Unknown or duplicate targets still fail; the rejected original is never
+retained. Replaying this actual paid answer through the corrected coordinator
+used ZERO network calls and left the 1,653-kurus total unchanged. Understanding
+remains limited pending the already-requested revenue-model correction; it is
+not relabelled complete. The next controlled continuation preserves all receipts.
