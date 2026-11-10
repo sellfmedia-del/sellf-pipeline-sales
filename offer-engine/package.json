@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+    "test": "node --import ./test/bhs-env-setup.mjs --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "153.0.0",
