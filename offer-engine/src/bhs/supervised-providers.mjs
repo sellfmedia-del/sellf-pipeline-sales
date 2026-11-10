@@ -43,16 +43,16 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // Gemini bills/counts hidden reasoning inside maxOutputTokens. Preserve the
   // caller's visible-report allowance and fund bounded LOW reasoning separately
   // before the request; otherwise a correct extraction gets cut mid-JSON.
-  const maxOutputTokens=receiptVersion==='v8'&&role==='worker'?Math.min(16384,requestedOutputTokens+3072):requestedOutputTokens;
+  const reasoningAllowance=receiptVersion==='v8'?(role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
+  const maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const model=supervisedModels[role],secret=role==='manager'?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');
   quoteSupervised(role,1,maxOutputTokens,now());
   const {instruction='',...context}=input;
   const system=instruction+'\n'+untrusted+(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':'');
-  // Routine evidence matching emits an auditable verdict without up-front
-  // thinking. Final multi-step source/numeric assessment retains adaptive high
-  // reasoning. Both modes have the same pre-call token/TRY accounting.
-  const rawBody=role==='manager'?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  // Content reviews reason adaptively; only the short initial task omits
+  // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
+  const rawBody=role==='manager'?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
   // PostgreSQL jsonb reorders object keys. Canonicalise JSON context/schema
   // so a reconnect cannot turn identical research into another paid request.
   let body=rawBody;
@@ -98,7 +98,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const limit=tariff.capKurus-reserveForFollowingKurus;
   if(!integer(reserveForFollowingKurus)||limit<0||amount+(await ledger.status()).chargedKurus>limit)throw new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const request=()=>json(role==='manager'?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey},role==='manager'?160000:90000);
+   const request=()=>json(role==='manager'?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,role==='manager'?anthHeaders:{'x-goog-api-key':geminiKey},role==='manager'?240000:90000);
    // Preserve the received content/usage before local accounting/proof checks.
    // This zero-cost subreceipt contains no request headers or credentials and
    // lets a reviewer inspect/revalidate a paid reply without buying it again.

@@ -211,7 +211,7 @@ test('a long internal review explanation preserves the verdict and original word
  const data={acceptedIds:[],rejectedIds:[],decision:'limited',missing:[],notes,nextTask:{instruction:'Sektörü incele.',queries:[]},repairTask:{instruction:'Kaynak eşleşmesini düzelt.',queries:[]}};
  const db=account(),t=transport({onGenerate:async()=>json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:700},stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(data)}]})}),p=v8Providers(db,t);
  assert.deepEqual((await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096})).data,data);
- assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,4096);
+ assert.equal(t.calls.find(c=>c.url.endsWith('/messages')).body.max_tokens,8192);
  const calls=t.calls.length;await p.manager('v8-brand-review',{},reviewSchema,{maxOutputTokens:4096});assert.equal(t.calls.length,calls);
 });
 
@@ -252,7 +252,7 @@ test('v8 content supervisors think adaptively inside the same quoted output cap 
  for(const stage of ['v8-brand-plan','v8-brand-review','v8-sector-validation','v8-competition-review','v8-swot-review','v8-coverage-plan','v8-final-report']){
   const db=account(),t=transport();await v8Providers(db,t).manager(stage,{},schema,{maxOutputTokens:4096});
   const body=t.calls.find(c=>c.url.endsWith('/messages')).body;
-  assert.equal(body.thinking.type,stage==='v8-brand-plan'?'between_tools':'adaptive');assert.equal(body.output_config.effort,'high');assert.equal(body.max_tokens,4096);
+  assert.equal(body.thinking.type,stage==='v8-brand-plan'?'between_tools':'adaptive');assert.equal(body.output_config.effort,['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium');assert.equal(body.max_tokens,stage==='v8-brand-plan'?4096:stage==='v8-final-report'?12288:8192);
   assert.ok((await db.ledger.status()).chargedKurus<5000);
  }
 });

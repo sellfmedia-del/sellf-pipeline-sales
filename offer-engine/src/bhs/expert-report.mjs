@@ -144,7 +144,8 @@ export function projectExpertReport(value,context){
  // A model ID identifies a bounded paragraph, not a disconnected 200-char
  // slice. Retain its adjacent proof chunks so a cited sentence stays readable.
  const refs=ids=>unique(list(ids).filter(id=>cards.has(id)).flatMap(id=>context.proofGroups?.get(id)||[id]));
- const use=ids=>refs(ids).map(id=>{const c=cards.get(id);sources.set(id,{...c,publishedAt:null,period:null,sourceType:c.method==='search-snippet'?'secondary':'primary'});return id;});
+ const publisherHosts=new Set((context.input.entities||[]).map(e=>researchHost(e.website)).filter(Boolean));
+ const use=ids=>refs(ids).map(id=>{const c=cards.get(id);sources.set(id,{...c,publishedAt:null,period:null,sourceType:c.method!=='search-snippet'&&publisherHosts.has(researchHost(c.url))?'primary':'secondary'});return id;});
  const findings=[],seenIds=new Set(),qualifiedStances=new Map();
  for(const original of list(raw.findings).filter(f=>f&&typeof f==='object')){
   const sourceIds=refs(original.sourceIds),quotes=sourceIds.map(id=>cards.get(id).quote).join('\n'),f=qualifyExpertFinding(original,quotes);

@@ -298,3 +298,22 @@ up-front thinking when no tools are used:
 https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5
 Brand's internal cumulative allocation is 2,200 rather than 2,000 kurus to fund
 this quality review; global and later-stage ceilings remain unchanged.
+
+The adaptive-high 4,096-token review returned ONLY 4,096 thinking tokens and
+no text (stop=max_tokens). Tadım's entire 2,497-kurus diagnostic is archived,
+including this paid 384-kurus incomplete reply. It remains a failed diagnostic,
+not a completed analysis. No further charge is requested against that case.
+The manager now funds visible output PLUS bounded reasoning (4,096 additional
+tokens for scoped reviews; 8,192 for the final review, combined max 16,384).
+Scoped reviews use adaptive medium; final review retains adaptive high. This
+is a measured configuration change, not evidence that quality has passed.
+The branch's initial brand allocation returns to 2,000 kurus; the global cap
+remains 5,000. Third-party full pages are now secondary sources; only the
+company entities' own domains can receive a primary-company-source label.
+
+The corrected complete configuration will be measured in a separately named
+tadim_release cold acceptance account. The prior tadim diagnostic and all its
+2,497 kurus remain unchanged; they are not transferred, refunded, or claimed as
+a passing <=50 TRY report. This separate release measurement must retain its
+own receipts across any continuations. Development diagnostics are additional
+spending and must not be confused with the measured per-analysis release cost.

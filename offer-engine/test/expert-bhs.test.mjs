@@ -268,3 +268,12 @@ test('the recorded real Humm research preserves ten facts while rejecting three 
  assert.match(d.findings.find(f=>f.id==='find-no-reviews-on-site').impact,/yorum toplamadığını.*kanıtlamaz/);
  assert.equal(s.summary.newPaidCalls,0);assert.equal(d.researchCoverage.length,24);
 });
+
+test('third-party company coverage is never labeled a primary company source merely because its full page was read',()=>{
+ const {value}=fixture(),p=packet();p.sources[0].url=p.sources[0].finalUrl='https://independent.example/company-coverage';
+ const context=expertContext(brief,{packet:p,searches:[]}),c=context.cards.find(c=>c.quote.includes('24.95'));
+ const report=projectExpertReport(value,context);
+ assert.equal(report.sources.find(s=>s.id===c.id).sourceType,'secondary');
+ const peerSource=report.sources.find(s=>new URL(s.url).hostname===new URL(plan.entities[1].website).hostname);
+ assert.equal(peerSource.sourceType,'primary');
+});

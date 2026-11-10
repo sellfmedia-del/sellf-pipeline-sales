@@ -11,7 +11,7 @@ export async function fetchQaCheckpoint(link,{fetchImpl=fetch}={}){
   if(!r.ok||Number(r.headers.get('content-length'))>2000000)throw Error('QA checkpoint unavailable.');
   const reader=r.body.getReader(),parts=[];let bytes=0;
   try{for(;;){const v=await reader.read();if(v.done)break;bytes+=v.value.byteLength;if(bytes>2000000)throw Error('QA checkpoint too large.');parts.push(v.value);}}finally{await reader.cancel();}
-  const wrapper=JSON.parse(Buffer.concat(parts).toString('utf8'));if(wrapper.encoding!=='br-base64'||!['humm','muratbey','sutas','duru','tadim'].includes(wrapper.case)||typeof wrapper.data!=='string')throw Error('QA checkpoint format invalid.');return wrapper.data;
+  const wrapper=JSON.parse(Buffer.concat(parts).toString('utf8'));if(wrapper.encoding!=='br-base64'||!['humm','muratbey','sutas','duru','tadim','tadim_release'].includes(wrapper.case)||typeof wrapper.data!=='string')throw Error('QA checkpoint format invalid.');return wrapper.data;
  }
  throw Error('QA checkpoint redirect limit.');
 }
