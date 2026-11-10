@@ -16,7 +16,7 @@ export const refs=arr(str(80),12);
 export const factSchema=obj({id:str(80),kind:{type:'string',enum:['observation','inference']},topic:str(80),statement:str(600),sourceIds:refs,limitation:str(400)});
 export const extractionSchema=obj({facts:arr(factSchema),unknowns:arr(str(400),12)});
 export const taskSchema=obj({instruction:str(1200),queries:arr(str(500),2)});
-const conciseFact=structuredClone(factSchema);conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
+const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'];conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
 export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(400),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(1400),nextTask:taskSchema,repairTask:taskSchema});
 export const peerSchema=expertSchema.properties.peers.items;

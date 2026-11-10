@@ -11,6 +11,7 @@ import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,seque
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
+import {balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
 function modelTransport({mutate,fail}={}){
@@ -97,14 +98,15 @@ test('fabricated evidence in a worker response cannot reach a manager approval',
   await assert.rejects(run(db,'brand_draft',t),e=>e.code==='model_output_invalid');assert.ok(!t.events.some(e=>e.stage==='v8-brand-review'));
  }finally{await db.close();}
 });
-test('Claude can order one targeted operator correction, while a second repair cannot buy more calls',async()=>{
+test('Claude can order one targeted correction per stage within the same total account',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,context)=>stage==='v8-brand-review'&&!context.repairRound||stage==='v8-sector-review'?{...data,decision:'limited',missing:['Kaynaklı hedef davranış netleşmeli.']}:data});
  try{
   for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector')+1))await run(db,phase,t);
   assert.equal((await db.ledger.get(stageKey(brief,'brand','v8'))).value.decision,'accepted');
   assert.equal((await db.ledger.get(stageKey(brief,'sector','v8'))).value.decision,'limited');
   assert.equal(t.events.filter(e=>e.stage==='v8-brand-repair-extract').length,1);
-  assert.equal(t.events.filter(e=>e.stage==='v8-sector-repair-extract').length,0);
+  assert.equal(t.events.filter(e=>e.stage==='v8-sector-repair-extract').length,1);
+  const cost=await db.ledger.status(),calls=t.events.length;await run(db,'sector_correction_sources',t);await run(db,'sector_correction_draft',t);await run(db,'sector',t);assert.equal(t.events.length,calls);assert.deepEqual(await db.ledger.status(),cost);
   assert.ok((await db.ledger.status()).chargedKurus<5000);
  }finally{await db.close();}
 });
@@ -128,4 +130,10 @@ test('stage tools cannot spend final-report headroom even through parallel reser
   await Promise.allSettled(Array.from({length:8},(_,i)=>l.once('tool:'+i,{i},400,async()=>{calls++;return {receipt:hash(i)};})));
   assert.ok((await db.ledger.status()).chargedKurus<=3900);assert.ok(calls<=8);
  }finally{await db.close();}
+});
+
+test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
+ assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
+ assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8:/);
 });

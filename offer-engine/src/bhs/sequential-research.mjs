@@ -16,7 +16,9 @@ async function search(providers,queries){
   catch(e){if(['budget_limit','budget_uncertain','tariff_expired','fx_limit'].includes(e.code))throw e;rows.push({query:q,results:[],unavailable:true,reason:e.code||'search_unavailable'});}
  }return rows;
 }
-const urls=searches=>[...new Set(searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean))];
+// Read across all manager questions before taking another result from one query.
+export const balancedSequentialUrls=searches=>{const rows=[];for(let i=0;i<8;i++)for(const s of searches){const url=researchUrl(s.results?.[i]?.url);if(url)rows.push(url);}return [...new Set(rows)];};
+const urls=balancedSequentialUrls;
 function peerPlanSchema(){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;return s;}
 async function enrichReading(brief,prior,plan,searches,limit,collect){
  const packet=await collect(brief,plan,{initialPacket:prior?.packet,extraSources:urls(searches),sourceLimit:limit});
@@ -55,10 +57,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const family=repair[1];
   if(repair[2]==='sources'){
    if(prior.understandingDecision==='accepted')return finish({...prior,repairNeeded:false});
-   const grant=providers.checkpoint?await providers.checkpoint('one-targeted-repair',brief,async()=>({phase:family})):null;
+   const grant=providers.checkpoint?await providers.checkpoint('targeted-repair:'+family,brief,async()=>({phase:family})):null;
    if(grant?.phase!==family)return finish({...prior,repairNeeded:false});
    const searches=await search(providers,prior.review.repairTask.queries);
-   const limits={brand:7,sector:12,competition:19,swot:21};
+   const limits={brand:7,sector:14,competition:19,swot:21};
    const evidence=await enrichReading(brief,prior,prior.plan,searches,limits[family],collect);
    return finish({...prior,...evidence,repairNeeded:true});
   }

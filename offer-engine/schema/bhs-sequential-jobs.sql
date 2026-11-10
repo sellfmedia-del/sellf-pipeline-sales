@@ -73,7 +73,7 @@ begin
  end if;
  if p_op='advance' then
   expected:=phases[array_position(phases,j.phase)+1];
-  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from 'audit:'||j.phase||':'||j.phase||'-v8:'||j.brief_hash then raise exception 'BHS checkpoint mismatch';end if;
+  if expected is null or p_data->>'nextPhase' is distinct from expected or p_data->>'checkpointKey' is distinct from 'audit:'||j.phase||':'||j.phase||'-v8'||case when j.phase in ('sector_correction_sources','sector_correction_draft','sector','sector_validation') then '-r2' else '' end||':'||j.brief_hash then raise exception 'BHS checkpoint mismatch';end if;
   if p_mode='preview' then select to_jsonb(s) into receipt from public.pipeline_offer_preview_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';
   else select to_jsonb(s) into receipt from public.pipeline_offer_budget_steps s where s.budget_id=j.budget_id and s.step_key=p_data->>'checkpointKey';end if;
   if receipt->>'state' is distinct from 'complete' then raise exception 'BHS checkpoint not committed';end if;
