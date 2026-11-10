@@ -20,7 +20,7 @@ export async function runSequentialAcceptance(){
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
  const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
- const allowedSnapshots=caseName==='tadim_release'?[snapshots[caseName],'tadim-release-market-retained-20261110']:[snapshots[caseName]];
+ const allowedSnapshots=caseName==='tadim_release'?[snapshots[caseName],'tadim-release-market-retained-20261110','tadim-release-expert-retained-20261110']:[snapshots[caseName]];
  if(snapshot&&!allowedSnapshots.includes(snapshot))throw Error('Unapproved QA receipt snapshot.');
  const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshot+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
  if(seedData){

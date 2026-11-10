@@ -101,6 +101,24 @@ test('fabricated evidence in a worker response cannot reach a manager approval',
   await assert.rejects(run(db,'brand_draft',t),e=>e.code==='model_output_invalid');assert.ok(!t.events.some(e=>e.stage==='v8-brand-review'));
  }finally{await db.close();}
 });
+test('a reviewer can recover an operator-omitted market fact from the original company source without another extraction',async()=>{
+ for(const invalid of [false,true]){
+  const db=await localBudget(),t=modelTransport({mutate:(stage,data,input)=>{
+   if(stage==='v8-brand-extract')return {...data,facts:data.facts.filter(f=>f.topic!=='market')};
+   if(stage==='v8-brand-review'){
+    const fact=modelAnswer('v8-brand-extract',input).facts.find(f=>f.topic==='market');
+    assert.ok(fact,'Reviewer must receive the original omitted company paragraph');
+    return {...data,additionalFacts:[{...fact,id:'manager_market',...(invalid?{sourceIds:['invented-proof']}: {})}]};
+   }
+   return data;
+  }});
+  try{
+   for(const phase of ['brand_plan','brand_sources','brand_draft'])await run(db,phase,t);
+   if(invalid)await assert.rejects(run(db,'brand_review',t),e=>e.code==='model_output_invalid');
+   else{const out=await run(db,'brand_review',t);assert.equal(out.understandingDecision,'accepted');assert.ok(out.facts.some(f=>f.id==='manager_market'));assert.equal(t.events.filter(e=>e.stage==='v8-brand-extract').length,1);}
+  }finally{await db.close();}
+ }
+});
 test('Claude can order one targeted correction per stage within the same total account',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,context)=>stage==='v8-brand-review'&&!context.repairRound||stage==='v8-sector-review'?{...data,decision:'limited',missing:['Kaynaklı hedef davranış netleşmeli.']}:data});
  try{
@@ -140,7 +158,7 @@ test('phases share the run budget with no smaller phase ceiling, including concu
 test('source reading balances independent manager questions and sector revisions preserve old receipts',()=>{
  assert.deepEqual(balancedSequentialUrls([{results:[{url:'https://one.example/a'},{url:'https://one.example/b'}]},{results:[{url:'https://two.example/a'},{url:'https://two.example/b'}]}]),['https://one.example/a','https://two.example/a','https://one.example/b','https://two.example/b']);
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
- assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r6:/);
+ assert.match(stageKey(brief,'brand','v8'),/:brand-v8-r7:/);
 });
 
 test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{

@@ -9,7 +9,7 @@ export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli
 // Every phase shares the same run-level 50 TRY account; no phase allocation.
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems)=>({type:'array',items,...(maxItems===undefined?{}:{maxItems})});
-const findingArrayKeys=new Set(['facts','findings','sourceIds','findingIds','comparisonFindingIds','acceptedIds','rejectedIds','patches','missing','unknowns','strength','weakness','opportunity','threat']);
+const findingArrayKeys=new Set(['facts','findings','sourceIds','findingIds','comparisonFindingIds','acceptedIds','rejectedIds','patches','additionalFacts','missing','unknowns','strength','weakness','opportunity','threat']);
 export function withoutFindingCeilings(schema){
  const copy=structuredClone(schema);
  const walk=(node,key)=>{if(node.type==='array'&&findingArrayKeys.has(key))delete node.maxItems;if(node.properties)for(const [name,value]of Object.entries(node.properties))walk(value,name);if(node.items)walk(node.items,key);if(node.anyOf)for(const value of node.anyOf)walk(value,key);};
@@ -28,10 +28,11 @@ export const taskSchema=obj({instruction:str(6000),queries:arr(str(500),2)});
 const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=['sector','revenue_drivers','customer_behavior','sales_conditions','market_risk'];conciseFact.properties.statement.maxLength=320;conciseFact.properties.limitation.maxLength=180;
 export const understandingSchema=obj({facts:arr(conciseFact),unknowns:arr(str(200)),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400)),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
-export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema)});
+export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema),additionalFacts:arr(factSchema)});
 export const understandingTopics=Object.freeze({brand:['identity','products','business_model','market'],sector:['sector','revenue_drivers','customer_behavior']});
 export function reviewVerdictSchema(schema,rows,{phase}={}){
  const result=withoutFindingCeilings(schema),ids=rows.map(r=>r.id);
+ if(result.properties.additionalFacts&&factTopics[phase])result.properties.additionalFacts.items.properties.topic.enum=factTopics[phase];
  if(new Set(ids).size!==ids.length)throw new BudgetError('model_output_invalid','Denetim aday kimlikleri yineleniyor.');
  delete result.properties.acceptedIds;delete result.properties.rejectedIds;
  result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
