@@ -5,7 +5,7 @@ import {briefHash} from './brief.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
-import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
+import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true});
@@ -247,7 +247,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='coverage'){
   const context=sequentialContext(brief,prior);
-  const worker=await providers.worker('v8-gap-extract',{instruction:'Yalnız ek araştırmanın getirdiği yeni veya düzeltilmiş olguları çıkar. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(phaseExtractionSchema('sector'),context),{maxOutputTokens:8192});
+  const worker=await providers.worker('v8-gap-extract',{instruction:'Ek araştırmanın getirdiği yeni veya düzeltilmiş olguları 24 BHS alanının tamamı için çıkar; finans, operasyon, satış hunisi, dijital, algı ve rekabet eksiklerini yalnız sektör konularına daraltma. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context,{areas:true}),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(extractionSchema,context),{maxOutputTokens:8192,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,facts:[],correctionCandidates:worker.data.facts,unknowns:worker.data.unknowns,correctionRounds:1});
  }
  const context=sequentialContext(brief,prior),competition=await previous('competition');

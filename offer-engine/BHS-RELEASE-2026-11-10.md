@@ -1,3 +1,13 @@
+# Güncel kullanıcı kabul kararı
+
+Kullanıcı, gerçek raporun uçtan uca kabul testini canlıda kendisi yapmayı tercih etti. Ön koşul kod, prompt ve bağlantı/kurulum ayrımının dürüstçe belirtilmesidir. Yeni ücretli kabul denemesi istenmiyor. Bu karar tek başına migration/Edge deployment/production merge onayı sayılmaz.
+
+Altı aşamalı kod/prompt akışı tamamdır; aşağıdaki gerçek rapor eksikleri canlı kullanıcı kabulünde değerlendirilecektir. Son kod kontrolünde gap extraction şeması sektör başlıklarından tüm BHS konularına açıldı; operatöre 24 alan verilir ve özgün kaynak kimliği doğrulaması korunur. Konu genişliği ve uydurma kaynağın reddi hedefli kontrolden geçti.
+
+**API bağlantılarının canlı kurulumu henüz tamamlanmadı:** mevcut Production Gemini anahtarı Preview hatasıyla aynı kabul edilmeyecek; canlı üretim erişimi aktivasyon sonrası kontrol edilir. Yeni özel queue, worker secret, scheduler ve gateway entegrasyonu uygulanmadı. Apify'nin orijinal Actor limitleri bulunmadığı için scraperlar doğrulanmış/etkin kabul edilmeyecek. Önceki gerçek QA sonuçları ve ücretleri aşağıda korunmuştur; yeni kullanıcı tercihi bunları başarılı rapora dönüştürmez.
+
+---
+
 # BHS doğrulama ve kurulum incelemesi - 10 Kasım 2026
 
 **DURUM: BEKLEMEDE. Nihai ön BHS raporu tamamlanmadı. Canlıya kurulum onayı için hazır olduğu iddia edilmemektedir.**

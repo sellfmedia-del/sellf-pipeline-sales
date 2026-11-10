@@ -305,3 +305,13 @@ test('missing candidate addresses use observed exact-name domains and unresolved
  const result=await resolvePeerAddresses({entities:peers,sources:[]},{search:async q=>{queries.push(q);return {results:[{url:'https://news.example/tugba'},{url:'https://tugbakuruyemis-fake.example/'},{url:'https://www.tugbakuruyemis.com.tr/urunler'}]};}});
  assert.equal(queries.length,2);assert.equal(result.data.entities.find(e=>e.id==='new').website,'https://www.tugbakuruyemis.com.tr/urunler');assert.equal(result.data.entities.length,2);assert.deepEqual(result.unresolved.map(e=>e.id),['unresolved']);assert.equal(peers[1].website,'');
 });
+
+test('gap research accepts every BHS dimension and still rejects an invented source',async()=>{
+ const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');const {assertSchema}=await import('../src/bhs/schema.mjs');
+ const prior={packet:packet(),searches:[],facts:[],swot:[],decision:'accepted',coveragePlan:{priorities:[]}};const context=sequentialContext(brief,prior),proof=context.cards[0].id;
+ for(const invented of [false,true]){
+  const facts=['financial','operations','funnel','digital','perception','competition'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
+  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async()=>prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
+  if(invented)await assert.rejects(run());else assert.equal((await run()).correctionCandidates.length,6);
+ }
+});
