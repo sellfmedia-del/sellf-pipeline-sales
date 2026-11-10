@@ -148,13 +148,47 @@ test('one explicit transient rejection receives a separately funded retry while 
  const rows=[...db.rows.values()];assert.equal(rows.filter(r=>r.state==='uncertain').length,1);assert.ok(rows.find(r=>r.state==='uncertain').charge_kurus>0);
  const cost=await db.ledger.status();await v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512});assert.equal(generated,2);assert.deepEqual(await db.ledger.status(),cost);
 });
-test('a second transient error, an ambiguous timeout and insufficient retry budget cannot buy another unbounded attempt',async()=>{
+test('repeated service errors, ambiguous timeouts and insufficient budget cannot buy an unbounded attempt',async()=>{
  for(const kind of ['twice','timeout','budget']){
   const db=account(kind==='budget'?4380:500);let generated=0;
   const t=transport({onGenerate:async()=>{generated++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{code:503,message:'Temporarily unavailable.'}}),{status:503});}});
   await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));
-  assert.equal(generated,kind==='twice'?2:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
-  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));assert.equal(generated,kind==='twice'?2:1);assert.deepEqual(await db.ledger.status(),cost);
+  assert.equal(generated,kind==='twice'?4:1);const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512}));assert.equal(generated,kind==='twice'?4:1);assert.deepEqual(await db.ledger.status(),cost);
+ }
+});
+
+test('explicit Gemini outage hands the same task to Claude once and reuses it after restart without changing manager review',async()=>{
+ const db=account();let workers=0,operators=0;
+ const t=transport({onGenerate:async url=>{
+  if(url.endsWith(':generateContent')){workers++;return new Response(JSON.stringify({error:{message:'Unavailable'}}),{status:503});}
+  operators++;return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]});
+ }});
+ const input={instruction:'Extract only the cited source.',proofIds:['p_original']},p=v8Providers(db,t);
+ const answer=await p.worker('extract',input,schema,{maxOutputTokens:512});
+ assert.equal(answer.model,supervisedModels.manager);assert.equal(workers,2);assert.equal(operators,1);
+ assert.equal([...db.rows.values()].filter(r=>r.state==='uncertain').length,2);
+ const call=t.calls.find(c=>c.url.endsWith('/messages'));assert.deepEqual(JSON.parse(call.body.messages[0].content),{proofIds:['p_original']});
+ assert.ok(call.body.system.startsWith(input.instruction));
+ const cost=await db.ledger.status(),calls=t.calls.length;
+ assert.deepEqual(await v8Providers(db,t).worker('extract',input,schema,{maxOutputTokens:512}),answer);
+ assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+ await p.manager('review',input,schema,{maxOutputTokens:512});assert.equal(operators,2);
+});
+
+test('Claude operator fallback keeps output validation and cannot consume protected final-stage funds',async()=>{
+ for(const kind of ['invalid','budget','timeout','quota']){
+  const db=account(kind==='budget'?4300:500);let operators=0,workers=0;
+  const t=transport({onGenerate:async url=>{
+   if(url.endsWith(':generateContent')){workers++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{message:'Unavailable'}}),{status:kind==='quota'?429:503});}
+   operators++;return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":false}'}]});
+  }});
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
+  assert.equal(operators,kind==='invalid'?1:0);assert.equal(workers,['timeout','quota'].includes(kind)?1:2);
+  const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=4400);
+  await assert.rejects(v8Providers(db,t).worker('extract',{},schema,{maxOutputTokens:512,validateData:data=>{if(!data.ok)throw Error('fabricated proof');}}));
+  // A blocked admission may repeat a free token count, never a paid generation.
+  assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,operators);assert.deepEqual(await db.ledger.status(),cost);
  }
 });
 

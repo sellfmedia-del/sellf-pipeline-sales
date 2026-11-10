@@ -62,6 +62,13 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    step=originalStep+':transient-retry:1';saved=await ledger.get(step);if(!saved)await delay(1000);
   }
   if(saved?.state==='complete')return validate(saved.value);
+  // Two explicit Gemini service rejections permit one bounded Claude operator
+  // handoff. Its own receipt is distinct from the later manager review and is
+  // charged at Claude's rate to the SAME stage/account. Unknown outcomes,
+  // invalid content and quota failures never trigger this handoff.
+  if(receiptVersion==='v8'&&role==='worker'&&step!==originalStep&&saved?.state==='uncertain'&&transientStatus(saved.value?.providerStatus)){
+   return generateRole('manager','v8-worker-fallback:'+stage,input,schema,opts);
+  }
   // Do not even repeat token counting after an ambiguous paid request.
   if(saved)throw new BudgetError(saved.state==='reserved'?'budget_pending':'budget_uncertain','Önceki BHS model isteğinin kaydı korunuyor; tekrar ücretli çağrı yapılmadı.');
   const snapshot=await fx();
@@ -94,7 +101,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    let data,rejectedOutput;try{data=JSON.parse(text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
    return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
-  catch(error){if(receiptVersion==='v8'&&step===originalStep&&transientStatus(error.providerStatus))return generateRole(role,stage,input,schema,opts);throw error;}
+  catch(error){if(receiptVersion==='v8'&&transientStatus(error.providerStatus)&&(step===originalStep||role==='worker'))return generateRole(role,stage,input,schema,opts);throw error;}
   return validate(result);
  }
  return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),worker:(...args)=>generateRole('worker',...args)};

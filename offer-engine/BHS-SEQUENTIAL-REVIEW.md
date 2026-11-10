@@ -124,3 +124,27 @@ retained. Replaying this actual paid answer through the corrected coordinator
 used ZERO network calls and left the 1,653-kurus total unchanged. Understanding
 remains limited pending the already-requested revenue-model correction; it is
 not relabelled complete. The next controlled continuation preserves all receipts.
+
+## Gemini outage continuation — 2026-11-10
+
+The v8 operator can now hand an unchanged task/schema to Claude after two explicit
+Gemini 500/502/503/529 responses. Both Gemini commitments remain charged. The
+Claude operator uses its own model-priced receipt and the existing per-stage and
+aggregate limits; the later manager review remains a separate call. Ambiguous
+timeouts, quota failures, invalid output and insufficient funds cannot trigger
+this handoff. Completed handoffs are replayed without another paid generation.
+The affected sector-correction coordinator is append-only revision r3; the SQL
+checkpoint contract matches it. Other previously completed stages are unchanged.
+
+Focused regression: 48 passed, including queue PostgreSQL, source patches,
+restart, fallback validation, distinct review, and protected-budget cases. The
+full ordinary suite and local build are being checked; real continuation results
+will be appended after the protected Preview run. Retained Duru baseline is
+1,987 kurus, including two 116-kurus Gemini 503 commitments and all infrastructure
+allowances. Its receipts must not be reset. Production remains unchanged.
+
+The account-specific Apify limits are still not available in saved Tasks, and
+the Console requires sign-in. No guessed/common .40 USD cap is substituted and
+no Actor has been started. Pipeline project gxngmqewskhrbxqmnpps and organization
+pvpknoqioxgyerinoecv (Sellf Toolları ve Aunce) were verified read-only. Queue,
+gateway and scheduler deployment require the user's specific SQL/Edge approval.
