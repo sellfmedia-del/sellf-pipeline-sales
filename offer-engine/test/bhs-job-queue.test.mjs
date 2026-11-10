@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {webcrypto} from 'node:crypto';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,fakeCollector,packet,modelAnswer,plan} from './fixtures/sequential.mjs';
-import {sequentialContext,stageModelInput,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialContext,stageModelInput,sequentialVersion,sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {projectExpertReport} from '../src/bhs/expert-report.mjs';
 import {briefHash} from '../src/bhs/brief.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
@@ -174,4 +174,17 @@ test('completed research requiring content review exposes explicit zero-cost off
   const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0];r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
   assert.equal(r.code,200);assert.equal(r.body.result.data.quality.contentComplete,false);assert.equal(r.body.result.cost.chargedKurus,2200);assert.ok(r.body.pricingProof);
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
+test('every queue phase acknowledges the same versioned key as the research journal',async()=>{
+ const f=await fixture();try{
+  const job=await f.enqueue();
+  for(const phase of sequentialPhases.slice(0,-1)){
+   const claim=await f.queue.claim();assert.equal(claim.phase,phase);
+   const ledger=await f.queue.getLedger(claim),key=stageKey(brief,phase,'v8');
+   await ledger.once(key,{phase},0,async()=>({phase}));
+   await f.queue.advance(claim,{nextPhase:sequentialPhases[sequentialPhases.indexOf(phase)+1],checkpointKey:key});
+  }
+  assert.equal((await f.queue.read(job)).state,'complete');
+ }finally{await f.close();}
 });

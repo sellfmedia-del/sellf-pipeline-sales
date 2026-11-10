@@ -137,3 +137,14 @@ test('source reading balances independent manager questions and sector revisions
  assert.match(stageKey(brief,'sector_correction_sources','v8'),/:sector_correction_sources-v8-r2:/);
  assert.match(stageKey(brief,'brand','v8'),/:brand-v8:/);
 });
+
+test('a source-backed product-sales inference can explain revenue without private channel turnover',async()=>{
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>{
+  if(stage==='v8-sector-review')return {...data,decision:'limited'};
+  if(stage==='v8-sector-validation')return {...data,facts:data.facts.map(f=>f.topic==='revenue_drivers'?{...f,kind:'inference',statement:'Gelir, kaynakta satışa sunulan ürünlerin satışından oluşuyor olabilir; gerçekleşmiş fiyat, hacim ve ciro bilinmiyor.'}:f)};
+  return data;
+ }});
+ try{for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_validation')+1))await run(db,phase,t);
+  const row=await db.ledger.get(stageKey(brief,'sector_validation','v8'));assert.equal(row.value.decision,'accepted');assert.ok(row.value.facts.some(f=>f.kind==='inference'));assert.ok((await db.ledger.status()).chargedKurus<=5000);
+ }finally{await db.close();}
+});
