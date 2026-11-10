@@ -176,6 +176,34 @@ test('explicit Gemini outage hands the same task to Claude once and reuses it af
  await p.manager('review',input,schema,{maxOutputTokens:512});assert.equal(operators,2);
 });
 
+test('a definitive Google billing rejection routes this job to Claude without retrying Google or discarding its commitment',async()=>{
+ const db=account();let workers=0,operators=0;
+ const t=transport({onGenerate:async url=>{
+  if(url.endsWith(':generateContent')){workers++;return new Response(JSON.stringify({error:{message:'Billing required for this project.'}}),{status:403});}
+  operators++;return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]});
+ }});
+ const p=v8Providers(db,t),answer=await p.worker('brand',{},schema,{maxOutputTokens:512});
+ assert.equal(answer.model,supervisedModels.manager);assert.equal(workers,1);assert.equal(operators,1);
+ const uncertain=[...db.rows.values()].find(r=>r.state==='uncertain'&&r.value?.providerStatus===403);assert.ok(uncertain.charge_kurus>0);
+ const cost=await db.ledger.status(),calls=t.calls.length;
+ assert.deepEqual(await v8Providers(db,t).worker('brand',{},schema,{maxOutputTokens:512}),answer);
+ assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
+ await v8Providers(db,t).worker('sector',{},schema,{maxOutputTokens:512});assert.equal(workers,1);assert.equal(operators,2);
+ await p.manager('review',{},schema,{maxOutputTokens:512});assert.equal(operators,3);
+ assert.equal([...db.rows.values()].find(r=>r.state==='uncertain').charge_kurus,uncertain.charge_kurus);
+});
+test('a billing fallback cannot spend the protected reserve, bypass validation or replace an ambiguous timeout',async()=>{
+ for(const kind of ['budget','invalid','timeout','permission']){
+  const db=account(kind==='budget'?4300:500);let operators=0,workers=0;
+  const t=transport({onGenerate:async url=>{
+   if(url.endsWith(':generateContent')){workers++;if(kind==='timeout')throw new DOMException('Timed out','TimeoutError');return new Response(JSON.stringify({error:{message:kind==='permission'?'Permission denied':'Billing required.'}}),{status:403});}
+   operators++;return json({model:supervisedModels.manager,usage:{input_tokens:100,output_tokens:50},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":false}'}]});
+  }});
+  const run=()=>v8Providers(db,t).worker('brand',{},schema,{maxOutputTokens:512,validateData:d=>{if(!d.ok)throw Error('bad proof');}});
+  await assert.rejects(run());const cost=await db.ledger.status();await assert.rejects(run());
+  assert.equal(workers,1);assert.equal(operators,kind==='invalid'?1:0);assert.deepEqual(await db.ledger.status(),cost);assert.ok(cost.chargedKurus<=4400);
+ }
+});
 test('Claude operator fallback keeps output validation and cannot consume protected final-stage funds',async()=>{
  for(const kind of ['invalid','budget','timeout','quota']){
   const db=account(kind==='budget'?4300:500);let operators=0,workers=0;

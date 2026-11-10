@@ -79,6 +79,16 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    step=originalStep+':transient-retry:1';saved=await ledger.get(step);if(!saved)await delay(1000);
   }
   if(saved?.state==='complete')return validate(saved.value);
+  // A definitive billing rejection cannot recover by retrying Google. Switch
+  // this job's remaining operator tasks to the already configured Claude API,
+  // retaining the original commitment and funding each replacement separately.
+  // An ambiguous prior request never becomes permission for a replacement.
+  if(receiptVersion==='v8'&&role==='worker'){
+   const route=await ledger.get('routing:bhs-v8:worker-billing');
+   if(route?.state==='complete'&&(!saved||saved.state==='uncertain'&&saved.value?.providerStatus===403)){
+    return generateRole('manager','v8-worker-billing-fallback:'+stage,input,schema,opts);
+   }
+  }
   // Two explicit Gemini service rejections permit one bounded Claude operator
   // handoff. Its own receipt is distinct from the later manager review and is
   // charged at Claude's rate to the SAME stage/account. Unknown outcomes,
@@ -126,7 +136,13 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    let data,rejectedOutput;try{data=JSON.parse(text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
    return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
-  catch(error){if(receiptVersion==='v8'&&transientStatus(error.providerStatus)&&(step===originalStep||role==='worker'))return generateRole(role,stage,input,schema,opts);throw error;}
+  catch(error){
+   if(receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
+    await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected'}));
+    return generateRole('manager','v8-worker-billing-fallback:'+stage,input,schema,opts);
+   }
+   if(receiptVersion==='v8'&&transientStatus(error.providerStatus)&&(step===originalStep||role==='worker'))return generateRole(role,stage,input,schema,opts);throw error;
+  }
   return validate(result);
  }
  return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),worker:(...args)=>generateRole('worker',...args)};

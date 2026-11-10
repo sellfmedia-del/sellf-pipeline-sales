@@ -42,3 +42,13 @@ test('Tadım continuation keeps the paid truncated response and thought usage in
  const incomplete=payload.receipts.find(r=>r.value?.rejectedOutput==='incomplete');
  assert.equal(incomplete.charge_kurus,48);assert.equal(incomplete.value.usage.thoughtsTokenCount,2343);assert.equal(incomplete.value.usage.candidatesTokenCount,715);
 });
+test('the release continuation retains the complete 13.09 TRY baseline and its 403 commitment',async()=>{
+ const {readFile}=await import('node:fs/promises');const {brotliDecompressSync}=await import('node:zlib');
+ const w=JSON.parse(await readFile(new URL('./fixtures/tadim-release-retained-20261110.json',import.meta.url),'utf8'));
+ const payload=JSON.parse(brotliDecompressSync(Buffer.from(w.data,'base64')));
+ assert.equal(payload.case,'tadim_release');assert.equal(500+payload.receipts.reduce((n,r)=>n+r.charge_kurus,0),1309);
+ const route=payload.receipts.find(r=>r.step_key==='routing:bhs-v8:worker-billing');
+ assert.equal(route.charge_kurus,0);assert.equal(route.value.recoveredDiagnostic.providerReason,'billing_required');
+ const paid=payload.receipts.find(r=>r.step_key===route.value.recoveredDiagnostic.failedStep);
+ assert.equal(paid.state,'uncertain');assert.equal(paid.value.providerStatus,403);assert.equal(paid.charge_kurus,108);
+});
