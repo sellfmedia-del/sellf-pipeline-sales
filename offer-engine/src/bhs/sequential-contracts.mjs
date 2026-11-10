@@ -8,7 +8,7 @@ export const logicalPhases=Object.freeze(['brand','sector','competition','swot',
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // A stage may spend only its share of the SAME 50 TRY account. The remainder
 // protects later research, final analysis and existing offer operations.
-export const stageCeilings=Object.freeze({brand:2000,sector:2800,sector_validation:3600,competition:3700,swot:3700,coverage:3900,report_draft:4100,synthesis:5000,scope:5000});
+export const stageCeilings=Object.freeze({brand:2200,sector:2800,sector_validation:3600,competition:3700,swot:3700,coverage:3900,report_draft:4100,synthesis:5000,scope:5000});
 export const str=(maxLength=600)=>({type:'string',maxLength});
 export const arr=(items,maxItems=24)=>({type:'array',items,maxItems});
 export const obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -24,18 +24,22 @@ const conciseFact=structuredClone(factSchema);conciseFact.properties.topic.enum=
 export const understandingSchema=obj({facts:arr(conciseFact,6),unknowns:arr(str(200),5),decision:{type:'string',enum:['accepted','limited']},notes:str(6000),nextTask:taskSchema});
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400),12),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
 export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema,4)});
-export function reviewVerdictSchema(schema,rows){
+export const understandingTopics=Object.freeze({brand:['identity','products','business_model','market'],sector:['sector','revenue_drivers','customer_behavior']});
+export function reviewVerdictSchema(schema,rows,{phase}={}){
  const result=structuredClone(schema),ids=rows.map(r=>r.id);
  if(new Set(ids).size!==ids.length)throw new BudgetError('model_output_invalid','Denetim aday kimlikleri yineleniyor.');
  delete result.properties.acceptedIds;delete result.properties.rejectedIds;
  result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
  result.required=result.required.filter(k=>!['acceptedIds','rejectedIds'].includes(k));result.required.push('verdicts');
+ if(understandingTopics[phase]){delete result.properties.decision;result.required=result.required.filter(k=>k!=='decision');result.properties.fundamentals=obj(Object.fromEntries(understandingTopics[phase].map(topic=>[topic,{type:'string',enum:['confirmed','incomplete']}] )));result.required.push('fundamentals');}
  return result;
 }
-export function normalizeVerdictReview(data,rows){
+export function normalizeVerdictReview(data,rows,{phase}={}){
  const {verdicts,...review}=data,ids=rows.map(r=>r.id);
  if(!verdicts||Object.keys(verdicts).length!==ids.length||ids.some(id=>!['accepted','rejected'].includes(verdicts[id])))throw new BudgetError('model_output_invalid','Her aday için ayrı ve eksiksiz denetim kararı gerekli.');
- return {...review,acceptedIds:ids.filter(id=>verdicts[id]==='accepted'),rejectedIds:ids.filter(id=>verdicts[id]==='rejected')};
+ const topics=understandingTopics[phase];
+ if(topics&&(!data.fundamentals||Object.keys(data.fundamentals).sort().join('|')!==[...topics].sort().join('|')||topics.some(t=>!['confirmed','incomplete'].includes(data.fundamentals[t]))))throw new BudgetError('model_output_invalid','Temel anlayış kararları eksik.');
+ return {...review,...(topics?{decision:topics.every(t=>data.fundamentals[t]==='confirmed')?'accepted':'limited'}:{}),acceptedIds:ids.filter(id=>verdicts[id]==='accepted'),rejectedIds:ids.filter(id=>verdicts[id]==='rejected')};
 }
 export const peerSchema=expertSchema.properties.peers.items;
 export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peerSchema,5)});

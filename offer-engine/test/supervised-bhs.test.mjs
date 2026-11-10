@@ -247,3 +247,12 @@ test('a rejected provider usage result retains its raw response and full paid co
  const wire=[...db.rows.entries()].find(([key,row])=>key.endsWith(':response')&&row.state==='complete');assert.equal(wire[1].value.usageMetadata.totalTokenCount,999);assert.equal(wire[1].charge_kurus,0);
  const calls=t.calls.length,cost=await db.ledger.status();await assert.rejects(v8Providers(db,t).worker('bad-usage',{},schema,{maxOutputTokens:512}),e=>e.code==='budget_uncertain');assert.equal(t.calls.length,calls);assert.deepEqual(await db.ledger.status(),cost);
 });
+
+test('v8 content supervisors think adaptively inside the same quoted output cap while the short initial task stays lightweight',async()=>{
+ for(const stage of ['v8-brand-plan','v8-brand-review','v8-sector-validation','v8-competition-review','v8-swot-review','v8-coverage-plan','v8-final-report']){
+  const db=account(),t=transport();await v8Providers(db,t).manager(stage,{},schema,{maxOutputTokens:4096});
+  const body=t.calls.find(c=>c.url.endsWith('/messages')).body;
+  assert.equal(body.thinking.type,stage==='v8-brand-plan'?'between_tools':'adaptive');assert.equal(body.output_config.effort,'high');assert.equal(body.max_tokens,4096);
+  assert.ok((await db.ledger.status()).chargedKurus<5000);
+ }
+});

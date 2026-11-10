@@ -282,3 +282,19 @@ same exhaustive verdict contract covers final review. Stage journal revisions
 are append-only and all earlier spending remains charged. Targeted sequential
 and queue checks: 32 passed; checkpoint checks: 4 passed; production build passed.
 Real acceptance of the six-stage report remains pending.
+
+The exhaustive-verdict continuation retained 2,113 kurus and still stopped
+before sector research: the manager said the core identity/model was adequate
+but marked the entire stage limited for unavailable private ownership/scale.
+This is not a pass. Brand and sector reviews now give a separate supervisor
+verdict for every REQUIRED understanding topic. All must be confirmed, and the
+server additionally checks accepted source-backed facts; missing core evidence
+still blocks. Private company figures are explicit unknowns rather than hidden
+extra gates. The earlier limited response is immutable, not promoted to success.
+Content supervisors now use adaptive thinking at high effort, still inside the
+same quoted max_tokens and 5,000-kurus account. The short initial task remains
+between_tools. Official Sonnet 5.5 docs explain that between_tools turns off
+up-front thinking when no tools are used:
+https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5
+Brand's internal cumulative allocation is 2,200 rather than 2,000 kurus to fund
+this quality review; global and later-stage ceilings remain unchanged.
