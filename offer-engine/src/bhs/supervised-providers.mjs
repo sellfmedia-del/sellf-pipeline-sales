@@ -84,7 +84,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    if(!integer(inputTokens,1)||inputTokens>upper||!integer(outputTokens,1)||outputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS kullanımı ayrılan üst sınırla eşleşmiyor.');
    const rate=supervisedRates[role],accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
    let data,rejectedOutput;try{data=JSON.parse(text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
-   return {model,role,usage,fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
+   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:tariff.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});
   return validate(result);
  }

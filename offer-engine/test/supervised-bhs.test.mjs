@@ -120,9 +120,9 @@ test('worker assignments reject a fabricated proof before supervisor review',asy
 });
 test('readiness is preview-only and probes catalogues without paid endpoints or secret output',async()=>{
  const calls=[],env={VERCEL_ENV:'preview',ANTHROPIC_API_KEY:'private-a',GEMINI_API_KEY:'private-g',APIFY_API_TOKEN:'private-p'};
- const fetchImpl=async url=>{calls.push(url);return json(url.includes('actor-tasks')?{data:{items:[],total:0}}:{});};
+ const fetchImpl=async url=>{calls.push(url);return json(url.endsWith('/users/me')?{data:{username:'synthetic-owner',email:'private-email@example.invalid'}}:url.includes('actor-tasks')?{data:{items:[],total:0}}:{});};
  const h=createSupervisedReadiness({env,fetchImpl}),res=response();await h({method:'GET'},res);
- assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.taskPolicies,0);
+ assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.taskPolicies,0);assert.equal(res.data.apify.accountUsername,'synthetic-owner');
  assert.ok(calls.every(u=>!u.includes('/runs')&&!u.includes('/messages')&&!u.includes(':generateContent')));assert.ok(!JSON.stringify(res.data).includes('private-'));
  const prod=response();await createSupervisedReadiness({env:{VERCEL_ENV:'production'},fetchImpl})({method:'GET'},prod);assert.equal(prod.code,404);
 });

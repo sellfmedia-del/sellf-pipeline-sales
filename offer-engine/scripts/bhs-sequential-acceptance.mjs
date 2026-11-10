@@ -49,7 +49,10 @@ export async function runSequentialAcceptance(){
   // an idempotent checkpoint and can never reset or add it a second time.
   await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
   result.cost=await db.ledger.status();
-  const rows=await db.receipts();result.costBreakdown={verifiedProviderAllowanceKurus:rows.filter(r=>r.value?.accountedKurus===r.charge_kurus&&r.value?.model||r.value?.accountedKurus===r.charge_kurus&&r.value?.credits!==undefined).reduce((n,r)=>n+r.charge_kurus,0),uncertainCommitmentKurus:rows.filter(r=>['reserved','uncertain'].includes(r.state)).reduce((n,r)=>n+r.charge_kurus,0),actorCommitmentKurus:rows.filter(r=>r.step_key.startsWith('apify:')).reduce((n,r)=>n+r.charge_kurus,0),infrastructureAllowanceKurus:1000};
+  const rows=await db.receipts();
+  const stagesToReview=new Set(['brand_review','brand','sector_review','sector','sector_validation','competition_review','competition','swot_review','swot','coverage_plan']);
+  result.stageReviews=rows.filter(r=>r.state==='complete'&&stagesToReview.has(r.value?.phase)).map(r=>({phase:r.value.phase,decision:r.value.understandingDecision||r.value.decision,review:r.value.review,facts:r.value.facts,swot:r.value.swot}));
+  result.costBreakdown={verifiedProviderAllowanceKurus:rows.filter(r=>r.value?.accountedKurus===r.charge_kurus&&r.value?.model||r.value?.accountedKurus===r.charge_kurus&&r.value?.credits!==undefined).reduce((n,r)=>n+r.charge_kurus,0),uncertainCommitmentKurus:rows.filter(r=>['reserved','uncertain'].includes(r.state)).reduce((n,r)=>n+r.charge_kurus,0),actorCommitmentKurus:rows.filter(r=>r.step_key.startsWith('apify:')).reduce((n,r)=>n+r.charge_kurus,0),infrastructureAllowanceKurus:1000};
   result.modelDiagnostics=rows.filter(r=>r.value?.rejectedOutput).map(r=>({model:r.value.model,role:r.value.role,rejection:r.value.rejectedOutput,usage:r.value.usage,committedKurus:r.charge_kurus}));
   await save();await writeFile(path.join(output,'bhs-sequential-acceptance.json'),JSON.stringify(result));await db.close();
  }
