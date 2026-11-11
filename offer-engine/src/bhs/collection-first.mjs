@@ -253,12 +253,25 @@ async function fundedReport(providers,funding,base,observations,quotes,sourceSam
  // evidence, observations and all source receipts stay in the archive.
  const options={...reservedOptions(finalCalls.report,funding.finalQuotes.repair),responseSchema:reservedReportResponseSchema,normalizeData:data=>normalizeFindingRows(data,reservedReportResponseSchema.properties.findings)};
  const variants=[{samples:45,keep:observations.length},{samples:20,keep:observations.length},{samples:10,keep:Math.min(observations.length,95)},{samples:0,keep:Math.min(observations.length,55)}];
- let lastError;
- for(const variant of variants){
+ const requests=variants.map(variant=>{
   const index=observations.slice(0,variant.keep);
   const ids=new Set(index.flatMap(([, ,proofs])=>proofs));
   const originalQuotes=Object.fromEntries(Object.entries(quotes).filter(([id])=>ids.has(id)));
-  try{return await providers.manager('v8-collection-reserved-report',{...base,index,originalQuotes,unindexedSources:sourceSamples.slice(0,variant.samples)},reservedReportSchema,options);}
+  return {...base,index,originalQuotes,unindexedSources:sourceSamples.slice(0,variant.samples)};
+ });
+ if(providers.readManagerResult){
+  // A prior run can have already bought the report before its peer decisions
+  // were recovered. Reuse that identical source report and attach the new
+  // verified peers during projection, with no second full generation.
+  const retained=base.peers.length?[...requests,...requests.map(request=>({...request,peers:[]}))]:requests;
+  for(const request of retained){
+   const receipt=await providers.readManagerResult('v8-collection-reserved-report',request,reservedReportSchema,options);
+   if(receipt)return receipt;
+  }
+ }
+ let lastError;
+ for(const request of requests){
+  try{return await providers.manager('v8-collection-reserved-report',request,reservedReportSchema,options);}
   catch(error){if(error.code!=='input_budget'||!error.budgetDiagnostic?.maxInputUpperTokens)throw error;lastError=error;}
  }
  throw lastError;

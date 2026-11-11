@@ -122,6 +122,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    step=originalStep+':transient-retry:1';saved=await ledger.get(step);if(!saved)await delay(1000);
   }
   if(saved?.state==='complete')return validate(saved.value);
+  if(opts.reuseOnly)return;
   // A definitive billing rejection cannot recover by retrying Google. Switch
   // this job's remaining operator tasks to the already configured Claude API,
   // retaining the original commitment and funding each replacement separately.
@@ -225,5 +226,5 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   return validate(result);
  }
- return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),worker:(...args)=>generateRole('worker',...args)};
+ return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),readManagerResult:(stage,input,schema,opts)=>generateRole('manager',stage,input,schema,{...opts,reuseOnly:true}),worker:(...args)=>generateRole('worker',...args)};
 }
