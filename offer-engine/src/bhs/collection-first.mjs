@@ -227,20 +227,29 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  context.input.entities=entities;
  const index=proofIndex(context,inventory);
  const selectedIds=unique(index.flatMap(([, ,ids])=>ids));
- const originalQuotes=Object.fromEntries(selectedIds.map(id=>{const card=context.known.get(id);return [id,[researchHost(card.url),card.quote]];}));
+ const byProof=new Map(),byAlias=new Map();
+ const alias=id=>{
+  if(!context.known.has(id))return null;
+  if(!byProof.has(id)){const short='s'+(byProof.size+1);byProof.set(id,short);byAlias.set(short,id);}
+  return byProof.get(id);
+ };
+ const originalQuotes=Object.fromEntries(selectedIds.map(id=>{const card=context.known.get(id);return [alias(id),[researchHost(card.url),card.quote]];}));
  const indexedUrls=new Set(selectedIds.map(id=>context.known.get(id).url));
  const focused=await previous(scrapeStages[0]);
  const peerHosts=new Set((focused.peerHints||[]).map(e=>researchHost(e.website)));
  const unindexedSources=context.input.sources.filter(source=>source.sections.length&&(!indexedUrls.has(source.url)||peerHosts.has(researchHost(source.url)))).map(source=>{
   const host=researchHost(source.url),peer=peerHosts.has(host);
   const sections=source.sections.slice(0,peer?3:1);
-  return [peer?source.url:host,source.method,sections.map(s=>{const id=s.proofIds[0];return [id,context.known.get(id).quote];})];
+  return [peer?source.url:host,source.method,sections.map(s=>{const id=s.proofIds[0];return [alias(id),context.known.get(id).quote];})];
  });
+ const approvedIdentity=brand.facts.map(f=>[f.topic,f.kind,f.statement,f.sourceIds.map(alias).filter(Boolean)]);
  const completion=await providers.manager('v8-collection-final-bhs',{
   instruction:'Sellf için Türkçe ön BHS hazırla. Marka kimliği onaylandıktan sonra kanıtlar toplandı. Şimdi ilk kez değerlendir. index satırları [alan, gözlem, proofId listesi], originalQuotes değerleri [yayıncı, özgün alıntı] şeklindedir. Kesin çürütülen iddiayı kullanma. Belirsiz bilgiyi ölçülmüş gerçek olarak yazma; l alanında sınırını açıkla. Ham arşiv korunur. Önce altı boyuta dengeli bak, sonra önem sırasına göre her alan ve SWOT kolu için en fazla dört destekli bulgu seç. Aynı bulguyu çoğaltma; birden fazla alana uyuyorsa a içinde alan kimliklerini birlikte ver. Kısa JSON sözleşmesi: a alan kimlikleri (ana alan önce), o somut gözlem, p özgün proofId dizisi, k gözlem veya çıkarım türü, h kendi ticari yorumun, l kanıtın sınırı, w SWOT yönü veya none. o en fazla 150, h ve l en fazla 90 karakter olsun. questions alanında boyut başına bir somut görüşme sorusu ver. Aynı ürünü aynı pazarda sunan üç doğrudan rakibi kendi ürün kaynağıyla destekle. Kaynaksız sayı ve performans üretme. Açıklamayı tekrar etme ve tam JSON ile bitir.',
-  brief,entities,areas:methodologyAreas,approvedIdentity:brand.facts,index,originalQuotes,unindexedSources
- },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3500,compactReview:true,lowEffort:true});
- const data=expandCollectedReport(completion.data);
+  brief,entities:entities.map(e=>[e.id,e.role,e.name,e.website]),areas:methodologyAreas.map(a=>[a.key,a.topic]),approvedIdentity,index:index.map(([area,text,ids])=>[area,text,ids.map(alias)]),originalQuotes,unindexedSources
+ },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3000,compactReview:true,lowEffort:true});
+ const unalias=ids=>ids.map(id=>byAlias.get(id)).filter(Boolean);
+ const reply=completion.data;
+ const data=expandCollectedReport({...reply,findings:reply.findings.map(f=>({...f,p:unalias(f.p)})),peers:reply.peers.map(p=>({...p,sourceIds:unalias(p.sourceIds)})),benchmarks:reply.benchmarks.map(b=>({...b,sourceIds:unalias(b.sourceIds)}))});
  const report=requireGroundedResearch(projectExpertReport(data,context));
  const citedUrls=new Set(report.sources.map(source=>source.url));
  const analysisPacket={...context.packet,sources:context.packet.sources.filter(source=>citedUrls.has(source.finalUrl)),citationCards:context.packet.citationCards.filter(source=>citedUrls.has(source.url))};

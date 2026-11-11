@@ -34,7 +34,11 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
        rawSearch.push(result);
        return result;
       }),
-      worker:async()=>{workers++;return {data:{observations:[],organizations:[]}};}
+      worker:async(stage,input)=>{
+       workers++;
+       if(stage==='v8-collection-peer-search')return {data:{queries:[]}};
+       return {data:{observations:input.sources.filter(source=>!source.url.includes('public.example')).flatMap(source=>source.sections.map(section=>({area:'operations_1',text:section.text||'Verbatim research record.',sourceIds:section.proofIds}))),organizations:[]}};
+      }
      };
     }
    };
@@ -65,7 +69,9 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
    const publicQuotes=request.unindexedSources.filter(row=>row[0]==='public.example').flatMap(row=>row[2].map(([,quote])=>quote));
    assert.ok(publicQuotes.some(quote=>quote.includes('increase')));
    assert.ok(publicQuotes.some(quote=>quote.includes('decrease')));
-   return {data,model:'claude-sonnet-5-5'};
+   const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
+   const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
+   return {data:{...data,findings:data.findings.map(f=>({...f,p:remap(f.p)})),peers:data.peers.map(p=>({...p,sourceIds:remap(p.sourceIds)}))},model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.equal(result.supervision.reviewMode,'collection-first');
   assert.equal(result.supervision.acceptance.passed,true);
