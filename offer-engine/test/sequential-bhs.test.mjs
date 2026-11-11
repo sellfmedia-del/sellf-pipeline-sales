@@ -27,6 +27,7 @@ function modelTransport({mutate,fail}={}){
   const stage=context.qaStage;events.push({type:manager?'manager':'worker',stage});
   if(fail?.(stage))throw new DOMException('Synthetic provider timeout','TimeoutError');
   const answer=modelAnswer(stage,context);let data=mutate?mutate(stage,answer,context):answer;
+  if(manager&&stage==='v8-swot-review'&&b.output_config.format.schema.properties.patches)data={patches:[],additionalFacts:[],...data};
   if(manager&&b.output_config.format.schema.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:b.output_config.format.schema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
   if(manager&&b.output_config.format.schema.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(b.output_config.format.schema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
   const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
@@ -41,12 +42,18 @@ function providerFor(db,phase,transport,apify){
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
 test('six logical stages run in order through real PostgreSQL receipts and provider accounting',async()=>{
- const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>stage==='v8-competition-review'?{...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']}:data});
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-competition-review')return {...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']};
+  if(stage==='v8-swot-review')return {...data,decision:'limited',acceptedIds:data.acceptedIds.slice(1),rejectedIds:data.acceptedIds.slice(0,1)};
+  if(stage==='v8-coverage-plan')assert.ok(input.requiredSwotGaps.includes('strength'));
+  return data;
+ }});
  try{
   let synthesis;for(const phase of sequentialPhases.slice(0,-2))synthesis=await run(db,phase,t);
   const report=directAuditResult(brief,synthesis);
   assert.deepEqual(synthesis.supervision.stageOrder,logicalPhases);
   assert.deepEqual(synthesis.supervision.stageDecisions.map(s=>s.phase),logicalPhases.slice(0,5));
+  assert.ok(synthesis.supervision.stageDecisions.every(s=>s.decision==='accepted'));
   assert.equal(report.status,'ready');const limited=directAuditResult(brief,{...synthesis,supervision:{...synthesis.supervision,finalDecision:'limited'}});assert.equal(limited.status,'review');assert.ok(limited.data.supervision.acceptance.issues.includes('manager_final_limited'));
   const drafted=(await db.ledger.get(stageKey(brief,'report_draft','v8'))).value,review=modelAnswer('v8-final-report',{operatorDraft:drafted.reportDraft});assert.throws(()=>applyFinalReview(drafted.reportDraft,{...review,patches:[{...drafted.reportDraft.findings[0],sourceIds:['fabricated']} ]},sequentialContext(brief,drafted)),e=>e.code==='model_output_invalid');
   assert.equal(report.data.researchCoverage.length,24);assert.equal(report.data.competitors.length,3);assert.ok(report.data.findings.length>=12);assert.equal(report.data.quality.checksPassed,true);

@@ -57,6 +57,7 @@ export const peerReviewSchema=obj({...factReviewSchema.properties,peers:arr(peer
 export const swotFindingSchema=structuredClone(expertProperties.findings.items);
 swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness','opportunity','threat']};swotFindingSchema.required.push('quadrant');
 export const swotSchema=obj({findings:arr(swotFindingSchema),unknowns:arr(str(400))});
+export const swotReviewSchema=obj({...reviewSchema.properties,patches:arr(swotFindingSchema),additionalFacts:arr(swotFindingSchema)});
 export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:actorRequestsSchema,priorities:arr(str(500))});
 export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80))])))});
 

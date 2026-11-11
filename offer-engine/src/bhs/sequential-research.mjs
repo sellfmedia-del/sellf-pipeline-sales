@@ -6,7 +6,7 @@ import {researchHost,researchUrl} from './research-url.mjs';
 import {observedActorTargets} from './apify-inputs.mjs';
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
-import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,coverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
+import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,swotReviewSchema,coverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000});
@@ -211,7 +211,8 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
 export async function runSequentialStage({phase,brief,providers,previous,collect=makeCollector()}){
  if(!sequentialPhases.includes(phase)||['scope','complete'].includes(phase))throw new BudgetError('invalid_phase','Sıralı BHS aşaması geçersiz.');
  const index=sequentialPhases.indexOf(phase),prior=index?await previous(sequentialPhases[index-1]):null;
- if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation')throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
+ const swotGapResearch=phase==='coverage_plan'&&prior?.phase==='swot'&&prior.decision==='limited'&&prior.review&&Array.isArray(prior.swot);
+ if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
  const stages=[];for(const name of logicalPhases.filter(p=>sequentialPhases.indexOf(p==='sector'?'sector_validation':p)<index))stages.push({...await previous(name==='sector'?'sector_validation':name),phase:name});
  const approved=stages.flatMap(s=>s.facts||[]);
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
@@ -219,6 +220,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(repair){
   const family=repair[1];
   if(repair[2]==='sources'){
+   if(family==='swot'&&prior.peerDiscoveryVersion==='product-v2')return finish({...prior,repairNeeded:false});
    const understood=family==='competition'?competitionCoreDecision(brief,prior,prior.review):prior.understandingDecision;
    if(understood==='accepted')return finish({...prior,understandingDecision:understood,repairNeeded:false});
    const grant=providers.checkpoint?await providers.checkpoint('targeted-repair:'+family,brief,async()=>({phase:family})):null;
@@ -362,13 +364,14 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='swot'||phase==='swot_review'){
   if(phase==='swot'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);
-  const check=await reviewFacts('swot',brief,prior,prior.workerData,providers,{extra:{previouslyApproved:approved,...(prior.repairNeeded?{repairRound:1}:{})}}),{workerData,...saved}=prior;
-  const decision=check.review.decision==='accepted'&&new Set(check.facts.map(f=>f.quadrant)).size===4?'accepted':'limited';
+  const modern=prior.peerDiscoveryVersion==='product-v2';
+  const check=await reviewFacts('swot',brief,prior,prior.workerData,providers,{schema:modern?swotReviewSchema:reviewSchema,extra:{previouslyApproved:approved,...(modern?{swotRepairPolicy:'Gözlemin desteklenen kısmını aynı kimlikle patches içinde düzelt. Ticari hipotez ve doğrulama sorusunu gerçekleşmiş sonuçtan ayrı tut. Özgün kaynağın açıkça desteklediği eksik SWOT yönünü additionalFacts ile tamamlayabilirsin. Kamuya kapalı rakam yokluğu tek başına zayıflık değildir.'}:{}),...(prior.repairNeeded?{repairRound:1}:{})}}),{workerData,...saved}=prior;
+  const decision=new Set(check.facts.map(f=>f.quadrant)).size===4?'accepted':'limited';
   return finish({...saved,facts:[],swot:check.facts,review:check.review,unknowns:workerData.unknowns,understandingDecision:decision},phase==='swot_review'?'accepted':decision);
  }
  if(phase==='coverage_plan'){
   const actorPlan=await actorPlanning(providers,brief,prior);
-  const plan=await providers.worker('v8-coverage-plan',{instruction:'Claude yöneticisinin emri: '+prior.review.nextTask.instruction+'\nOnaylanan marka → sektör → rekabet → SWOT araştırmasını altı BHS boyutu ve sabit 24 alana grupla. Önceki aşamalardan gelen önemli veri açıklarını ele al. Aynı pazarda karşılaştırılabilir marka ürün/fiyatı veya kaynaklı rekabet riski eksikse bunu öncelikli araştırma görevi olarak değerlendir; bulunamayan sayıları uydurma. coverage.findingIds içinde yalnız onaylı SWOT kimlikleri kullan. Kritik eksikleri bulmak için en fazla iki hedefli Tavily sorgusu ve yalnız availableActors içinden iki Apify talebi ver. URLler gerçek kaynak/navigation bağlantısı olmalı. Yerel pazar bilinmiyorsa countryCode/language boş olsun; ALL/US varsayma. Teknik kapsam yalnız SEO. Gereksiz tekrar isteme.',...stageModelInput(sequentialContext(brief,prior),{rows:[...approved,...prior.swot],areas:true}),approvedFacts:approved,approvedSwot:prior.swot,priorEvidenceGaps:stages.map(s=>({phase:s.phase,missing:s.review?.missing||[]})),...actorPlan},coverageSchema,{maxOutputTokens:4096,validateData:d=>{const ids=new Set(prior.swot.map(f=>f.id));if(Object.values(d.coverage).some(c=>c.findingIds.some(id=>!ids.has(id))))throw Error('Unknown SWOT reference.');}});
+  const plan=await providers.worker('v8-coverage-plan',{instruction:'Claude yöneticisinin emri: '+prior.review.nextTask.instruction+'\nOnaylanan marka → sektör → rekabet → SWOT araştırmasını altı BHS boyutu ve sabit 24 alana grupla. Önceki aşamalardan gelen önemli veri açıklarını ele al. requiredSwotGaps alanındaki eksik yönleri kanıtla tamamlamak ilk önceliktir. Aynı pazarda karşılaştırılabilir marka ürün/fiyatı veya kaynaklı rekabet riski eksikse bunu öncelikli araştırma görevi olarak değerlendir; bulunamayan sayıları uydurma. coverage.findingIds içinde yalnız onaylı SWOT kimlikleri kullan. Kritik eksikleri bulmak için en fazla iki hedefli Tavily sorgusu ve yalnız availableActors içinden iki Apify talebi ver. URLler gerçek kaynak/navigation bağlantısı olmalı. Yerel pazar bilinmiyorsa countryCode/language boş olsun; ALL/US varsayma. Teknik kapsam yalnız SEO. Gereksiz tekrar isteme.',...stageModelInput(sequentialContext(brief,prior),{rows:[...approved,...prior.swot],areas:true}),approvedFacts:approved,approvedSwot:prior.swot,requiredSwotGaps:['strength','weakness','opportunity','threat'].filter(q=>!prior.swot.some(f=>f.quadrant===q)),priorEvidenceGaps:stages.map(s=>({phase:s.phase,missing:s.review?.missing||[]})),...actorPlan},coverageSchema,{maxOutputTokens:4096,validateData:d=>{const ids=new Set(prior.swot.map(f=>f.id));if(Object.values(d.coverage).some(c=>c.findingIds.some(id=>!ids.has(id))))throw Error('Unknown SWOT reference.');}});
   return finish({...prior,coveragePlan:plan.data});
  }
  if(phase==='coverage_sources'){
@@ -402,6 +405,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  const finalReview=normalizeVerdictReview(generated.data,prior.reportDraft.findings);
  const finalData=applyFinalReview(prior.reportDraft,finalReview,context,competition.peers),report=projectExpertReport(finalData,context);requireGroundedResearch(report);
  const swot=Object.entries(finalData.swot).flatMap(([quadrant,ids])=>ids.flatMap(id=>{const f=report.findings.find(f=>f.id===id);return f?[{...f,quadrant}]:[];}));
- const budget=await providers.costStatus(),acceptance=qualityAcceptance(report,{stages,swot,budget,finalDecision:generated.data.decision});
- return finish({report,analysisPacket:context.packet,searchEvidence:[],model:generated.model,usage:generated.usage,fullPacketHash:evidenceHash(prior.packet),researchContext:{brief,briefHash:briefHash(brief)},supervision:{manager:generated.model,worker:'gemini-3.1-flash-lite',stageOrder:logicalPhases,stageDecisions:stages.map(s=>({phase:s.phase,decision:s.decision})),swot,acceptance,finalDecision:generated.data.decision,finalNotes:generated.data.notes,costUpperBound:budget,toolLimitations:(prior.actorResults||[]).filter(r=>r.status!=='complete').map(r=>({actor:r.actor,reason:r.reason||r.status})),qualityStatus:acceptance.passed?'passed':'requires_content_review'}});
+ const finalStages=stages.map(stage=>stage.phase==='swot'&&stage.decision==='limited'&&generated.data.decision==='accepted'&&new Set(swot.map(f=>f.quadrant)).size===4?{...stage,decision:'accepted'}:stage);
+ const budget=await providers.costStatus(),acceptance=qualityAcceptance(report,{stages:finalStages,swot,budget,finalDecision:generated.data.decision});
+ return finish({report,analysisPacket:context.packet,searchEvidence:[],model:generated.model,usage:generated.usage,fullPacketHash:evidenceHash(prior.packet),researchContext:{brief,briefHash:briefHash(brief)},supervision:{manager:generated.model,worker:'gemini-3.1-flash-lite',stageOrder:logicalPhases,stageDecisions:finalStages.map(s=>({phase:s.phase,decision:s.decision})),swot,acceptance,finalDecision:generated.data.decision,finalNotes:generated.data.notes,costUpperBound:budget,toolLimitations:(prior.actorResults||[]).filter(r=>r.status!=='complete').map(r=>({actor:r.actor,reason:r.reason||r.status})),qualityStatus:acceptance.passed?'passed':'requires_content_review'}});
 }
