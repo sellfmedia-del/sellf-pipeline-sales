@@ -6,6 +6,7 @@ import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/seq
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,plan,packet,modelAnswer} from './fixtures/sequential.mjs';
+import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
  const db=await localBudget(),seen=new Map();
@@ -55,7 +56,10 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
   const input=stageModelInput(context,{areas:true});
   const peers=plan.entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',reason:'Aynı ürün ve hedef pazar.',sourceIds:[context.cards.find(c=>c.url===e.website).id]}));
-  const data=modelAnswer('v8-report-draft',{...input,peerReview:peers});
+  const draft=modelAnswer('v8-report-draft',{...input,peerReview:peers});
+  const data={peers,benchmarks:[],questions:Object.fromEntries(draft.dimensions.map(d=>[d.id,'Bu bulguyu hangi verilerle doğrulayabiliriz?'])),findings:draft.findings.map(f=>({
+   a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:f.commercialHypothesis,l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
+  }))};
   const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
    assert.equal(stage,'v8-collection-final-bhs');
    assert.ok(request.unindexedSources.some(row=>row[0]==='https://public.example/a'));

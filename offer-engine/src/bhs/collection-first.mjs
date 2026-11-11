@@ -1,12 +1,12 @@
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
 import {gzipSync} from 'node:zlib';
-import {briefHash} from './brief.mjs';
+import {briefHash,dimensions} from './brief.mjs';
 import {evidenceExcerpts,evidenceHash} from './evidence.mjs';
-import {expertInstruction,projectExpertReport} from './expert-report.mjs';
+import {projectExpertReport} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 import {actorInput,observedActorTargets} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
-import {arr,finalSchema,obj,qualityAcceptance,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
+import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 
 export const collectionBudgetKurus=2500;
@@ -15,10 +15,17 @@ const readStages=['sector_correction_sources','sector_correction_draft','sector'
 const scrapeStages=['competition_draft','competition_review','competition_correction_sources'];
 const inventoryStages=['competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot'];
 const quadrants=['strength','weakness','opportunity','threat'];
+const areasByKey=new Map(methodologyAreas.map(area=>[area.key,area]));
 const markets=[[/Türkiye|Turkey/iu,'Türkiye','TR','tr'],[/United Kingdom|Birleşik Krallık|\bUK\b/iu,'United Kingdom','GB','en'],[/United States|Amerika Birleşik Devletleri|\bUSA\b/iu,'United States','US','en'],[/Germany|Almanya/iu,'Germany','DE','de'],[/France|Fransa/iu,'France','FR','fr']];
 const schema=obj({
  observations:arr(obj({area:str(80),text:str(350),sourceIds:arr(str(80))})),
  organizations:arr(obj({name:str(120),sourceId:str(80)}))
+});
+const compactReportSchema=obj({
+ findings:arr(obj({a:arr({type:'string',enum:[...areasByKey.keys()]},4),o:str(220),p:arr(str(80)),k:{type:'string',enum:['observation','inference']},h:str(150),l:str(140),w:{type:'string',enum:['none',...quadrants]}})),
+ peers:arr(peerSchema,5),
+ questions:obj(Object.fromEntries(dimensions.map(({id})=>[id,str(180)]))),
+ benchmarks:finalSchema.properties.benchmarks
 });
 const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified']);
 
@@ -103,6 +110,27 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
+export function expandCollectedReport(data){
+ const findings=[],coverage=Object.fromEntries(methodologyAreas.map(({key})=>[key,{status:'unavailable',findingIds:[],note:'Bu konuya ait bilgi görüşmede doğrulanacak.'}]));
+ const swot=Object.fromEntries(quadrants.map(key=>[key,[]]));
+ for(const row of data.findings){
+  const area=areasByKey.get(row.a[0]);
+  if(!area||!row.p.length||!row.o.trim())continue;
+  const id='collection_'+(findings.length+1),stance=['strength','opportunity'].includes(row.w)?'positive':['weakness','threat'].includes(row.w)?'risk':'neutral';
+  findings.push({id,dimension:area.dimension,kind:row.k,stance,observation:row.o,sourceIds:row.p,commercialHypothesis:row.h,limitation:row.l,question:data.questions[area.dimension],priority:findings.length<4?'high':'medium'});
+  for(const key of new Set(row.a)){
+   const topic=coverage[key];
+   if(topic.findingIds.length>=4)continue;
+   topic.findingIds.push(id);
+   topic.status=row.k==='observation'?'observed':topic.status==='unavailable'?'partial':topic.status;
+  }
+  if(swot[row.w]?.length<4)swot[row.w].push(id);
+ }
+ return {findings,coverage,swot,peers:data.peers,benchmarks:data.benchmarks,
+  overviewIds:findings.slice(0,4).map(f=>f.id),opportunityId:swot.opportunity[0]||null,riskId:swot.threat[0]||null,
+  dimensions:dimensions.map(({id})=>({id,score:null,bandReason:'Kamuya açık sinyaller üzerinden değerlendirildi.',findingIds:findings.filter(f=>f.dimension===id).slice(0,4).map(f=>f.id),comparisonFindingIds:[]}))};
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const funding=phase===searchStages[0]?await providers.checkpoint('collection-first-funding',brief,async()=>{
@@ -174,13 +202,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  const indexedUrls=new Set(index.map(([url])=>url));
  const unindexedSources=context.input.sources.filter(source=>!indexedUrls.has(source.url)&&source.sections.length).map(source=>[source.url,source.title,source.method,source.sections[0].proofIds[0],source.sections[0].text]);
  const completion=await providers.manager('v8-collection-final-bhs',{
-  instruction:expertInstruction()+'\nMarka kimliği onaylandıktan sonra tüm kanıtlar tek araştırma bütçesiyle toplandı. Şimdi araştırma bulgularını ilk kez değerlendir. Kesin biçimde çürütülen iddiaları rapora alma. Belirsiz veya çelişkili bilgi varsa, doğrulanmış gerçek gibi yazmadan kapsamını ve görüşmede doğrulanacak noktayı belirt. Ham kanıt arşivi korunur. Her metodoloji alanı ve SWOT kolu için en önemli en fazla dört destekli bulguyu önem sırasına göre seç; veri yokken sayı doldurma. Raporu kendi iş yorumlarınla yaz. Aynı ürün ve pazarda üç kaynaklı doğrudan rakibi değerlendirmeye çalış. Sahiplik, operasyon, algı, pazar, marka ve dijital gözlemlerini ayrı tut. Sadece verilen özgün proofId değerlerini kullan. Ölçülmeyen sayı ve performansı üretme.',
+  instruction:'Sellf için Türkçe ön BHS hazırla. Marka kimliği onaylandıktan sonra kanıtlar toplandı. Şimdi ilk kez değerlendir. Kesin çürütülen iddiayı kullanma. Belirsiz bilgiyi ölçülmüş gerçek olarak yazma; l alanında sınırını açıkla. Ham arşiv korunur. Önce altı boyuta dengeli bak, sonra önem sırasına göre her alan ve SWOT kolu için en fazla dört destekli bulgu seç. Aynı bulguyu çoğaltma; birden fazla alana uyuyorsa a içinde alan kimliklerini birlikte ver. Kısa JSON sözleşmesi: a alan kimlikleri (ana alan önce), o somut gözlem, p özgün proofId dizisi, k gözlem veya çıkarım türü, h kendi ticari yorumun, l kanıtın sınırı, w SWOT yönü veya none. o en fazla 150, h ve l en fazla 90 karakter olsun. questions alanında boyut başına bir somut görüşme sorusu ver. Aynı ürünü aynı pazarda sunan üç doğrudan rakibi kendi ürün kaynağıyla destekle. Kaynaksız sayı ve performans üretme. Açıklamayı tekrar etme ve tam JSON ile bitir.',
   brief,entities,areas:methodologyAreas,approvedIdentity:brand.facts,index,originalQuotes,unindexedSources
- },finalSchema,{maxOutputTokens:8192,minimumOutputTokens:4096,compactReview:true});
- const data=completion.data;
- for(const area of Object.values(data.coverage))area.findingIds=area.findingIds.slice(0,4);
- for(const dimension of data.dimensions)dimension.findingIds=dimension.findingIds.slice(0,4);
- for(const key of quadrants)data.swot[key]=data.swot[key].slice(0,4);
+ },compactReportSchema,{maxOutputTokens:7600,minimumOutputTokens:3500,compactReview:true});
+ const data=expandCollectedReport(completion.data);
  const report=requireGroundedResearch(projectExpertReport(data,context));
  const citedUrls=new Set(report.sources.map(source=>source.url));
  const analysisPacket={...context.packet,sources:context.packet.sources.filter(source=>citedUrls.has(source.finalUrl)),citationCards:context.packet.citationCards.filter(source=>citedUrls.has(source.url))};
