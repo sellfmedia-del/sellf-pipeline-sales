@@ -88,6 +88,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
    if(stage==='v8-collection-reserved-peers'){
     const {data}=directPeerReply(request);
     data.decisions[0].reason='Aynı hedef pazarda aynı kullanım için satılan ürün, markanın kaynaklı teklifine doğrudan ikame olabilir.';
+    data.decisions[0].proof=request.candidates[0][3].map(([id])=>id).join(',');
     assert.ok(data.decisions[0].reason.length>95);
     const normalized=options.normalizeData({decisions:[...data.decisions,{...data.decisions[0],verdict:'invalid'}]});
     assertSchema(normalized,options.responseSchema);

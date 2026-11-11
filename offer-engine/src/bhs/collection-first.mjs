@@ -63,6 +63,7 @@ const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pendin
 async function collectAttempt(run){
  try{return await run();}
  catch(error){
+  if(error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed')return {unavailable:true,reason:'provider_timeout'};
   if(!collectionErrors.has(error.code))throw error;
   return {unavailable:true,reason:error.code};
  }
@@ -74,7 +75,7 @@ const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M
 const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
 function publisherMatches(name,url,expanded=false){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
- return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida']:[])].includes(domain);
+ return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida',brand+'snacks',brand+'organic',brand+'organik']:[])].includes(domain);
 }
 const sourcesFrom=async(previous,stages,key)=>(await Promise.all(stages.map(previous))).flatMap(s=>s[key]||[]);
 const canonicalSources=rows=>[...new Map(rows.map(s=>[s.finalUrl+' '+s.contentHash,s])).values()].map((s,i)=>({...s,id:'ev'+(i+1)}));
@@ -193,7 +194,10 @@ function comparisonEntities(context,inventory){
 function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
- const terms=unique(product.toLocaleLowerCase('tr').match(peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
+ const preciseProduct=Boolean(peerProduct&&expandedPublishers);
+ const terms=unique(product.toLocaleLowerCase('tr').match(preciseProduct?/[\p{L}]{3,}/gu:peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
+ const format=preciseProduct?terms.at(-1):null;
+ const containsFormat=text=>format&&(text.toLocaleLowerCase('tr').match(/[\p{L}]+/gu)||[]).some(word=>word===format||word===format+'i'||word===format+'lar'||word===format+'lari');
  const productPattern=/ürün|product|satın|shop|₺|kategori|category|fiyat|price|sepet|cart/i;
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
@@ -201,10 +205,10 @@ function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=fa
    if(source.metadataOnly||source.method==='search-snippet'||!publisherMatches(candidate.name,source.url,expandedPublishers))continue;
    const cards=source.sections.flatMap(section=>section.proofIds.map(id=>context.known.get(id))).filter(card=>card&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method)).map(card=>{
     const quote=card.quote.toLocaleLowerCase('tr');
-    return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))};
+    return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))+Number(Boolean(containsFormat(quote)))*4};
    }).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
    if(!cards.length)continue;
-   const key=peerProduct?peerGroupKey(candidate.name):nameKey(candidate.name),score=cards[0].score;
+   const key=peerProduct?peerGroupKey(candidate.name):nameKey(candidate.name),score=cards[0].score+Number(Boolean(containsFormat(new URL(source.url).pathname)))*6;
    if(scored.get(key)?.score>=score)continue;
    const entity={...candidate,website:source.url,scope:product,audienceReason:''};
    scored.set(key,{entity,score,cards:cards.slice(0,2).map(item=>item.card)});
@@ -241,9 +245,10 @@ async function reviewCollectedPeers(brief,providers,funding,candidates,alias,rep
  const decisions=[];
  for(const row of result.data?.decisions||[]){
   const peer=peers.find(p=>p.id===row.id);
-  const card=peer?.cards.find(c=>alias(c.id)===row.proof);
-  if(!card||decisions.some(d=>d.entityId===peer.entity.id))continue;
-  decisions.push({entityId:peer.entity.id,relationship:row.verdict,sourceIds:[card.id],reason:row.reason});
+  const proofs=unique(row.proof.split(/[,\s]+/).filter(Boolean));
+  const cards=proofs.map(id=>peer?.cards.find(card=>alias(card.id)===id));
+  if(!peer||!cards.length||cards.some(card=>!card)||decisions.some(d=>d.entityId===peer.entity.id))continue;
+  decisions.push({entityId:peer.entity.id,relationship:row.verdict,sourceIds:cards.map(card=>card.id),reason:row.reason});
  }
  return decisions;
 }
