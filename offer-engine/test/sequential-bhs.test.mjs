@@ -375,3 +375,17 @@ test('targeted competitor reading uses observed product pages before any home na
  assert.equal(capturedPeerHosts(collected).size,3);
  assert.deepEqual(collected.packet.sources.slice(0,2),prior.packet.sources);
 });
+
+test('brand and sector paragraphs cannot crowd competitor product pages out of the model payload',()=>{
+ const base=packet(),old=base.sources.slice(0,2),peers=base.sources.slice(2);
+ const archives=Array.from({length:10},(_,i)=>({...old[0],id:'ev'+(i+20),url:'https://archive'+i+'.example/',finalUrl:'https://archive'+i+'.example/',excerpts:Array.from({length:7},(_,j)=>({text:('Archive '+i+' section '+j+' original sales and product information ').repeat(32)}))}));
+ const evidence={packet:{...base,sources:[...old,...archives,...peers]},searches:[],peerDiscoveryVersion:'product-v2'};
+ const oldContext=sequentialContext(brief,evidence,{completeSources:false});
+ assert.ok(peers.every(p=>!oldContext.cards.some(c=>c.url===p.finalUrl)));
+ const ctx=sequentialContext(brief,evidence);
+ assert.ok(peers.every(p=>ctx.cards.some(c=>c.url===p.finalUrl)));
+ const operator=stageModelInput(ctx);
+ assert.ok(peers.every(p=>operator.sources.some(s=>s.url===p.finalUrl&&s.sections.length)));
+ assert.ok(operator.sources.flatMap(s=>s.sections).reduce((n,p)=>n+(p.text?.length||0),0)<=76000);
+ assert.ok(oldContext.cards.every(c=>ctx.known.has(c.id)));
+});

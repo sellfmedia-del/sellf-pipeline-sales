@@ -80,8 +80,9 @@ export function phaseExtractionSchema(phase){const s=structuredClone(extractionS
 
 // A proof remains the same after collection order, snippets or enrichment change.
 // Stable IDs are a v8 adapter; historical v6/v7 paragraph IDs remain untouched.
-export function sequentialContext(brief,evidence){
- const c=expertContext(brief,evidence,{allParagraphs:true,includeTechnicalSignals:false}),mapping=new Map(c.cards.map(p=>[p.id,'p_'+hash({url:p.url,quote:p.quote}).slice(0,24)]));
+export function sequentialContext(brief,evidence,{completeSources=evidence.peerDiscoveryVersion==='product-v2'}={}){
+ const c=expertContext(brief,evidence,{allParagraphs:true,includeTechnicalSignals:false,paragraphBudget:completeSources?420000:60000}),mapping=new Map(c.cards.map(p=>[p.id,'p_'+hash({url:p.url,quote:p.quote}).slice(0,24)]));
+ c.completeSources=completeSources;
  c.cards=[...new Map(c.cards.map(p=>[mapping.get(p.id),{...p,id:mapping.get(p.id)}])).values()];
  const actorSources=new Map((evidence.packet.sources||[]).filter(s=>s.provenance?.actor).map(s=>[s.finalUrl||s.url,s]));
  for(const card of c.cards)if(actorSources.has(card.url))card.scope=actorSources.get(card.url).scope;
@@ -121,6 +122,18 @@ export function stageModelInput(context,{rows,sample=false,areas=false}={}){
   const ids=new Set(rows.flatMap(r=>r.sourceIds||[]).flatMap(id=>context.proofGroups.get(id)||[id]));
   input.sources=input.sources.map(s=>({...s,sections:s.sections.filter(p=>p.proofIds.some(id=>ids.has(id)))})).filter(s=>s.sections.length);
   input.selectionScope='Original candidate-cited paragraphs; no whole-site absence claim is justified. Full source snapshots remain saved for the final audit.';
+ }
+ if(context.completeSources&&!rows&&!sample){
+  // Keep proof IDs for the full packet. Bound only the general operator view
+  // and alternate sources so old pages cannot fill it before a new publisher.
+  let used=0;
+  const chosen=input.sources.map(()=>[]),depth=Math.max(0,...input.sources.map(s=>s.sections.length));
+  for(let i=0;i<depth;i++)for(let j=0;j<input.sources.length;j++){
+   const p=input.sources[j].sections[i];
+   if(p&&used+p.text.length<=76000){chosen[j].push(p);used+=p.text.length;}
+  }
+  input.sources=input.sources.map((s,i)=>({...s,sections:chosen[i]})).filter(s=>s.sections.length);
+  input.selectionScope='Balanced original source excerpts. Evidence beyond these excerpts is retained in the stage receipt.';
  }
  if(sample){
   let used=0;input.sources=input.sources.slice(0,2).map(s=>({...s,sections:s.sections.filter(p=>{if(used+p.text.length>6000)return false;used+=p.text.length;return true;}).slice(0,6)}));

@@ -34,7 +34,7 @@ const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|grow
 
 // Paragraph-sized context is selected once; model only returns immutable IDs.
 // The complete original packet stays in the ledger, never in a public bundle.
-export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true}={}){
+export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true,paragraphBudget=60000}={}){
  const cards=[],sources=[],proofGroups=new Map();let used=0;
  for(const s of evidence.packet.sources||[]){
   const excerpts=list(s.excerpts).map(e=>e.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1'));
@@ -43,7 +43,7 @@ export function expertContext(brief,evidence,{allParagraphs=false,includeTechnic
   for(const pattern of Object.values(terms)){const p=candidates.find(t=>pattern.test(fold(t))&&!seen.has(t));if(p){picked.push(p);seen.add(p);}}
   for(const p of candidates)if(picked.length<(allParagraphs?24:7)&&!seen.has(p)){picked.push(p);seen.add(p);}
   const sections=[];
-  for(const paragraph of picked){if(used+paragraph.length>60000)continue;used+=paragraph.length;
+  for(const paragraph of picked){if(used+paragraph.length>paragraphBudget)continue;used+=paragraph.length;
    const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),scope:s.metadataOnly?'Yalnız yayıncının başlık/açıklama meta verisi; sayfa işlevi veya performans kanıtı değildir.':'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
    for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
