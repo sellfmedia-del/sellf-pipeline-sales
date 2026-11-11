@@ -334,9 +334,17 @@
       const current=recoverableAudit;recoverableAudit=null;runAudit(current,'recover');
     });
     dialog.querySelector('.ob-continue').addEventListener('click',()=>{
-      if(!continuableAudit||continuableAudit.stopped||task)return;
-      const current=continuableAudit;continuableAudit=null;runAudit(current,'continue');
+      if(!continuableAudit||continuableAudit.stopped||(task&&task!==continuableAudit))return;
+      const current=continuableAudit;continuableAudit=null;
+      if(task===current){current.stopped=true;current.handedOff=true;runAudit({...current,stopped:false,handedOff:false},'continue');}
+      else runAudit(current,'continue');
     });
+    function showAuditContinuation(current,active){
+      continuableAudit=current;
+      const section=dialog.querySelector('.ob-continuation');
+      section.querySelector('p').textContent=active?'Araştırmayı durdurup görüşme bilgileriyle teklife geçebilirsin. Başlatılmış işlemlerin maliyetleri korunur.':'Ön BHS tamamlanamadı. Mevcut doğrulanmış bulgular korunur. Teklif, görüşme bilgileriyle kontrol için hazırlanır. Bu adım ek ücretli model çağrısı yapmaz.';
+      section.hidden=false;
+    }
     function showAuditCost(cost){
       const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
       dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi (kullanım ve rezerv): '+money(cost.attemptChargedKurus)+' TL · ':'')+'Bu teklif çalışması (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
@@ -360,12 +368,16 @@
           notice.textContent=action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
+          if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
-          if(current.stopped){if(current.ticket)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
+          if(response.phase==='complete'&&response.result){
+            continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
+            draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;
+          }
           if(response.phase==='complete'){action='status';continue;}
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
+          if(response.continuationAvailable&&current.ticket)showAuditContinuation(current,true);
           action='status';
           const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',evidence:'Bulunan kaynaklar tek araştırma paketinde okunuyor…',scope:'BHS ve görüşme bağlamına uygun hizmet kapsamı hazırlanıyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',revision:'Kanıtların kapsamı ve yorumların kesinliği gözden geçiriliyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
           if(stages[response.phase])notice.textContent=stages[response.phase];
@@ -380,11 +392,11 @@
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
         if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
         if(error.recoveryAvailable&&error.ticket){current.ticket=error.ticket;recoverableAudit=current;dialog.querySelector('.ob-recovery').hidden=false;}
-        if(error.continuationAvailable&&error.ticket){current.ticket=error.ticket;continuableAudit=current;dialog.querySelector('.ob-continuation').hidden=false;}
+        if(error.continuationAvailable&&error.ticket){current.ticket=error.ticket;showAuditContinuation(current,false);}
         if(error.budgetDetail){const money=value=>(Math.max(0,value)/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});const d=error.budgetDetail;notice.textContent+=' Bu adım için gerekli üst tutar: '+money(d.requiredKurus)+' TL; kullanılabilir: '+money(d.availableKurus)+' TL. Sonraki aşamalara ayrılan: '+money(d.followingReserveKurus)+' TL.'+(d.limitKurus===3000?' Otomatik maliyet hedefi: 30 TL.':'')+' Kartın kalan toplam sınırı: '+money(d.remainingKurus)+' TL.';}
         if(error.code&&!transport)notice.textContent+=' Hata kodu: '+error.code+'.';
         if(error.requestId)notice.textContent+=' Kontrol kodu: '+error.requestId;
-      }finally{if(task===current)task=null;if(dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}
+      }finally{if(task===current)task=null;if(!task&&dialog.isConnected)dialog.querySelector('.ob-edit').textContent='Bilgileri düzenle';}
     }
     form.addEventListener('submit', event => {
       event.preventDefault();

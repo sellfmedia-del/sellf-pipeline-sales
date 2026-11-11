@@ -9,14 +9,17 @@ import {recoverModelStage,recoveryStages,transientModelStatus,recoverableModelFa
 import {startLogoDiagnostic} from './logo-diagnostic.mjs';
 
 const base='https://generativelanguage.googleapis.com/v1beta/models/';
-export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget,manualRecoveryRound=0,transport='google',defaultModel='gemini-3.8-flash',gatewayToken=process.env.AI_GATEWAY_API_KEY||process.env.VERCEL_OIDC_TOKEN}={}){
+export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavilyKey=process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY,fetchImpl=fetch,now=Date.now,validateUrl=resolveTarget,manualRecoveryRound=0,transport='google',defaultModel='gemini-3.8-flash',gatewayToken=process.env.AI_GATEWAY_API_KEY||process.env.VERCEL_OIDC_TOKEN,pricing=tariff,researchFx}={}){
  if(!['google','vertex'].includes(transport))throw new BudgetError('not_configured','AI servis yolu geçersiz.');
  const gateway=transport==='vertex'?createGatewayTransport({token:gatewayToken,fetchImpl}):null;
  if(![0,1].includes(manualRecoveryRound))throw new BudgetError('invalid_recovery','Kurtarma kaydı geçersiz.');
  let fxChecked=0,fxInFlight,fxSnapshot;
- function validTariff(){if(now()>=Date.parse(tariff.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
+ const quote=(model,input,output)=>quoteModel(model,input,output,now(),pricing);
+ const consumed=(model,input,output,cached=0)=>consumedModel(model,input,output,fxSnapshot.usdTry,now(),cached,pricing);
+ function validTariff(){if(now()>=Date.parse(pricing.expires))throw new BudgetError('tariff_expired','Maliyet tarifesinin süresi doldu; ücretli çağrı yapılmadı.');}
  async function readCurrency(){
   validTariff();if(now()-fxChecked<3600000)return;
+  if(researchFx){fxSnapshot=await researchFx();fxChecked=now();return;}
   const response=await fetchImpl('https://www.tcmb.gov.tr/kurlar/today.xml',{signal:AbortSignal.timeout(10000),redirect:'error'});
   if(!response.ok)throw new BudgetError('fx_unavailable','Kur üst sınırı doğrulanamadı; ücretli işlem başlatılmadı.');
   const xml=await response.text(),block=xml.match(/<Currency\b[^>]*(?:CurrencyCode|Kod)="USD"[^>]*>([\s\S]*?)<\/Currency>/)?.[1],rate=Number(block?.match(/<ForexSelling>([\d.]+)<\/ForexSelling>/)?.[1]);
@@ -63,7 +66,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url)),fx:fxSnapshot,creditsUpper:2,accountedKurus:consumedSearch(2,fxSnapshot.usdTry)};
    },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
-  async search(query,{depth='advanced',maxResults=6}={}){
+  async search(query,{depth='advanced',maxResults=6,retainRaw=false}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');
    if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');
@@ -73,7 +76,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const result=await readJson('https://api.tavily.com/search',input,{Authorization:'Bearer '+tavilyKey},25000);
     if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');
     const credits=depth==='basic'?1:2;
-    return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
+    return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),...(retainRaw?{rawResults:result.results||[]}:{}),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
    },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
   async generate(stage,input,schema,{model=defaultModel,maxOutputTokens=4096,minOutputTokens=maxOutputTokens,reserveForFollowingKurus=0,thinkingLevel='LOW',jsonMode=false,image,logoFallback=false,recoveryAttempt=false,modelFallback=false,recoveryDeadline,validateData}={}){
@@ -128,12 +131,12 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    {
     const status=await ledger.status();
     const limit=Math.min(status.capKurus,tariff.capKurus),available=limit-status.chargedKurus-following;
-    while(maxOutputTokens>minOutputTokens&&quoteModel(model,upper,maxOutputTokens,now())>available)maxOutputTokens=Math.max(minOutputTokens,maxOutputTokens-1024);
-    if(quoteModel(model,upper,maxOutputTokens,now())>available){const error=new BudgetError('budget_limit',following?'Bu aşama için kullanılabilir tutar, sonraki aşamalara ayrılan rezerv nedeniyle yetersiz. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.':'Kartın kalan toplam sınırı bu model çağrısına yeterli değil. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quoteModel(model,upper,maxOutputTokens,now()),availableKurus:Math.max(0,available),followingReserveKurus:following,limitKurus:limit,normalTargetKurus:tariff.normalTargetKurus,remainingKurus:Math.max(0,status.capKurus-status.chargedKurus)};throw error;}
+    while(maxOutputTokens>minOutputTokens&&quote(model,upper,maxOutputTokens)>available)maxOutputTokens=Math.max(minOutputTokens,maxOutputTokens-1024);
+    if(quote(model,upper,maxOutputTokens)>available){const error=new BudgetError('budget_limit',following?'Bu aşama için kullanılabilir tutar, sonraki aşamalara ayrılan rezerv nedeniyle yetersiz. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.':'Kartın kalan toplam sınırı bu model çağrısına yeterli değil. Önceki sonuçlar ve maliyetler korundu; yeni ücretli model çağrısı yapılmadı.');error.modelBudgetFallback=!isLogo&&!modelFallback&&recoveryAttempt;error.budgetDiagnostic={inputTokens:count.totalTokens,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:quote(model,upper,maxOutputTokens),availableKurus:Math.max(0,available),followingReserveKurus:following,limitKurus:limit,normalTargetKurus:tariff.normalTargetKurus,remainingKurus:Math.max(0,status.capKurus-status.chargedKurus)};throw error;}
     body.generationConfig.maxOutputTokens=maxOutputTokens;
    }
-   const amount=quoteModel(model,upper,maxOutputTokens,now());
-   const status=await ledger.status(),estimatedKurus=consumedModel(model,count.totalTokens,maxOutputTokens,fxSnapshot.usdTry,now());
+   const amount=quote(model,upper,maxOutputTokens);
+   const status=await ledger.status(),estimatedKurus=consumed(model,count.totalTokens,maxOutputTokens);
    const costDecision={tier:status.chargedKurus+estimatedKurus>tariff.normalTargetKurus?'quality_exception':'normal',estimatedKurus,normalTargetKurus:tariff.normalTargetKurus,capKurus:tariff.capKurus};
    // Above-target work is identifiable and bounded; never silently shorten the
    // approved research or switch models to manufacture a lower displayed cost.
@@ -150,12 +153,12 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const offerContent=['synthesis','methodology_areas','scope'].includes(stage);
     // A fully verified usage response is settled even when its content is bad.
     // Transport/HTTP failures without verified usage keep their full reservation.
-    const rejectedOutput=code=>({rejectedOutput:code,usage,model,fx:fxSnapshot,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0)});
+    const rejectedOutput=code=>({rejectedOutput:code,usage,model,fx:fxSnapshot,accountedKurus:consumed(model,usage.promptTokenCount,output,usage.cachedContentTokenCount||0)});
     if(candidate?.finishReason!=='STOP'&&!(offerContent&&candidate?.finishReason==='MAX_TOKENS'))return rejectedOutput('incomplete');
     const text=(candidate.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('');
     let parsed;try{parsed={data:JSON.parse(text)};}catch{if(!offerContent)return rejectedOutput('invalid_report');parsed=readPartialOutput(text);}
     if(candidate.finishReason==='MAX_TOKENS')parsed={...parsed,originalText:text,issues:[...(parsed.issues||[]),'model_output_limit']};
-    return {...parsed,usage,model,...(result.modelVersion?{providerModelVersion:result.modelVersion}:{}),...(result.gatewayReceipt?{gatewayReceipt:result.gatewayReceipt}:{}),reservedKurus:amount,accountedKurus:consumedModel(model,usage.promptTokenCount,output,fxSnapshot.usdTry,now(),usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:tariff.version,accountingVersion:'verified-usage-fx-v2'};
+    return {...parsed,usage,model,...(result.modelVersion?{providerModelVersion:result.modelVersion}:{}),...(result.gatewayReceipt?{gatewayReceipt:result.gatewayReceipt}:{}),reservedKurus:amount,accountedKurus:consumed(model,usage.promptTokenCount,output,usage.cachedContentTokenCount||0),fx:fxSnapshot,costDecision,...(stage==='synthesis'&&input.brief?{researchContext:{brief:input.brief,briefHash:hash(input.brief)}}:{}),tariffVersion:pricing.version,accountingVersion:'verified-usage-fx-v2'};
    },{settle:value=>value.accountedKurus,...(recoveryStages.has(stage)?{limitKurus:tariff.capKurus}:{})});
    return validated(generated);
   }

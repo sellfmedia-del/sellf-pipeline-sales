@@ -25,7 +25,9 @@ test('brief relevance breaks ties without producing new statements or changing p
 
 test('methodology headings and relevant fields have no artificial six-finding cap',()=>{
  const dimensions=['financial','operations','digital','perception','brand','market'];
- const findings=dimensions.flatMap(d=>Array.from({length:9},(_,i)=>row(d+i,{dimension:d,statement:d+' araştırma bulgusu '+i})));
- const out=selectProposalAudit({findings,dimensions:dimensions.map(id=>({id,rationale:'Mevcut gerekçe.',strengths:[],gaps:[]}))});
+ const findings=dimensions.flatMap(d=>Array.from({length:9},(_,i)=>row(d+i,{dimension:d,statement:d+' araştırma bulgusu '+i,sourceIds:['source-'+d+i]})));
+ const sources=findings.map(f=>({id:f.sourceIds[0],title:'Kaynak',url:'https://example.com/'+f.id}));
+ const out=selectProposalAudit({findings,sources,dimensions:dimensions.map(id=>({id,rationale:'Mevcut gerekçe.',strengths:[],gaps:[]}))});
  assert.equal(out.dimensions.length,dimensions.length);assert.equal(out.findings.length,54);for(const d of out.dimensions){assert.equal(d.highlights.length,9);assert.equal(out.findings.filter(f=>f.dimension===d.id).length,9);}
+ assert.deepEqual(out.sources.map(s=>s.id),sources.map(s=>s.id));
 });

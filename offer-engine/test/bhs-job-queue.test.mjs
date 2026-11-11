@@ -128,17 +128,34 @@ test('existing audit endpoint queues v8 and reconnects to the original budget wi
   r=res();await h(request,r);assert.equal(r.code,202);assert.equal(enqueues,1);assert.equal(r.body.phase,'sector_sources');
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
-test('explicit continuation from a paused background job keeps the offer open and labels incomplete research',async()=>{
+test('a paused background job automatically keeps the offer open without misrepresenting incomplete research',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{
   const job={id:other,leadId:'lead1',budgetId:token,briefHash:hash,state:'paused',phase:'sector_gate',diagnostic:{code:'research_stage_incomplete'}};
   const queue={find:async()=>job,read:async()=>job},ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:1300}),get:async()=>null,once:async(key,input,amount,run)=>{assert.equal(amount,0);return run();}};
   const h=createBoundedAuditHandler({getQueue:async()=>queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('no paid provider'),logger:{}});
   const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'lead1'}}};
-  let r=res();await h(request,r);assert.equal(r.code,422);assert.equal(r.body.continuationAvailable,true);
-  const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0];r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
+  const r=res();await h(request,r);
   assert.equal(r.code,200);assert.equal(r.body.phase,'complete');assert.equal(r.body.result.data.researchContinuity.status,'unavailable');assert.equal(r.body.result.data.quality.contentComplete,false);assert.equal(r.body.result.cost.chargedKurus,1300);assert.ok(r.body.pricingProof);
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
+test('an active background job can hand off to the offer and refuses any subsequent paid reservation',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ const f=await fixture();
+ try{
+  await f.enqueue();
+  const job=await f.queue.claim(),workerLedger=await f.queue.getLedger(job);
+  const h=createBoundedAuditHandler({getQueue:async()=>f.queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>f.ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('continuation cannot open a paid provider'),logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'synthetic-bhs'}}};
+  let r=res();await h(request,r);assert.equal(r.code,202);assert.equal(r.body.continuationAvailable,true);
+  const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0],cost=await f.ledger.status();
+  r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
+  assert.equal(r.code,200);assert.equal(r.body.result.data.quality.contentComplete,false);assert.ok(r.body.pricingProof);
+  assert.equal((await f.queue.read(job)).cancelRequested,true);
+  await assert.rejects(workerLedger.once('new-paid-call',{},100,async()=>assert.fail()),/cancellation/);
+  assert.deepEqual(await f.ledger.status(),cost);
+ }finally{await f.close();if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 
 test('lost queue acknowledgements and expired leases recover committed phases without another provider call',async()=>{
@@ -165,18 +182,19 @@ test('a concurrent background enqueue reconnects its winning account and ticket'
   assert.equal(r.code,202);assert.equal(binds,2);assert.equal(r.body.cost.id,token);assert.equal(r.body.cost.chargedKurus,1500);
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
-test('completed research requiring content review exposes explicit zero-cost offer continuation',async()=>{
+test('completed research requiring content review advances with grounded findings and checked scope at zero extra cost',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';try{
   const context=sequentialContext(brief,{packet:packet(),searches:[]});
   const input={...stageModelInput(context),peerReview:plan.entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',sourceIds:[[...context.known.keys()].find(id=>context.known.get(id).url===e.website)],reason:'Same product and market.'}))};
   const report=projectExpertReport(modelAnswer('v8-report-draft',input),context),synthesis={report,methodologyVersion:sequentialVersion,analysisPacket:packet(),model:'claude-sonnet-5-5',supervision:{acceptance:{passed:false},finalDecision:'limited',stageDecisions:[],swot:[]}};
   const job={id:other,leadId:'lead1',budgetId:token,briefHash:hash,state:'complete',phase:'complete'};
-  const scope={scopePlan:{},proposalCopy:{}},ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:2200}),get:async key=>({state:'complete',value:key===stageKey(brief,'synthesis','v8')?synthesis:scope}),once:async(key,input,amount,run)=>{assert.equal(amount,0);return run();}};
+  const scope={scopePlan:{},proposalCopy:{}},ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:2200}),get:async key=>({state:'complete',value:key===stageKey(brief,'synthesis','v8')?synthesis:scope}),once:()=>assert.fail('completed research already persisted')};
   const h=createBoundedAuditHandler({getQueue:async()=>({find:async()=>job,read:async()=>job}),isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('no paid provider'),logger:{}});
   const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'lead1'}}};
-  let r=res();await h(request,r);assert.equal(r.code,422);assert.equal(r.body.code,'quality_review');assert.equal(r.body.continuationAvailable,true);
-  const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0];r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
-  assert.equal(r.code,200);assert.equal(r.body.result.data.quality.contentComplete,false);assert.equal(r.body.result.cost.chargedKurus,2200);assert.ok(r.body.pricingProof);
+  const r=res();await h(request,r);
+  const {result,pricingProof}=r.body;
+  assert.equal(r.code,200);assert.equal(result.data.researchContinuity.reason,'quality_review');assert.equal(result.data.quality.contentComplete,false);assert.equal(result.cost.chargedKurus,2200);assert.ok(pricingProof);
+  assert.ok(result.data.findings.length>0);assert.ok(result.data.sources.every(source=>source.verification.status==='quote_matched'));
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 

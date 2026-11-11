@@ -30,11 +30,12 @@ const words=s=>fold(s).match(/[a-z]{5,}/g)||[];
 const stop=new Set(words('company products product services service website online official brand market customers customer turkey turkiye global international similar digital operations platform shopping ecommerce kurumsal sirket marka urunler hizmetler musteri turkiye pazari hedef kitle pazarlama benzer dogrudan rekabet sitesi kanal satici'));
 const topicWords=s=>unique(words(s).filter(w=>!stop.has(w)));
 const categories=[/burger|hamburger|smash/,/coffee|kahve|roast/,/planner|planlayici|calendar|takvim/,/carpet|\brug\b|hali/,/travel|seyahat|turizm|ferry|feribot|tour/,/cosmetic|kozmetik|cologne|kolonya|sabun|skincare/,/organic|organik|snack|atistirmalik/];
+const snackBars=/\b(?:yulaf|meyve|hurma|protein|tahil|granola|oat|fruit|cereal|energy)[ -]+bar/;
 const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|growth|buyume/i,operations:/team|employees|ekip|calisan|delivery|kargo|iade|return|crm|platform/i,funnel:/newsletter|bulten|subscribe|abonelik|checkout|teklif|quote|cart|sepet|loyalty/i,digital:/analytics|pixel|piksel|seo|traffic|trafik|mobile|mobil/i,perception:/review|yorum|rating|puan|complaint|sikayet|response|yanit/i,competition:/price|fiyat|subscription|abonelik|differ|fark|shipping|kargo/i};
 
 // Paragraph-sized context is selected once; model only returns immutable IDs.
 // The complete original packet stays in the ledger, never in a public bundle.
-export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true}={}){
+export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true,paragraphBudget=60000}={}){
  const cards=[],sources=[],proofGroups=new Map();let used=0;
  for(const s of evidence.packet.sources||[]){
   const excerpts=list(s.excerpts).map(e=>e.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1'));
@@ -43,7 +44,7 @@ export function expertContext(brief,evidence,{allParagraphs=false,includeTechnic
   for(const pattern of Object.values(terms)){const p=candidates.find(t=>pattern.test(fold(t))&&!seen.has(t));if(p){picked.push(p);seen.add(p);}}
   for(const p of candidates)if(picked.length<(allParagraphs?24:7)&&!seen.has(p)){picked.push(p);seen.add(p);}
   const sections=[];
-  for(const paragraph of picked){if(used+paragraph.length>60000)continue;used+=paragraph.length;
+  for(const paragraph of picked){if(used+paragraph.length>paragraphBudget)continue;used+=paragraph.length;
    const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),scope:s.metadataOnly?'Yalnız yayıncının başlık/açıklama meta verisi; sayfa işlevi veya performans kanıtı değildir.':'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
    for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
@@ -166,7 +167,8 @@ export function projectExpertReport(value,context){
   const readProduct=card=>publisher(card)&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method);
   let sourceIds=refs(p.sourceIds).filter(id=>readProduct(cards.get(id)));if(!sourceIds.length)continue;
   const category=topicWords(e.scope+' '+e.audienceReason);
-  const expectedCategories=categories.filter(p=>p.test(fold(e.scope+' '+e.audienceReason)));
+  const productScope=fold(e.scope+' '+e.audienceReason),expectedCategories=categories.filter(p=>p.test(productScope));
+  if(context.collectionFirst&&categories.at(-1).test(productScope))expectedCategories.push(snackBars);
   // A newsletter citation is not product identity. Reuse a product paragraph
   // already read from that same publisher instead of losing a valid peer or
   // trusting an unrelated same-name business. No new request or model call.

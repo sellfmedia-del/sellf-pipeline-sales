@@ -46,7 +46,7 @@ export function evidenceExcerpts(text,{maxChunks=7,size=1800}={}){
  return [...selected].sort((a,b)=>a-b).map(i=>chunks[i]).filter(chunk=>chunk.text.length>=24);
 }
 export function assertEvidencePacket(packet,brief){
- if(packet?.version!=='sellf-evidence-v1'||packet.briefHash!==briefHash(brief)||!Array.isArray(packet.sources)||packet.sources.length>24||!packet.sources.length||JSON.stringify(packet).length>240000)throw Error('Kanıt paketi geçersiz.');
+ if(packet?.version!=='sellf-evidence-v1'||packet.briefHash!==briefHash(brief)||!Array.isArray(packet.sources)||packet.sources.length>24||!packet.sources.length||JSON.stringify(packet).length>(packet.evidenceTransportVersion==='sequential-v8-wide'?420000:240000)||Buffer.byteLength(JSON.stringify(packet))>1000000)throw Error('Kanıt paketi geçersiz.');
  const ids=new Set();
  for(const source of packet.sources){
   if(!/^ev\d+$/.test(source.id)||ids.has(source.id)||!publicUrl(source.url)||!publicUrl(source.finalUrl)||!['html','pdf','rendered','extracted'].includes(source.method)||!Array.isArray(source.excerpts)||!source.excerpts.length||source.excerpts.length>7)throw Error('Kanıt kaynağı geçersiz.');ids.add(source.id);
@@ -71,27 +71,29 @@ export function mergeExtractedEvidence(packet,extraction={}){
  }
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false}={}){
- return async function collect(brief,sourcePlan,{extraSources=[],initialPacket,identityOnly=false,sourceLimit=maxSources}={}){
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000}={}){
+ return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false,archivePages,allowEmpty=false}={}){
+  if(!Number.isSafeInteger(maxSourceChars)||maxSourceChars<180000||maxSourceChars>360000)throw Error('Kanıt taşıma sınırı geçersiz.');
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
   const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
   const seed=initialPacket&&initialPacket.briefHash===briefHash(brief)?structuredClone(initialPacket):null;
-  const queue=[],seen=new Set((seed?.sources||[]).flatMap(s=>[researchUrl(s.url),researchUrl(s.finalUrl)]).filter(Boolean)),expandedHosts=new Set(),sources=seed?.sources||[],unavailable=seed?.unavailable||[],renderCandidates=[];
+  const queue=[],seen=new Set((seed?.sources||[]).filter(s=>!s.metadataOnly).flatMap(s=>[researchUrl(s.url),researchUrl(s.finalUrl)]).filter(Boolean)),expandedHosts=new Set(),sources=seed?.sources||[],unavailable=seed?.unavailable||[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>host(e.website)).filter(Boolean));entityHosts.add(brandHost);
   function enqueue(url,front=false){const value=researchUrl(url);if(value&&!seen.has(value)&&seen.size<128){seen.add(value);front?queue.unshift(value):queue.push(value);}}
   const rankedPeerLinks=links=>links.slice().sort((a,b)=>{
    const score=l=>/product|ürün|urun|kuruyem|nuts|snack|category|kategori|catalog|shop|store/i.test(l.label+' '+l.url)?2:/privacy|gizlilik|cookie|çerez|kvkk|policy/i.test(l.label+' '+l.url)?-1:0;
    return score(b)-score(a);
   });
-  enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));
-  if(preferProductLinks)for(const source of seed?.sources||[]){
+  for(const url of prioritySources)enqueue(url);
+  if(!explicitSourcesOnly){enqueue(brief.website);plan.entities.forEach(e=>enqueue(e.website));}
+  if(preferProductLinks&&!prioritySources.length&&!explicitSourcesOnly)for(const source of seed?.sources||[]){
    const sourceHost=host(source.finalUrl||source.url);if(sourceHost===brandHost||!entityHosts.has(sourceHost))continue;
    for(const link of rankedPeerLinks(source.technicalSignals?.navigation||[]).filter(l=>host(l.url)===sourceHost).slice(0,2).reverse())enqueue(link.url,true);
   }
   // Interleave the planner and every search topic, rather than reading only
   // the first twelve discovery links (which mostly repeat corporate pages).
-  for(let i=0;i<Math.max(plan.sources.length,extraSources.length);i++){if(plan.sources[i])enqueue(plan.sources[i].url);if(extraSources[i])enqueue(extraSources[i]);}
+  if(!explicitSourcesOnly)for(let i=0;i<Math.max(plan.sources.length,extraSources.length);i++){if(plan.sources[i])enqueue(plan.sources[i].url);if(extraSources[i])enqueue(extraSources[i]);}
   async function readSource(input){
    let url=input;
    for(let i=0;i<=3;i++){
@@ -111,32 +113,37 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   }
   function keep(page){
    const excerpts=evidenceExcerpts(page.text);if(!excerpts.length||excerpts[0].text.length<24)return false;
-   const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered')return false;
+   const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered'&&!sources[previous].metadataOnly)return false;
    const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.technicalSignals?{technicalSignals:page.technicalSignals}:{}),...(page.metadataOnly?{metadataOnly:true}:{}),...(page.pages?{pages:page.pages}:{})};
-   if(JSON.stringify(sources).length+JSON.stringify(record).length>180000)return false;
+   const nextChars=JSON.stringify(sources).length+JSON.stringify(record).length-(previous>=0?JSON.stringify(sources[previous]).length:0);
+   if(nextChars>maxSourceChars){unavailable.push({url:page.url,reason:'source_packet_capacity'});return false;}
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
+  const archived=[];
+  const archive=({url,finalUrl,title,text,method,technicalSignals})=>{if(archivePages)archived.push({url,finalUrl,title,text,method,technicalSignals});};
   while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
    const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:capacity)-sources.length-renderCandidates.length));
    const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:result.reason});continue;}
     const page=result.page;
+    archive(page);
     if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push({...page,requiresRender:/kap\.org\.tr$/.test(host(page.finalUrl))});}
     else keep(page);
     const pageHost=host(page.finalUrl);
-    if(entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);const candidates=page.links.filter(l=>entityHosts.has(host(l.url))),links=(preferProductLinks&&pageHost!==brandHost?rankedPeerLinks(candidates):candidates).slice(0,pageHost===brandHost?4:2),priority=pageHost===brandHost||preferProductLinks;for(const link of priority?links.reverse():links)enqueue(link.url,priority);}
+    if(!explicitSourcesOnly&&entityHosts.has(pageHost)&&!expandedHosts.has(pageHost)){expandedHosts.add(pageHost);const candidates=page.links.filter(l=>entityHosts.has(host(l.url))),links=(preferProductLinks&&pageHost!==brandHost?rankedPeerLinks(candidates):candidates).slice(0,pageHost===brandHost?4:2),priority=!prioritySources.length&&(pageHost===brandHost||preferProductLinks);for(const link of priority?links.reverse():links)enqueue(link.url,priority);}
    }
   }
   if(renderCandidates.length&&clock()<deadline-3000){
    const renderPages=render||(await import('./render-source.mjs')).renderEvidencePages;
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
-   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<capacity)keep({...page,method:'rendered'});});
+   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)){const rendered={...page,method:'rendered'};archive(rendered);if(sources.length<capacity)keep(rendered);}});
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<capacity)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<capacity)keep({...page,text:page.metadata,metadataOnly:true});}}
-  const packet={version:'sellf-evidence-v1',briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
+  const packet={version:'sellf-evidence-v1',...(maxSourceChars>180000?{evidenceTransportVersion:'sequential-v8-wide'}:{}),briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
+  if(archivePages&&archived.length)await archivePages(archived);
   onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?host(x.url)||null:null,reason:x.reason}))});
-  return assertEvidencePacket(packet,brief);
+  return allowEmpty&&!packet.sources.length?packet:assertEvidencePacket(packet,brief);
  };
 }
 export function evidenceSourceVerifier(packet){

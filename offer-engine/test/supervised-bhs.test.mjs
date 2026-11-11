@@ -316,6 +316,23 @@ test('v8 content supervisors think adaptively inside the same quoted output cap 
  }
 });
 
+test('Claude schema preflight can switch transport before buying the single validated review',async()=>{
+ const db=account(4176),t=transport();let rejected=0;
+ const p=v8Providers(db,{...t,fetchImpl:async(url,options)=>{
+  const body=options.body?JSON.parse(options.body):null;
+  if(url.endsWith('/count_tokens')&&body.output_config.format){
+   rejected++;assert.equal((await db.ledger.status()).chargedKurus,4176);
+   return new Response(JSON.stringify({error:{message:'Output schema is too complex'}}),{status:400});
+  }
+  return t.fetchImpl(url,options);
+ }});
+ const result=await p.manager('v8-final-report',{},schema,{maxOutputTokens:4096});
+ assert.deepEqual(result.data,{ok:true});assert.equal(rejected,1);
+ const generations=t.calls.filter(c=>c.url.endsWith('/messages'));
+ assert.equal(generations.length,1);assert.equal(generations[0].body.output_config.format,undefined);
+ assert.equal((await db.ledger.status()).chargedKurus,4176+result.accountedKurus);
+});
+
 test('historical scraper caps require exact account and actor ownership and never become active policies',async()=>{
  const {historicalApifyLimits}=await import('../src/bhs/supervised-readiness.mjs');const {actorIds}=await import('../src/bhs/apify-inputs.mjs');let calls=0;
  const out=await historicalApifyLimits({token:'private-test',userId:'ExactAccount',fetchImpl:async(url,options)=>{
@@ -349,6 +366,13 @@ test('an account that cannot fund the full visible contract rejects before any p
  const db=account(4900),t=transport(),p=v8Providers({...db,ledger:stageBudgetLedger(db.ledger,'competition_review')},t);
  await assert.rejects(p.manager('v8-competition-review',{},schema,{maxOutputTokens:4096}),e=>e.code==='budget_limit'&&e.budgetDiagnostic.followingReserveKurus===0);
  assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);assert.equal((await db.ledger.status()).chargedKurus,4900);
+});
+
+test('the compact final audit is never purchased with a truncated output allowance',async()=>{
+ const db=account(4780),t=transport(),p=v8Providers({...db,ledger:stageBudgetLedger(db.ledger,'synthesis')},t);
+ await assert.rejects(p.manager('v8-final-report',{},schema,{maxOutputTokens:2304,plainJson:true,compactReview:true}),e=>e.code==='budget_limit'&&e.budgetDiagnostic.minimumOutputTokens===2304);
+ assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);
+ assert.equal((await db.ledger.status()).chargedKurus,4780);
 });
 
 test('a large counted review can use a complete smaller response instead of reserving an arbitrary 4096-token minimum',async()=>{

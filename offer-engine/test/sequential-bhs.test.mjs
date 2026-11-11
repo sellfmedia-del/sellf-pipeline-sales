@@ -4,15 +4,16 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {localBudget} from './fixtures/local-budget.mjs';
-import {brief,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
+import {brief,plan,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {createSequentialProviders,stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
-import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialPhases,logicalPhases,sequentialContext,stageModelInput,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
-import {balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
+import {completePeerSources,capturedPeerHosts,balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
+import {finalEvidenceCandidates,essentialEvidenceCandidates} from '../src/bhs/final-evidence-review.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
 function modelTransport({mutate,fail}={}){
@@ -27,9 +28,17 @@ function modelTransport({mutate,fail}={}){
   const stage=context.qaStage;events.push({type:manager?'manager':'worker',stage});
   if(fail?.(stage))throw new DOMException('Synthetic provider timeout','TimeoutError');
   const answer=modelAnswer(stage,context);let data=mutate?mutate(stage,answer,context):answer;
-  if(manager&&b.output_config.format.schema.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;data={...rest,verdicts:Object.fromEntries([...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])])};}
-  if(manager&&b.output_config.format.schema.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(b.output_config.format.schema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
-  const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
+  const managerSchema=manager?(b.output_config.format?.schema||JSON.parse(b.system.slice(b.system.lastIndexOf('\n{')+1))):null;
+  if(!manager&&stage==='v8-coverage-plan'&&b.generationConfig.responseJsonSchema.properties.queries.items.type==='object')data={...data,queries:data.queries.map(q=>typeof q==='string'?{query:q,target:'operations'}:q),actorRequests:data.actorRequests.map(r=>({target:'digital',...r}))};
+  if(manager&&stage==='v8-swot-review'&&managerSchema.properties.patches)data={patches:[],additionalFacts:[],...data};
+  if(['v8-final-keyed','v8-final-essential'].includes(stage)){
+   assert.equal(b.thinking.type,'between_tools');
+   assert.ok(b.max_tokens<=512);
+   assert.ok(Object.values(context.findings).every(row=>row[4]===null||row[4].every(i=>context.sources[i]?.[1])));
+   assert.ok(Object.values(context.findings).some(row=>row[4]===null));
+  }else if(managerSchema?.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:managerSchema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
+  if(managerSchema?.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(managerSchema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
+  const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+(b.thinking?.type==='between_tools'?0:128);
   if(manager)return json({model:'claude-sonnet-5-5',stop_reason:'end_turn',usage:{input_tokens:inputTokens,output_tokens:outputTokens},content:[{type:'text',text}]});
   return json({modelVersion:'gemini-3.1-flash-lite',usageMetadata:{promptTokenCount:inputTokens,candidatesTokenCount:outputTokens,thoughtsTokenCount:0,totalTokenCount:inputTokens+outputTokens},candidates:[{finishReason:'STOP',content:{parts:[{text}]}}]});
  };
@@ -41,18 +50,31 @@ function providerFor(db,phase,transport,apify){
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
 test('six logical stages run in order through real PostgreSQL receipts and provider accounting',async()=>{
- const db=await localBudget(),t=modelTransport();
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data,input)=>{
+  if(stage==='v8-competition-review')return {...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']};
+  if(stage==='v8-swot-review')return {...data,decision:'limited',acceptedIds:data.acceptedIds.slice(1),rejectedIds:data.acceptedIds.slice(0,1)};
+  if(stage==='v8-coverage-plan'){
+   assert.ok(input.requiredSwotGaps.includes('strength'));
+   assert.ok(input.evidenceCounts.brand>=4);
+   return {...data,queries:[{target:'brand',query:'redundant already verified brand'},{target:'strength',query:'find missing strength evidence'}]};
+  }
+  return data;
+ }});
  try{
   let synthesis;for(const phase of sequentialPhases.slice(0,-2))synthesis=await run(db,phase,t);
   const report=directAuditResult(brief,synthesis);
   assert.deepEqual(synthesis.supervision.stageOrder,logicalPhases);
   assert.deepEqual(synthesis.supervision.stageDecisions.map(s=>s.phase),logicalPhases.slice(0,5));
+  assert.ok(synthesis.supervision.stageDecisions.every(s=>s.decision==='accepted'));
   assert.equal(report.status,'ready');const limited=directAuditResult(brief,{...synthesis,supervision:{...synthesis.supervision,finalDecision:'limited'}});assert.equal(limited.status,'review');assert.ok(limited.data.supervision.acceptance.issues.includes('manager_final_limited'));
   const drafted=(await db.ledger.get(stageKey(brief,'report_draft','v8'))).value,review=modelAnswer('v8-final-report',{operatorDraft:drafted.reportDraft});assert.throws(()=>applyFinalReview(drafted.reportDraft,{...review,patches:[{...drafted.reportDraft.findings[0],sourceIds:['fabricated']} ]},sequentialContext(brief,drafted)),e=>e.code==='model_output_invalid');
   assert.equal(report.data.researchCoverage.length,24);assert.equal(report.data.competitors.length,3);assert.ok(report.data.findings.length>=12);assert.equal(report.data.quality.checksPassed,true);
   assert.deepEqual(new Set(synthesis.supervision.swot.map(s=>s.quadrant)),new Set(['strength','weakness','opportunity','threat']));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-sector-extract')>t.events.findIndex(e=>e.stage==='v8-brand-review'));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-swot-draft')>t.events.findIndex(e=>e.stage==='v8-competition-review'));
+  assert.equal(t.events.filter(e=>e.stage==='v8-competition-review').length,1);
+  assert.equal(t.events.some(e=>e.query==='redundant already verified brand'),false);
+  assert.equal(t.events.some(e=>e.query==='find missing strength evidence'),true);
   const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);assert.ok(cost.chargedKurus>500);
   const count=t.events.length;
   for(const phase of sequentialPhases.slice(0,-2))await run(db,phase,t);
@@ -316,11 +338,42 @@ test('missing candidate addresses use observed exact-name domains and unresolved
 test('gap research accepts every BHS dimension and still rejects an invented source',async()=>{
  const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');const {assertSchema}=await import('../src/bhs/schema.mjs');
  const prior={packet:packet(),searches:[],facts:[],swot:[],decision:'accepted',coveragePlan:{priorities:[]}};const context=sequentialContext(brief,prior),proof=context.cards[0].id;
+ const baseline={...prior,packet:{...prior.packet,sources:prior.packet.sources.slice(0,-1)}};
  for(const invented of [false,true]){
-  const facts=['financial','operations','funnel','digital','perception','competition'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
-  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async()=>prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
-  if(invented)await assert.rejects(run());else assert.equal((await run()).correctionCandidates.length,6);
+  const facts=['financial_1','operations_3','funnel_4','digital_1','perception_2','competition_2'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
+  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async phase=>phase==='swot'?baseline:prior,providers:{worker:async(_stage,input,schema)=>{assert.equal(input.areas.length,24);if(!invented)assertSchema({facts,unknowns:[]},schema);return {data:{facts,unknowns:[]}};}}});
+  const result=await run();
+  assert.equal(result.correctionCandidates.length,invented?0:6);
+  assert.equal(result.operatorValidation.rejectedCandidates.length,invented?6:0);
  }
+});
+
+test('final review retains reviewed SWOT evidence, scopes complaints, and admits verified-source gap candidates for review',()=>{
+ const known=new Map([
+  ['brand',{url:'https://acme.example/delivery'}],
+  ['complaint',{url:'https://www.sikayetvar.com/acme'}],
+ ]);
+ const context={known,packet:{sources:[]}};
+ const strength={id:'delivery',quadrant:'strength',dimension:'operations',kind:'observation',observation:'Marka teslimat koşullarını yayımlıyor.',sourceIds:['brand'],commercialHypothesis:'Teslimat tercihleri görüşmede doğrulanabilir.'};
+ const repeated={...strength,id:'duplicate',commercialHypothesis:'Teslimat koşulları geliri %88 artırıyor.'};
+ const complaint={id:'packaging',dimension:'operations',kind:'observation',stance:'risk',observation:'Bir müşteri pompa arızası bildirdi.',sourceIds:['complaint'],commercialHypothesis:'Bu sorun %88 müşteri kaybına yol açıyor.'};
+ const correction={id:'returns',topic:'operations_3',kind:'observation',statement:'Marka iade koşullarını yayımlıyor.',sourceIds:['brand'],limitation:'Politika beyanıdır.'};
+ const candidates=finalEvidenceCandidates({findings:[repeated,complaint],swot:{}},[{phase:'swot',decision:'accepted'}],[strength],context,[correction]);
+ assert.equal(candidates.rows.length,3);
+ assert.equal(candidates.rows[0].commercialHypothesis,strength.commercialHypothesis);
+ assert.equal(candidates.approvedQuadrants.get(strength.id),'strength');
+ const scoped=candidates.rows.find(f=>f.id===complaint.id);
+ assert.equal(scoped.dimension,'perception');
+ assert.match(scoped.observation,/^Şikayetvar örneklemi/);
+ assert.doesNotMatch(scoped.commercialHypothesis,/%88/);
+ assert.equal(candidates.areas.get(scoped.id),'perception_2');
+ const gap=candidates.rows.find(f=>f.observation===correction.statement);
+ assert.equal(candidates.areas.get(gap.id),'operations_3');
+ assert.equal(candidates.reviewed.has(gap.id),false);
+ const {focused,retained}=essentialEvidenceCandidates(candidates,context);
+ assert.ok(focused.rows.some(f=>f.id===complaint.id));
+ assert.ok(retained.rows.some(f=>f.id===strength.id));
+ assert.equal(retained.approvedQuadrants.get(strength.id),'strength');
 });
 
 test('Claude can dispatch an observed Actor during brand research before Gemini and retain the result in the stage receipt',async()=>{
@@ -337,4 +390,66 @@ test('Claude can dispatch an observed Actor during brand research before Gemini 
   assert.equal(sawExtraction,true);const receipt=(await db.ledger.get(stageKey(brief,'brand_sources','v8'))).value;
   assert.equal(receipt.actorResults[0].status,'complete');assert.ok(receipt.packet.sources.some(s=>s.provenance?.actor===actor));
  }finally{await db.close();}
+});
+
+test('missing official peer pages use one bounded extraction before any paid peer analysis',async()=>{
+ const evidence={plan,packet:packet(),searches:[]};evidence.packet.sources=evidence.packet.sources.filter(s=>!s.finalUrl.includes('peer'));let calls=0;
+ const read=await completePeerSources(evidence,{extract:async urls=>{calls++;assert.equal(urls.length,3);return{pages:urls.map((url,i)=>({url,text:'Organic '+['Alpha','Beta','Gamma'][i]+" sells organic oat bars in Türkiye through its public product catalogue. Delivery terms and listed prices are disclosed."}))};}});
+ assert.equal(calls,1);assert.equal(capturedPeerHosts(read).size,3);
+ await completePeerSources(read,{extract:()=>assert.fail('Complete sources need no new extraction')});
+ const unavailable=await completePeerSources(evidence,{extract:async()=>({pages:[],failed:[{reason:'unavailable'}]})});assert.equal(capturedPeerHosts(unavailable).size,0);
+});
+
+test('competition extraction never buys a model response without three captured candidate domains',async()=>{
+ const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');
+ const prior={plan,packet:packet(),searches:[],facts:[],decision:'accepted',repairNeeded:true};
+ prior.packet.sources=prior.packet.sources.filter(s=>!s.finalUrl.includes('peer'));
+ for(const phase of ['competition_draft','competition_correction_draft']){
+  const draft=await runSequentialStage({phase,brief,previous:async()=>prior,providers:{worker:()=>assert.fail('Missing source evidence must precede model purchase')}});
+  assert.deepEqual(draft.workerData.facts,[]);
+  assert.ok(draft.workerData.unknowns.length);
+ }
+});
+
+test('targeted competitor reading uses observed product pages before any home navigation',async()=>{
+ const {runSequentialStage,selectPeerProductPages}=await import('../src/bhs/sequential-research.mjs');
+ const {createEvidenceCollector}=await import('../src/bhs/evidence.mjs');
+ const names=plan.entities.filter(e=>e.role==='competitor');
+ const product=names.map(e=>({name:e.name,url:new URL('/product/oat-bar',e.website).href}));
+ const published=product.map(p=>({url:p.url,title:p.name+' oat bar'}));
+ const first=await selectPeerProductPages({brief,plan,focus:'oat bar',searches:[{results:published}],providers:{worker:async()=>({data:{pages:[{name:'Unobserved',url:'https://invented.example/one'},...product]}})}});
+ assert.deepEqual(first.prioritySources,product.map(p=>p.url));
+ const prior={...first,packet:{...packet(),sources:packet().sources.filter(s=>!s.url.includes('peer'))},searches:[],facts:[],decision:'accepted',review:{nextTask:{actorRequests:[]}}};
+ const opened=[];
+ const read=async url=>{opened.push(url);return {status:200,headers:{'content-type':'text/html'},body:Buffer.from('<a href="/unrelated">Unrelated product navigation</a><p>'+('Organic oat bar sold in Türkiye. Package and shelf price information. '.repeat(24))+'</p>')};};
+ const collected=await runSequentialStage({phase:'competition_sources',brief,previous:async()=>prior,providers:{},collect:createEvidenceCollector({read,allowPartialPlan:true,preferProductLinks:true})});
+ assert.deepEqual(opened,product.map(p=>p.url));
+ assert.equal(capturedPeerHosts(collected).size,3);
+ assert.deepEqual(collected.packet.sources.slice(0,2),prior.packet.sources);
+});
+
+test('brand and sector paragraphs cannot crowd competitor product pages out of the model payload',()=>{
+ const base=packet(),old=base.sources.slice(0,2),peers=base.sources.slice(2);
+ const archives=Array.from({length:10},(_,i)=>({...old[0],id:'ev'+(i+20),url:'https://archive'+i+'.example/',finalUrl:'https://archive'+i+'.example/',excerpts:Array.from({length:7},(_,j)=>({text:Array.from({length:38},(_,k)=>`Archive ${i} part ${j} row ${k} original sales and products`).join(' ').slice(0,1800)}))}));
+ const evidence={packet:{...base,sources:[...old,...archives,...peers]},searches:[],peerDiscoveryVersion:'product-v2'};
+ const oldContext=sequentialContext(brief,evidence,{completeSources:false});
+ const ctx=sequentialContext(brief,evidence);
+ const peerProofs=c=>c.cards.filter(card=>peers.some(p=>p.finalUrl===card.url));
+ assert.ok(peerProofs(oldContext).length<peerProofs(ctx).length);
+ assert.ok(peers.every(p=>ctx.cards.some(c=>c.url===p.finalUrl)));
+ const operator=stageModelInput(ctx);
+ assert.ok(peers.every(p=>operator.sources.some(s=>s.url===p.finalUrl&&s.sections.length)));
+ assert.ok(operator.sources.flatMap(s=>s.sections).reduce((n,p)=>n+(p.text?.length||0),0)<=76000);
+ assert.ok(oldContext.cards.every(c=>ctx.known.has(c.id)));
+});
+
+test('portable Claude verdicts keep one schema while rejecting missing or duplicated review decisions',async()=>{
+ const {factReviewSchema,reviewVerdictSchema,normalizeVerdictReview}=await import('../src/bhs/sequential-contracts.mjs');
+ const rows=Array.from({length:120},(_,i)=>({id:'observed fact '+i}));
+ const opts={phase:'competition',portable:true};
+ assert.deepEqual(reviewVerdictSchema(factReviewSchema,rows,opts),reviewVerdictSchema(factReviewSchema,[],opts));
+ const verdicts=rows.map((r,i)=>({id:r.id,decision:i===1?'rejected':'accepted'}));
+ assert.deepEqual(normalizeVerdictReview({verdicts},rows).rejectedIds,[rows[1].id]);
+ assert.throws(()=>normalizeVerdictReview({verdicts:verdicts.slice(1)},rows),e=>e.code==='model_output_invalid');
+ assert.throws(()=>normalizeVerdictReview({verdicts:[verdicts[1],...verdicts.slice(1)]},rows),e=>e.code==='model_output_invalid');
 });
