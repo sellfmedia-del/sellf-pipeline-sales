@@ -59,6 +59,7 @@ const peerVerdictSchema=obj({decisions:arr(obj({id:str(12),verdict:{type:'string
 const peerDecisionResponse=obj({...peerVerdictSchema.properties.decisions.items.properties,reason:str(200)});
 const peerVerdictResponseSchema=obj({decisions:arr(peerDecisionResponse,6)});
 const peerSearchSchema=obj({product:str(100),candidates:arr(str(100),6)});
+const observedNamesSchema=obj({names:arr(str(100),3)});
 const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','quota','provider_timeout','fx_unavailable','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
 async function collectAttempt(run){
@@ -139,7 +140,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
   ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Mevcut ürün ifadesi genişse kaynaklı marka ürünlerinden tek bir somut format seç ve product alanında yaz. Hedef pazarda ürün sayfası bulunan bağımsız markaları öncele. Aynı kullanıma uygun benzer ürünü olan markalar, sertifika veya içerikleri farklı olsa da araştırma adayı olabilir.'}:{})
  },peerSearchSchema,{maxOutputTokens:512}));
- const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
+ const searches=[],hints=[],observedNames=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{3,}/gu)||[];
  const addHint=(name,url)=>{
   const host=researchHost(url);
@@ -157,8 +158,17 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
    if(!name||seen.has(peerGroupKey(name))||!words.some(word=>nameKey((result.title||'')+' '+(result.content||'')).includes(nameKey(word))))continue;
    addHint(name,url);
   }
+  const results=(found.results||[]).map(({title='',content='',url})=>[title,content.slice(0,220),url]);
+  if(results.length){
+   const discovery=await collectAttempt(()=>pool.worker('v8-collection-observed-peer-names',{
+    instruction:'Arama sonuçlarında bu ürünü satan ve adı açıkça geçen bağımsız üretici markalarını yaz. Bir pazaryeri ürün başlığında üretici ve alt marka birlikte geçiyorsa yalnız üreticinin kısa adını yaz. Pazaryeri, perakendeci, ülke dışındaki üretici veya zaten doğrulanan markaları yazma.',
+    product:format,market:market?.[1]||'',excluded:[brief.brandName,...repair.names],results
+   },observedNamesSchema,{maxOutputTokens:256}));
+   const evidence=nameKey(results.flat().join(' '));
+   observedNames.push(...(discovery.data?.names||[]).filter(name=>peerGroupKey(name).length>2&&evidence.includes(peerGroupKey(name))));
+  }
  }
- for(const name of product?(plan.data?.candidates||[]):[]){
+ for(const name of product?[...observedNames,...(plan.data?.candidates||[])]:[]){
   const group=peerGroupKey(name);
   if(!group||seen.has(group))continue;
   seen.add(group);
@@ -385,9 +395,14 @@ async function repairPeerCoverage({brief,brand,providers,context,funding,product
  if(searchCeiling<=chargedKurus)return {decisions:[],entities:[]};
  const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
  const collected=await comparisonResearch(brief,brand,market,providers.withCeiling(searchCeiling),providers,collect,{product,names});
- const entities=collected.peerHints;
- if(!entities.length||!collected.pages.length)return {decisions:[],entities:[]};
- const fresh=sequentialContext(brief,{packet:{...context.packet,entities,sources:canonicalSources(collected.pages)},searches:[],peerDiscoveryVersion:'product-v2'});
+ const excluded=new Set(names.map(peerGroupKey));
+ const newPublishers=new Set(collected.pages.map(page=>researchHost(page.finalUrl)));
+ for(const entity of collected.peerHints)if(newPublishers.has(researchHost(entity.website)))excluded.add(peerGroupKey(entity.name));
+ const entities=[...new Map([...collected.peerHints,...context.input.entities.filter(e=>e.role==='competitor'&&!excluded.has(peerGroupKey(e.name)))].map(entity=>[entity.id,entity])).values()];
+ if(!entities.length)return {decisions:[],entities:[]};
+ const publishers=new Set(entities.map(entity=>researchHost(entity.website)));
+ const earlierPages=context.packet.sources.filter(source=>publishers.has(researchHost(source.finalUrl))&&source.method!=='search-snippet');
+ const fresh=sequentialContext(brief,{packet:{...context.packet,entities,sources:canonicalSources([...earlierPages,...collected.pages])},searches:[],peerDiscoveryVersion:'product-v2'});
  const candidates=peerCandidates(fresh,entities,brand,collected.peerProduct||product,true);
  if(!candidates.length)return {decisions:[],entities:[]};
  for(const [id,card] of fresh.known)context.known.set(id,card);
