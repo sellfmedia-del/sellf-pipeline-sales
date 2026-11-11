@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BudgetError} from '../src/budget/ledger.mjs';
-import {runCollectionFirstStage,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {BudgetError,tariff,tariffReadiness} from '../src/budget/ledger.mjs';
+import {runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {createResearchFx,researchTariff} from '../src/bhs/research-tariff.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {assertSchema} from '../src/bhs/schema.mjs';
@@ -133,7 +134,34 @@ test('identity and infrastructure costs reduce research room before any research
  assert.ok(funding.researchLimitKurus<2500);
  assert.equal(funding.capKurus+funding.finalReserveKurus+funding.finalInfrastructureKurus,5000);
  assert.equal(funding.finalReserveKurus,Object.values(funding.finalQuotes).reduce((sum,quote)=>sum+quote,0));
+ assert.equal(collectionBrandCeiling(5000,400,clock()),funding.capKurus);
  assert.throws(()=>planCollectionFunding({chargedKurus:4500,capKurus:5000},400,clock()),{code:'budget_limit'});
+});
+
+test('BHS keeps its reviewed ceiling after the legacy tariff date and shares a verified FX receipt',async()=>{
+ const db=await localBudget();
+ try{
+  let now=Date.parse('2026-12-12T10:00:00Z'),requests=0;
+  assert.equal(tariffReadiness(now,tariff).paidCallsAllowed,false);
+  assert.equal(tariffReadiness(now,researchTariff).status,'review_due');
+  assert.equal(tariffReadiness(now,researchTariff).paidCallsAllowed,true);
+  assert.equal(collectionBrandCeiling(5000,400,now),collectionBrandCeiling(5000,400,clock()));
+  const getFx=fetchImpl=>createResearchFx({ledger:db.ledger,now:()=>now,fetchImpl});
+  const resolveFx=getFx(async()=>{
+   requests++;
+   if(requests===1)throw new TypeError('fetch failed');
+   return new Response('<Tarih_Date Tarih="11.12.2026"><Currency Kod="USD"><ForexSelling>46.22</ForexSelling></Currency></Tarih_Date>');
+  });
+  const snapshot=await resolveFx();
+  assert.equal(requests,2);
+  assert.equal(snapshot.usdTry,46.22);
+  const prior=await getFx(()=>assert.fail('Same-day receipt must be reused'))();
+  assert.deepEqual(prior,snapshot);
+  now+=86400000;
+  assert.deepEqual(await getFx(async()=>{throw new TypeError('fetch failed');})(),snapshot);
+  await assert.rejects(getFx(async()=>new Response('<Tarih_Date Tarih="13.12.2026"><Currency Kod="USD"><ForexSelling>62</ForexSelling></Currency></Tarih_Date>'))(),{code:'fx_limit'});
+  assert.equal((await db.ledger.status()).chargedKurus,500);
+ }finally{await db.close();}
 });
 
 test('a scoped research ledger shares the same account and cannot claim past its ceiling',async()=>{
