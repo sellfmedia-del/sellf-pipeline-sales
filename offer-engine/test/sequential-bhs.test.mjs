@@ -30,11 +30,11 @@ function modelTransport({mutate,fail}={}){
   const managerSchema=manager?(b.output_config.format?.schema||JSON.parse(b.system.slice(b.system.lastIndexOf('\n{')+1))):null;
   if(!manager&&stage==='v8-coverage-plan'&&b.generationConfig.responseJsonSchema.properties.queries.items.type==='object')data={...data,queries:data.queries.map(q=>typeof q==='string'?{query:q,target:'operations'}:q),actorRequests:data.actorRequests.map(r=>({target:'digital',...r}))};
   if(manager&&stage==='v8-swot-review'&&managerSchema.properties.patches)data={patches:[],additionalFacts:[],...data};
-  if(stage==='v8-final-verdicts'){
+  if(['v8-final-keyed','v8-final-essential'].includes(stage)){
    assert.equal(b.thinking.type,'between_tools');
    assert.ok(b.max_tokens<=512);
-   assert.ok(context.findings.every(row=>row[4]===null||row[4].every(i=>context.sources[i]?.[1])));
-   assert.ok(context.findings.some(row=>row[4]===null));
+   assert.ok(Object.values(context.findings).every(row=>row[4]===null||row[4].every(i=>context.sources[i]?.[1])));
+   assert.ok(Object.values(context.findings).some(row=>row[4]===null));
   }else if(managerSchema?.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:managerSchema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
   if(managerSchema?.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(managerSchema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
   const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;

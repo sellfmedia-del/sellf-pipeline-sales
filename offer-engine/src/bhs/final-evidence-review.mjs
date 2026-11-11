@@ -1,13 +1,16 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {dimensions} from './brief.mjs';
-import {arr,obj} from './sequential-contracts.mjs';
+import {obj} from './sequential-contracts.mjs';
+import {researchHost} from './research-url.mjs';
 
 const quadrants=['strength','weakness','opportunity','threat'];
 const topics={identity:'operations',products:'funnel',business_model:'funnel',market:'operations',scale:'operations',ownership:'operations',sector:'financial',revenue_drivers:'financial',customer_behavior:'funnel',sales_conditions:'funnel',market_risk:'competition',product_overlap:'competition',audience_overlap:'competition',geography:'competition',price:'competition',differentiation:'competition',competitive_risk:'competition'};
 const areaByTopic={revenue_drivers:'financial_4',business_model:'funnel_4',sales_conditions:'funnel_4',ownership:'operations_1',price:'competition_2',product_overlap:'competition_2',differentiation:'competition_2'};
 const questions={financial:'Bu sinyali hangi dönemsel satış, maliyet ve kârlılık verileriyle değerlendirebiliriz?',operations:'Bunun operasyon üzerindeki etkisini hangi süreç veya hizmet verileriyle ölçüyorsunuz?',funnel:'Bu satış veya müşteri sinyali hangi kanal ve dönüşüm verileriyle doğrulanabilir?',digital:'Bu sayfa veya kanal için son ölçüm ve gerçek kullanıcı testleri ne gösteriyor?',perception:'Bu sinyal diğer kanallardaki müşteri geri bildirimi ve yanıt verileriyle örtüşüyor mu?',competition:'Bu rekabet sinyali eşdeğer ürün, kanal ve dönem kıyasına nasıl yansıyor?'};
 const ordinal={type:'number',enum:[0,1,2,3,4,5]};
-export const finalEvidenceSchema=obj({verdicts:arr(ordinal),benchmarks:arr({type:'boolean'})});
+const fields=(rows,prefix,schema)=>obj(Object.fromEntries(rows.map((_,i)=>[prefix+(i+1),schema])));
+export const finalEvidenceSchema=input=>obj({verdicts:fields(input.findings,'f',ordinal),benchmarks:fields(input.comparisons,'b',{type:'boolean'})});
+export const orderedEvidenceVerdicts=(data,input)=>({verdicts:input.findings.map((_,i)=>data.verdicts['f'+(i+1)]),benchmarks:input.comparisons.map((_,i)=>data.benchmarks['b'+(i+1)])});
 
 // Bring forward the claims Claude already reviewed. Each still needs a final
 // verdict. Never let an operator's sparse grouping erase prior source evidence.
@@ -50,6 +53,26 @@ export function finalEvidenceInput(candidates,benchmarks,context){
  });
  const comparisons=benchmarks.map(b=>[b.metric,b.entityId,b.value,b.unit,b.period,cite(b.sourceIds)]);
  return {findings,comparisons,sources};
+}
+
+// Already approved findings keep their original evidence and can be carried
+// into a budget-limited final review. Pay only for the material gaps.
+export function essentialEvidenceCandidates(candidates,context){
+ const {rows,areas,hints,reviewed}=candidates,confirmed=rows.filter(f=>reviewed.has(f.id)),pending=rows.filter(f=>!reviewed.has(f.id));
+ const complaint=pending.find(f=>f.stance==='risk'&&f.sourceIds.some(id=>['sikayetvar.com','trustpilot.com'].includes(researchHost(context.known.get(id)?.url))));
+ const seenDimensions=new Set(confirmed.map(f=>f.dimension));
+ const focused=new Map(),targetHints=new Map(hints),targetAreas=new Map(areas);
+ const add=(f,hint)=>{if(!f)return;focused.set(f.id,f);if(hint)targetHints.set(f.id,hint);};
+ if(complaint&&!seenDimensions.has('perception')){
+  add({...complaint,dimension:'perception'},'weakness');seenDimensions.add('perception');targetAreas.set(complaint.id,'perception_2');
+ }else if(!confirmed.some(f=>hints.get(f.id)==='weakness'))add(complaint||pending.find(f=>f.stance==='risk'),'weakness');
+ for(const {id} of dimensions)if(!seenDimensions.has(id))add(pending.find(f=>f.dimension===id&&areas.has(f.id))||pending.find(f=>f.dimension===id));
+ add(pending.find(f=>areas.get(f.id)==='digital_1'));
+ add(confirmed.find(f=>hints.get(f.id)==='strength')||confirmed.find(f=>f.dimension==='operations'),'strength');
+ add(confirmed.find(f=>hints.get(f.id)==='opportunity'),'opportunity');
+ add(confirmed.find(f=>hints.get(f.id)==='threat'&&f.id.startsWith('reviewed_'))||confirmed.find(f=>hints.get(f.id)==='threat'),'threat');
+ const focusedRows=[...focused.values()];
+ return {focused:{rows:focusedRows,areas:targetAreas,hints:targetHints,reviewed},retained:{rows:[...confirmed.filter(f=>!focused.has(f.id)),...focusedRows],areas:targetAreas,hints:targetHints,reviewed}};
 }
 
 export function finalizeEvidenceVerdicts({draft,candidates,verdicts,benchmarks}){
