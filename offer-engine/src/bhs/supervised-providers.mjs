@@ -43,7 +43,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
  const anthHeaders={'x-api-key':anthropicKey,'anthropic-version':'2023-06-01'};
  const transientStatus=status=>[500,502,503,529].includes(status);
  async function generateRole(role,stage,input,schema,opts={}){
-  const {maxOutputTokens:requestedOutputTokens=4096,reserveForFollowingKurus=receiptVersion==='v8'?0:600,validateData}=opts;
+  const {maxOutputTokens:requestedOutputTokens=4096,reserveForFollowingKurus=receiptVersion==='v8'?0:600,validateData,normalizeData}=opts;
   if(!integer(requestedOutputTokens,1)||requestedOutputTokens>16384)throw new BudgetError('input_budget','BHS çıktı sınırı geçersiz.');
   // Gemini bills/counts hidden reasoning inside maxOutputTokens. Preserve the
   // caller's visible-report allowance and fund bounded LOW reasoning separately
@@ -107,8 +107,11 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   let step=originalStep;
   const validate=value=>{
    if(value.rejectedOutput)throw Object.assign(new BudgetError(value.rejectedOutput,'BHS model yanıtı tamamlanmadı; kullanım kaydı korundu.'),{paidResponseRetained:true});
-   try{assertSchema(value.data,schema);validateData?.(value.data);}catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.paidResponseRetained=true;failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
-   return value;
+   try{
+    const data=normalizeData?normalizeData(value.data):value.data;
+    assertSchema(data,schema);validateData?.(data);
+    return normalizeData?{...value,data}:value;
+   }catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.paidResponseRetained=true;failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
   };
   let saved=await ledger.get(step);
   // An explicit transient HTTP rejection permits one NEW, separately funded

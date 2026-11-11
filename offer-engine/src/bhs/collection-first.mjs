@@ -6,6 +6,7 @@ import {projectExpertReport} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 import {actorInput,observedActorTargets} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
+import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
@@ -281,11 +282,19 @@ function reservedRepairSources(context,index,issues,verifiedPeers){
 }
 
 async function fundedRepair(providers,input,proof,alias){
+ const normalizeData=data=>{
+  if(!Array.isArray(data?.findings))return data;
+  const findings=data.findings.filter(row=>{
+   try{assertSchema(row,reservedRepairSchema.properties.findings.items);return true;}
+   catch{return false;}
+  });
+  return {...data,findings:findings.slice(0,4)};
+ };
  for(const limit of [18,9,4]){
   const chosen=proof.slice(0,limit);
   const sources=chosen.map(card=>[alias(card.id),researchHost(card.url),card.quote]);
   try{
-   const result=await collectAttempt(()=>providers.manager('v8-collection-reserved-gaps',{...input,existing:input.existing.slice(0,limit),sources},reservedRepairSchema,reservedOptions(finalCalls.repair)));
+   const result=await collectAttempt(()=>providers.manager('v8-collection-reserved-gaps',{...input,existing:input.existing.slice(0,limit),sources},reservedRepairSchema,{...reservedOptions(finalCalls.repair),normalizeData}));
    return {...result,proof:chosen};
   }catch(error){
    if(error.code!=='input_budget'||!error.budgetDiagnostic?.maxInputUpperTokens)throw error;

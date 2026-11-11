@@ -77,7 +77,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   const peers=fixturePacket().entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',reason:'Aynı ürün ve hedef pazar.',sourceIds:[context.cards.find(c=>c.url===e.website).id]}));
   const draft=modelAnswer('v8-report-draft',{...input,peerReview:peers});
   const data={peers,benchmarks:[],questions:Object.fromEntries(draft.dimensions.map(d=>[d.id,'Bu bulguyu hangi verilerle doğrulayabiliriz?'])),findings:draft.findings.map(f=>({
-   a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:f.commercialHypothesis,l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
+   a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:'Ticari etkisi iç verilerle ölçülmeli.',l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
   }))};
   const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
    if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
@@ -95,7 +95,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   assert.ok(result.report.dimensions.every(d=>d.findingIds.length<=4));
   const reviews=[];
   let compact;
-  const repaired=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
+  const repaired=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request,_schema,options)=>{
    reviews.push(stage);
    if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
    if(stage==='v8-collection-reserved-report'){
@@ -107,7 +107,9 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
    assert.ok(request.issues.includes('insufficient_dimension_depth'));
    assert.ok(request.issues.includes('swot_threat_incomplete'));
    const findings=compact.findings.filter(f=>f.a[0].startsWith('digital_')||f.w==='threat');
-   return {data:{...compact,findings:[...findings,{...findings[0],o:'Geçersiz kanıtlı örnek.',p:['existing:2']}]},model:'claude-sonnet-5-5'};
+   const normalized=options.normalizeData({findings:[...findings,{...findings[0],o:'Aşırı uzun yorumlu örnek.',h:'x'.repeat(96)},{...findings[0],o:'Geçersiz kanıtlı örnek.',p:['existing:2']}]});
+   assert.ok(!normalized.findings.some(f=>f.o==='Aşırı uzun yorumlu örnek.'));
+   return {data:normalized,model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.deepEqual(reviews,['v8-collection-reserved-peers','v8-collection-reserved-report','v8-collection-reserved-gaps']);
   assert.equal(repaired.supervision.acceptance.passed,true);
