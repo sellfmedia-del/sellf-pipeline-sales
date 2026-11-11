@@ -390,3 +390,14 @@ test('brand and sector paragraphs cannot crowd competitor product pages out of t
  assert.ok(operator.sources.flatMap(s=>s.sections).reduce((n,p)=>n+(p.text?.length||0),0)<=76000);
  assert.ok(oldContext.cards.every(c=>ctx.known.has(c.id)));
 });
+
+test('portable Claude verdicts keep one schema while rejecting missing or duplicated review decisions',async()=>{
+ const {factReviewSchema,reviewVerdictSchema,normalizeVerdictReview}=await import('../src/bhs/sequential-contracts.mjs');
+ const rows=Array.from({length:120},(_,i)=>({id:'observed fact '+i}));
+ const opts={phase:'competition',portable:true};
+ assert.deepEqual(reviewVerdictSchema(factReviewSchema,rows,opts),reviewVerdictSchema(factReviewSchema,[],opts));
+ const verdicts=rows.map((r,i)=>({id:r.id,decision:i===1?'rejected':'accepted'}));
+ assert.deepEqual(normalizeVerdictReview({verdicts},rows).rejectedIds,[rows[1].id]);
+ assert.throws(()=>normalizeVerdictReview({verdicts:verdicts.slice(1)},rows),e=>e.code==='model_output_invalid');
+ assert.throws(()=>normalizeVerdictReview({verdicts:[verdicts[1],...verdicts.slice(1)]},rows),e=>e.code==='model_output_invalid');
+});
