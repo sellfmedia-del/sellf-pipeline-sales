@@ -51,7 +51,7 @@ export async function runSequentialAcceptance(){
   for(phase of (snapshot==='humm-market'?['synthesis']:sequentialPhases.slice(0,-1))){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
    const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:workerInfraReservationKurus});
-   const job={id:'public-qa-'+caseName,phase,briefHash:briefHash(brief)+':proposal-continuity-compact-peer-check'};
+   const job={id:'public-qa-'+caseName,phase,briefHash:briefHash(brief)+':proposal-continuity-observed-peer-check'};
    await runMeteredBhsPhase(job,{phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'},{meter:args=>meteredBhsStage({...args,region:'iad1'})});
   }
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
