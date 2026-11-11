@@ -1,0 +1,64 @@
+import {BudgetError,hash} from '../budget/ledger.mjs';
+import {dimensions} from './brief.mjs';
+import {arr,obj} from './sequential-contracts.mjs';
+
+const quadrants=['strength','weakness','opportunity','threat'];
+const topics={identity:'operations',products:'funnel',business_model:'funnel',market:'operations',scale:'operations',ownership:'operations',sector:'financial',revenue_drivers:'financial',customer_behavior:'funnel',sales_conditions:'funnel',market_risk:'competition',product_overlap:'competition',audience_overlap:'competition',geography:'competition',price:'competition',differentiation:'competition',competitive_risk:'competition'};
+const areaByTopic={revenue_drivers:'financial_4',business_model:'funnel_4',sales_conditions:'funnel_4',ownership:'operations_1',price:'competition_2',product_overlap:'competition_2',differentiation:'competition_2'};
+const questions={financial:'Bu sinyali hangi dönemsel satış, maliyet ve kârlılık verileriyle değerlendirebiliriz?',operations:'Bunun operasyon üzerindeki etkisini hangi süreç veya hizmet verileriyle ölçüyorsunuz?',funnel:'Bu satış veya müşteri sinyali hangi kanal ve dönüşüm verileriyle doğrulanabilir?',digital:'Bu sayfa veya kanal için son ölçüm ve gerçek kullanıcı testleri ne gösteriyor?',perception:'Bu sinyal diğer kanallardaki müşteri geri bildirimi ve yanıt verileriyle örtüşüyor mu?',competition:'Bu rekabet sinyali eşdeğer ürün, kanal ve dönem kıyasına nasıl yansıyor?'};
+const ordinal={type:'number',enum:[0,1,2,3,4,5]};
+export const finalEvidenceSchema=obj({verdicts:arr(ordinal),benchmarks:arr({type:'boolean'})});
+
+// Bring forward the claims Claude already reviewed. Each still needs a final
+// verdict. Never let an operator's sparse grouping erase prior source evidence.
+export function finalEvidenceCandidates(draft,stages,swot,context){
+ const areas=new Map(),hints=new Map(),rows=[];
+ const add=(finding,area,quadrant)=>{
+  if(!finding.sourceIds?.length||finding.sourceIds.some(id=>!context.known.has(id)))return;
+  if(rows.some(f=>f.id===finding.id||f.observation.toLocaleLowerCase('tr')===finding.observation.toLocaleLowerCase('tr')))return;
+  rows.push(finding);
+  if(area)areas.set(finding.id,area);
+  if(quadrant)hints.set(finding.id,quadrant);
+ };
+ for(const f of draft.findings)add(f,null,quadrants.find(q=>draft.swot[q]?.includes(f.id)));
+ for(const {quadrant,...f} of swot)add(f,null,quadrant);
+ for(const stage of stages)for(const f of stage.facts||[]){
+  const dimension=topics[f.topic];if(!dimension||!f.statement?.trim())continue;
+  const substitute=stage.phase==='competition'&&f.topic==='product_overlap';
+  add({id:'reviewed_'+hash({phase:stage.phase,id:f.id}).slice(0,20),dimension,kind:f.kind,stance:'neutral',observation:f.statement,sourceIds:f.sourceIds,commercialHypothesis:substitute?'Aynı kategorideki alternatif ürünler satın alma kararında rekabet yaratabilir; talep etkisi ölçülmedi.':'Ticari etkisi şirketin kendi verileriyle değerlendirilebilir.',limitation:f.limitation||'Kapsam incelenen kaynak ve dönemle sınırlıdır.',question:questions[dimension],priority:'medium'},areaByTopic[f.topic],substitute?'threat':null);
+ }
+ for(const source of context.packet.sources.filter(s=>s.provenance?.actor==='logiover/website-seo-audit-crawler')){
+  const cards=context.cards.filter(c=>c.url===source.finalUrl&&c.scope?.startsWith('Apify structured sample')&&/statusCode: 200\b|h1Count: 1\b/.test(c.quote));
+  const status=cards.find(c=>/statusCode: 200\b/.test(c.quote));if(!status)continue;
+  const heading=cards.find(c=>/h1Count: 1\b/.test(c.quote));
+  add({id:'seo_'+hash(source.finalUrl).slice(0,20),dimension:'digital',kind:'observation',stance:'neutral',observation:new URL(source.finalUrl).hostname+' adresinden başlatılan Apify taramasında dönen HTML HTTP 200 olarak kaydedildi'+(heading?' ve bir H1 başlığı içeriyordu.':'.'),sourceIds:[...new Set([status.id,heading?.id].filter(Boolean))],commercialHypothesis:'Bu sinyaller sayfa düzeyinde teknik SEO kontrolüne başlangıç sağlar.',limitation:'Taramaya dönen statik HTML örneğidir. Türkiye oturumu, hız, mobil deneyim ve tüm sitenin durumu doğrulanmadı.',question:questions.digital,priority:'medium'},'digital_1');
+ }
+ return {rows,areas,hints};
+}
+
+export function finalEvidenceInput(candidates,benchmarks,context){
+ const sources=[],numbers=new Map();
+ const cite=ids=>[...new Set(ids.flatMap(id=>context.proofGroups.get(id)||[id]))].flatMap(id=>{
+  const c=context.known.get(id);if(!c)return [];
+  if(!numbers.has(id)){numbers.set(id,sources.length);sources.push([c.url,c.quote]);}
+  return [numbers.get(id)];
+ });
+ const findings=candidates.rows.map(f=>[f.dimension,f.kind,f.observation,f.limitation,cite(f.sourceIds),candidates.hints.get(f.id)||null,...(f.id.startsWith('reviewed_')&&!candidates.hints.has(f.id)?[]:[f.commercialHypothesis])]);
+ const comparisons=benchmarks.map(b=>[b.metric,b.entityId,b.value,b.unit,b.period,cite(b.sourceIds)]);
+ return {findings,comparisons,sources};
+}
+
+export function finalizeEvidenceVerdicts({draft,candidates,verdicts,benchmarks}){
+ const {rows,areas}=candidates;
+ if(verdicts.length!==rows.length||benchmarks.length!==draft.benchmarks.length)throw new BudgetError('model_output_invalid','Son denetim her bulgu ve kıyas için ayrı karar gerektirir.');
+ const accepted=rows.filter((_,i)=>verdicts[i]!==0),swot=Object.fromEntries(quadrants.map((q,i)=>[q,rows.filter((_,j)=>verdicts[j]===i+2).map(f=>f.id)]));
+ const coverageChanges=[];
+ for(const key of new Set(areas.values())){
+  const additions=accepted.filter(f=>areas.get(f.id)===key).map(f=>f.id);if(!additions.length)continue;
+  const existing=draft.coverage[key];
+  coverageChanges.push({key,value:{...existing,status:existing.status==='observed'?'observed':'partial',findingIds:[...new Set([...existing.findingIds,...additions])]}});
+ }
+ const reviewedDimensions=dimensions.map(({id})=>({id,score:null,findingIds:accepted.filter(f=>f.dimension===id).map(f=>f.id),comparisonFindingIds:[],bandReason:'Kamuya açık kanıtlarla sınırlı. Ölçülmeyen iç göstergeler puanlanmadı.'}));
+ const decision=accepted.length>=12&&reviewedDimensions.every(d=>d.findingIds.length)&&Object.values(swot).every(ids=>ids.length)?'accepted':'limited';
+ return {acceptedIds:accepted.map(f=>f.id),rejectedIds:rows.filter((_,i)=>verdicts[i]===0).map(f=>f.id),patches:[],rejectedPeerIds:[],dimensions:reviewedDimensions,coverageChanges,approvedBenchmarkIndices:benchmarks.flatMap((v,i)=>v?[i]:[]),swot,decision,notes:'Her bulgu özgün kaynakla denetlendi; doğrudan rakipler onaylı rekabet aşamasından taşındı.'};
+}
