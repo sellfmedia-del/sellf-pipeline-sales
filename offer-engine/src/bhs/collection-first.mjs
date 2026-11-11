@@ -119,15 +119,16 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect){
 // Research receipts remain intact. This packet is a compact index for Claude,
 // with each entry pointing back to a read paragraph, not a replacement archive.
 function proofIndex(context,inventory){
- const indexed=inventory.flatMap(i=>i.observations||[]).filter(row=>row.sourceIds?.some(id=>context.known.has(id)));
- const bySource=new Map();
- for(const row of indexed)for(const id of row.sourceIds){
-  if(!context.known.has(id))continue;
-  const source=context.known.get(id);
-  if(!bySource.has(source.url))bySource.set(source.url,[]);
-  bySource.get(source.url).push([id,row.area,row.text]);
+ const entries=new Map();
+ for(const row of inventory.flatMap(i=>i.observations||[])){
+  const ids=row.sourceIds.filter(id=>context.known.has(id));
+  if(!ids.length)continue;
+  const key=JSON.stringify([row.area,row.text.trim()]);
+  const existing=entries.get(key);
+  if(existing)for(const id of ids)existing[2].add(id);
+  else entries.set(key,[row.area,row.text,new Set(ids)]);
  }
- return [...bySource].map(([url,rows])=>[url,rows]);
+ return [...entries.values()].map(([area,text,ids])=>[area,text,[...ids]]);
 }
 
 function comparisonEntities(context,inventory){
@@ -225,16 +226,18 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  const entities=comparisonEntities(context,inventory);
  context.input.entities=entities;
  const index=proofIndex(context,inventory);
- const selectedIds=unique(index.flatMap(([,rows])=>rows.map(r=>r[0])));
- const originalQuotes=Object.fromEntries(selectedIds.map(id=>[id,context.known.get(id).quote]));
- const indexedUrls=new Set(index.map(([url])=>url));
- const peerHosts=new Set(entities.filter(e=>e.role==='competitor').map(e=>researchHost(e.website)));
+ const selectedIds=unique(index.flatMap(([, ,ids])=>ids));
+ const originalQuotes=Object.fromEntries(selectedIds.map(id=>{const card=context.known.get(id);return [id,[researchHost(card.url),card.quote]];}));
+ const indexedUrls=new Set(selectedIds.map(id=>context.known.get(id).url));
+ const focused=await previous(scrapeStages[0]);
+ const peerHosts=new Set((focused.peerHints||[]).map(e=>researchHost(e.website)));
  const unindexedSources=context.input.sources.filter(source=>source.sections.length&&(!indexedUrls.has(source.url)||peerHosts.has(researchHost(source.url)))).map(source=>{
-  const sections=source.sections.slice(0,peerHosts.has(researchHost(source.url))?3:1);
-  return [source.url,source.title,source.method,sections.map(s=>{const id=s.proofIds[0];return [id,context.known.get(id).quote];})];
+  const host=researchHost(source.url),peer=peerHosts.has(host);
+  const sections=source.sections.slice(0,peer?3:1);
+  return [peer?source.url:host,source.method,sections.map(s=>{const id=s.proofIds[0];return [id,context.known.get(id).quote];})];
  });
  const completion=await providers.manager('v8-collection-final-bhs',{
-  instruction:'Sellf için Türkçe ön BHS hazırla. Marka kimliği onaylandıktan sonra kanıtlar toplandı. Şimdi ilk kez değerlendir. Kesin çürütülen iddiayı kullanma. Belirsiz bilgiyi ölçülmüş gerçek olarak yazma; l alanında sınırını açıkla. Ham arşiv korunur. Önce altı boyuta dengeli bak, sonra önem sırasına göre her alan ve SWOT kolu için en fazla dört destekli bulgu seç. Aynı bulguyu çoğaltma; birden fazla alana uyuyorsa a içinde alan kimliklerini birlikte ver. Kısa JSON sözleşmesi: a alan kimlikleri (ana alan önce), o somut gözlem, p özgün proofId dizisi, k gözlem veya çıkarım türü, h kendi ticari yorumun, l kanıtın sınırı, w SWOT yönü veya none. o en fazla 150, h ve l en fazla 90 karakter olsun. questions alanında boyut başına bir somut görüşme sorusu ver. Aynı ürünü aynı pazarda sunan üç doğrudan rakibi kendi ürün kaynağıyla destekle. Kaynaksız sayı ve performans üretme. Açıklamayı tekrar etme ve tam JSON ile bitir.',
+  instruction:'Sellf için Türkçe ön BHS hazırla. Marka kimliği onaylandıktan sonra kanıtlar toplandı. Şimdi ilk kez değerlendir. index satırları [alan, gözlem, proofId listesi], originalQuotes değerleri [yayıncı, özgün alıntı] şeklindedir. Kesin çürütülen iddiayı kullanma. Belirsiz bilgiyi ölçülmüş gerçek olarak yazma; l alanında sınırını açıkla. Ham arşiv korunur. Önce altı boyuta dengeli bak, sonra önem sırasına göre her alan ve SWOT kolu için en fazla dört destekli bulgu seç. Aynı bulguyu çoğaltma; birden fazla alana uyuyorsa a içinde alan kimliklerini birlikte ver. Kısa JSON sözleşmesi: a alan kimlikleri (ana alan önce), o somut gözlem, p özgün proofId dizisi, k gözlem veya çıkarım türü, h kendi ticari yorumun, l kanıtın sınırı, w SWOT yönü veya none. o en fazla 150, h ve l en fazla 90 karakter olsun. questions alanında boyut başına bir somut görüşme sorusu ver. Aynı ürünü aynı pazarda sunan üç doğrudan rakibi kendi ürün kaynağıyla destekle. Kaynaksız sayı ve performans üretme. Açıklamayı tekrar etme ve tam JSON ile bitir.',
   brief,entities,areas:methodologyAreas,approvedIdentity:brand.facts,index,originalQuotes,unindexedSources
  },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3500,compactReview:true,lowEffort:true});
  const data=expandCollectedReport(completion.data);

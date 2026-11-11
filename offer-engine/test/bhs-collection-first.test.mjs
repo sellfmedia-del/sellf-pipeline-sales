@@ -62,8 +62,9 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   }))};
   const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
    assert.equal(stage,'v8-collection-final-bhs');
-   assert.ok(request.unindexedSources.some(row=>row[0]==='https://public.example/a'));
-   assert.ok(request.unindexedSources.some(row=>row[0]==='https://public.example/b'));
+   const publicQuotes=request.unindexedSources.filter(row=>row[0]==='public.example').flatMap(row=>row[2].map(([,quote])=>quote));
+   assert.ok(publicQuotes.some(quote=>quote.includes('increase')));
+   assert.ok(publicQuotes.some(quote=>quote.includes('decrease')));
    return {data,model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.equal(result.supervision.reviewMode,'collection-first');
