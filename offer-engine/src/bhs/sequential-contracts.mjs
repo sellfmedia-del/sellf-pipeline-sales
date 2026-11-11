@@ -161,7 +161,7 @@ export function acceptedRows(rows,review){
  if([...ids].some(id=>!accepted.has(id)&&!review.rejectedIds.includes(id)))throw new BudgetError('model_output_invalid','Yönetici bütün aday bulguları değerlendirmeli.');
  return rows.filter(f=>accepted.has(f.id));
 }
-export function qualityAcceptance(report,{stages,swot,budget,finalDecision='accepted'}){
+export function qualityAcceptance(report,{stages,swot,budget,finalDecision='accepted',reviewMode}){
  const issues=[],sourceIds=new Set((report.sources||[]).filter(s=>s.verification?.status==='quote_matched').map(s=>s.id));
  const backed=f=>f.sourceIds?.length&&f.sourceIds.every(id=>sourceIds.has(id));
  const findings=(report.findings||[]).filter(f=>f.kind!=='brief'&&backed(f));
@@ -173,7 +173,9 @@ export function qualityAcceptance(report,{stages,swot,budget,finalDecision='acce
  if((report.researchCoverage||[]).length!==methodologyAreas.length)issues.push('methodology_fields_incomplete');
  if((report.findings||[]).some(f=>!backed(f)))issues.push('unsupported_finding');
  for(const quadrant of ['strength','weakness','opportunity','threat'])if(!swot.some(f=>f.quadrant===quadrant&&backed(f)))issues.push('swot_'+quadrant+'_incomplete');
- if(stages.length!==5||stages.some(s=>s.decision!=='accepted')||stages.map(s=>s.phase).join('|')!==logicalPhases.slice(0,5).join('|'))issues.push('stage_understanding_incomplete');
+ const expectedStages=reviewMode==='collection-first'?['brand','collection']:logicalPhases.slice(0,5);
+ if(stages.length!==expectedStages.length||stages.some((s,i)=>s.decision!=='accepted'||s.phase!==expectedStages[i]))issues.push('stage_understanding_incomplete');
  if(!Number.isSafeInteger(budget?.chargedKurus)||budget.chargedKurus<500||budget.chargedKurus>5000||budget.capKurus!==5000)issues.push('cost_not_verified');
  return {passed:issues.length===0,issues,findingCount:findings.length,directCompetitors:(report.competitors||[]).length,dimensions:new Set(findings.map(f=>f.dimension)).size,coverage:(report.researchCoverage||[]).length};
 }
+

@@ -8,6 +8,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,swotReviewSchema,coverageSchema,targetedCoverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 import {finalEvidenceSchema,finalEvidenceCandidates,finalEvidenceInput,finalizeEvidenceVerdicts,orderedEvidenceVerdicts,essentialEvidenceCandidates} from './final-evidence-review.mjs';
+import {runCollectionFirstStage} from './collection-first.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000});
@@ -240,9 +241,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  const index=sequentialPhases.indexOf(phase),prior=index?await previous(sequentialPhases[index-1]):null;
  const swotGapResearch=phase==='coverage_plan'&&prior?.phase==='swot'&&prior.decision==='limited'&&prior.review&&Array.isArray(prior.swot);
  if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
+ const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
+ if(prior?.collectionFirst&&index>sequentialPhases.indexOf('brand'))return runCollectionFirstStage({phase,brief,providers,previous,collect,finish});
  const stages=[];for(const name of logicalPhases.filter(p=>sequentialPhases.indexOf(p==='sector'?'sector_validation':p)<index))stages.push({...await previous(name==='sector'?'sector_validation':name),phase:name});
  const approved=stages.flatMap(s=>s.facts||[]);
- const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
  const repair=phase.match(/^(brand|sector|competition|swot)_correction_(sources|draft)$/);
  if(repair){
   const family=repair[1];
@@ -284,13 +286,13 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
   const packet=providers.checkpoint?await providers.checkpoint('identity-input',brief,read):await read();
   const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true}),...await actorPlanning(providers,brief,{packet,searches:[]})},taskSchema,{maxOutputTokens:2048});
-  return finish({packet,searches:[],plan,managerPlan:task.data,peerDiscoveryVersion:'product-v2'});
+  return finish({packet,searches:[],plan,managerPlan:task.data,peerDiscoveryVersion:'product-v2',...(providers.collectionFirst?{collectionFirst:true}:{})});
  }
  if(phase==='brand_sources'){
   const queries=[...(prior.managerPlan.queries.length?prior.managerPlan.queries:[`site:${researchHost(brief.website)} ${queryBrand(brief)} products about company target market ownership`]),queryBrand(brief)+' official corporate company about manufacturing sales markets'];
   const searches=await search(providers,queries);let evidence=await enrichReading(brief,prior,prior.plan,searches,7,collect);
   if(!evidence.packet.sources.some(s=>researchHost(s.finalUrl)===researchHost(brief.website)&&s.excerpts.some(e=>e.text.length>100))&&providers.extract)evidence={...evidence,packet:mergeExtractedEvidence(evidence.packet,await providers.extract([brief.website]))};
-  evidence=await enrichStageActors(brief,evidence,prior.managerPlan.actorRequests,providers);
+  if(!prior.collectionFirst)evidence=await enrichStageActors(brief,evidence,prior.managerPlan.actorRequests,providers);
   return finish({...prior,...evidence});
  }
  if(phase==='brand_draft'){

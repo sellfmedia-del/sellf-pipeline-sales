@@ -63,7 +63,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url)),fx:fxSnapshot,creditsUpper:2,accountedKurus:consumedSearch(2,fxSnapshot.usdTry)};
    },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
-  async search(query,{depth='advanced',maxResults=6}={}){
+  async search(query,{depth='advanced',maxResults=6,retainRaw=false}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');
    if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');
@@ -73,7 +73,7 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const result=await readJson('https://api.tavily.com/search',input,{Authorization:'Bearer '+tavilyKey},25000);
     if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');
     const credits=depth==='basic'?1:2;
-    return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
+    return {query,results:(result.results||[]).slice(0,maxResults).filter(x=>typeof x.url==='string'&&/^https?:\/\//.test(x.url)).map(x=>({url:x.url,title:String(x.title||'').slice(0,250),content:String(x.content||'').slice(0,1800)})),...(retainRaw?{rawResults:result.results||[]}:{}),fx:fxSnapshot,credits,accountedKurus:consumedSearch(credits,fxSnapshot.usdTry)};
    },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
   async generate(stage,input,schema,{model=defaultModel,maxOutputTokens=4096,minOutputTokens=maxOutputTokens,reserveForFollowingKurus=0,thinkingLevel='LOW',jsonMode=false,image,logoFallback=false,recoveryAttempt=false,modelFallback=false,recoveryDeadline,validateData}={}){

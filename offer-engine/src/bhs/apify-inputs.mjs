@@ -20,8 +20,8 @@ export function observedActorTargets(context){
  for(const s of context.searches||[])for(const r of s.results||[])urls.add(researchUrl(r.url));
  return {urls,official};
 }
-export function actorInput(request,context){
- const {actor}=request,url=researchUrl(request.url),known=observedActorTargets(context);
+export function actorInput(request,context,known=observedActorTargets(context)){
+ const {actor}=request,url=researchUrl(request.url);
  if(!actorIds[actor]||!url||!known.urls.has(url))throw new BudgetError('actor_source_unverified','Aktör için gözlemlenmiş kaynak URLsi gerekli.');
  const u=new URL(url),host=researchHost(url),parts=u.pathname.split('/').filter(Boolean);
  const locale=()=>{const g=context.geo;if(!g||request.countryCode!==g.countryCode||request.language!==g.language||!['TR','GB','US','DE','FR','IT','ES','NL'].includes(g.countryCode))throw new BudgetError('actor_locale_unverified','Aktör için doğrulanmış hedef ülke ve dil gerekli.');return g;};

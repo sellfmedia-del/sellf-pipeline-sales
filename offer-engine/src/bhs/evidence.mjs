@@ -72,7 +72,7 @@ export function mergeExtractedEvidence(packet,extraction={}){
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000}={}){
- return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false}={}){
+ return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false,archivePages}={}){
   if(!Number.isSafeInteger(maxSourceChars)||maxSourceChars<180000||maxSourceChars>360000)throw Error('Kanıt taşıma sınırı geçersiz.');
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
@@ -119,12 +119,15 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    if(nextChars>maxSourceChars){unavailable.push({url:page.url,reason:'source_packet_capacity'});return false;}
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
+  const archived=[];
+  const archive=({url,finalUrl,title,text,method,technicalSignals})=>{if(archivePages)archived.push({url,finalUrl,title,text,method,technicalSignals});};
   while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
    const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:capacity)-sources.length-renderCandidates.length));
    const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:result.reason});continue;}
     const page=result.page;
+    archive(page);
     if(page.method==='html'&&((page.text.length<1200&&entityHosts.has(host(page.finalUrl)))||/kap\.org\.tr$/.test(host(page.finalUrl)))){if(!renderCandidates.some(p=>p.finalUrl===page.finalUrl))renderCandidates.push({...page,requiresRender:/kap\.org\.tr$/.test(host(page.finalUrl))});}
     else keep(page);
     const pageHost=host(page.finalUrl);
@@ -134,10 +137,11 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   if(renderCandidates.length&&clock()<deadline-3000){
    const renderPages=render||(await import('./render-source.mjs')).renderEvidencePages;
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
-   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)&&sources.length<capacity)keep({...page,method:'rendered'});});
+   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)){const rendered={...page,method:'rendered'};archive(rendered);if(sources.length<capacity)keep(rendered);}});
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<capacity)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<capacity)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',...(maxSourceChars>180000?{evidenceTransportVersion:'sequential-v8-wide'}:{}),briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};
+  if(archivePages&&archived.length)await archivePages(archived);
   onDiagnostic?.({sourceCount:sources.length,failures:unavailable.map(x=>({host:x.url?host(x.url)||null:null,reason:x.reason}))});
   return assertEvidencePacket(packet,brief);
  };

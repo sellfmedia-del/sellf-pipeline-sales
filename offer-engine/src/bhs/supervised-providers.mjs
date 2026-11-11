@@ -50,7 +50,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // A result allowance is a maximum, not a mandatory pre-purchase. Keep the
   // complete schema and semantic gates even when a terse review is affordable.
   const compactReview=receiptVersion==='v8'&&role==='manager'&&opts.compactReview===true;
-  const minimumFundedOutput=receiptVersion==='v8'&&role==='manager'&&!compactReview?Math.min(requestedOutputTokens,stage==='v8-final-report'?2048:1024):requestedOutputTokens;
+  const minimumFundedOutput=receiptVersion==='v8'&&role==='manager'?(opts.minimumOutputTokens??(compactReview?requestedOutputTokens:Math.min(requestedOutputTokens,stage==='v8-final-report'?2048:1024))):requestedOutputTokens;
+  if(!integer(minimumFundedOutput,1)||minimumFundedOutput>requestedOutputTokens)throw new BudgetError('input_budget','BHS asgari çıktı sınırı geçersiz.');
   const reasoningAllowance=receiptVersion==='v8'&&!compactReview?(role==='fallbackWorker'?0:role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
   let maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;
@@ -150,7 +151,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const tokens=anthropicRole?count.input_tokens:count.totalTokens;
   if(!integer(tokens,1))throw new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.');
   const upper=Math.ceil(tokens*1.2)+4096;
-  const limit=tariff.capKurus-reserveForFollowingKurus,status=await ledger.status();
+  const status=await ledger.status(),limit=Math.min(tariff.capKurus,status.capKurus)-reserveForFollowingKurus;
   if(!integer(reserveForFollowingKurus)||limit<0)throw new BudgetError('budget_limit','BHS çağrı bütçesi geçersiz.');
   const reservation=amount=>ledger.quoteReservation?ledger.quoteReservation(amount):amount;
   const fits=output=>status.chargedKurus+reservation(quoteSupervised(role,upper,output,now()))<=limit;

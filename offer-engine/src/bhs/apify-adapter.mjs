@@ -63,7 +63,7 @@ function recordsForEvidence(actor,rows,target,context){
  }
  return result;
 }
-export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
  let policies;const metadata=new Map();
  async function json(path,{body,maxBytes=1000000,deadline=Infinity}={}){
   const remaining=Math.min(12000,deadline-now());if(remaining<=0)throw new BudgetError('actor_time_limit','Apify aşamasının süre sınırına ulaşıldı.');
@@ -133,9 +133,10 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems,{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
     const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];
-    return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
+    return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),...(retainDataset?{datasetRows:rows}:{}),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
    });
-   return {...output,status:'complete',runReservedKurus:start.reservedKurus};
+   const {datasetRows,...evidence}=output;
+   return {...evidence,status:'complete',runReservedKurus:start.reservedKurus};
   },
   mergeEvidence(packet,results){
    const out=structuredClone(packet);
