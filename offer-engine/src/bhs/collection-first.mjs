@@ -45,6 +45,9 @@ const reservedReportSchema=obj({
  questions:compactReportSchema.properties.questions,
  benchmarks:arr(finalSchema.properties.benchmarks.items,6)
 });
+// The paid token envelope caps output size. The final report may retain
+// additional valid rows and citations even when Claude exceeds its targets.
+const reservedReportResponseSchema=obj({...reservedReportSchema.properties,findings:arr(findingSchema)});
 const reservedRepairSchema=obj({findings:arr(reservedReportSchema.properties.findings.items,4)});
 const peerVerdictSchema=obj({decisions:arr(obj({id:str(12),verdict:{type:'string',enum:['direct','benchmark','unconfirmed']},proof:str(16),reason:str(95)}),6)});
 const peerSearchSchema=obj({queries:arr(obj({name:str(100),query:str(350)}),4)});
@@ -196,6 +199,15 @@ function reservedOptions(call,reserveForFollowingKurus=0){
  return {maxOutputTokens:call.output,minimumOutputTokens:call.output,maxInputUpperTokens:call.input,reserveForFollowingKurus,compactReview:true,lowEffort:true};
 }
 
+function normalizeFindingRows(data,findingsSchema){
+ if(!Array.isArray(data?.findings))return data;
+ const findings=data.findings.filter(row=>{
+  try{assertSchema(row,findingsSchema.items);return true;}
+  catch{return false;}
+ });
+ return {...data,findings:findingsSchema.maxItems===undefined?findings:findings.slice(0,findingsSchema.maxItems)};
+}
+
 async function reviewCollectedPeers(brief,providers,funding,candidates,alias){
  if(!candidates.length)return [];
  const peers=candidates.map(({entity,cards},i)=>({id:'r'+(i+1),entity,cards}));
@@ -217,7 +229,7 @@ async function reviewCollectedPeers(brief,providers,funding,candidates,alias){
 async function fundedReport(providers,funding,base,observations,quotes,sourceSamples){
  // Shorten only the model request on an unbilled input-size rejection. Raw
  // evidence, observations and all source receipts stay in the archive.
- const options=reservedOptions(finalCalls.report,funding.finalQuotes.repair);
+ const options={...reservedOptions(finalCalls.report,funding.finalQuotes.repair),responseSchema:reservedReportResponseSchema,normalizeData:data=>normalizeFindingRows(data,reservedReportResponseSchema.properties.findings)};
  const variants=[{samples:45,keep:observations.length},{samples:20,keep:observations.length},{samples:10,keep:Math.min(observations.length,95)},{samples:0,keep:Math.min(observations.length,55)}];
  let lastError;
  for(const variant of variants){
@@ -282,14 +294,7 @@ function reservedRepairSources(context,index,issues,verifiedPeers){
 }
 
 async function fundedRepair(providers,input,proof,alias){
- const normalizeData=data=>{
-  if(!Array.isArray(data?.findings))return data;
-  const findings=data.findings.filter(row=>{
-   try{assertSchema(row,reservedRepairSchema.properties.findings.items);return true;}
-   catch{return false;}
-  });
-  return {...data,findings:findings.slice(0,4)};
- };
+ const normalizeData=data=>normalizeFindingRows(data,reservedRepairSchema.properties.findings);
  for(const limit of [18,9,4]){
   const chosen=proof.slice(0,limit);
   const sources=chosen.map(card=>[alias(card.id),researchHost(card.url),card.quote]);
@@ -403,7 +408,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3000,compactReview:true,lowEffort:true});
  const unalias=ids=>ids.map(id=>byAlias.get(id)).filter(Boolean);
  const stages=[{phase:'brand',decision:brand.decision},{phase:'collection',decision:'accepted'}];
- if(funding.finalQuotes)context.input.entities=distinctPeerEntities(entities,peers);
+ if(funding.finalQuotes){
+  const productScope=brand.facts.filter(fact=>fact.topic==='products').map(fact=>fact.statement).join(' ');
+  context.input.entities=distinctPeerEntities(entities,peers).map(entity=>entity.role==='competitor'&&productScope?{...entity,scope:productScope}:entity);
+ }
  const project=async reply=>{
   const data=expandCollectedReport({...reply,findings:reply.findings.map(f=>({...f,p:unalias(f.p)})),peers:reply.peers.map(p=>({...p,sourceIds:unalias(p.sourceIds)})),benchmarks:reply.benchmarks.map(b=>({...b,sourceIds:unalias(b.sourceIds)}))});
   const report=requireGroundedResearch(projectExpertReport(data,context));

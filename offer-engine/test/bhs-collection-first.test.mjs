@@ -4,6 +4,7 @@ import {BudgetError} from '../src/budget/ledger.mjs';
 import {runCollectionFirstStage,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
+import {assertSchema} from '../src/bhs/schema.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,plan,packet,modelAnswer} from './fixtures/sequential.mjs';
 import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
@@ -23,7 +24,10 @@ const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,p
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
  const db=await localBudget(),seen=new Map();
- const brand={packet:fixturePacket(),plan,decision:'accepted',facts:[]};
+ const brand={packet:fixturePacket(),plan,decision:'accepted',facts:[
+  {topic:'products',kind:'observation',statement:'Sertifikalı formülasyonlar sunulur.',sourceIds:[]},
+  {topic:'products',kind:'observation',statement:'Organik yulaf atıştırmalık barları satılır.',sourceIds:[]}
+ ]};
  seen.set('brand',brand);
  const previous=async phase=>seen.get(phase);
  const phases=sequentialPhases.slice(sequentialPhases.indexOf('brand')+1,sequentialPhases.indexOf('synthesis'));
@@ -79,7 +83,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   const data={peers,benchmarks:[],questions:Object.fromEntries(draft.dimensions.map(d=>[d.id,'Bu bulguyu hangi verilerle doğrulayabiliriz?'])),findings:draft.findings.map(f=>({
    a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:'Ticari etkisi iç verilerle ölçülmeli.',l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
   }))};
-  const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
+  const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request,_schema,options)=>{
    if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
    assert.equal(stage,'v8-collection-reserved-report');
    const publicQuotes=request.unindexedSources.filter(row=>row[0]==='public.example').flatMap(row=>row[2].map(([,quote])=>quote));
@@ -87,7 +91,13 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
    assert.ok(publicQuotes.some(quote=>quote.includes('decrease')));
    const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
    const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
-    return {data:{...data,findings:data.findings.map(f=>({...f,p:remap(f.p)}))},model:'claude-sonnet-5-5'};
+    const report={questions:data.questions,benchmarks:data.benchmarks,findings:data.findings.map(f=>({...f,p:remap(f.p)}))};
+    const sample={...report.findings[0],p:Array(4).fill(report.findings[0].p[0])};
+    const normalized=options.normalizeData({...report,findings:[...Array(21).fill(sample),{...sample,k:'invalid'},report.findings.find(f=>f.w==='threat')]});
+    assertSchema(normalized,options.responseSchema);
+    assert.equal(normalized.findings.length,22);
+    assert.equal(normalized.findings.at(-1).w,'threat');
+    return {data:report,model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.equal(result.supervision.reviewMode,'collection-first');
   assert.equal(result.supervision.acceptance.passed,true);
