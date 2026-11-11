@@ -15,7 +15,7 @@ const caseName=process.env.OFFER_BHS_QA_CASE;
 const allowed=sequentialQaRequested;
 export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
- const selected={tadim_final:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
+ const selected={est:{brandName:'Eyüp Sabri Tuncer',website:'https://www.eyupsabrituncer.com/',segment:'corporate'},tadim_final:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
  const brief=snapshotBrief({...selected,goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
@@ -45,7 +45,7 @@ export async function runSequentialAcceptance(){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
    const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:500});
    await runBoundedStage({phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
-   await save();
+   console.info(JSON.stringify({event:'bhs_fresh_qa_phase',phase,cost:await db.ledger.status()}));
   }
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:caseName,status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
