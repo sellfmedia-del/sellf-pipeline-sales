@@ -280,6 +280,20 @@ function reservedRepairSources(context,index,issues,verifiedPeers){
  return [...new Set([...peerEvidence,...riskByPublisher,...sources])];
 }
 
+async function fundedRepair(providers,input,proof,alias){
+ for(const limit of [18,9,4]){
+  const chosen=proof.slice(0,limit);
+  const sources=chosen.map(card=>[alias(card.id),researchHost(card.url),card.quote]);
+  try{
+   const result=await collectAttempt(()=>providers.manager('v8-collection-reserved-gaps',{...input,existing:input.existing.slice(0,limit),sources},reservedRepairSchema,reservedOptions(finalCalls.repair)));
+   return {...result,proof:chosen};
+  }catch(error){
+   if(error.code!=='input_budget'||!error.budgetDiagnostic?.maxInputUpperTokens)throw error;
+  }
+ }
+ return {unavailable:true,reason:'input_budget'};
+}
+
 function distinctPeerEntities(entities,peers){
  const groups=new Set(),duplicates=new Set();
  for(const peer of peers.filter(peer=>peer.relationship==='direct')){
@@ -398,16 +412,16 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const verifiedPeers=(peers||[]).filter(peer=>result.report.competitors.some(entity=>entity.id===peer.entityId));
   const proof=funding.finalQuotes?reservedRepairSources(context,index,issues,verifiedPeers):repairSources(context,entities,index,issues);
   if(proof.length){
-   const focused=funding.finalQuotes?await collectAttempt(()=>providers.manager('v8-collection-reserved-gaps',{
+   const focused=funding.finalQuotes?await fundedRepair(providers,{
     instruction:'Listelenen eksikleri tamamlayan en fazla dört kısa bulgu yaz. SWOT tehdidi eksikse önce tek bir dış risk yaz. Bir rakibin aynı ihtiyacı karşılayan somut ürünü varsa bunu gözlem olarak ve olası ikame baskısını koşullu ticari yorum olarak kullanabilirsin. Pazar payı, satış kaybı veya güncel hukuki durum varsayma. Mevcut bulguları tekrarlama. p için yalnız sources içindeki gerçek s kimliklerini kullan. a alan anahtarları, o gözlem, k tür, h ticari yorum, l sınır, w SWOT yönü. Gözlem 150, yorum ve sınır 80 karakteri geçmesin. Kanıt yoksa ilgili bulguyu ekleme. Tam JSON ile bitir.',
-    brand:brief.brandName,market:brief.goals,issues,dimensionStatus:result.report.dimensions.map(d=>[d.id,d.findingIds.length]),existing:result.report.findings.map(f=>f.statement),areas:methodologyAreas.map(a=>[a.key,a.topic]),sources:proof.map(c=>[alias(c.id),researchHost(c.url),c.quote])
-   },reservedRepairSchema,reservedOptions(finalCalls.repair))):await collectAttempt(()=>providers.manager('v8-collection-final-gaps',{
+    brand:brief.brandName,market:brief.goals,issues,dimensionStatus:result.report.dimensions.map(d=>[d.id,d.findingIds.length]),existing:result.report.findings.map(f=>f.statement),areas:methodologyAreas.map(a=>[a.key,a.topic])
+   },proof,alias):await collectAttempt(()=>providers.manager('v8-collection-final-gaps',{
     instruction:'Ön BHS son kontrolündeki açıkları aynı arşivde okunmuş kanıtlarla tamamla. Mevcut bulguları tekrarlama. Açık boyut için markaya özgü, ölçüsü sınırlandırılmış kanıt bul. SWOT fırsatı dış pazar veya müşteri davranışına dayanmalı. Elde kanıt varsa eksik sayı için en az üç kısa somut gözlem ekle. Rakipler yalnız kendi okunan ürün kaynağıyla doğrulanabilir. Ürün ikamesi ve hedef ülke kaynağa uymuyorsa benchmark veya unconfirmed kullan. Olası fırsatı gerçekleşmiş sonuç sayma. finding alanları a metodoloji anahtarları, o gözlem, p verilen kanıt kimlikleri, k tür, h ticari yorum, l sınır, w SWOT yönü veya none. O, h ve l alanlarını kısa tut. JSON dışında yazma.',
     brand:brief.brandName,market:brief.goals,issues:result.acceptance.issues,dimensionStatus:result.report.dimensions.map(d=>[d.id,d.findingIds.length]),existing:result.report.findings.map(f=>f.statement),areas:methodologyAreas.map(a=>[a.key,a.topic]),entities:entities.map(e=>[e.id,e.role,e.name,e.website]),sources:proof.map(c=>[alias(c.id),researchHost(c.url),c.quote])
    },compactReportSchema,{maxOutputTokens:2400,minimumOutputTokens:1300,compactReview:true,lowEffort:true}));
    if(focused.data){
     const patch=focused.data;
-    const allowed=new Set(proof.map(card=>alias(card.id)));
+    const allowed=new Set((focused.proof||proof).map(card=>alias(card.id)));
     const findings=funding.finalQuotes?patch.findings.filter(row=>row.p.length&&row.p.every(id=>allowed.has(id))):patch.findings;
     const mergedPeers=[...new Map([...initial.peers,...(patch.peers||[])].map(peer=>[peer.entityId,peer])).values()];
     const questions=Object.fromEntries(Object.entries(initial.questions).map(([key,value])=>[key,patch.questions?.[key]||value]));
