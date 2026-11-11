@@ -55,6 +55,8 @@ const reservedReportSchema=obj({
 const reservedReportResponseSchema=obj({...reservedReportSchema.properties,findings:arr(findingSchema)});
 const reservedRepairSchema=obj({findings:arr(reservedReportSchema.properties.findings.items,4)});
 const peerVerdictSchema=obj({decisions:arr(obj({id:str(12),verdict:{type:'string',enum:['direct','benchmark','unconfirmed']},proof:str(16),reason:str(95)}),6)});
+const peerDecisionResponse=obj({...peerVerdictSchema.properties.decisions.items.properties,reason:str(200)});
+const peerVerdictResponseSchema=obj({decisions:arr(peerDecisionResponse,6)});
 const peerSearchSchema=obj({product:str(100),candidates:arr(str(100),6)});
 const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','quota','provider_timeout','fx_unavailable','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
@@ -133,11 +135,11 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
  const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
   instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
-  ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Önce ürün sayfası bulunan, hedef pazardaki bağımsız markaları seç.'}:{})
+  ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Mevcut ürün ifadesi genişse kaynaklı marka ürünlerinden tek bir somut format seç ve product alanında yaz. Hedef pazarda ürün sayfası bulunan bağımsız markaları öncele. Aynı kullanıma uygun benzer ürünü olan markalar, sertifika veya içerikleri farklı olsa da araştırma adayı olabilir.'}:{})
  },peerSearchSchema,{maxOutputTokens:512}));
- const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=repair?.product||plan.data?.product?.trim();
+ const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
- for(const name of product?plan.data.candidates:[]){
+ for(const name of product?(plan.data?.candidates||[]):[]){
   const group=peerGroupKey(name);
   if(!group||seen.has(group))continue;
   seen.add(group);
@@ -228,10 +230,14 @@ async function reviewCollectedPeers(brief,providers,funding,candidates,alias,rep
  if(!candidates.length)return [];
  const peers=candidates.map(({entity,cards},i)=>({id:'r'+(i+1),entity,cards}));
  const result=await collectAttempt(()=>providers.manager(repair?'v8-collection-peer-evidence-repair':'v8-collection-reserved-peers',{
-  instruction:'Marka ile aynı hedef pazarda aynı ürün veya ihtiyaca hitap eden doğrudan rakipleri belirle. Satıcı, ajans, aynı grubun tekrarı veya benzer olmayan ürün doğrudan rakip sayılmaz. Her aday için sadece o adayın altındaki okunan birincil kaynak kimliğini kullan. Açık ürün ve pazar örtüşmesi varsa direct, yalnız kıyas örneğiyse benchmark, kanıt yetersizse unconfirmed. En fazla dört gerçek doğrudan rakip seç. Her kararın gerekçesini tek kısa cümleyle yaz.',
+  instruction:'Marka ile aynı hedef pazarda aynı ürün veya ihtiyaca hitap eden doğrudan rakipleri belirle. Satıcı, ajans, aynı grubun tekrarı veya benzer olmayan ürün doğrudan rakip sayılmaz. Her aday için sadece o adayın altındaki okunan birincil kaynak kimliğini kullan. Açık ürün ve pazar örtüşmesi varsa direct, yalnız kıyas örneğiyse benchmark, kanıt yetersizse unconfirmed. En fazla dört gerçek doğrudan rakip seç. Her kararın gerekçesini tek kısa cümleyle yaz.'+(repair?' Aynı ürün formatı ve kullanım için somut ikame varsa sertifika veya formül farkını gerekçede belirt. Sertifika eşitliği varsayma ve yalnız geniş kategori ortaklığını doğrudan rakip sayma.':''),
   brand:brief.brandName,market:brief.goals,product:candidates[0].entity.scope,
   candidates:peers.map(({id,entity,cards})=>[id,entity.name,entity.website,cards.map(c=>[alias(c.id),c.quote])])
- },peerVerdictSchema,reservedOptions(finalCalls.peers,repair?0:funding.finalQuotes.report+funding.finalQuotes.repair)));
+ },peerVerdictSchema,{...reservedOptions(finalCalls.peers,repair?0:funding.finalQuotes.report+funding.finalQuotes.repair),responseSchema:peerVerdictResponseSchema,normalizeData:data=>{
+  if(!Array.isArray(data?.decisions))return data;
+  const decisions=data.decisions.filter(row=>{try{assertSchema(row,peerDecisionResponse);return true;}catch{return false;}});
+  return {...data,decisions:decisions.slice(0,6)};
+ }}));
  const decisions=[];
  for(const row of result.data?.decisions||[]){
   const peer=peers.find(p=>p.id===row.id);
@@ -413,6 +419,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(!closed.collectionClosed)throw new BudgetError('research_stage_incomplete','Kanıt toplama tamamlanmadan Claude değerlendirmesi başlatılamaz.');
  const [{packet},inventory,focused]=await Promise.all([corpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
  const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
+ context.collectionFirst=true;
  const discovered=comparisonEntities(context,inventory);
  const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct,focused.expandedPeerPublishers):[];
  const entities=funding.finalQuotes?[...discovered.filter(entity=>entity.role==='brand'),...candidates.map(item=>item.entity)]:discovered;

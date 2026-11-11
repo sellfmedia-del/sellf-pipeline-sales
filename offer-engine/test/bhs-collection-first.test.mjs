@@ -85,7 +85,15 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
    a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:'Ticari etkisi iç verilerle ölçülmeli.',l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
   }))};
   const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request,_schema,options)=>{
-   if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
+   if(stage==='v8-collection-reserved-peers'){
+    const {data}=directPeerReply(request);
+    data.decisions[0].reason='Aynı hedef pazarda aynı kullanım için satılan ürün, markanın kaynaklı teklifine doğrudan ikame olabilir.';
+    assert.ok(data.decisions[0].reason.length>95);
+    const normalized=options.normalizeData({decisions:[...data.decisions,{...data.decisions[0],verdict:'invalid'}]});
+    assertSchema(normalized,options.responseSchema);
+    assert.equal(normalized.decisions.length,data.decisions.length);
+    return {data:normalized};
+   }
    assert.equal(stage,'v8-collection-reserved-report');
    const publicQuotes=request.unindexedSources.filter(row=>row[0]==='public.example').flatMap(row=>row[2].map(([,quote])=>quote));
    assert.ok(publicQuotes.some(quote=>quote.includes('increase')));
@@ -125,6 +133,29 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   assert.deepEqual(reviews,['v8-collection-reserved-peers','v8-collection-reserved-report','v8-collection-reserved-gaps']);
   assert.equal(repaired.supervision.acceptance.passed,true);
   assert.ok(!repaired.report.findings.some(f=>f.statement==='Geçersiz kanıtlı örnek.'));
+  const comparison=seen.get('competition_draft');
+  seen.set('competition_draft',{...comparison,peerProduct:'organik atıştırmalık'});
+  const gamma=fixturePacket().sources.find(s=>s.url.includes('organicgamma.'));
+  const gammaUrl='https://organicgammafoods.example/urunler';
+  let searches=0,peerReviews=0;
+  const peerGap=await runCollectionFirstStage({phase:'synthesis',brief,previous,finish:value=>value,
+   collect:async()=>({...fixturePacket(),sources:[{...gamma,url:gammaUrl,finalUrl:gammaUrl}]}),
+   providers:{costStatus:()=>db.ledger.status(),withCeiling:limit=>{
+    assert.ok(limit<5000);
+    return {worker:async()=>({data:{product:'organik atıştırmalık',candidates:['Organic Gamma']}}),search:async()=>{searches++;return {results:[{url:gammaUrl}]};}};
+   },manager:async(stage,request)=>{
+    if(stage==='v8-collection-reserved-peers')return directPeerReply({...request,candidates:request.candidates.filter(([,name])=>['Organic Alpha','Organic Beta'].includes(name))});
+    if(stage==='v8-collection-reserved-report')return {data:compact,model:'claude-sonnet-5-5'};
+    assert.equal(stage,'v8-collection-peer-evidence-repair');
+    assert.equal(request.candidates[0][2],gammaUrl);
+    peerReviews++;
+    return directPeerReply(request);
+   }}
+  });
+  assert.equal(searches,1);
+  assert.equal(peerReviews,1);
+  assert.equal(peerGap.supervision.acceptance.passed,true);
+  assert.ok(peerGap.report.competitors.some(peer=>peer.name==='Organic Gamma'&&peer.website==='https://organicgammafoods.example'));
  }finally{await db.close();}
 });
 

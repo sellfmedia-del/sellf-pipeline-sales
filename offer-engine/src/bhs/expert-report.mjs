@@ -29,7 +29,8 @@ const list=v=>Array.isArray(v)?v:[];
 const words=s=>fold(s).match(/[a-z]{5,}/g)||[];
 const stop=new Set(words('company products product services service website online official brand market customers customer turkey turkiye global international similar digital operations platform shopping ecommerce kurumsal sirket marka urunler hizmetler musteri turkiye pazari hedef kitle pazarlama benzer dogrudan rekabet sitesi kanal satici'));
 const topicWords=s=>unique(words(s).filter(w=>!stop.has(w)));
-const categories=[/burger|hamburger|smash/,/coffee|kahve|roast/,/planner|planlayici|calendar|takvim/,/carpet|\brug\b|hali/,/travel|seyahat|turizm|ferry|feribot|tour/,/cosmetic|kozmetik|cologne|kolonya|sabun|skincare/,/organic|organik|snack|atistirmalik|\b(?:yulaf|meyve|hurma|protein|tahil|granola|oat|fruit|cereal|energy)[ -]+bar/];
+const categories=[/burger|hamburger|smash/,/coffee|kahve|roast/,/planner|planlayici|calendar|takvim/,/carpet|\brug\b|hali/,/travel|seyahat|turizm|ferry|feribot|tour/,/cosmetic|kozmetik|cologne|kolonya|sabun|skincare/,/organic|organik|snack|atistirmalik/];
+const snackBars=/\b(?:yulaf|meyve|hurma|protein|tahil|granola|oat|fruit|cereal|energy)[ -]+bar/;
 const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|growth|buyume/i,operations:/team|employees|ekip|calisan|delivery|kargo|iade|return|crm|platform/i,funnel:/newsletter|bulten|subscribe|abonelik|checkout|teklif|quote|cart|sepet|loyalty/i,digital:/analytics|pixel|piksel|seo|traffic|trafik|mobile|mobil/i,perception:/review|yorum|rating|puan|complaint|sikayet|response|yanit/i,competition:/price|fiyat|subscription|abonelik|differ|fark|shipping|kargo/i};
 
 // Paragraph-sized context is selected once; model only returns immutable IDs.
@@ -166,7 +167,8 @@ export function projectExpertReport(value,context){
   const readProduct=card=>publisher(card)&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method);
   let sourceIds=refs(p.sourceIds).filter(id=>readProduct(cards.get(id)));if(!sourceIds.length)continue;
   const category=topicWords(e.scope+' '+e.audienceReason);
-  const expectedCategories=categories.filter(p=>p.test(fold(e.scope+' '+e.audienceReason)));
+  const productScope=fold(e.scope+' '+e.audienceReason),expectedCategories=categories.filter(p=>p.test(productScope));
+  if(context.collectionFirst&&categories.at(-1).test(productScope))expectedCategories.push(snackBars);
   // A newsletter citation is not product identity. Reuse a product paragraph
   // already read from that same publisher instead of losing a valid peer or
   // trusting an unrelated same-name business. No new request or model call.
