@@ -464,7 +464,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
    const result=await providers.manager(stage,{
     instruction:'Ön BHS son denetimi. findings satırları: [boyut, tür, gözlem, sınır, sıfır tabanlı kaynak indeksleri, SWOT önerisi, hipotez]. İndeksleri null olan gözlemler önceki Claude denetiminden aynen alınmıştır; bağlam ve SWOT sınıfını kontrol et. Diğerlerini verilen özgün alıntıyla doğrula. Her f kimliği için karar: 0 reddet, 1 doğrula, 2 güç, 3 zayıflık, 4 fırsat, 5 tehdit. 2–5 kararı doğrulamayı da içerir. Sayı, birim, dönem, pazar ve şirketi doğrula; tekrarları ve genellemeleri reddet. Kaynaklı, koşullu ticari hipotezi gerçekleşmiş etki sayma. Şikâyet platformla, SEO taranan sayfayla sınırlı. Her b kimliği için true veya false. Yalnız verilen kimlikleri kullan, açıklama yazma.',
     brand:brief.brandName,market:brief.goals,findings:keyed(input.findings,'f'),comparisons:keyed(input.comparisons,'b'),sources:input.sources
-   },finalEvidenceSchema(input),{maxOutputTokens:Math.max(128,7*(input.findings.length+input.comparisons.length)+64),compactReview:true,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(reviewedDraft,review(d),context,competition.peers),context))});
+   },finalEvidenceSchema(input),{maxOutputTokens:Math.max(96,7*(input.findings.length+input.comparisons.length)+56),compactReview:true,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(reviewedDraft,review(d),context,competition.peers),context))});
    return {generated:result,finalReview:review(result.data)};
   };
   try{({generated,finalReview}=await audit(candidates,candidates,reviewedDraft.benchmarks,'v8-final-keyed'));}
