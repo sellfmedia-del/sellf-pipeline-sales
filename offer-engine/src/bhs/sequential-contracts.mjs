@@ -67,13 +67,15 @@ export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['
 const patch=structuredClone(expertProperties.findings.items);
 for(const [field,limit]of Object.entries({observation:280,commercialHypothesis:260,limitation:220,question:180}))patch.properties[field].maxLength=limit;
 export const finalReviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),patches:arr(patch),rejectedPeerIds:arr(str(80),5),dimensions:expertProperties.dimensions,coverageChanges:arr(obj({key:{type:'string',enum:methodologyAreas.map(a=>a.key)},value:structuredClone(Object.values(expertProperties.coverage.properties)[0])})),approvedBenchmarkIndices:arr({type:'number',minimum:0,maximum:47},48),swot:finalSchema.properties.swot,decision:{type:'string',enum:['accepted','limited']},notes:str(6000)});
-export const compactFinalReviewSchema=obj({verdicts:arr({type:'boolean'}),patches:finalReviewSchema.properties.patches,rejectedPeerIds:finalReviewSchema.properties.rejectedPeerIds,approvedBenchmarkIndices:finalReviewSchema.properties.approvedBenchmarkIndices,swot:finalReviewSchema.properties.swot,decision:finalReviewSchema.properties.decision,notes:str(1000)});
+const compactPatch={type:'object',properties:{id:str(80),observation:str(280),commercialHypothesis:str(260),limitation:str(220),question:str(180)},required:['id','observation'],additionalProperties:false};
+export const compactFinalReviewSchema=obj({verdicts:arr({type:'boolean'}),patches:arr(compactPatch),rejectedPeerIds:finalReviewSchema.properties.rejectedPeerIds,approvedBenchmarkIndices:finalReviewSchema.properties.approvedBenchmarkIndices,swot:finalReviewSchema.properties.swot,decision:finalReviewSchema.properties.decision,notes:str(700)});
 export function expandFinalReview(data,draft){
  if(data.verdicts.length!==draft.findings.length)throw new BudgetError('model_output_invalid','Her rapor bulgusu için ayrı denetim kararı gerekli.');
  const acceptedIds=draft.findings.filter((_,i)=>data.verdicts[i]).map(f=>f.id),rejectedIds=draft.findings.filter((_,i)=>!data.verdicts[i]).map(f=>f.id),accepted=new Set(acceptedIds);
  const dimensions=draft.dimensions.map(d=>({...d,score:null,findingIds:d.findingIds.filter(id=>accepted.has(id)),comparisonFindingIds:d.comparisonFindingIds.filter(id=>accepted.has(id))}));
  const swot=Object.fromEntries(Object.entries(data.swot).map(([key,ids])=>[key,ids.filter(id=>accepted.has(id))]));
- return {...data,acceptedIds,rejectedIds,dimensions,swot,coverageChanges:[]};
+ const patches=data.patches.map(p=>({...draft.findings.find(f=>f.id===p.id),...p}));
+ return {...data,patches,acceptedIds,rejectedIds,dimensions,swot,coverageChanges:[]};
 }
 export function applyFinalReview(draft,review,context,peers=draft.peers){
  const selected=acceptedRows(draft.findings,review),ids=new Set(selected.map(f=>f.id)),patches=new Map();

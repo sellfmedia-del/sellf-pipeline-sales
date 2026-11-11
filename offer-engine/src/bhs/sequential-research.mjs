@@ -443,11 +443,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const reviewedRows=[...draft.findings,...competition.peers.filter(p=>p.relationship==='direct'),...draft.benchmarks];
   const input=stageModelInput(context,{rows:reviewedRows});
   const sources=input.sources.map(({url,method,sections})=>({url,method,sections}));
-  const operatorDraft={findings:draft.findings,dimensions:draft.dimensions.map(({id,findingIds,comparisonFindingIds})=>({id,findingIds,comparisonFindingIds})),swot:draft.swot,benchmarks:draft.benchmarks};
+  const operatorDraft={findings:draft.findings.map(({id,dimension,kind,observation,sourceIds,commercialHypothesis,limitation,question})=>({id,dimension,kind,observation,sourceIds,commercialHypothesis,limitation,question})),swot:draft.swot,benchmarks:draft.benchmarks};
   generated=await providers.manager('v8-final-report',{
    instruction:'Ön BHS son kanıt denetimini yap. Raporu tekrar yazma. verdicts dizisinde findings ile TAM AYNI SIRADA her aday için true (kanıtlı) veya false (desteksiz) ver. Sayı, dönem, şirket ve pazar kaynakla eşleşmeli. Bütün iddiası desteklenmeyen bir bulguyu false yap veya gerçek alıntının desteklediği dar gözlemle aynı kimlikte patches içinde düzelt ve true yap. Özellikle şikayet ve memnuniyet sayıları platform kapsamıyla sınırlı olmalı. Eski veri güncel sonuç değildir. Desteksiz ticari hipotezi daralt. Sadece okunmuş kaynakta yer alan kanıtı kullan. SWOT listelerinde yalnız onaylanan bulgular olsun. Uygun dört yön ve altı boyut tamamlanmadıysa limited seç. Özel rakamlar bulunamıyorsa uydurma, kapsamı not et. Doğrudan rakipleri kaynakla denetle. Yalnız kanıtlanmış benchmark indekslerini onayla. notes kısa ve Türkçe olsun.',
-   brand:brief.brandName,market:brief.goals,sources,sharedParagraphs:input.sharedParagraphs,operatorDraft,peerReview:competition.peers,
-   coveredAreas:Object.entries(draft.coverage).map(([key,value])=>[key,value.status,value.findingIds])
+   brand:brief.brandName,market:brief.goals,sources,sharedParagraphs:input.sharedParagraphs,operatorDraft,peerReview:competition.peers.filter(p=>p.relationship==='direct'),coveredAreaCount:Object.keys(draft.coverage).length
   },compactFinalReviewSchema,{maxOutputTokens:1536,plainJson:true,compactReview:true,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(draft,expandFinalReview(d,draft),context,competition.peers),context))});
   finalReview=expandFinalReview(generated.data,draft);
  }else{
