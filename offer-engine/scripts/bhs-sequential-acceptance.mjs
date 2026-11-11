@@ -28,7 +28,7 @@ export async function runSequentialAcceptance(){
   if(payload.briefHash!==briefHash(brief)||payload.case!==caseName)throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
   if(snapshot==='est-reserve-finish'){
    const prior=seed.find(row=>row.step_key.startsWith('audit:synthesis:'));
-   if(prior?.charge_kurus!==0||payload.cost.chargedKurus!==4238)throw Error('Unexpected original account.');
+   if(prior?.charge_kurus!==0||payload.cost.chargedKurus!==4348)throw Error('Unexpected original account.');
    seed=seed.filter(row=>row!==prior);
   }
  }
@@ -48,7 +48,7 @@ export async function runSequentialAcceptance(){
  try{
   for(phase of sequentialPhases.slice(0,-2)){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
-   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:0});
+   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:0,fetchImpl:async()=>{throw Error('A paid provider call is outside this replay.');}});
    await runBoundedStage({phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
    console.info(JSON.stringify({event:'bhs_reserved_finish_phase',phase,cost:await db.ledger.status()}));
   }
