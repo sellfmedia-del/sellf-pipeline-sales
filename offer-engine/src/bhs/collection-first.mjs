@@ -70,9 +70,9 @@ const shard=(rows,index,count)=>rows.filter((_,i)=>i%count===index);
 const unique=items=>[...new Set(items)];
 const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
 const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
-function publisherMatches(name,url){
+function publisherMatches(name,url,expanded=false){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
- return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand].includes(domain);
+ return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida']:[])].includes(domain);
 }
 const sourcesFrom=async(previous,stages,key)=>(await Promise.all(stages.map(previous))).flatMap(s=>s[key]||[]);
 const canonicalSources=rows=>[...new Map(rows.map(s=>[s.finalUrl+' '+s.contentHash,s])).values()].map((s,i)=>({...s,id:'ev'+(i+1)}));
@@ -121,7 +121,7 @@ async function actorRequest(context,providers,index,market){
 
 async function readResearchPages(brief,plan,targets,providers,collect){
  if(!targets.length)return {sources:[],unavailable:[]};
- return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,sourceLimit:targets.length,archivePages:async pages=>{
+ return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
    await providers.checkpoint('collection-raw-page',input,async()=>({encoding:'gzip-base64',data:gzipSync(JSON.stringify(page)).toString('base64')}));
@@ -129,12 +129,13 @@ async function readResearchPages(brief,plan,targets,providers,collect){
  }});
 }
 
-async function comparisonResearch(brief,brand,market,pool,providers,collect){
+async function comparisonResearch(brief,brand,market,pool,providers,collect,repair){
  const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
   instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
-  brand:brief.brandName,market:market?.[1]||'',identity:brand.facts
+  brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
+  ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Önce ürün sayfası bulunan, hedef pazardaki bağımsız markaları seç.'}:{})
  },peerSearchSchema,{maxOutputTokens:512}));
- const searches=[],hints=[],seen=new Set([peerGroupKey(brief.brandName)]),product=plan.data?.product?.trim();
+ const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=repair?.product||plan.data?.product?.trim();
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
  for(const name of product?plan.data.candidates:[]){
   const group=peerGroupKey(name);
@@ -143,14 +144,20 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect){
   const query=[name,product,market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
   const search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(search);
-  const urls=(search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url));
+  const owned=results=>(results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url,true));
+  let urls=owned(search.results);
+  if(repair&&!urls.length&&!search.unavailable){
+   const publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" marka resmi web sitesi online mağaza',{depth:'basic',maxResults:12,retainRaw:true}));
+   searches.push(publisherSearch);
+   urls=owned(publisherSearch.results);
+  }
   const url=urls.find(url=>words.some(word=>nameKey(url.split('/').slice(3).join('/')).includes(nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
   if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))continue;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
  const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
- return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||''};
+ return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true};
 }
 
 // Research receipts remain intact. This packet is a compact index for Claude,
@@ -181,7 +188,7 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-function peerCandidates(context,entities,brand,peerProduct){
+function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
  const terms=unique(product.toLocaleLowerCase('tr').match(peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
@@ -189,8 +196,8 @@ function peerCandidates(context,entities,brand,peerProduct){
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
   for(const source of context.input.sources){
-   if(source.metadataOnly||source.method==='search-snippet'||!publisherMatches(candidate.name,source.url))continue;
-   const cards=source.sections.flatMap(section=>section.proofIds.map(id=>context.known.get(id))).filter(Boolean).map(card=>{
+   if(source.metadataOnly||source.method==='search-snippet'||!publisherMatches(candidate.name,source.url,expandedPublishers))continue;
+   const cards=source.sections.flatMap(section=>section.proofIds.map(id=>context.known.get(id))).filter(card=>card&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method)).map(card=>{
     const quote=card.quote.toLocaleLowerCase('tr');
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))};
    }).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
@@ -217,14 +224,14 @@ function normalizeFindingRows(data,findingsSchema){
  return {...data,findings:findingsSchema.maxItems===undefined?findings:findings.slice(0,findingsSchema.maxItems)};
 }
 
-async function reviewCollectedPeers(brief,providers,funding,candidates,alias){
+async function reviewCollectedPeers(brief,providers,funding,candidates,alias,repair=false){
  if(!candidates.length)return [];
  const peers=candidates.map(({entity,cards},i)=>({id:'r'+(i+1),entity,cards}));
- const result=await collectAttempt(()=>providers.manager('v8-collection-reserved-peers',{
+ const result=await collectAttempt(()=>providers.manager(repair?'v8-collection-peer-evidence-repair':'v8-collection-reserved-peers',{
   instruction:'Marka ile aynı hedef pazarda aynı ürün veya ihtiyaca hitap eden doğrudan rakipleri belirle. Satıcı, ajans, aynı grubun tekrarı veya benzer olmayan ürün doğrudan rakip sayılmaz. Her aday için sadece o adayın altındaki okunan birincil kaynak kimliğini kullan. Açık ürün ve pazar örtüşmesi varsa direct, yalnız kıyas örneğiyse benchmark, kanıt yetersizse unconfirmed. En fazla dört gerçek doğrudan rakip seç. Her kararın gerekçesini tek kısa cümleyle yaz.',
   brand:brief.brandName,market:brief.goals,product:candidates[0].entity.scope,
   candidates:peers.map(({id,entity,cards})=>[id,entity.name,entity.website,cards.map(c=>[alias(c.id),c.quote])])
- },peerVerdictSchema,reservedOptions(finalCalls.peers,funding.finalQuotes.report+funding.finalQuotes.repair)));
+ },peerVerdictSchema,reservedOptions(finalCalls.peers,repair?0:funding.finalQuotes.report+funding.finalQuotes.repair)));
  const decisions=[];
  for(const row of result.data?.decisions||[]){
   const peer=peers.find(p=>p.id===row.id);
@@ -329,6 +336,29 @@ function distinctPeerEntities(entities,peers){
  return entities.filter(entity=>!duplicates.has(entity.id));
 }
 
+async function repairPeerCoverage({brief,brand,providers,context,funding,product,names,collect,alias,researchSpend}){
+ const {chargedKurus,capKurus}=await providers.costStatus();
+ const searchCeiling=Math.min(capKurus-funding.finalQuotes.peers,chargedKurus+350,chargedKurus+collectionBudgetKurus-researchSpend);
+ if(searchCeiling<=chargedKurus)return {decisions:[],entities:[]};
+ const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
+ const collected=await comparisonResearch(brief,brand,market,providers.withCeiling(searchCeiling),providers,collect,{product,names});
+ const entities=collected.peerHints;
+ if(!entities.length||!collected.pages.length)return {decisions:[],entities:[]};
+ const fresh=sequentialContext(brief,{packet:{...context.packet,entities,sources:canonicalSources(collected.pages)},searches:[],peerDiscoveryVersion:'product-v2'});
+ const candidates=peerCandidates(fresh,entities,brand,collected.peerProduct||product,true);
+ if(!candidates.length)return {decisions:[],entities:[]};
+ for(const [id,card] of fresh.known)context.known.set(id,card);
+ for(const [id,group] of fresh.proofGroups)context.proofGroups.set(id,group);
+ context.cards=[...context.known.values()];
+ context.input.sources.push(...fresh.input.sources);
+ context.packet.sources=canonicalSources([...context.packet.sources,...fresh.packet.sources]);
+ context.packet.citationCards=[...new Map([...context.packet.citationCards,...fresh.packet.citationCards].map(card=>[card.id,card])).values()];
+ let decisions;
+ try{decisions=await reviewCollectedPeers(brief,providers,funding,candidates,alias,true);}
+ catch(error){if(error.code!=='input_budget')throw error;decisions=[];}
+ return {decisions:decisions.filter(d=>d.relationship==='direct').slice(0,4-names.length),entities:candidates.map(candidate=>candidate.entity)};
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const funding=phase===searchStages[0]?await providers.checkpoint('collection-first-funding',brief,async()=>planCollectionFunding(await providers.costStatus(),providers.infrastructureOffsetKurus,providers.now?.())):(await previous(searchStages[0])).funding;
@@ -356,7 +386,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
-  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(1150),providers,collect):{searches:[],pages:[]};
+  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(1650),providers,collect):{searches:[],pages:[]};
   // The Actor adapter holds the final 6 TRY of this research account for Gemini.
   const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},scoped(collectionBudgetKurus),scrapeIndex,market);
   return save({...comparison,scrapes});
@@ -384,7 +414,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  const [{packet},inventory,focused]=await Promise.all([corpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
  const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
  const discovered=comparisonEntities(context,inventory);
- const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct):[];
+ const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct,focused.expandedPeerPublishers):[];
  const entities=funding.finalQuotes?[...discovered.filter(entity=>entity.role==='brand'),...candidates.map(item=>item.entity)]:discovered;
  context.input.entities=entities;
  const index=proofIndex(context,inventory);
@@ -430,8 +460,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const budget=await providers.costStatus();
   return {report,swot,budget,acceptance:qualityAcceptance(report,{stages,swot,budget,reviewMode:'collection-first'})};
  };
- const initial=funding.finalQuotes?{...completion.data,peers:peers.map(p=>({...p,sourceIds:p.sourceIds.map(alias)}))}:completion.data;
- let result=await project(initial);
+ let reply=funding.finalQuotes?{...completion.data,peers:peers.map(p=>({...p,sourceIds:p.sourceIds.map(alias)}))}:completion.data;
+ let result=await project(reply);
  const issues=result.acceptance.issues.filter(issue=>!funding.finalQuotes||issue!=='direct_competitors_incomplete');
  if(issues.length){
   const verifiedPeers=(peers||[]).filter(peer=>result.report.competitors.some(entity=>entity.id===peer.entityId));
@@ -448,11 +478,23 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
     const patch=focused.data;
     const allowed=new Set((focused.proof||proof).map(card=>alias(card.id)));
     const findings=funding.finalQuotes?patch.findings.filter(row=>row.p.length&&row.p.every(id=>allowed.has(id))):patch.findings;
-    const mergedPeers=[...new Map([...initial.peers,...(patch.peers||[])].map(peer=>[peer.entityId,peer])).values()];
-    const questions=Object.fromEntries(Object.entries(initial.questions).map(([key,value])=>[key,patch.questions?.[key]||value]));
-    result=await project({...initial,findings:[...initial.findings,...findings],peers:mergedPeers,questions,benchmarks:[...initial.benchmarks,...(patch.benchmarks||[])]});
+    const mergedPeers=[...new Map([...reply.peers,...(patch.peers||[])].map(peer=>[peer.entityId,peer])).values()];
+    const questions=Object.fromEntries(Object.entries(reply.questions).map(([key,value])=>[key,patch.questions?.[key]||value]));
+    reply={...reply,findings:[...reply.findings,...findings],peers:mergedPeers,questions,benchmarks:[...reply.benchmarks,...(patch.benchmarks||[])]};
+    result=await project(reply);
    }else result.budget=await providers.costStatus();
   }
+ }
+ if(funding.finalQuotes&&focused.peerProduct&&result.acceptance.issues.includes('direct_competitors_incomplete')){
+  const names=result.report.competitors.map(entity=>entity.name);
+  const repaired=await repairPeerCoverage({brief,brand,providers,context,funding,product:focused.peerProduct,names,collect,alias,researchSpend:closed.researchAccount.committedKurus});
+  if(repaired.decisions.length){
+   const productScope=brand.facts.filter(fact=>fact.topic==='products').map(fact=>fact.statement).join(' ');
+   const repairedPeers=[...new Map([...peers,...repaired.decisions].map(peer=>[peer.entityId,peer])).values()];
+   const repairedEntities=[...new Map([...context.input.entities,...repaired.entities].map(entity=>[entity.id,entity])).values()];
+   context.input.entities=distinctPeerEntities(repairedEntities,repairedPeers).map(entity=>entity.role==='competitor'&&productScope?{...entity,scope:productScope}:entity);
+   result=await project({...reply,peers:repairedPeers.map(peer=>({...peer,sourceIds:peer.sourceIds.map(alias)}))});
+  }else result.budget=await providers.costStatus();
  }
  const {report,swot,budget,acceptance}=result;
  const citedUrls=new Set(report.sources.map(source=>source.url));
