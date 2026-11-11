@@ -151,7 +151,7 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
  const peerHosts=new Set(peers.map(e=>researchHost(e.website)));
  const readPeerPages=context.input.sources.filter(s=>peerHosts.has(researchHost(s.url))&&!s.metadataOnly&&s.method!=='search-snippet'&&s.sections.length);
  const productSignals=/kolonya|cologne|fiyat|price|₺|\bTL\b|satın|sepete|catalog|product|ürün|hizmet|service|katalog/i;
- const peerRows=readPeerPages.flatMap(s=>[...new Set([s.sections[0],...s.sections.filter(p=>productSignals.test(p.text))])].slice(0,5).map(p=>({sourceIds:p.proofIds})));
+ const peerRows=readPeerPages.flatMap(s=>[...new Set([s.sections[0],...s.sections.filter(p=>productSignals.test(p.text)),...s.sections])].slice(0,5).map(p=>({sourceIds:p.proofIds})));
  const peerEvidence=peers.map(e=>({entityId:e.id,name:e.name,plannedUrl:e.website,readUrls:readPeerPages.filter(s=>researchHost(s.url)===researchHost(e.website)).map(s=>s.url)}));
  const primaryRows=['brand','sector'].includes(phase)?context.cards.filter(c=>phase==='sector'&&!candidates.length||researchHost(c.url)===researchHost(brief.website)).map(c=>({sourceIds:[c.id]})):[];
  const comparisonFacts=phase==='competition'?(extra.previouslyApproved||[]).filter(f=>['products','market'].includes(f.topic)):[];
@@ -274,7 +274,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const brand=await previous('brand'),queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} alternatives competitors same products target market`,`${brand.facts.filter(f=>['products','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,250)} doğrudan rakip alternatif markalar`];
   const searches=await search(providers,queries),discovered=[brief.website,...urls(searches),...prior.packet.sources.map(s=>s.finalUrl)];
   const focusedDiscovery=['product-v1','product-v2'].includes(prior.peerDiscoveryVersion);
-  const focusInstruction=focusedDiscovery?'productFocus alanına markanın öncelikli satılan ürün veya hizmet kategorisini aramada kullanılan kısa, tek bir ifadeyle yaz. ':'';
+  const focusInstruction=focusedDiscovery?'productFocus alanına kaynaklarda doğrulanmış ve alıcının başka markayla ikame edebileceği TEK somut ürün veya hizmet türünü yaz. En fazla dört kelime. Sektör adı, ürün portföyü veya “ve” ile birleştirilen farklı türler kullanma. Örneğin kişisel bakım yerine limon kolonyası, yiyecek yerine kavrulmuş fındık. Adayların bu aynı ürün türünde ürünleri olmalı. ':'';
   const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\n'+focusInstruction+'Onaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(focusedDiscovery),{maxOutputTokens:3072});
   if(!focusedDiscovery){
    const resolved=await resolvePeerAddresses(planned.data,providers),plan=parseSequentialPeerPlan(resolved.data,brief),peerSearches=[...searches,...resolved.searches];
@@ -282,11 +282,11 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   }
   const {productFocus,...candidatePlan}=planned.data;
   const candidates=candidatePlan.entities.filter(e=>e.role==='competitor');
-  const focused=await search(providers,candidates.map(e=>`"${e.name.replace(/["\n\r]/g,' ')}" ${productFocus} resmi ürün katalog`),5);
+  const focused=await search(providers,[`${productFocus} markaları alternatif üreticiler resmî ürün kataloğu ${brief.goals.slice(0,100)}`,...candidates.map(e=>`"${e.name.replace(/\([^)]*\)|["\n\r]/g,' ').trim()}" ${productFocus} resmi ürün katalog`)],6);
   const peerSearches=[...focused,...searches];
   const plan=parseSequentialPeerPlan({...candidatePlan,entities:candidatePlan.entities.filter(e=>e.role!=='competitor'||researchUrl(e.website))},brief);
   const selected=await selectPeerProductPages({brief,plan,searches:peerSearches,providers,focus:productFocus});
-  return finish({...prior,...selected,searches:[...prior.searches,...peerSearches],peerSearches,peerProductFocus:productFocus});
+  return finish({...prior,...selected,searches:[...prior.searches,...peerSearches],peerSearches,peerProductFocus:productFocus,peerDiscoveryVersion:'product-v2'});
  }
  if(phase==='competition_sources'){
   const packet=await collect(brief,prior.plan,{initialPacket:prior.packet,prioritySources:prior.prioritySources||prior.plan.entities.filter(e=>e.role==='competitor').map(e=>e.website),explicitSourcesOnly:true,sourceLimit:20});
