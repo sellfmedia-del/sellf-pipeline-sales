@@ -219,8 +219,8 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(repair){
   const family=repair[1];
   if(repair[2]==='sources'){
-   if(family==='competition'&&competitionCoreDecision(brief,prior,prior.review)==='accepted')return finish({...prior,understandingDecision:'accepted',repairNeeded:false});
-   if(prior.understandingDecision==='accepted')return finish({...prior,repairNeeded:false});
+   const understood=family==='competition'?competitionCoreDecision(brief,prior,prior.review):prior.understandingDecision;
+   if(understood==='accepted')return finish({...prior,understandingDecision:understood,repairNeeded:false});
    const grant=providers.checkpoint?await providers.checkpoint('targeted-repair:'+family,brief,async()=>({phase:family})):null;
    if(grant?.phase!==family)return finish({...prior,repairNeeded:false});
    const queries=family==='brand'?[...prior.review.repairTask.queries,queryBrand(brief)+' official corporate company about manufacturing sales markets']:prior.review.repairTask.queries;

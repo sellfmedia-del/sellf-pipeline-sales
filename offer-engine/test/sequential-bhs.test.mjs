@@ -41,7 +41,7 @@ function providerFor(db,phase,transport,apify){
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
 test('six logical stages run in order through real PostgreSQL receipts and provider accounting',async()=>{
- const db=await localBudget(),t=modelTransport();
+ const db=await localBudget(),t=modelTransport({mutate:(stage,data)=>stage==='v8-competition-review'?{...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']}:data});
  try{
   let synthesis;for(const phase of sequentialPhases.slice(0,-2))synthesis=await run(db,phase,t);
   const report=directAuditResult(brief,synthesis);
@@ -53,6 +53,7 @@ test('six logical stages run in order through real PostgreSQL receipts and provi
   assert.deepEqual(new Set(synthesis.supervision.swot.map(s=>s.quadrant)),new Set(['strength','weakness','opportunity','threat']));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-sector-extract')>t.events.findIndex(e=>e.stage==='v8-brand-review'));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-swot-draft')>t.events.findIndex(e=>e.stage==='v8-competition-review'));
+  assert.equal(t.events.filter(e=>e.stage==='v8-competition-review').length,1);
   const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);assert.ok(cost.chargedKurus>500);
   const count=t.events.length;
   for(const phase of sequentialPhases.slice(0,-2))await run(db,phase,t);

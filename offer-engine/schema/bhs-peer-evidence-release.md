@@ -1,57 +1,39 @@
-# BHS v8 peer evidence admission
+# Sequential BHS evidence and sales continuity
 
-## Observed failure
+The original Eyüp Sabri Tuncer production analysis remains paused at 45.28 TRY
+in its existing 50 TRY account. All previous stage records and charges remain
+available for review.
 
-The Eyüp Sabri Tuncer job reused its preserved brand/sector packet during
-competition research. Fourteen long sources already filled the collector's
-180,000-character source allowance. Successful competitor reads were silently
-discarded. The following paid model review therefore had no original competitor
-pages and correctly refused to confirm three direct peers.
+A populated source packet can still produce an empty competitor review if the
+model input takes the first 60,000 characters from older sources. Sequential v8
+indexes proof from the whole packet and distributes the general reading input
+across publishers. Individual review calls receive original cited paragraphs.
+Previously valid proof IDs are stable. The wider v8 transport retains its
+existing source, character and byte protections.
 
-The existing run remains paused at 45.28 TRY against its original 50 TRY account.
-This release does not restart that job, reset charges, refund uncertain receipts,
-raise its limit, or claim that its report is complete.
+Competitor discovery starts from a concrete verified product or service. Market
+search finds observed product brands. A separate search locates their product
+pages and the collector reads the selected observed pages before generic
+navigation. Claude checks actual product and audience overlap in the analysis
+market. Three distinct direct competitors still need original publisher proof.
+Unverified prices and other remaining comparisons become explicit research gaps
+for BHS coverage. A bad operator citation removes only that candidate. Valid
+saved evidence can be reviewed without purchasing the same provider reply.
+Claude's verdict list uses a stable schema and the server requires a decision
+for every submitted candidate.
 
-## Change
+The same 50 TRY account funds all paid providers. An Actor run is capped at
+0.20 USD or its lower saved limit. BHS stage keys and the database schema are
+unchanged. A user can stop an active background audit and continue with the
+brief. The existing queue cancellation guard blocks new paid reservations and
+allows an already started operation to settle. The handoff uses a zero-cost
+receipt and preserves the incomplete research status in the proposal.
 
-- Only sequential v8 collection gets 360,000 source characters and an explicit
-  transport marker. Existing collectors keep their 180,000-character allowance.
-  The packet validator accepts the marked wider transport up to 420,000
-  characters, still under a 1 MB UTF-8 transport limit. The 24-source and original
-  excerpt size checks remain in place. Existing source text is preserved.
-- Source capacity rejection is recorded as `source_packet_capacity` rather than
-  silently dropping a page. Replacing a captured page subtracts its old size.
-- After direct competitor collection, missing candidate domains receive at most
-  one bounded Tavily advanced extraction request, with up to five exact candidate
-  URLs. Normal durable provider receipts and the existing 50 TRY account apply.
-  Already captured peers do not cause another extraction purchase.
-- Initial and correction competitor drafts require captured original content
-  for at least three candidate domains before buying Gemini output. This is a
-  source admission check; Claude still decides whether each candidate actually
-  overlaps in product, audience and geography. No direct-peer claim is fabricated.
+The release is limited to BHS and its handoff. Verification includes durable
+receipt replay, large packets, source selection, invalid citations, provider
+schemas, budget admission, cancellation and desktop/mobile continuation.
+Real report quality and cost are verified separately from synthetic tests.
 
-No proposal pricing, logo logic, interface layout, database schema, credentials,
-Actor policy, tariff, budget cap, stage acceptance criteria, or finding-count
-limits change. Actor runs remain limited to their existing policy, at most
-0.20 USD each; tool purchases share the same overall account.
-
-## Verification
-
-Regression coverage includes a full 14-source seed that previously saturated
-the packet, preservation of every existing source, capture of all three peer
-domains, one bounded extraction for missing pages, no repeat when complete,
-and no model purchase when competitor evidence is still missing. The complete
-six-stage synthetic flow uses actual local PostgreSQL receipts and simulated
-provider responses; it is not a new paid brand audit.
-
-The prior production commit is `2d9470a898dc3f63d25278fbf3882bc1d24cf186`.
-Rollback is a revert of this isolated change followed by the normal Vercel
-deployment. No database rollback or customer data restoration is required.
-
-## Remaining acceptance
-
-Build and automated tests verify code paths and budget guards, not the quality
-or final cost of a completed real-world audit. The paused old run has not
-completed the remaining SWOT, BHS coverage and synthesis stages. No new paid
-run is launched by this release. A real completed report within 50 TRY remains
-an explicit live acceptance condition; it must not be reported as already proven.
+The production rollback baseline is `2d9470a898dc3f63d25278fbf3882bc1d24cf186`.
+Revert this isolated BHS change and deploy the prior code if a regression is
+confirmed. No database migration is required.
