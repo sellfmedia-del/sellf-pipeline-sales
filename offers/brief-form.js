@@ -370,7 +370,10 @@
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
-          if(response.phase==='complete'&&response.result){draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;}
+          if(response.phase==='complete'&&response.result){
+            continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
+            draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;
+          }
           if(response.phase==='complete'){action='status';continue;}
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}

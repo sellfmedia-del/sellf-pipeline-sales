@@ -95,6 +95,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
    if(!['start','status','advance','recover','continue'].includes(action))throw Error();
+   let backgroundJob;
    if(queue&&action!=='continue'){
     if(!job.backgroundJobId){
      const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;
@@ -106,30 +107,29 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
       job.attemptStartKurus=(await ledger.status()).chargedKurus;
      }
     }
-    const saved=await queue.read(job),updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
-    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
-    if(saved.state!=='complete'){
-     if(['paused','cancelled'].includes(saved.state))return res.status(422).json({code:saved.diagnostic?.code||'stage_paused',error:'BHS araştırması durdu; aşamalar ve maliyet kayıtları korundu.',phase:saved.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:true});
-     return res.status(202).json({phase:saved.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
-    }
+    backgroundJob=await queue.read(job);
+    const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
+    if(backgroundJob.briefHash!==hash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if(['queued','running'].includes(backgroundJob.state))return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const finish=async final=>{
-    if(queue&&action!=='continue'&&final.status!=='ready')return res.status(422).json({code:'quality_review',error:'BHS son kalite kontrolünü tamamlayamadı; mevcut bilgilerle teklif hazırlamaya devam edebilirsin.',phase:'complete',ticket:recoveryTicket,cost:await cost(),continuationAvailable:true});
     const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
    };
    if(queue&&action==='continue'){
-    let saved=await queue.read(job);
-    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
-    const active=['queued','running'].includes(saved.state);
-    if(active)saved=await queue.cancel(job);
-    if(!['paused','complete','cancelled'].includes(saved.state)&&!(saved.state==='running'&&saved.cancelRequested))throw new BudgetError('continuation_unavailable','Araştırmanın durdurulduğu doğrulanamadı.');
-    const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=saved.phase;
-    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason:saved.diagnostic?.code||(active||saved.state==='cancelled'?'research_cancelled':'quality_review')}));
-    return await finish(partial);
+    backgroundJob=await queue.read(job);
+    if(backgroundJob.briefHash!==hash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if(['queued','running'].includes(backgroundJob.state))backgroundJob=await queue.cancel(job);
+   }
+   if(backgroundJob&&backgroundJob.state!=='complete'){
+    if(!['paused','cancelled'].includes(backgroundJob.state)&&!(backgroundJob.state==='running'&&backgroundJob.cancelRequested))throw new BudgetError('continuation_unavailable','Araştırmanın durdurulduğu doğrulanamadı.');
+    const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=backgroundJob.phase;
+    const reason=backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
+    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason}));
+    return await finish(await restoreContinuation(brief,partial,ledger,now()));
    }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
    if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){
@@ -182,7 +182,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     break;
    }
    const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
-   let audit=await auditEngine.run({brief,synthesis});
+   const audit=await auditEngine.run({brief,synthesis});
    if(!hasGroundedResearch(audit.data))return await finish(await restoreContinuation(brief,continuationAudit(brief,{reason:'research_empty'}),ledger,now()));
    // Re-grounding an older paid report can remove a finding used by its saved
    // scope. Revalidate before signing; never replay research or sign stale IDs.
@@ -190,6 +190,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
    try{scopePlan=validateScope(scope.scopePlan,brief,audit.data);}
    catch{scopePlan=fallbackScope(brief);proposalCopy=offerCopy(null,audit.data);}
    const final={...audit,data:{...audit.data,scopePlan,proposalCopy}};
+   if(backgroundJob&&audit.status!=='ready')return await finish(continuationAudit(brief,{verifiedAudit:final,reason:'quality_review'}));
    return await finish(final);
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){

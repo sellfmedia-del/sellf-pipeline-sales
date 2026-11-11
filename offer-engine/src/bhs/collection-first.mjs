@@ -75,7 +75,7 @@ const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M
 const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
 function publisherMatches(name,url,expanded=false){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
- return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida',brand+'snacks',brand+'organic',brand+'organik']:[])].includes(domain);
+ return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida',brand+'snacks',brand+'organic',brand+'organik',brand.repeat(2),brand.repeat(3)]:[])].includes(domain);
 }
 const sourcesFrom=async(previous,stages,key)=>(await Promise.all(stages.map(previous))).flatMap(s=>s[key]||[]);
 const canonicalSources=rows=>[...new Map(rows.map(s=>[s.finalUrl+' '+s.contentHash,s])).values()].map((s,i)=>({...s,id:'ev'+(i+1)}));
@@ -139,21 +139,20 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
   ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Mevcut ürün ifadesi genişse kaynaklı marka ürünlerinden tek bir somut format seç ve product alanında yaz. Hedef pazarda ürün sayfası bulunan bağımsız markaları öncele. Aynı kullanıma uygun benzer ürünü olan markalar, sertifika veya içerikleri farklı olsa da araştırma adayı olabilir.'}:{})
  },peerSearchSchema,{maxOutputTokens:512}));
  const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
- const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
+ const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{3,}/gu)||[];
  const addHint=(name,url)=>{
   const host=researchHost(url);
   if(!host||host===researchHost(brief.website)||hints.some(peer=>researchHost(peer.website)===host))return;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  };
  if(repair&&product){
-  const audience=brand.facts.some(f=>/çocuk|bebek|children|toddler/i.test(f.statement))?(market?.[3]==='tr'?'çocuk':'children'):'';
-  const organic=brand.facts.some(f=>/organik|organic/i.test(f.statement))?(market?.[3]==='tr'?'organik':'organic'):'';
-  const query=[product,market?.[1],audience,organic,market?.[3]==='tr'?'benzer ürün markaları üretici ürün sayfası':'alternative brands manufacturer product page'].filter(Boolean).join(' ');
+  const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
+  const query=[format,market?.[1],market?.[3]==='tr'?'markalar ürün çeşitleri satın al':'brands product range shop'].filter(Boolean).join(' ');
   const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(found);
   for(const result of found.results||[]){
-   const url=researchUrl(result.url),domain=researchHost(url).split('.')[0],key=nameKey(domain);
-   const name=(result.title?.match(/[\p{L}\p{N}]{3,}/gu)||[]).find(word=>nameKey(word)===key);
+   const url=researchUrl(result.url);
+   const name=(result.title?.match(/[\p{L}\p{N}]{3,}/gu)||[]).find(word=>publisherMatches(word,url,true));
    if(!name||seen.has(peerGroupKey(name))||!words.some(word=>nameKey((result.title||'')+' '+(result.content||'')).includes(nameKey(word))))continue;
    addHint(name,url);
   }
@@ -172,7 +171,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
    searches.push(publisherSearch);
    urls=owned(publisherSearch.results);
   }
-  const url=urls.find(url=>words.some(word=>nameKey(url.split('/').slice(3).join('/')).includes(nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
+  const url=urls.find(url=>words.some(word=>new URL(url).pathname.split(/[^\p{L}]+/u).some(part=>nameKey(part)===nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
   addHint(name,url);
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
