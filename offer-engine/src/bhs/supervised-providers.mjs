@@ -50,7 +50,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // A result allowance is a maximum, not a mandatory pre-purchase. Keep the
   // complete schema and semantic gates even when a terse review is affordable.
   const compactReview=receiptVersion==='v8'&&role==='manager'&&opts.compactReview===true;
-  const minimumFundedOutput=receiptVersion==='v8'&&role==='manager'?Math.min(requestedOutputTokens,compactReview?384:stage==='v8-final-report'?2048:1024):requestedOutputTokens;
+  const minimumFundedOutput=receiptVersion==='v8'&&role==='manager'&&!compactReview?Math.min(requestedOutputTokens,stage==='v8-final-report'?2048:1024):requestedOutputTokens;
   const reasoningAllowance=receiptVersion==='v8'&&!compactReview?(role==='fallbackWorker'?0:role==='worker'?3072:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
   let maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;

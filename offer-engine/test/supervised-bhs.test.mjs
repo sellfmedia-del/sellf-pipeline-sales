@@ -368,6 +368,13 @@ test('an account that cannot fund the full visible contract rejects before any p
  assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);assert.equal((await db.ledger.status()).chargedKurus,4900);
 });
 
+test('the compact final audit is never purchased with a truncated output allowance',async()=>{
+ const db=account(4780),t=transport(),p=v8Providers({...db,ledger:stageBudgetLedger(db.ledger,'synthesis')},t);
+ await assert.rejects(p.manager('v8-final-report',{},schema,{maxOutputTokens:2304,plainJson:true,compactReview:true}),e=>e.code==='budget_limit'&&e.budgetDiagnostic.minimumOutputTokens===2304);
+ assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,0);
+ assert.equal((await db.ledger.status()).chargedKurus,4780);
+});
+
 test('a large counted review can use a complete smaller response instead of reserving an arbitrary 4096-token minimum',async()=>{
  const db=account(4264),t=transport({onGenerate:async(_url,b)=>json({model:b.model,usage:{input_tokens:30000,output_tokens:1000},stop_reason:'end_turn',content:[{type:'text',text:'{"ok":true}'}]})});
  const counted={...t,fetchImpl:(url,options)=>url.endsWith('/count_tokens')?Promise.resolve(json({input_tokens:30000})):t.fetchImpl(url,options)};
