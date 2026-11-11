@@ -64,7 +64,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
   let rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
   if(plainJson)rawBody={...rawBody,output_config:{effort:'medium'}};
-  if(compactReview)rawBody={...rawBody,thinking:{type:'between_tools'}};
+  if(compactReview)rawBody={...rawBody,thinking:{type:'between_tools'},...(opts.lowEffort?{output_config:{...rawBody.output_config,effort:'low'}}:{})};
   // Haiku 5.5 explicitly supports forced client tool output without an initial
   // thinking block. This tool only returns data; it executes no action. Sonnet
   // still independently reviews the original evidence and the final report.

@@ -27,7 +27,8 @@ const compactReportSchema=obj({
  questions:obj(Object.fromEntries(dimensions.map(({id})=>[id,str(180)]))),
  benchmarks:finalSchema.properties.benchmarks
 });
-const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified']);
+const peerSearchSchema=obj({queries:arr(obj({name:str(100),query:str(350)}),4)});
+const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
 async function collectAttempt(run){
  try{return await run();}
@@ -50,14 +51,15 @@ function providerSource({url,title,text,method,asOf,scope,provenance}){
 async function corpus(previous){
  const brand=await previous('brand');
  const [searches,pages,scrapes]=await Promise.all([
-  sourcesFrom(previous,searchStages,'searches'),
-  sourcesFrom(previous,readStages,'pages'),
+  sourcesFrom(previous,[...searchStages,scrapeStages[0]],'searches'),
+  sourcesFrom(previous,[...readStages,scrapeStages[0]],'pages'),
   sourcesFrom(previous,scrapeStages,'scrapes')
  ]);
+ const {peerHints=[]}=await previous(scrapeStages[0]);
  const asOf=brand.packet.asOf;
  const searchSources=searches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:'Tavily arama alıntısı'}))).filter(Boolean);
  const actorSources=scrapes.flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId}}))).filter(Boolean);
- return {searches,scrapes,packet:{...brand.packet,sources:canonicalSources([...brand.packet.sources,...pages,...actorSources,...searchSources])}};
+ return {searches,scrapes,packet:{...brand.packet,entities:[...brand.packet.entities,...peerHints],sources:canonicalSources([...brand.packet.sources,...pages,...actorSources,...searchSources])}};
 }
 
 function queryFor(brief,topic,market){
@@ -81,6 +83,37 @@ async function actorRequest(context,providers,index,market){
  const scrapes=[];
  for(const request of shard(targets,index,scrapeStages.length))scrapes.push(await collectAttempt(()=>providers.enrich(request,{...context,geo})));
  return scrapes;
+}
+
+async function readResearchPages(brief,plan,targets,providers,collect){
+ if(!targets.length)return {sources:[],unavailable:[]};
+ return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,sourceLimit:targets.length,archivePages:async pages=>{
+  for(const page of pages){
+   const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
+   await providers.checkpoint('collection-raw-page',input,async()=>({encoding:'gzip-base64',data:gzipSync(JSON.stringify(page)).toString('base64')}));
+  }
+ }});
+}
+
+async function comparisonResearch(brief,brand,market,pool,providers,collect){
+ const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
+  instruction:'Onaylı marka ürünlerinden ana ikame edilebilir ürün veya hizmeti seç. Hedef pazarda o ürünün kendi resmî ürün sayfası olabilecek en fazla dört farklı marka için birer arama sorgusu yaz. name sadece adayın marka adı, query ise marka + somut ürün + ülke + resmî ürün sayfası kelimeleri olsun. İnternetten gelen sonuçlar daha sonra kaydedilip doğrulanacak. Rakip kararı verme, URL uydurma.',
+  brand:brief.brandName,market:market?.[1]||'',identity:brand.facts
+ },peerSearchSchema,{maxOutputTokens:512}));
+ const searches=[],hints=[];
+ const key=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
+ for(const {name,query} of plan.data?.queries||[]){
+  if(!name.trim()||!query.trim()||key(name)===key(brief.brandName))continue;
+  const search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
+  searches.push(search);
+  const nameKey=key(name);
+  const url=search.results?.map(r=>researchUrl(r.url)).find(url=>url&&nameKey.length>2&&key(researchHost(url).split('.')[0])===nameKey);
+  if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))continue;
+  hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
+ }
+ const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
+ const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
+ return {searches,pages:packet.sources,peerHints:hints};
 }
 
 // Research receipts remain intact. This packet is a compact index for Claude,
@@ -155,22 +188,17 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const brand=await previous('brand'),searches=await sourcesFrom(previous,searchStages,'searches');
   const urls=unique(searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean));
   const targets=shard(urls,readIndex,readStages.length);
-  if(!targets.length)return save({pages:[],unavailable:[]});
-  const packet=await collect(brief,brand.plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,sourceLimit:targets.length,archivePages:async pages=>{
-   for(const page of pages){
-    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
-    await providers.checkpoint('collection-raw-page',input,async()=>({encoding:'gzip-base64',data:gzipSync(JSON.stringify(page)).toString('base64')}));
-   }
-  }});
+  const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
   return save({pages:packet.sources,unavailable:packet.unavailable});
  }
  if(scrapeIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
+  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(1150),providers,collect):{searches:[],pages:[]};
   // The Actor adapter holds the final 6 TRY of this research account for Gemini.
-  const scrapes=await actorRequest({brief,searches,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},scoped(collectionBudgetKurus),scrapeIndex,market);
-  return save({scrapes});
+  const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},scoped(collectionBudgetKurus),scrapeIndex,market);
+  return save({...comparison,scrapes});
  }
  if(inventoryIndex>=0){
   const {packet}=await corpus(previous);
@@ -200,11 +228,15 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  const selectedIds=unique(index.flatMap(([,rows])=>rows.map(r=>r[0])));
  const originalQuotes=Object.fromEntries(selectedIds.map(id=>[id,context.known.get(id).quote]));
  const indexedUrls=new Set(index.map(([url])=>url));
- const unindexedSources=context.input.sources.filter(source=>!indexedUrls.has(source.url)&&source.sections.length).map(source=>[source.url,source.title,source.method,source.sections[0].proofIds[0],source.sections[0].text]);
+ const peerHosts=new Set(entities.filter(e=>e.role==='competitor').map(e=>researchHost(e.website)));
+ const unindexedSources=context.input.sources.filter(source=>source.sections.length&&(!indexedUrls.has(source.url)||peerHosts.has(researchHost(source.url)))).map(source=>{
+  const sections=source.sections.slice(0,peerHosts.has(researchHost(source.url))?3:1);
+  return [source.url,source.title,source.method,sections.map(s=>{const id=s.proofIds[0];return [id,context.known.get(id).quote];})];
+ });
  const completion=await providers.manager('v8-collection-final-bhs',{
   instruction:'Sellf için Türkçe ön BHS hazırla. Marka kimliği onaylandıktan sonra kanıtlar toplandı. Şimdi ilk kez değerlendir. Kesin çürütülen iddiayı kullanma. Belirsiz bilgiyi ölçülmüş gerçek olarak yazma; l alanında sınırını açıkla. Ham arşiv korunur. Önce altı boyuta dengeli bak, sonra önem sırasına göre her alan ve SWOT kolu için en fazla dört destekli bulgu seç. Aynı bulguyu çoğaltma; birden fazla alana uyuyorsa a içinde alan kimliklerini birlikte ver. Kısa JSON sözleşmesi: a alan kimlikleri (ana alan önce), o somut gözlem, p özgün proofId dizisi, k gözlem veya çıkarım türü, h kendi ticari yorumun, l kanıtın sınırı, w SWOT yönü veya none. o en fazla 150, h ve l en fazla 90 karakter olsun. questions alanında boyut başına bir somut görüşme sorusu ver. Aynı ürünü aynı pazarda sunan üç doğrudan rakibi kendi ürün kaynağıyla destekle. Kaynaksız sayı ve performans üretme. Açıklamayı tekrar etme ve tam JSON ile bitir.',
   brief,entities,areas:methodologyAreas,approvedIdentity:brand.facts,index,originalQuotes,unindexedSources
- },compactReportSchema,{maxOutputTokens:7600,minimumOutputTokens:3500,compactReview:true});
+ },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3500,compactReview:true,lowEffort:true});
  const data=expandCollectedReport(completion.data);
  const report=requireGroundedResearch(projectExpertReport(data,context));
  const citedUrls=new Set(report.sources.map(source=>source.url));
