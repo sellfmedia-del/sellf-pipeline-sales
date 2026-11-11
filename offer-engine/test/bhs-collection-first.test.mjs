@@ -153,7 +153,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
     return directPeerReply(request);
    }}
   });
-  assert.equal(searches,1);
+  assert.equal(searches,2);
   assert.equal(peerReviews,1);
   assert.equal(peerGap.supervision.acceptance.passed,true);
   assert.ok(peerGap.report.competitors.some(peer=>peer.name==='Organic Gamma'&&peer.website==='https://organicgammafoods.example'));

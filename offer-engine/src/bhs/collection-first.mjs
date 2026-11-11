@@ -140,6 +140,23 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
  },peerSearchSchema,{maxOutputTokens:512}));
  const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
+ const addHint=(name,url)=>{
+  if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))return;
+  hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
+ };
+ if(repair&&product){
+  const audience=brand.facts.some(f=>/çocuk|bebek|children|toddler/i.test(f.statement))?(market?.[3]==='tr'?'çocuk':'children'):'';
+  const organic=brand.facts.some(f=>/organik|organic/i.test(f.statement))?(market?.[3]==='tr'?'organik':'organic'):'';
+  const query=[product,market?.[1],audience,organic,market?.[3]==='tr'?'benzer ürün markaları üretici ürün sayfası':'alternative brands manufacturer product page'].filter(Boolean).join(' ');
+  const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
+  searches.push(found);
+  for(const result of found.results||[]){
+   const url=researchUrl(result.url),domain=researchHost(url).split('.')[0],key=nameKey(domain);
+   const name=(result.title?.match(/[\p{L}\p{N}]{3,}/gu)||[]).find(word=>nameKey(word)===key);
+   if(!name||seen.has(peerGroupKey(name))||!words.some(word=>nameKey((result.title||'')+' '+(result.content||'')).includes(nameKey(word))))continue;
+   addHint(name,url);
+  }
+ }
  for(const name of product?(plan.data?.candidates||[]):[]){
   const group=peerGroupKey(name);
   if(!group||seen.has(group))continue;
@@ -155,8 +172,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
    urls=owned(publisherSearch.results);
   }
   const url=urls.find(url=>words.some(word=>nameKey(url.split('/').slice(3).join('/')).includes(nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
-  if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))continue;
-  hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
+  addHint(name,url);
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
  const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
