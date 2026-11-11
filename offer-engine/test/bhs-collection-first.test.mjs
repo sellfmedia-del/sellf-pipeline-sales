@@ -1,16 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BudgetError} from '../src/budget/ledger.mjs';
-import {runCollectionFirstStage,collectionBudgetKurus} from '../src/bhs/collection-first.mjs';
+import {runCollectionFirstStage,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,plan,packet,modelAnswer} from './fixtures/sequential.mjs';
 import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
 
+const clock=()=>Date.parse('2026-11-11T10:00:00Z');
+const fixturePacket=()=>{
+ const data=packet();
+ const domains=new Map(plan.entities.filter(e=>e.role==='competitor').map(e=>[e.website,'https://'+e.name.toLowerCase().replaceAll(' ','')+'.example/']));
+ return {...data,entities:data.entities.map(e=>({...e,website:domains.get(e.website)||e.website})),sources:data.sources.map(s=>({...s,url:domains.get(s.url)||s.url,finalUrl:domains.get(s.finalUrl)||s.finalUrl}))};
+};
+const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
+
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
  const db=await localBudget(),seen=new Map();
- const brand={packet:packet(),plan,decision:'accepted',facts:[]};
+ const brand={packet:fixturePacket(),plan,decision:'accepted',facts:[]};
  seen.set('brand',brand);
  const previous=async phase=>seen.get(phase);
  const phases=sequentialPhases.slice(sequentialPhases.indexOf('brand')+1,sequentialPhases.indexOf('synthesis'));
@@ -19,6 +27,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
  try{
   for(const phase of phases){
    const providers={
+    now:clock,
     costStatus:()=>db.ledger.status(),
     checkpoint:(key,input,run)=>db.ledger.once(key,input,0,run),
     manager:async()=>{managers++;throw Error('Claude should start only after the archive closes');},
@@ -42,7 +51,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
      };
     }
    };
-   const stage=await runCollectionFirstStage({phase,brief,providers,previous,collect:async()=>packet(),finish:data=>data});
+   const stage=await runCollectionFirstStage({phase,brief,providers,previous,collect:async()=>fixturePacket(),finish:data=>data});
    seen.set(phase,stage);
   }
   assert.ok(workers>0);
@@ -53,25 +62,27 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   const boundary=seen.get('coverage_plan');
   assert.equal(boundary.collectionClosed,true);
   assert.equal(boundary.researchAccount.capKurus-boundary.researchAccount.startKurus,collectionBudgetKurus);
+ assert.ok(boundary.researchAccount.finalReserveKurus>0);
   assert.ok(boundary.researchAccount.committedKurus<=collectionBudgetKurus);
   const providers={manager:async()=>{managers++;throw new BudgetError('test_stop','Reached final Claude review.');}};
   await assert.rejects(runCollectionFirstStage({phase:'synthesis',brief,providers,previous,finish:data=>data}),{code:'test_stop'});
   assert.equal(managers,1);
-  const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
+  const context=sequentialContext(brief,{packet:fixturePacket(),searches:[],peerDiscoveryVersion:'product-v2'});
   const input=stageModelInput(context,{areas:true});
-  const peers=plan.entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',reason:'Aynı ürün ve hedef pazar.',sourceIds:[context.cards.find(c=>c.url===e.website).id]}));
+  const peers=fixturePacket().entities.filter(e=>e.role==='competitor').map(e=>({entityId:e.id,relationship:'direct',reason:'Aynı ürün ve hedef pazar.',sourceIds:[context.cards.find(c=>c.url===e.website).id]}));
   const draft=modelAnswer('v8-report-draft',{...input,peerReview:peers});
   const data={peers,benchmarks:[],questions:Object.fromEntries(draft.dimensions.map(d=>[d.id,'Bu bulguyu hangi verilerle doğrulayabiliriz?'])),findings:draft.findings.map(f=>({
    a:[methodologyAreas.find(a=>a.dimension===f.dimension).key],o:f.observation,p:f.sourceIds,k:f.kind,h:f.commercialHypothesis,l:f.limitation,w:Object.keys(draft.swot).find(key=>draft.swot[key].includes(f.id))||'none'
   }))};
   const result=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
-   assert.equal(stage,'v8-collection-final-bhs');
+   if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
+   assert.equal(stage,'v8-collection-reserved-report');
    const publicQuotes=request.unindexedSources.filter(row=>row[0]==='public.example').flatMap(row=>row[2].map(([,quote])=>quote));
    assert.ok(publicQuotes.some(quote=>quote.includes('increase')));
    assert.ok(publicQuotes.some(quote=>quote.includes('decrease')));
    const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
    const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
-   return {data:{...data,findings:data.findings.map(f=>({...f,p:remap(f.p)})),peers:data.peers.map(p=>({...p,sourceIds:remap(p.sourceIds)}))},model:'claude-sonnet-5-5'};
+    return {data:{...data,findings:data.findings.map(f=>({...f,p:remap(f.p)}))},model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.equal(result.supervision.reviewMode,'collection-first');
   assert.equal(result.supervision.acceptance.passed,true);
@@ -80,18 +91,28 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   let compact;
   const repaired=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
    reviews.push(stage);
-   if(stage==='v8-collection-final-bhs'){
+   if(stage==='v8-collection-reserved-peers')return directPeerReply(request);
+   if(stage==='v8-collection-reserved-report'){
     const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
     const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
     compact={...data,findings:data.findings.map(f=>({...f,p:remap(f.p)})),peers:data.peers.map(p=>({...p,sourceIds:remap(p.sourceIds)}))};
     return {data:{...compact,findings:compact.findings.filter(f=>!f.a[0].startsWith('digital_')),peers:[]},model:'claude-sonnet-5-5'};
    }
-   assert.ok(request.issues.includes('direct_competitors_incomplete'));
+   assert.ok(request.issues.includes('insufficient_dimension_depth'));
    return {data:{...compact,findings:compact.findings.filter(f=>f.a[0].startsWith('digital_'))},model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
-  assert.deepEqual(reviews,['v8-collection-final-bhs','v8-collection-final-gaps']);
+  assert.deepEqual(reviews,['v8-collection-reserved-peers','v8-collection-reserved-report','v8-collection-reserved-gaps']);
   assert.equal(repaired.supervision.acceptance.passed,true);
  }finally{await db.close();}
+});
+
+test('identity and infrastructure costs reduce research room before any research is bought',()=>{
+ const funding=planCollectionFunding({chargedKurus:2023,capKurus:5000},400,clock());
+ assert.equal(funding.startKurus,1623);
+ assert.ok(funding.researchLimitKurus<2500);
+ assert.equal(funding.capKurus+funding.finalReserveKurus+funding.finalInfrastructureKurus,5000);
+ assert.equal(funding.finalReserveKurus,Object.values(funding.finalQuotes).reduce((sum,quote)=>sum+quote,0));
+ assert.throws(()=>planCollectionFunding({chargedKurus:4500,capKurus:5000},400,clock()),{code:'budget_limit'});
 });
 
 test('a scoped research ledger shares the same account and cannot claim past its ceiling',async()=>{
