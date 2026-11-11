@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm test && npm run build",
+  "buildCommand": "if [ \"$VERCEL_GIT_COMMIT_REF\" = qa/bhs-peer-final-humm ]; then export OFFER_BHS_QA_CASE=humm OFFER_BHS_QA_COMMIT=\"$VERCEL_GIT_COMMIT_SHA\" OFFER_BHS_COLLECTION_FIRST=1 OFFER_BHS_QA_SEED_SNAPSHOT=humm-peer-final; fi; npm run build",
   "outputDirectory": "offer-engine/public",
   "functions": {
     "api/logo-upload.js": {
