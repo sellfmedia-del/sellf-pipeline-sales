@@ -12,20 +12,21 @@ export const finalEvidenceSchema=obj({verdicts:arr(ordinal),benchmarks:arr({type
 // Bring forward the claims Claude already reviewed. Each still needs a final
 // verdict. Never let an operator's sparse grouping erase prior source evidence.
 export function finalEvidenceCandidates(draft,stages,swot,context){
- const areas=new Map(),hints=new Map(),rows=[];
- const add=(finding,area,quadrant)=>{
+ const areas=new Map(),hints=new Map(),reviewed=new Set(),rows=[];
+ const add=(finding,area,quadrant,alreadyReviewed=false)=>{
   if(!finding.sourceIds?.length||finding.sourceIds.some(id=>!context.known.has(id)))return;
   if(rows.some(f=>f.id===finding.id||f.observation.toLocaleLowerCase('tr')===finding.observation.toLocaleLowerCase('tr')))return;
   rows.push(finding);
   if(area)areas.set(finding.id,area);
   if(quadrant)hints.set(finding.id,quadrant);
+  if(alreadyReviewed)reviewed.add(finding.id);
  };
  for(const f of draft.findings)add(f,null,quadrants.find(q=>draft.swot[q]?.includes(f.id)));
- for(const {quadrant,...f} of swot)add(f,null,quadrant);
+ for(const {quadrant,...f} of swot)add(f,null,quadrant,true);
  for(const stage of stages)for(const f of stage.facts||[]){
   const dimension=topics[f.topic];if(!dimension||!f.statement?.trim())continue;
   const substitute=stage.phase==='competition'&&f.topic==='product_overlap';
-  add({id:'reviewed_'+hash({phase:stage.phase,id:f.id}).slice(0,20),dimension,kind:f.kind,stance:'neutral',observation:f.statement,sourceIds:f.sourceIds,commercialHypothesis:substitute?'Aynı kategorideki alternatif ürünler satın alma kararında rekabet yaratabilir; talep etkisi ölçülmedi.':'Ticari etkisi şirketin kendi verileriyle değerlendirilebilir.',limitation:f.limitation||'Kapsam incelenen kaynak ve dönemle sınırlıdır.',question:questions[dimension],priority:'medium'},areaByTopic[f.topic],substitute?'threat':null);
+  add({id:'reviewed_'+hash({phase:stage.phase,id:f.id}).slice(0,20),dimension,kind:f.kind,stance:'neutral',observation:f.statement,sourceIds:f.sourceIds,commercialHypothesis:substitute?'Aynı kategorideki alternatif ürünler satın alma kararında rekabet yaratabilir; talep etkisi ölçülmedi.':'Ticari etkisi şirketin kendi verileriyle değerlendirilebilir.',limitation:f.limitation||'Kapsam incelenen kaynak ve dönemle sınırlıdır.',question:questions[dimension],priority:'medium'},areaByTopic[f.topic],substitute?'threat':null,true);
  }
  for(const source of context.packet.sources.filter(s=>s.provenance?.actor==='logiover/website-seo-audit-crawler')){
   const cards=context.cards.filter(c=>c.url===source.finalUrl&&c.scope?.startsWith('Apify structured sample')&&/statusCode: 200\b|h1Count: 1\b/.test(c.quote));
@@ -33,17 +34,20 @@ export function finalEvidenceCandidates(draft,stages,swot,context){
   const heading=cards.find(c=>/h1Count: 1\b/.test(c.quote));
   add({id:'seo_'+hash(source.finalUrl).slice(0,20),dimension:'digital',kind:'observation',stance:'neutral',observation:new URL(source.finalUrl).hostname+' adresinden başlatılan Apify taramasında dönen HTML HTTP 200 olarak kaydedildi'+(heading?' ve bir H1 başlığı içeriyordu.':'.'),sourceIds:[...new Set([status.id,heading?.id].filter(Boolean))],commercialHypothesis:'Bu sinyaller sayfa düzeyinde teknik SEO kontrolüne başlangıç sağlar.',limitation:'Taramaya dönen statik HTML örneğidir. Türkiye oturumu, hız, mobil deneyim ve tüm sitenin durumu doğrulanmadı.',question:questions.digital,priority:'medium'},'digital_1');
  }
- return {rows,areas,hints};
+ return {rows,areas,hints,reviewed};
 }
 
 export function finalEvidenceInput(candidates,benchmarks,context){
  const sources=[],numbers=new Map();
  const cite=ids=>[...new Set(ids.flatMap(id=>context.proofGroups.get(id)||[id]))].flatMap(id=>{
   const c=context.known.get(id);if(!c)return [];
-  if(!numbers.has(id)){numbers.set(id,sources.length);sources.push([c.url,c.quote]);}
+  if(!numbers.has(id)){numbers.set(id,sources.length);sources.push([new URL(c.url).hostname,c.quote]);}
   return [numbers.get(id)];
  });
- const findings=candidates.rows.map(f=>[f.dimension,f.kind,f.observation,f.limitation,cite(f.sourceIds),candidates.hints.get(f.id)||null,...(f.id.startsWith('reviewed_')&&!candidates.hints.has(f.id)?[]:[f.commercialHypothesis])]);
+ const findings=candidates.rows.map(f=>{
+  const reviewed=candidates.reviewed.has(f.id),hint=candidates.hints.get(f.id)||null;
+  return [f.dimension,f.kind,f.observation,reviewed?'':f.limitation,reviewed?null:cite(f.sourceIds),hint,...(!reviewed||hint?[f.commercialHypothesis]:[])];
+ });
  const comparisons=benchmarks.map(b=>[b.metric,b.entityId,b.value,b.unit,b.period,cite(b.sourceIds)]);
  return {findings,comparisons,sources};
 }

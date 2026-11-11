@@ -33,7 +33,8 @@ function modelTransport({mutate,fail}={}){
   if(stage==='v8-final-verdicts'){
    assert.equal(b.thinking.type,'between_tools');
    assert.ok(b.max_tokens<=512);
-   assert.ok(context.findings.every(row=>row[4].every(i=>context.sources[i]?.[1])));
+   assert.ok(context.findings.every(row=>row[4]===null||row[4].every(i=>context.sources[i]?.[1])));
+   assert.ok(context.findings.some(row=>row[4]===null));
   }else if(managerSchema?.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:managerSchema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
   if(managerSchema?.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(managerSchema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
   const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
