@@ -27,6 +27,7 @@ function modelTransport({mutate,fail}={}){
   const stage=context.qaStage;events.push({type:manager?'manager':'worker',stage});
   if(fail?.(stage))throw new DOMException('Synthetic provider timeout','TimeoutError');
   const answer=modelAnswer(stage,context);let data=mutate?mutate(stage,answer,context):answer;
+  if(!manager&&stage==='v8-coverage-plan'&&b.generationConfig.responseJsonSchema.properties.queries.items.type==='object')data={...data,queries:data.queries.map(q=>typeof q==='string'?{query:q,target:'operations'}:q),actorRequests:data.actorRequests.map(r=>({target:'digital',...r}))};
   if(manager&&stage==='v8-swot-review'&&b.output_config.format.schema.properties.patches)data={patches:[],additionalFacts:[],...data};
   if(manager&&b.output_config.format.schema.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:b.output_config.format.schema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
   if(manager&&b.output_config.format.schema.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(b.output_config.format.schema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
@@ -45,7 +46,11 @@ test('six logical stages run in order through real PostgreSQL receipts and provi
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,input)=>{
   if(stage==='v8-competition-review')return {...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']};
   if(stage==='v8-swot-review')return {...data,decision:'limited',acceptedIds:data.acceptedIds.slice(1),rejectedIds:data.acceptedIds.slice(0,1)};
-  if(stage==='v8-coverage-plan')assert.ok(input.requiredSwotGaps.includes('strength'));
+  if(stage==='v8-coverage-plan'){
+   assert.ok(input.requiredSwotGaps.includes('strength'));
+   assert.ok(input.evidenceCounts.brand>=4);
+   return {...data,queries:[{target:'brand',query:'redundant already verified brand'},{target:'strength',query:'find missing strength evidence'}]};
+  }
   return data;
  }});
  try{
@@ -61,6 +66,8 @@ test('six logical stages run in order through real PostgreSQL receipts and provi
   assert.ok(t.events.findIndex(e=>e.stage==='v8-sector-extract')>t.events.findIndex(e=>e.stage==='v8-brand-review'));
   assert.ok(t.events.findIndex(e=>e.stage==='v8-swot-draft')>t.events.findIndex(e=>e.stage==='v8-competition-review'));
   assert.equal(t.events.filter(e=>e.stage==='v8-competition-review').length,1);
+  assert.equal(t.events.some(e=>e.query==='redundant already verified brand'),false);
+  assert.equal(t.events.some(e=>e.query==='find missing strength evidence'),true);
   const cost=await db.ledger.status();assert.ok(cost.chargedKurus<=5000);assert.ok(cost.chargedKurus>500);
   const count=t.events.length;
   for(const phase of sequentialPhases.slice(0,-2))await run(db,phase,t);

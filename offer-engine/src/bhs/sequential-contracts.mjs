@@ -1,6 +1,7 @@
 import {hash,BudgetError} from '../budget/ledger.mjs';
 import {expertContext,expertSchema,expertModelInput} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
+import {dimensions} from './brief.mjs';
 
 export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
 export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete']);
@@ -59,6 +60,8 @@ swotFindingSchema.properties.quadrant={type:'string',enum:['strength','weakness'
 export const swotSchema=obj({findings:arr(swotFindingSchema),unknowns:arr(str(400))});
 export const swotReviewSchema=obj({...reviewSchema.properties,patches:arr(swotFindingSchema),additionalFacts:arr(swotFindingSchema)});
 export const coverageSchema=obj({coverage:expertProperties.coverage,queries:arr(str(500),2),actorRequests:actorRequestsSchema,priorities:arr(str(500))});
+const researchTarget={type:'string',enum:[...dimensions.map(d=>d.id),'brand','sector','strength','weakness','opportunity','threat']};
+export const targetedCoverageSchema=obj({...coverageSchema.properties,queries:arr(obj({query:str(500),target:researchTarget}),2),actorRequests:arr(obj({...actorRequestsSchema.items.properties,target:researchTarget}),2)});
 export const finalSchema=obj({...expertProperties,swot:obj(Object.fromEntries(['strength','weakness','opportunity','threat'].map(k=>[k,arr(str(80))])))});
 
 const patch=structuredClone(expertProperties.findings.items);
