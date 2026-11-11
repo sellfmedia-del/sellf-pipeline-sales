@@ -135,3 +135,14 @@ test('v8 peer discovery prioritizes observed nut product pages over earlier priv
  const packet=await createEvidenceCollector({read,preferProductLinks:true,maxSources:12})(snapshotBrief(brief),plan);
  for(const peer of plan.entities.filter(e=>e.role==='competitor'))assert.ok(packet.sources.some(s=>new URL(s.finalUrl).hostname===new URL(peer.website).hostname&&s.finalUrl.includes('kuruyemis')));
 });
+
+test('v8 retains a near-full 14-source seed and still captures the three competitor domains',async()=>{
+ const sb=snapshotBrief(brief),seed={...context().packet,briefHash:briefHash(sb)};
+ seed.sources=Array.from({length:14},(_,i)=>({...seed.sources[0],id:'ev'+(i+1),url:i?'https://archive'+i+'.example/':sb.website,finalUrl:i?'https://archive'+i+'.example/':sb.website,excerpts:Array.from({length:7},(_,n)=>({text:('Archived source '+i+' paragraph '+n+' public facts. ').repeat(60).slice(0,1700)}))}));
+ const before=JSON.stringify(seed),read=async url=>({status:200,headers:{'content-type':'text/html'},body:Buffer.from('<title>Peer products</title><p>'+('A public product catalogue with organic products, prices and delivery conditions. '.repeat(170))+'</p>')});
+ const legacy=await createEvidenceCollector({read,render:async()=>[],preferProductLinks:true})(sb,plan,{initialPacket:seed,sourceLimit:20});
+ assert.ok(legacy.unavailable.some(s=>s.reason==='source_packet_capacity'));
+ const wide=await createEvidenceCollector({read,render:async()=>[],preferProductLinks:true,maxSourceChars:360000})(sb,plan,{initialPacket:seed,sourceLimit:20});
+ assert.ok(plan.entities.filter(e=>e.role==='competitor').every(e=>wide.sources.some(s=>new URL(s.finalUrl).hostname===new URL(e.website).hostname)));
+ assert.deepEqual(wide.sources.slice(0,14),seed.sources);assert.equal(JSON.stringify(seed),before);assert.equal(wide.evidenceTransportVersion,'sequential-v8-wide');
+});

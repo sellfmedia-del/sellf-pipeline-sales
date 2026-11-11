@@ -5,7 +5,7 @@ import {createLedger,BudgetError} from '../budget/ledger.mjs';
 import {briefHash,snapshotBrief} from './brief.mjs';
 
 export const backgroundBhsEnabled=()=>process.env.OFFER_BHS_BACKGROUND_ENABLED==='true';
-const jobRow=row=>row?{id:row.id,leadId:row.lead_id,budgetId:row.budget_id,briefHash:row.brief_hash,brief:JSON.parse(row.brief_text),phase:row.phase,state:row.state,...row.spec,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),diagnostic:row.diagnostic}:null;
+const jobRow=row=>row?{id:row.id,leadId:row.lead_id,budgetId:row.budget_id,briefHash:row.brief_hash,brief:JSON.parse(row.brief_text),phase:row.phase,state:row.state,...row.spec,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),diagnostic:row.diagnostic,cancelRequested:row.cancel_requested===true}:null;
 export function createBhsJobStore({store=runtimeStore(),jwt,workerSecret=process.env.BHS_WORKER_SECRET}={}){
  const browser=(op,args)=>store.call('bhs_job_'+op,{jwt,...args});
  const worker=(op,args={})=>{if(!/^[A-Za-z0-9_-]{43}$/.test(workerSecret||''))throw new BudgetError('not_configured','BHS arka plan bağlantısı gerekli.');return store.call('bhs_job_'+op,{workerSecret,...args});};

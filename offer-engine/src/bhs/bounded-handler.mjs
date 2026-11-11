@@ -108,8 +108,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     const saved=await queue.read(job),updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
     if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
     if(saved.state!=='complete'){
-     if(['paused','cancelled'].includes(saved.state))return res.status(422).json({code:saved.diagnostic?.code||'stage_paused',error:'BHS araştırması durdu; aşamalar ve maliyet kayıtları korundu.',phase:saved.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:saved.state==='paused'});
-     return res.status(202).json({phase:saved.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background'});
+     if(['paused','cancelled'].includes(saved.state))return res.status(422).json({code:saved.diagnostic?.code||'stage_paused',error:'BHS araştırması durdu; aşamalar ve maliyet kayıtları korundu.',phase:saved.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:true});
+     return res.status(202).json({phase:saved.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
     }
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
@@ -121,10 +121,13 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
    };
    if(queue&&action==='continue'){
-    const saved=await queue.read(job);
-    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id||!['paused','complete'].includes(saved.state))throw new BudgetError('continuation_unavailable','Araştırma sürerken mevcut bilgilerle devam edilemez.');
+    let saved=await queue.read(job);
+    if(saved.briefHash!==hash||saved.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    const active=['queued','running'].includes(saved.state);
+    if(active)saved=await queue.cancel(job);
+    if(!['paused','complete','cancelled'].includes(saved.state)&&!(saved.state==='running'&&saved.cancelRequested))throw new BudgetError('continuation_unavailable','Araştırmanın durdurulduğu doğrulanamadı.');
     const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=saved.phase;
-    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason:saved.diagnostic?.code||'quality_review'}));
+    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason:saved.diagnostic?.code||(active||saved.state==='cancelled'?'research_cancelled':'quality_review')}));
     return await finish(partial);
    }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');

@@ -29,6 +29,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0}={})
 }
 export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date.now,apify,infrastructureOffsetKurus=0,...options}={}){
  const scoped=stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus}),base=createRuntimeProviders({...options,ledger:scoped,fetchImpl,now});
- const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now});
+ // At coverage only the gap extraction, draft and final audit remain.
+ const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,followingKurus:phase==='coverage_actors'?750:1400});
  return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8'}),costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once('audit:v8:checkpoint:'+name+':'+hash(input),input,0,run),availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence};
 }

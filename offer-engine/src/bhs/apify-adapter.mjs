@@ -63,7 +63,7 @@ function recordsForEvidence(actor,rows,target,context){
  }
  return result;
 }
-export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
  let policies;const metadata=new Map();
  async function json(path,{body,maxBytes=1000000,deadline=Infinity}={}){
   const remaining=Math.min(12000,deadline-now());if(remaining<=0)throw new BudgetError('actor_time_limit','Apify aşamasının süre sınırına ulaşıldı.');
@@ -107,7 +107,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     const status=await ledger.status();
     // Meet a verified minimum only inside the saved individual cap and total account.
     const requestedUsd=Math.min(.4,Math.max(.04,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0));
-    const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus:1400,pricing});
+    const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus,pricing});
     const query=new URLSearchParams({maxTotalChargeUsd:String(limit.maxTotalChargeUsd),maxItems:String(target.maxItems),timeout:'60',waitForFinish:'0'});
     const identity={actorId,input:target.input,capUsd:limit.maxTotalChargeUsd,maxItems:target.maxItems,timeout:60};
     return ledger.once(step,identity,limit.reservedKurus,async()=>{
