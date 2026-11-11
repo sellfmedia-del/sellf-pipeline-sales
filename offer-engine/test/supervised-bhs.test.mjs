@@ -316,6 +316,23 @@ test('v8 content supervisors think adaptively inside the same quoted output cap 
  }
 });
 
+test('Claude schema preflight can switch transport before buying the single validated review',async()=>{
+ const db=account(4176),t=transport();let rejected=0;
+ const p=v8Providers(db,{...t,fetchImpl:async(url,options)=>{
+  const body=options.body?JSON.parse(options.body):null;
+  if(url.endsWith('/count_tokens')&&body.output_config.format){
+   rejected++;assert.equal((await db.ledger.status()).chargedKurus,4176);
+   return new Response(JSON.stringify({error:{message:'Output schema is too complex'}}),{status:400});
+  }
+  return t.fetchImpl(url,options);
+ }});
+ const result=await p.manager('v8-final-report',{},schema,{maxOutputTokens:4096});
+ assert.deepEqual(result.data,{ok:true});assert.equal(rejected,1);
+ const generations=t.calls.filter(c=>c.url.endsWith('/messages'));
+ assert.equal(generations.length,1);assert.equal(generations[0].body.output_config.format,undefined);
+ assert.equal((await db.ledger.status()).chargedKurus,4176+result.accountedKurus);
+});
+
 test('historical scraper caps require exact account and actor ownership and never become active policies',async()=>{
  const {historicalApifyLimits}=await import('../src/bhs/supervised-readiness.mjs');const {actorIds}=await import('../src/bhs/apify-inputs.mjs');let calls=0;
  const out=await historicalApifyLimits({token:'private-test',userId:'ExactAccount',fetchImpl:async(url,options)=>{

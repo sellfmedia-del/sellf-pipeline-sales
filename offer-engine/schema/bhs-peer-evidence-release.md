@@ -22,6 +22,14 @@ saved evidence can be reviewed without purchasing the same provider reply.
 Claude's verdict list uses a stable schema and the server requires a decision
 for every submitted candidate.
 
+Four independently supported findings are sufficient for further research in a
+heading. Tagged optional searches and Actor requests for an adequately covered
+heading are skipped. The comparison focuses on up to four verified peers.
+The final report retains all valid findings that contribute to the analysis.
+Missing SWOT directions enter gap research and still need source proof at the
+final quality gate. The final Claude response is validated against the full
+server contract without compiling a provider grammar for the report review.
+
 The same 50 TRY account funds all paid providers. An Actor run is capped at
 0.20 USD or its lower saved limit. BHS stage keys and the database schema are
 unchanged. A user can stop an active background audit and continue with the
