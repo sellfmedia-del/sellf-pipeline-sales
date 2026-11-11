@@ -407,7 +407,14 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
    return [key,{...value,findingIds,status:findingIds.length?value.status:'unavailable'}];
   }));
   const needed=task=>(evidenceCounts[task.target]||0)<researchTargetCount;
-  const coveragePlan=targeted?{...plan.data,coverage,queries:plan.data.queries.filter(needed).map(task=>task.query),actorRequests:plan.data.actorRequests.filter(needed).map(({target,...request})=>request),researchTargetCounts:evidenceCounts}:{...plan.data,coverage};
+  const queries=targeted?plan.data.queries.filter(needed):[];
+  const missingOperations=!evidenceCounts.operations&&!queries.some(q=>q.target==='operations');
+  const missingPerception=!evidenceCounts.perception&&!queries.some(q=>q.target==='perception');
+  if(targeted&&(missingOperations||missingPerception)){
+   const focus=missingOperations&&missingPerception?'operasyon üretim tesis teslimat iade müşteri yorum şikâyet marka yanıtı':missingOperations?'üretim tesis kapasite teslimat iade operasyon':'müşteri yorum şikâyet puan marka yanıtı';
+   queries.unshift({target:missingOperations?'operations':'perception',query:`${queryBrand(brief)} ${focus} ${brief.goals.slice(0,100)}`});
+  }
+  const coveragePlan=targeted?{...plan.data,coverage,queries:queries.slice(0,2).map(task=>task.query),actorRequests:plan.data.actorRequests.filter(needed).map(({target,...request})=>request),researchTargetCounts:evidenceCounts}:{...plan.data,coverage};
   return finish({...prior,coveragePlan});
  }
  if(phase==='coverage_sources'){
@@ -436,7 +443,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const baseline=await previous('swot');
   const known=new Set(baseline.packet.sources.map(s=>s.finalUrl+' '+s.contentHash));
   if(!prior.packet.sources.some(s=>!known.has(s.finalUrl+' '+s.contentHash)))return finish({...prior,facts:[],correctionCandidates:[],correctionRounds:0});
-  const worker=await reviewableOperator(()=>providers.worker('v8-gap-extract',{instruction:'Ek araştırmanın getirdiği yeni veya düzeltilmiş olguları 24 BHS alanının tamamı için çıkar; finans, operasyon, satış hunisi, dijital, algı ve rekabet eksiklerini yalnız sektör konularına daraltma. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context,{areas:true}),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(extractionSchema,context),{maxOutputTokens:8192}));
+  const worker=await reviewableOperator(()=>providers.worker('v8-gap-extract',{instruction:'Ek araştırmanın getirdiği yeni veya düzeltilmiş olguları 24 BHS alanının tamamı için çıkar; finans, operasyon, satış hunisi, dijital, algı ve rekabet eksiklerini yalnız sektör konularına daraltma. Her fact.topic için verilen areas listesindeki tam alan key değerini kullan (örneğin operations_3 veya perception_2). Operasyon için kaynaklı tesis, teslimat, iade veya servis işleyişini; algı için platformu ve kapsamı belirtilmiş müşteri geri bildirimini ayrı ayrı ara. Marka politikasını gerçekleşmiş hizmet kalitesi diye yazma. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context,{areas:true}),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(extractionSchema,context),{maxOutputTokens:8192}));
   const selected=selectReviewableFacts(worker.data.facts,context);
   return finish({...prior,facts:[],correctionCandidates:selected.facts,unknowns:worker.data.unknowns,correctionRounds:1,operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator}});
  }
@@ -444,7 +451,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='report_draft'){
   const draftInput=stageModelInput(context,{areas:true});
   const actorProof=draftInput.sources.filter(s=>s.scope?.startsWith('Apify structured sample'));
-  const drafted=await providers.worker('v8-report-draft',{instruction:expertInstruction()+'\nNihai yönetici denetimi için TAM bir ön BHS TASLAĞI oluştur. Altı boyutun HER BİRİNDE en az bir kaynaklı bulgu olmalı; kanıt yeterliyse ikiden fazla adayla destekle. Finansal, operasyonel, satış hunisi, dijital, algı ve rekabet bulgularının her birini doğru dimension altında tut. Toplam en az 12 farklı kaynaklı bulgu; üst sınır yok. Tüm doğrulanmış farklı bulguları, 24 alanı, üç doğrulanmış doğrudan rakibi ve dört SWOT yönünü koru. Güç ve zayıflık için kuruma ait ayrı kanıt kullan. Teknik bulgular için technicalSamples içindeki gözlenen sayfa başlığı, açıklama, robots, canonical, H1, alt metin ve durum kodu gibi statik işaretleri değerlendir; hız, trafik, sıralama ve çalışırlık iddiası çıkarma. Ölçüleri kaynakta aynen kontrol et. Şikâyet örneklerini tarih/platform/örneklemle sınırla, doğrulanmamış sayım verme. Şirket beyanını ve üçüncü taraf verisini tarih ve yayıncıyla birlikte yaz. observation en fazla 280, commercialHypothesis 260, limitation 220, question 180 karakter olsun. Ölçülmemiş skoru null bırak. Karşılaştırılabilir gerçek sayılar yoksa benchmarks boş olabilir; matrisin boş hücrelerini sunucu tamamlar. coverage notları kısa olsun. sourceIds yalnız verilen proofIds kimlikleri; SWOT, overview, opportunity/risk ve coverage bulgu kimlikleri findings içinden seçilsin. Gerçekleşmiş sonuç olmayan çıkarımları kind=inference ile belirt. Bulgular, sınırlamalar, hipotezler, sorular ve kapsam notlarının tamamını Türkçe yaz.',...draftInput,technicalSamples:actorProof,approvedFacts:approved,approvedSwot:prior.swot,peerReview:competition.peers,coveragePlan:prior.coveragePlan,unreviewedCorrections:prior.correctionCandidates},finalSchema,{maxOutputTokens:12288});
+  const drafted=await providers.worker('v8-report-draft',{instruction:expertInstruction()+'\nNihai yönetici denetimi için TAM bir ön BHS TASLAĞI oluştur. Altı boyutun HER BİRİNDE en az bir kaynaklı bulgu olmalı; kanıt yeterliyse ikiden fazla adayla destekle. Operasyonda marka kaynaklı üretim, teslimat, iade veya hizmet işleyişini ara; bir politikanın yayımlanmasını hizmet başarısı sayma. Algıda müşteri görüşünü şirket beyanından ayır. Şikâyet bulgusunun gözlem cümlesi platform adıyla başlasın; ‘sıkça’ gibi genellemeler, doğrulanmamış yüzdeler, pazar liderliği veya sadakat etkisi ekleme. Kaynaklı gözlem sağlamken hipotez ve soru ölçülmemiş bir rakamı ima etmesin. SWOT için marka içi güçlü/zayıf yön ile sektör veya rakip kaynaklı dış fırsat/tehdidi ayrı göster; her birini ayrı aday kimliğine bağla. Finansal, operasyonel, satış hunisi, dijital, algı ve rekabet bulgularının her birini doğru dimension altında tut. Toplam en az 12 farklı kaynaklı bulgu; üst sınır yok. Tüm doğrulanmış farklı bulguları, 24 alanı, üç doğrulanmış doğrudan rakibi ve dört SWOT yönünü koru. Güç ve zayıflık için kuruma ait ayrı kanıt kullan. Teknik bulgular için technicalSamples içindeki gözlenen sayfa başlığı, açıklama, robots, canonical, H1, alt metin ve durum kodu gibi statik işaretleri değerlendir; hız, trafik, sıralama ve çalışırlık iddiası çıkarma. Ölçüleri kaynakta aynen kontrol et. Şikâyet örneklerini tarih/platform/örneklemle sınırla, doğrulanmamış sayım verme. Şirket beyanını ve üçüncü taraf verisini tarih ve yayıncıyla birlikte yaz. observation en fazla 280, commercialHypothesis 260, limitation 220, question 180 karakter olsun. Ölçülmemiş skoru null bırak. Karşılaştırılabilir gerçek sayılar yoksa benchmarks boş olabilir; matrisin boş hücrelerini sunucu tamamlar. coverage notları kısa olsun. sourceIds yalnız verilen proofIds kimlikleri; SWOT, overview, opportunity/risk ve coverage bulgu kimlikleri findings içinden seçilsin. Gerçekleşmiş sonuç olmayan çıkarımları kind=inference ile belirt. Bulgular, sınırlamalar, hipotezler, sorular ve kapsam notlarının tamamını Türkçe yaz.',...draftInput,technicalSamples:actorProof,approvedFacts:approved,approvedSwot:prior.swot,peerReview:competition.peers,coveragePlan:prior.coveragePlan,unreviewedCorrections:prior.correctionCandidates},finalSchema,{maxOutputTokens:12288});
   const selected=selectReviewableFacts(drafted.data.findings,context);
   return finish({...prior,reportDraft:{...drafted.data,findings:selected.facts},draftValidation:{rejectedCandidates:selected.rejected}});
  }
@@ -452,26 +459,29 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  let generated,finalReview;
  let reviewedDraft=prior.reportDraft;
  if(compact){
-  const candidates=finalEvidenceCandidates(reviewedDraft,stages,prior.swot,context);
+  const candidates=finalEvidenceCandidates(reviewedDraft,stages,prior.swot,context,prior.correctionCandidates);
   const audit=async(target,retained,benchmarks,stage)=>{
    reviewedDraft={...prior.reportDraft,findings:retained.rows,benchmarks};
    const input=finalEvidenceInput(target,benchmarks,context);
    const review=data=>{
     const ordered=orderedEvidenceVerdicts(data,input),byId=new Map(target.rows.map((f,i)=>[f.id,ordered.verdicts[i]]));
-    return finalizeEvidenceVerdicts({draft:reviewedDraft,candidates:retained,verdicts:retained.rows.map(f=>byId.get(f.id)??1),benchmarks:ordered.benchmarks});
+    const codes={strength:2,weakness:3,opportunity:4,threat:5};
+    return finalizeEvidenceVerdicts({draft:reviewedDraft,candidates:retained,verdicts:retained.rows.map(f=>byId.get(f.id)??codes[retained.approvedQuadrants.get(f.id)]??1),benchmarks:ordered.benchmarks});
    };
    const keyed=(rows,prefix)=>Object.fromEntries(rows.map((row,i)=>[prefix+(i+1),row]));
    const result=await providers.manager(stage,{
-    instruction:'Ön BHS son denetimi. findings satırları: [boyut, tür, gözlem, sınır, sıfır tabanlı kaynak indeksleri, SWOT önerisi, hipotez]. İndeksleri null olan gözlemler önceki Claude denetiminden aynen alınmıştır; bağlam ve SWOT sınıfını kontrol et. Diğerlerini verilen özgün alıntıyla doğrula. Her f kimliği için karar: 0 reddet, 1 doğrula, 2 güç, 3 zayıflık, 4 fırsat, 5 tehdit. 2–5 kararı doğrulamayı da içerir. Sayı, birim, dönem, pazar ve şirketi doğrula; tekrarları ve genellemeleri reddet. Kaynaklı, koşullu ticari hipotezi gerçekleşmiş etki sayma. Şikâyet platformla, SEO taranan sayfayla sınırlı. Her b kimliği için true veya false. Yalnız verilen kimlikleri kullan, açıklama yazma.',
+    instruction:'Ön BHS son denetimi. findings satırları: [boyut, tür, gözlem, sınır, sıfır tabanlı kaynak indeksleri, SWOT önerisi, hipotez]. İndeksleri null olan gözlemler önceki Claude denetiminden aynen alınmıştır; bağlam ve SWOT sınıfını kontrol et. Diğerlerini verilen özgün alıntıyla doğrula. Her f kimliği için karar: 0 reddet, 1 doğrula, 2 güç, 3 zayıflık, 4 fırsat, 5 tehdit. 2–5 kararı doğrulamayı da içerir. SWOT için 2–3 marka içi kapasite veya darboğaz, 4–5 marka için somut dış fırsat veya tehdit gerektirir. Genel sektör büyümesi kendi başına tehdit değildir; aynı ürün ve pazarda belgelenen ikame, koşullu rekabet riski olabilir. Sayı, birim, dönem, pazar ve şirketi doğrula; tekrarları ve genellemeleri reddet. Kaynaklı, koşullu ticari hipotezi gerçekleşmiş etki sayma. Şikâyet platformla, SEO taranan sayfayla sınırlı. Her b kimliği için true veya false. Yalnız verilen kimlikleri kullan, açıklama yazma.',
     brand:brief.brandName,market:brief.goals,findings:keyed(input.findings,'f'),comparisons:keyed(input.comparisons,'b'),sources:input.sources
    },finalEvidenceSchema(input),{maxOutputTokens:Math.max(96,7*(input.findings.length+input.comparisons.length)+56),compactReview:true,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(reviewedDraft,review(d),context,competition.peers),context))});
    return {generated:result,finalReview:review(result.data)};
   };
-  try{({generated,finalReview}=await audit(candidates,candidates,reviewedDraft.benchmarks,'v8-final-keyed'));}
+  const needsFinalVerdict=candidates.rows.filter(f=>!candidates.reviewed.has(f.id)||candidates.hints.has(f.id)&&!candidates.approvedQuadrants.has(f.id));
+  const target={...candidates,rows:needsFinalVerdict.length?needsFinalVerdict:candidates.rows.slice(0,1)};
+  try{({generated,finalReview}=await audit(target,candidates,reviewedDraft.benchmarks,'v8-final-keyed'));}
   catch(error){
    if(error.code!=='budget_limit'&&!(error.paidResponseRetained&&['incomplete','invalid_report','model_output_invalid'].includes(error.code)))throw error;
    const {focused,retained}=essentialEvidenceCandidates(candidates,context);
-   if(!focused.rows.length||focused.rows.length===candidates.rows.length)throw error;
+   if(!focused.rows.length||!reviewedDraft.benchmarks.length&&focused.rows.length===target.rows.length&&focused.rows.every((f,i)=>f.id===target.rows[i].id))throw error;
    ({generated,finalReview}=await audit(focused,retained,[],'v8-final-essential'));
   }
  }else{

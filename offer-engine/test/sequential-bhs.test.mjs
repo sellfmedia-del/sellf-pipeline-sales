@@ -13,6 +13,7 @@ import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-s
 import {hash} from '../src/budget/ledger.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {completePeerSources,capturedPeerHosts,balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
+import {finalEvidenceCandidates,essentialEvidenceCandidates} from '../src/bhs/final-evidence-review.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
 function modelTransport({mutate,fail}={}){
@@ -37,7 +38,7 @@ function modelTransport({mutate,fail}={}){
    assert.ok(Object.values(context.findings).some(row=>row[4]===null));
   }else if(managerSchema?.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:managerSchema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
   if(managerSchema?.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(managerSchema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
-  const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
+  const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+(b.thinking?.type==='between_tools'?0:128);
   if(manager)return json({model:'claude-sonnet-5-5',stop_reason:'end_turn',usage:{input_tokens:inputTokens,output_tokens:outputTokens},content:[{type:'text',text}]});
   return json({modelVersion:'gemini-3.1-flash-lite',usageMetadata:{promptTokenCount:inputTokens,candidatesTokenCount:outputTokens,thoughtsTokenCount:0,totalTokenCount:inputTokens+outputTokens},candidates:[{finishReason:'STOP',content:{parts:[{text}]}}]});
  };
@@ -339,12 +340,40 @@ test('gap research accepts every BHS dimension and still rejects an invented sou
  const prior={packet:packet(),searches:[],facts:[],swot:[],decision:'accepted',coveragePlan:{priorities:[]}};const context=sequentialContext(brief,prior),proof=context.cards[0].id;
  const baseline={...prior,packet:{...prior.packet,sources:prior.packet.sources.slice(0,-1)}};
  for(const invented of [false,true]){
-  const facts=['financial','operations','funnel','digital','perception','competition'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
+  const facts=['financial_1','operations_3','funnel_4','digital_1','perception_2','competition_2'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
   const run=()=>runSequentialStage({phase:'coverage',brief,previous:async phase=>phase==='swot'?baseline:prior,providers:{worker:async(_stage,input,schema)=>{assert.equal(input.areas.length,24);if(!invented)assertSchema({facts,unknowns:[]},schema);return {data:{facts,unknowns:[]}};}}});
   const result=await run();
   assert.equal(result.correctionCandidates.length,invented?0:6);
   assert.equal(result.operatorValidation.rejectedCandidates.length,invented?6:0);
  }
+});
+
+test('final review retains reviewed SWOT evidence, scopes complaints, and admits verified-source gap candidates for review',()=>{
+ const known=new Map([
+  ['brand',{url:'https://acme.example/delivery'}],
+  ['complaint',{url:'https://www.sikayetvar.com/acme'}],
+ ]);
+ const context={known,packet:{sources:[]}};
+ const strength={id:'delivery',quadrant:'strength',dimension:'operations',kind:'observation',observation:'Marka teslimat koşullarını yayımlıyor.',sourceIds:['brand'],commercialHypothesis:'Teslimat tercihleri görüşmede doğrulanabilir.'};
+ const repeated={...strength,id:'duplicate',commercialHypothesis:'Teslimat koşulları geliri %88 artırıyor.'};
+ const complaint={id:'packaging',dimension:'operations',kind:'observation',stance:'risk',observation:'Bir müşteri pompa arızası bildirdi.',sourceIds:['complaint'],commercialHypothesis:'Bu sorun %88 müşteri kaybına yol açıyor.'};
+ const correction={id:'returns',topic:'operations_3',kind:'observation',statement:'Marka iade koşullarını yayımlıyor.',sourceIds:['brand'],limitation:'Politika beyanıdır.'};
+ const candidates=finalEvidenceCandidates({findings:[repeated,complaint],swot:{}},[{phase:'swot',decision:'accepted'}],[strength],context,[correction]);
+ assert.equal(candidates.rows.length,3);
+ assert.equal(candidates.rows[0].commercialHypothesis,strength.commercialHypothesis);
+ assert.equal(candidates.approvedQuadrants.get(strength.id),'strength');
+ const scoped=candidates.rows.find(f=>f.id===complaint.id);
+ assert.equal(scoped.dimension,'perception');
+ assert.match(scoped.observation,/^Şikayetvar örneklemi/);
+ assert.doesNotMatch(scoped.commercialHypothesis,/%88/);
+ assert.equal(candidates.areas.get(scoped.id),'perception_2');
+ const gap=candidates.rows.find(f=>f.observation===correction.statement);
+ assert.equal(candidates.areas.get(gap.id),'operations_3');
+ assert.equal(candidates.reviewed.has(gap.id),false);
+ const {focused,retained}=essentialEvidenceCandidates(candidates,context);
+ assert.ok(focused.rows.some(f=>f.id===complaint.id));
+ assert.ok(retained.rows.some(f=>f.id===strength.id));
+ assert.equal(retained.approvedQuadrants.get(strength.id),'strength');
 });
 
 test('Claude can dispatch an observed Actor during brand research before Gemini and retain the result in the stage receipt',async()=>{
