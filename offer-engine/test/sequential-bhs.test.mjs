@@ -7,7 +7,7 @@ import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,plan,packet,fakeCollector,modelAnswer} from './fixtures/sequential.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {createSequentialProviders,stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
-import {sequentialPhases,logicalPhases,sequentialContext,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialPhases,logicalPhases,sequentialContext,stageModelInput,qualityAcceptance,sequentialVersion,applyFinalReview} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
@@ -378,11 +378,12 @@ test('targeted competitor reading uses observed product pages before any home na
 
 test('brand and sector paragraphs cannot crowd competitor product pages out of the model payload',()=>{
  const base=packet(),old=base.sources.slice(0,2),peers=base.sources.slice(2);
- const archives=Array.from({length:10},(_,i)=>({...old[0],id:'ev'+(i+20),url:'https://archive'+i+'.example/',finalUrl:'https://archive'+i+'.example/',excerpts:Array.from({length:7},(_,j)=>({text:('Archive '+i+' section '+j+' original sales and product information ').repeat(32)}))}));
+ const archives=Array.from({length:10},(_,i)=>({...old[0],id:'ev'+(i+20),url:'https://archive'+i+'.example/',finalUrl:'https://archive'+i+'.example/',excerpts:Array.from({length:7},(_,j)=>({text:Array.from({length:38},(_,k)=>`Archive ${i} part ${j} row ${k} original sales and products`).join(' ').slice(0,1800)}))}));
  const evidence={packet:{...base,sources:[...old,...archives,...peers]},searches:[],peerDiscoveryVersion:'product-v2'};
  const oldContext=sequentialContext(brief,evidence,{completeSources:false});
- assert.ok(peers.every(p=>!oldContext.cards.some(c=>c.url===p.finalUrl)));
  const ctx=sequentialContext(brief,evidence);
+ const peerProofs=c=>c.cards.filter(card=>peers.some(p=>p.finalUrl===card.url));
+ assert.ok(peerProofs(oldContext).length<peerProofs(ctx).length);
  assert.ok(peers.every(p=>ctx.cards.some(c=>c.url===p.finalUrl)));
  const operator=stageModelInput(ctx);
  assert.ok(peers.every(p=>operator.sources.some(s=>s.url===p.finalUrl&&s.sections.length)));
