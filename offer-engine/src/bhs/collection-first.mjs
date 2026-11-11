@@ -14,7 +14,7 @@ import {researchTariff} from './research-tariff.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
-const peerRepairCall={input:4000,output:600};
+const peerRepairCall={input:3500,output:600};
 const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
 export function collectionBrandCeiling(capKurus,infrastructureKurus,now){
  return capKurus-infrastructureKurus-Object.values(quoteFinalCalls(now)).reduce((sum,quote)=>sum+quote,0);
