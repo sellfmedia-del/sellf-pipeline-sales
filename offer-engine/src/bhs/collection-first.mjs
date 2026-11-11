@@ -141,7 +141,8 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
  const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
  const addHint=(name,url)=>{
-  if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))return;
+  const host=researchHost(url);
+  if(!host||host===researchHost(brief.website)||hints.some(peer=>researchHost(peer.website)===host))return;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  };
  if(repair&&product){
@@ -210,6 +211,7 @@ function comparisonEntities(context,inventory){
 function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
+ const brandHost=researchHost(context.input.brief.website);
  const preciseProduct=Boolean(peerProduct&&expandedPublishers);
  const terms=unique(product.toLocaleLowerCase('tr').match(preciseProduct?/[\p{L}]{3,}/gu:peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
  const format=preciseProduct?terms.at(-1):null;
@@ -218,7 +220,7 @@ function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=fa
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
   for(const source of context.input.sources){
-   if(source.metadataOnly||source.method==='search-snippet'||!publisherMatches(candidate.name,source.url,expandedPublishers))continue;
+   if(source.metadataOnly||source.method==='search-snippet'||researchHost(source.url)===brandHost||!publisherMatches(candidate.name,source.url,expandedPublishers))continue;
    const cards=source.sections.flatMap(section=>section.proofIds.map(id=>context.known.get(id))).filter(card=>card&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method)).map(card=>{
     const quote=card.quote.toLocaleLowerCase('tr');
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))+Number(Boolean(containsFormat(quote)))*4};
