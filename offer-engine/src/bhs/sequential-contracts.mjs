@@ -106,7 +106,7 @@ export function selectReviewableFacts(rows,context){
  const facts=[],rejected=[];
  for(const row of rows){
   let reason;
-  if(!row.statement.trim())reason='empty_statement';
+  if(!(row.statement??row.observation??'').trim())reason='empty_statement';
   else if(counts.get(row.id)!==1)reason='duplicate_id';
   else try{validateProofRows([row],context);}catch{reason='missing_or_unknown_proof';}
   if(reason)rejected.push({id:row.id,reason});else facts.push(row);

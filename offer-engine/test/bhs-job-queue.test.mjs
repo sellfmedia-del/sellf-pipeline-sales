@@ -141,6 +141,24 @@ test('explicit continuation from a paused background job keeps the offer open an
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 
+test('an active background job can hand off to the offer and refuses any subsequent paid reservation',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ const f=await fixture();
+ try{
+  await f.enqueue();
+  const job=await f.queue.claim(),workerLedger=await f.queue.getLedger(job);
+  const h=createBoundedAuditHandler({getQueue:async()=>f.queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>f.ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('continuation cannot open a paid provider'),logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'synthetic-bhs'}}};
+  let r=res();await h(request,r);assert.equal(r.code,202);assert.equal(r.body.continuationAvailable,true);
+  const ticket=r.body.ticket,cookie=r.headers['Set-Cookie'][0].split(';')[0],cost=await f.ledger.status();
+  r=res();await h({...request,headers:{...request.headers,cookie},body:{...request.body,action:'continue',ticket}},r);
+  assert.equal(r.code,200);assert.equal(r.body.result.data.quality.contentComplete,false);assert.ok(r.body.pricingProof);
+  assert.equal((await f.queue.read(job)).cancelRequested,true);
+  await assert.rejects(workerLedger.once('new-paid-call',{},100,async()=>assert.fail()),/cancellation/);
+  assert.deepEqual(await f.ledger.status(),cost);
+ }finally{await f.close();if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
 test('lost queue acknowledgements and expired leases recover committed phases without another provider call',async()=>{
  for(const expires of [false,true]){
   const f=await fixture();try{
