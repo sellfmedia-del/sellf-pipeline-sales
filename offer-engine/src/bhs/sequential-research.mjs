@@ -11,8 +11,8 @@ import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequen
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000});
 const queryBrand=b=>'"'+b.brandName.replace(/["\n\r]/g,' ').trim()+'"';
-async function search(providers,queries){
- const rows=[];for(const q of queries.slice(0,3)){
+async function search(providers,queries,maxQueries=3){
+ const rows=[];for(const q of [...new Set(queries)].slice(0,maxQueries)){
   try{rows.push(await providers.search(q.slice(0,500),{depth:'basic',maxResults:8}));}
   catch(e){if(['budget_limit','budget_uncertain','tariff_expired','fx_limit'].includes(e.code))throw e;rows.push({query:q,results:[],unavailable:true,reason:e.code||'search_unavailable'});}
  }return rows;
@@ -20,7 +20,7 @@ async function search(providers,queries){
 // Read across all manager questions before taking another result from one query.
 export const balancedSequentialUrls=searches=>{const rows=[];for(let i=0;i<8;i++)for(const s of searches){const url=researchUrl(s.results?.[i]?.url);if(url)rows.push(url);}return [...new Set(rows)];};
 const urls=balancedSequentialUrls;
-function peerPlanSchema(){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;s.properties.entities.items.properties.website.minLength=0;return s;}
+function peerPlanSchema(withProductFocus=false){const s=structuredClone(sourcePlanSchema);delete s.properties.researchQueries;s.properties.entities.minItems=1;s.properties.sources.minItems=1;s.properties.entities.items.properties.website.minLength=0;if(withProductFocus){s.properties.productFocus={type:'string',minLength:1,maxLength:120};s.required.push('productFocus');}return s;}
 const domainName=value=>String(value||'').toLocaleLowerCase('tr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
 export async function resolvePeerAddresses(value,providers){
  const entities=structuredClone(value.entities),missing=entities.filter(e=>e.role==='competitor'&&!researchUrl(e.website));
@@ -46,9 +46,46 @@ export function parseSequentialPeerPlan(value,brief){
  if(parsed.sources.length>24)parsed.sources=parsed.sources.slice(0,24);
  return parsed;
 }
-async function enrichReading(brief,prior,plan,searches,limit,collect){
- const packet=await collect(brief,plan,{initialPacket:prior?.packet,extraSources:urls(searches),sourceLimit:limit});
+async function enrichReading(brief,prior,plan,searches,limit,collect,{prioritize=false}={}){
+ const extraSources=urls(searches);
+ const packet=await collect(brief,plan,{initialPacket:prior?.packet,extraSources,prioritySources:prioritize?extraSources:[],sourceLimit:limit});
  return {packet,plan,searches:[...(prior?.searches||[]),...searches]};
+}
+const peerPageSchema={type:'object',additionalProperties:false,required:['pages'],properties:{pages:{type:'array',maxItems:5,items:{type:'object',additionalProperties:false,required:['name','url'],properties:{name:{type:'string',minLength:1,maxLength:200},url:{type:'string',minLength:1,maxLength:2048}}}}}};
+
+export async function selectPeerProductPages({brief,plan,searches,providers,focus,confirmed=[]}){
+ const candidates=plan.entities.filter(e=>e.role==='competitor');
+ const observed=new Map();
+ for(const search of searches)for(const r of search.results||[]){
+  const url=researchUrl(r.url);
+  if(url&&researchHost(url)!==researchHost(brief.website)&&!observed.has(url))observed.set(url,{url,title:String(r.title||'').slice(0,160),excerpt:String(r.content||r.snippet||'').slice(0,360)});
+ }
+ const anchored=candidates.filter(e=>confirmed.includes(e.id));
+ const selected=[];
+ if(observed.size){
+  const pick=await providers.worker('v8-peer-product-pages',{
+   instruction:'Sadece verilen gerçek arama sonuçlarından rakiplerin en iyi birincil ÜRÜN/KATEGORİ kanıtı URLlerini seç. Markanın üreticisine ait o marka ve ürünü tanıtan sayfa da uygundur. Resmî ürün sayfasını genel ana sayfa, şirket hakkımızda, pazar yeri, haber, dizin veya sosyal medya önüne al. Aynı ürünü aynı analiz pazarında sunan üç ila beş farklı markayı hedefle. Bir adayın kanıtı yoksa aynı kategoride arama sonuçlarında gerçek ürün kanıtı olan başka marka seçebilirsin. Aynı marka veya grubu tekrar sayma. Ad ve adresi kaynaktan kopyala, URL uydurma. Bu yalnız okuma planıdır, rakip onayı değildir.',
+   focus,market:brief.goals,candidates:candidates.map(e=>({name:e.name,website:e.website})),confirmed:anchored.map(e=>e.name),observed:[...observed.values()]
+  },peerPageSchema,{maxOutputTokens:1024}).catch(error=>{
+   if(error.code==='budget_limit'||error.paidResponseRetained)return {data:{pages:[]}};
+   throw error;
+  });
+  for(const row of pick.data.pages){
+   const url=researchUrl(row.url),host=researchHost(url),name=domainName(row.name);
+   if(!observed.has(url)||!name||[...anchored,...selected].some(e=>domainName(e.name)===name||researchHost(e.website)===host))continue;
+   const known=candidates.find(e=>domainName(e.name)===name);
+   selected.push(known?{...known,website:url}:{id:'peer_'+hash({name,host}).slice(0,20),role:'competitor',name:row.name,website:url,scaleReason:'Ölçek doğrulanacak.',audienceReason:'Ürün ve kitle örtüşmesi doğrulanacak.',geographyReason:'Analiz pazarı doğrulanacak.',scope:focus||'Aynı ürün kategorisi araştırılacak.'});
+  }
+ }
+ const ranked=[...anchored,...selected];
+ for(const entity of candidates){
+  if(ranked.length>=5)break;
+  if(ranked.some(e=>e.id===entity.id||researchHost(e.website)===researchHost(entity.website)))continue;
+  const productPage=[...observed.keys()].find(url=>researchHost(url)===researchHost(entity.website)&&/ürün|urun|product|kategori|category|collections|catalog/i.test(new URL(url).pathname));
+  ranked.push(productPage?{...entity,website:productPage}:entity);
+ }
+ const updated=parseSequentialPeerPlan({entities:[plan.entities.find(e=>e.role==='brand'),...ranked],sources:plan.sources},brief);
+ return {plan:updated,prioritySources:ranked.map(e=>e.website)};
 }
 // Captured domain evidence is an admission condition, not a direct-peer
 // verdict. Claude still validates identity/product/audience/geography later.
@@ -65,9 +102,6 @@ export async function completePeerSources(evidence,providers){
  if(!targets.length)return evidence;
  const extracted=await providers.extract(targets),packet=mergeExtractedEvidence(evidence.packet,extracted);
  return {...evidence,packet,peerExtraction:{targets,failed:extracted.failed||[]}};
-}
-export function requirePeerSources(evidence){
- if(capturedPeerHosts(evidence).size<3)throw new BudgetError('research_stage_incomplete','En az üç rakibin özgün kaynakları okunamadı; yeni ücretli analiz çağrısı yapılmadı.');
 }
 // Claude selects tools; server supplies only observed targets and affordable Actors.
 async function actorPlanning(providers,brief,evidence){
@@ -115,7 +149,8 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
  const peerHosts=phase==='competition'?new Set(evidence.plan.entities.filter(e=>e.role==='competitor').map(e=>researchHost(e.website))):new Set();
  const peerRows=context.cards.filter(c=>peerHosts.has(researchHost(c.url))).map(c=>({sourceIds:[c.id]}));
  const primaryRows=['brand','sector'].includes(phase)?context.cards.filter(c=>phase==='sector'&&!candidates.length||researchHost(c.url)===researchHost(brief.website)).map(c=>({sourceIds:[c.id]})):[];
- const input=stageModelInput(context,{rows:[...candidates,...peerRows,...primaryRows]});
+ const comparisonFacts=phase==='competition'?(extra.previouslyApproved||[]).filter(f=>['products','market'].includes(f.topic)):[];
+ const input=stageModelInput(context,{rows:[...candidates,...peerRows,...primaryRows,...comparisonFacts]});
  const next=logicalPhases[logicalPhases.indexOf(phase)+1];
  const gateInstruction=['brand','sector'].includes(phase)?'fundamentals içinde HER temel başlığı ayrı confirmed/incomplete değerlendir. Yalnız kabul edilen veya patches ile açıkça düzeltilen kaynaklı facts yeterliyse confirmed seç. Kimlik, ürün, iş modeli ve HEDEF PAZAR anlaşılmalı; Liderlik söylemini ölçülmüş liderlik sayma; açık ülke/faaliyet beyanını diğer kurumsal, ürün ve teslimat kanıtlarıyla birlikte değerlendir. Kamuya kapalı ölçek/sahiplik/ciro/kanal payı ayrıntılarını unknowns/missing içinde tut; bunlar temel başlık değildir ve tek başına incomplete gerekçesi olamaz. Gerçek kaynak/kimlik/ürün/gelir mekanizması/müşteri veya hedef pazar boşluğu varsa ilgili temel başlığı incomplete bırak.':'Temel anlayış sonraki aşamaya yetecek kadar net değilse limited seç.';
  const reviewed=await providers.manager('v8-'+phase+'-review',{instruction:'BHS yöneticisi olarak '+sequentialTitles[phase]+' aşamasını denetle. Operatörün boş veya kanıtsız adayları reddedilmiştir; candidates boş olsa bile verilen özgün kaynakları kendin oku ve kaynakların desteklediği gerekli olguları additionalFacts ile tamamla. Kaynaklar yetersizse temel başlığı incomplete bırak. notes alanını 2–4 kısa cümleyle yaklaşık 700 karakterde tut; nextTask/repairTask yaklaşık 600 karakter olsun; aynı açıklamayı tekrarlama. Her adayın ifadesini ORİJİNAL kaynak paragrafıyla karşılaştır. verdicts nesnesinde HER aday kimliğine accepted veya rejected kararını ayrı ver; hiçbir adayı atlama. Yanlış şirket, belirsiz ülke/dönem, çıkarımı gerçek sayma, birim karıştırma ve kanıtsız neden-sonuç çıkarımını reddet. accepted kararı verilen adayın TÜM iddiası kaynaklı olmalı; notes içinde bir ayrıntıyı çıkardığını söylemek aday metnini değiştirmez. patches sözleşmesi varsa, kaynak paragrafının zaten desteklediği dar bir düzeltmeyi aynı kimlikle TAM fact alanlarıyla patches içine yaz ve verdicts içinde accepted yap. Notlarda değişiklik söylemek veriyi değiştirmez; düzeltmeyi patches içine yaz. additionalFacts sözleşmesi varsa, operatörün atladığı fakat verilen ORİJİNAL kaynakların açıkça desteklediği gerekli olguları yeni ve benzersiz kimlikle additionalFacts içine ekleyebilirsin. Özellikle resmî sipariş/teslimat sözleşmesindeki iş modelini ve kaynaklı faaliyet/pazar bağlamını yalnız operatör atladı diye eksik sayma. Yeni olguya da kind, topic, doğru sourceIds ve sınır koy; kaynakta olmayan iddia ekleme. Bulgu veya düzeltme sayısına üst sınır koyma; gerekli kaynaklı düzeltmelerin hepsini yap. Kanıtlanmayan çıkarımı, şirket/dönem/birim hatasını düzeltilemiyorsa tümüyle reddet. patches yoksa bir kısmı yanlış adayı tümüyle reddet ve düzeltme iste. '+gateInstruction+' '+(phase==='brand'?'marketContext içinde analizin uygulanacağı EN AZ BİR pazarı belirt. Müşteri briefinde açık bir hedef/analiz pazarı belirtilmişse basis=brief_declared seç, briefQuote içine müşterinin o pazarı belirten metnini AYNEN kopyala ve sourceIds boş olsun. Bu müşteri beyanıdır; markanın gerçekleşmiş satış/pazar payı veya tüm mevcut ihracat ülkeleri kanıtı değildir. Kaynaklı mevcut pazar varsa basis=source ve özgün sourceIds kullan. Hiçbiri bilinmiyorsa unknown. Bilinen bir analiz pazarı varken tüm güncel ihracat ülkelerinin bilinmemesi bu aşamayı engellemez. ': '')+' nextTask ve repairTask içinde actorRequests ile gerektiğinde uygun scraper iste; kullanmıyorsan [] ver. Eksikleri açıkla; repairTask içinde AYNI aşamayı düzeltecek operatör emri ve en fazla iki hedefli sorgu ver. Temel başlıkların hepsi confirmed olduğunda (veya decision=accepted ise) repairTask.instruction ve queries boş olsun. nextTask içinde bir sonraki '+sequentialTitles[next]+' aşaması için somut emir ve en fazla iki sorgu ver. '+understandingContract(phase)+' '+scopeInstruction,...input,...await actorPlanning(providers,brief,evidence),previouslyApproved:extra.previouslyApproved||[],candidates,unknowns:worker.unknowns||[],...extra},reviewVerdictSchema(schema,candidates,{phase}),{maxOutputTokens});
@@ -154,13 +189,18 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
    const queries=family==='brand'?[...prior.review.repairTask.queries,queryBrand(brief)+' official corporate company about manufacturing sales markets']:prior.review.repairTask.queries;
    const searches=await search(providers,queries);
    const limits={brand:10,sector:16,competition:21,swot:23};
-   let reading=await enrichReading(brief,prior,prior.plan,searches,limits[family],collect);
-   if(family==='competition')reading=await completePeerSources(reading,providers);
+   let reading;
+   if(family==='competition'){
+    const confirmed=(prior.review.peers||[]).filter(p=>p.relationship==='direct').map(p=>p.entityId);
+    const selected=await selectPeerProductPages({brief,plan:prior.plan,searches,providers,focus:prior.peerProductFocus,confirmed});
+    const packet=await collect(brief,selected.plan,{initialPacket:prior.packet,prioritySources:selected.prioritySources,explicitSourcesOnly:true,sourceLimit:22});
+    reading=await completePeerSources({packet,plan:selected.plan,searches:[...prior.searches,...searches]},providers);
+   }else reading=await enrichReading(brief,prior,prior.plan,searches,limits[family],collect,{prioritize:family==='swot'});
    const evidence=await enrichStageActors(brief,reading,prior.review.repairTask.actorRequests,providers,approved);
    return finish({...prior,...evidence,repairNeeded:true});
   }
   if(!prior.repairNeeded)return finish({...prior});
-  if(family==='competition')requirePeerSources(prior);
+  if(family==='competition'&&capturedPeerHosts(prior).size<3)return finish({...prior,workerData:{facts:prior.facts||[],unknowns:['Doğrudan rakiplerin ürün kaynakları eksik.']}});
   const context=sequentialContext(brief,prior),schema=family==='swot'?swotSchema:phaseExtractionSchema(family);
   const required=family==='brand'?'Kimlik, ürünler, iş modeli ve hedef pazar için identity, products, business_model ve market konularının her birini ayrı kısa facts olarak yeniden doğrula. Sahiplik/ölçek düzeltmesi yaparken bu dört temel konuyu düşürme.':family==='sector'?'sector, revenue_drivers ve customer_behavior konularını ayrı kaynaklı facts olarak koru.':'';
   const worker=await providers.worker('v8-'+family+'-repair-extract',{instruction:'Yönetici düzeltme emri: '+prior.review.repairTask.instruction+'\nAynı aşamanın bütün adaylarını yeni kaynakları da kullanarak yeniden çıkar. Önceki reddedilen çıkarımı veya başka şirket bilgisini tekrarlama. Kaynak kimliklerini ve bütün gerekli konu alanlarını koru. Önceki kabul notunda bir cümlenin düzeltilmesi istendiyse eski metni aynen alma; özgün paragrafın söylediğiyle yeniden yaz. '+required+' '+scopeInstruction,...stageModelInput(context),missing:prior.review.missing,previouslyApproved:approved,currentStageCandidates:prior.facts||prior.swot||[]},withProofIds(schema,context),{maxOutputTokens:family==='swot'?6144:4096,validateData:d=>validateProofRows(d.facts||d.findings,context)});
@@ -175,7 +215,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
   const packet=providers.checkpoint?await providers.checkpoint('identity-input',brief,read):await read();
   const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true}),...await actorPlanning(providers,brief,{packet,searches:[]})},taskSchema,{maxOutputTokens:2048});
-  return finish({packet,searches:[],plan,managerPlan:task.data});
+  return finish({packet,searches:[],plan,managerPlan:task.data,peerDiscoveryVersion:'product-v1'});
  }
  if(phase==='brand_sources'){
   const queries=[...(prior.managerPlan.queries.length?prior.managerPlan.queries:[`site:${researchHost(brief.website)} ${queryBrand(brief)} products about company target market ownership`]),queryBrand(brief)+' official corporate company about manufacturing sales markets'];
@@ -225,19 +265,34 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='competition_plan'){
   const brand=await previous('brand'),queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} alternatives competitors same products target market`,`${brand.facts.filter(f=>['products','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,250)} doğrudan rakip alternatif markalar`];
   const searches=await search(providers,queries),discovered=[brief.website,...urls(searches),...prior.packet.sources.map(s=>s.finalUrl)];
-  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\nOnaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(),{maxOutputTokens:3072});
-  const resolved=await resolvePeerAddresses(planned.data,providers),plan=parseSequentialPeerPlan(resolved.data,brief),peerSearches=[...searches,...resolved.searches];
-  return finish({...prior,plan,searches:[...prior.searches,...peerSearches],peerSearches,unresolvedPeers:resolved.unresolved});
+  const focusedDiscovery=prior.peerDiscoveryVersion==='product-v1';
+  const focusInstruction=focusedDiscovery?'productFocus alanına markanın öncelikli satılan ürün veya hizmet kategorisini aramada kullanılan kısa, tek bir ifadeyle yaz. ':'';
+  const planned=await providers.worker('v8-peer-candidates',{instruction:'Yöneticinin görevi: '+prior.review.nextTask.instruction+'\n'+focusInstruction+'Onaylanan marka ve sektörden sonra 3–5 doğrudan rakip adayı seç. Aynı ürün/ihtiyaç, kitle ve ülkeyi gözet. Marka entity website brief.website olsun. En az üç, tercihen beş gerçek ürün markasını araştırılacak ADAY olarak seç. Genel perakendeci, pazaryeri veya markanın ürününü satan mağaza ürün markasının doğrudan rakibi değildir. Bilinen resmî domain aramada çıkmamışsa doğrulanacak aday olarak önerilebilir; okunmuş kanıt sayılmaz. Başka sektörde aynı adlı şirketi, tedarikçiyi, holdingi veya genel benchmarkı doğrudan rakip sayma. Ölçek eşitliğini varsayma. Bulunamıyorsa sayı uydurma.',brief,approvedBrand:brand.facts,approvedSector:prior.facts,searches,discoveredUrls:discovered},peerPlanSchema(focusedDiscovery),{maxOutputTokens:3072});
+  if(!focusedDiscovery){
+   const resolved=await resolvePeerAddresses(planned.data,providers),plan=parseSequentialPeerPlan(resolved.data,brief),peerSearches=[...searches,...resolved.searches];
+   return finish({...prior,plan,searches:[...prior.searches,...peerSearches],peerSearches,unresolvedPeers:resolved.unresolved});
+  }
+  const {productFocus,...candidatePlan}=planned.data;
+  const candidates=candidatePlan.entities.filter(e=>e.role==='competitor');
+  const focused=await search(providers,candidates.map(e=>`"${e.name.replace(/["\n\r]/g,' ')}" ${productFocus} resmi ürün katalog`),5);
+  const peerSearches=[...focused,...searches];
+  const plan=parseSequentialPeerPlan({...candidatePlan,entities:candidatePlan.entities.filter(e=>e.role!=='competitor'||researchUrl(e.website))},brief);
+  const selected=await selectPeerProductPages({brief,plan,searches:peerSearches,providers,focus:productFocus});
+  return finish({...prior,...selected,searches:[...prior.searches,...peerSearches],peerSearches,peerProductFocus:productFocus});
  }
  if(phase==='competition_sources'){
-  let reading=await enrichReading(brief,{...prior,searches:prior.searches.filter(s=>!prior.peerSearches.some(p=>p.query===s.query))},prior.plan,prior.peerSearches,20,collect);
+  const packet=await collect(brief,prior.plan,{initialPacket:prior.packet,prioritySources:prior.prioritySources||prior.plan.entities.filter(e=>e.role==='competitor').map(e=>e.website),explicitSourcesOnly:true,sourceLimit:20});
+  let reading={packet,plan:prior.plan,searches:prior.searches};
   reading=await completePeerSources(reading,providers);
   return finish({...prior,...await enrichStageActors(brief,reading,prior.review.nextTask.actorRequests,providers,approved)});
  }
  if(phase==='competition_draft'){
-  requirePeerSources(prior);
+  if(capturedPeerHosts(prior).size<3)return finish({...prior,workerData:{facts:[],unknowns:['Doğrudan rakiplerin ürün kaynakları eksik.']},operatorValidation:{independentSourceReviewRequired:true}});
   const context=sequentialContext(brief,prior),brand=await previous('brand'),sector=await previous('sector_validation');
-  const worker=await reviewableOperator(()=>providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context),approvedBrand:brand.facts,approvedSector:sector.facts},withProofIds(phaseExtractionSchema('competition'),context),{maxOutputTokens:4096}));
+  const peerHosts=new Set(prior.plan.entities.filter(e=>e.role==='competitor').map(e=>researchHost(e.website)));
+  const peerRows=context.cards.filter(c=>peerHosts.has(researchHost(c.url))).map(c=>({sourceIds:[c.id]}));
+  const comparisonRows=[...peerRows,...brand.facts.filter(f=>['products','market'].includes(f.topic)),...sector.facts.filter(f=>f.topic==='sector')];
+  const worker=await reviewableOperator(()=>providers.worker('v8-competition-extract',{instruction:'Her adayın resmî ürün/hizmet sayfasını esas alarak ürün/kitle/ülke örtüşmesini ve somut fiyat/kanal/farklılaşma kıyasını ayrı kaynaklı facts olarak çıkar. Gerçekleşmiş pazar payı ya da üstünlük uydurma. '+scopeInstruction,...stageModelInput(context,{rows:comparisonRows}),approvedBrand:brand.facts,approvedSector:sector.facts},withProofIds(phaseExtractionSchema('competition'),context),{maxOutputTokens:4096}));
   const selected=selectReviewableFacts(worker.data.facts,context);
   return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
@@ -254,7 +309,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='swot_sources'){
   const queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} customer reviews complaints Şikayetvar Trustpilot responses delivery returns`,`${queryBrand(brief)} company history changes investment closures customer satisfaction`];
-  const reading=await enrichReading(brief,prior,prior.plan,await search(providers,queries),22,collect);
+  const reading=await enrichReading(brief,prior,prior.plan,await search(providers,queries),22,collect,{prioritize:true});
   return finish({...prior,...await enrichStageActors(brief,reading,prior.review.nextTask.actorRequests,providers,approved)});
  }
  if(phase==='swot_draft'){
@@ -275,7 +330,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='coverage_sources'){
   const searches=await search(providers,prior.coveragePlan.queries);
-  return finish({...prior,...(searches.length?await enrichReading(brief,prior,prior.plan,searches,22,collect):{})});
+  return finish({...prior,...(searches.length?await enrichReading(brief,prior,prior.plan,searches,24,collect,{prioritize:true}):{})});
  }
  if(phase==='coverage_actors'){
   const brand=await previous('brand');
@@ -288,6 +343,9 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='coverage'){
   const context=sequentialContext(brief,prior);
+  const baseline=await previous('swot');
+  const known=new Set(baseline.packet.sources.map(s=>s.finalUrl+' '+s.contentHash));
+  if(!prior.packet.sources.some(s=>!known.has(s.finalUrl+' '+s.contentHash)))return finish({...prior,facts:[],correctionCandidates:[],correctionRounds:0});
   const worker=await providers.worker('v8-gap-extract',{instruction:'Ek araştırmanın getirdiği yeni veya düzeltilmiş olguları 24 BHS alanının tamamı için çıkar; finans, operasyon, satış hunisi, dijital, algı ve rekabet eksiklerini yalnız sektör konularına daraltma. Önceki SWOTu tekrar üretme. Mevcut bulgunun yanlışlığını gösteren kanıt varsa limitation içinde düzeltme ihtiyacını açıkla. Eksikleri unknowns içinde tut. '+scopeInstruction,...stageModelInput(context,{areas:true}),approvedSwot:prior.swot,correctionPriorities:prior.coveragePlan.priorities},withProofIds(extractionSchema,context),{maxOutputTokens:8192,validateData:d=>validateProofRows(d.facts,context)});
   return finish({...prior,facts:[],correctionCandidates:worker.data.facts,unknowns:worker.data.unknowns,correctionRounds:1});
  }
@@ -296,7 +354,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const drafted=await providers.worker('v8-report-draft',{instruction:expertInstruction()+'\nNihai yönetici denetimi için TAM bir ön BHS TASLAĞI oluştur. Kaynaklara dayalı en az 12 farklı bulgu üret; üst sınır yok. Tüm doğrulanmış farklı bulguları koru; altı boyut, 24 alan, üç doğrulanmış doğrudan rakip ve dört SWOT yönünü koru. observation en fazla 280, commercialHypothesis 260, limitation 220, question 180 karakter olsun. Ölçülmemiş skoru null bırak. Karşılaştırılabilir gerçek sayılar yoksa benchmarks boş olabilir; matrisin boş hücrelerini sunucu tamamlar. coverage notları kısa olsun. sourceIds yalnız verilen proofIds kimlikleri; SWOT, overview, opportunity/risk ve coverage bulgu kimlikleri findings içinden seçilsin. Gerçekleşmiş sonuç olmayan çıkarımları kind=inference ile belirt. Türkçe yaz.',...stageModelInput(context,{areas:true}),approvedFacts:approved,approvedSwot:prior.swot,peerReview:competition.peers,coveragePlan:prior.coveragePlan,unreviewedCorrections:prior.correctionCandidates},finalSchema,{maxOutputTokens:12288,validateData:d=>validateProofRows(d.findings,context)});
   return finish({...prior,reportDraft:drafted.data});
  }
- const generated=await providers.manager('v8-final-report',{instruction:expertInstruction()+'\nSON DENETİM: Raporu baştan yazma. verdicts nesnesinde HER aday kimliğine accepted veya rejected kararını ayrı ver; hiçbir adayı atlama. Düzeltilmesi gereken KABUL EDİLEN bulguların hepsini aynı kimlikle patches içinde TAM alanlarıyla yeniden yaz; diğerlerinin metni kayıttan aynen korunacak. Temel kapsam veya kaynak kalitesi yetersizse limited seç; bulgu/düzeltme adedi tek başına limited gerekçesi değildir. rejectedPeerIds yalnız hatalı doğrudan rakipleri içerir. dimensions içinde altı boyutu kaynaklı değerlendir; ölçülmemiş skor null olsun. coverageChanges düzeltme gerektiren bütün alanları içersin; değişmeyen 24 alan taslaktan korunur ve reddedilen bulgu bağlantıları sunucuda kaldırılır. approvedBenchmarkIndices içinde sadece orijinal alıntıyla doğruladığın 0-tabanlı taslak kıyas satırı indekslerini belirt, aksi halde boş bırak. swot içinde yalnız kabul edilen son bulgu kimliklerini kullan. Operatörün tam taslağını her bulgunun ORİJİNAL dayanak paragrafıyla denetle ve düzelt. Tam kaynak görüntüleri aşama kayıtlarında korunur; seçili paragraflardan tam sitede yokluk iddiası çıkarma. İyi bulguları koru, sorunlu iddiayı gerekirse sınırlandır. Yanıtı tam ve geçerli JSON olarak bitir; notları ve tekrarları kısa tut. En az 12 farklı kaynaklı bulgu gerekli; üst sınır yok. İlave doğrulanmış bulguları sayı gerekçesiyle çıkarma; observation 280, commercialHypothesis 260, limitation 220, question 180 karakteri geçmesin, coverage notları kısa olsun. Marka, sektör, rekabet, SWOT ve eksik araştırma kayıtlarını sırayla denetle. İşçi önerilerini orijinal kaynaklarla doğrula. Yanlış şirket, ülke/dönem/birim, kanıtsız nedensellik ve tekrarları ele. Özel ciro/marj bulunamadığında açık veri sınırı koy. Sabit 24 alanı, altı boyutu, somut rakip kıyaslarını ve eyleme dönük toplantı sorularını koru. Son findings kimliklerini swot.strength/weakness/opportunity/threat listelerine bağla. Onaylı SWOTu yeni kanıtla düzeltebilirsin. Üç doğrulanmış rakip ve yeterli kanıt yoksa eksikliği saklama; sayı/puan uydurma. Ürün/kanal varlığı başarı, HTML etiketi çalışırlık kanıtı değildir. Sektör bilgisini markanın gerçekleşmiş sonucu gibi sunma.',...stageModelInput(context,{rows:[...prior.reportDraft.findings,...prior.reportDraft.peers,...prior.reportDraft.benchmarks,...approved,...prior.swot,...(prior.correctionCandidates||[])],areas:true}),operatorDraft:prior.reportDraft,approvedFacts:approved,approvedSwot:prior.swot,peerReview:competition.peers,coveragePlan:prior.coveragePlan,unreviewedCorrections:prior.correctionCandidates,stageReviews:stages.map(s=>({phase:s.phase,decision:s.decision,review:s.review,unknowns:s.unknowns}))},reviewVerdictSchema(finalReviewSchema,prior.reportDraft.findings),{maxOutputTokens:4096,reserveForFollowingKurus:0,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(prior.reportDraft,normalizeVerdictReview(d,prior.reportDraft.findings),context,competition.peers),context))});
+ const generated=await providers.manager('v8-final-report',{instruction:expertInstruction()+'\nSON DENETİM: Raporu baştan yazma. verdicts nesnesinde HER aday kimliğine accepted veya rejected kararını ayrı ver; hiçbir adayı atlama. Düzeltilmesi gereken KABUL EDİLEN bulguların hepsini aynı kimlikle patches içinde TAM alanlarıyla yeniden yaz; diğerlerinin metni kayıttan aynen korunacak. Temel kapsam veya kaynak kalitesi yetersizse limited seç; bulgu/düzeltme adedi tek başına limited gerekçesi değildir. rejectedPeerIds yalnız hatalı doğrudan rakipleri içerir. dimensions içinde altı boyutu kaynaklı değerlendir; ölçülmemiş skor null olsun. coverageChanges düzeltme gerektiren bütün alanları içersin; değişmeyen 24 alan taslaktan korunur ve reddedilen bulgu bağlantıları sunucuda kaldırılır. approvedBenchmarkIndices içinde sadece orijinal alıntıyla doğruladığın 0-tabanlı taslak kıyas satırı indekslerini belirt, aksi halde boş bırak. swot içinde yalnız kabul edilen son bulgu kimliklerini kullan. Operatörün tam taslağını her bulgunun ORİJİNAL dayanak paragrafıyla denetle ve düzelt. Tam kaynak görüntüleri aşama kayıtlarında korunur; seçili paragraflardan tam sitede yokluk iddiası çıkarma. İyi bulguları koru, sorunlu iddiayı gerekirse sınırlandır. Yanıtı tam ve geçerli JSON olarak bitir; notları ve tekrarları kısa tut. En az 12 farklı kaynaklı bulgu gerekli; üst sınır yok. İlave doğrulanmış bulguları sayı gerekçesiyle çıkarma; observation 280, commercialHypothesis 260, limitation 220, question 180 karakteri geçmesin, coverage notları kısa olsun. Marka, sektör, rekabet, SWOT ve eksik araştırma kayıtlarını sırayla denetle. İşçi önerilerini orijinal kaynaklarla doğrula. Yanlış şirket, ülke/dönem/birim, kanıtsız nedensellik ve tekrarları ele. Özel ciro/marj bulunamadığında açık veri sınırı koy. Sabit 24 alanı, altı boyutu, somut rakip kıyaslarını ve eyleme dönük toplantı sorularını koru. Son findings kimliklerini swot.strength/weakness/opportunity/threat listelerine bağla. Onaylı SWOTu yeni kanıtla düzeltebilirsin. Üç doğrulanmış rakip ve yeterli kanıt yoksa eksikliği saklama; sayı/puan uydurma. Ürün/kanal varlığı başarı, HTML etiketi çalışırlık kanıtı değildir. Sektör bilgisini markanın gerçekleşmiş sonucu gibi sunma.',...stageModelInput(context,{rows:[...prior.reportDraft.findings,...prior.reportDraft.peers,...prior.reportDraft.benchmarks,...approved,...prior.swot,...(prior.correctionCandidates||[])],areas:true}),operatorDraft:prior.reportDraft,approvedFacts:approved,approvedSwot:prior.swot,peerReview:competition.peers,coveragePlan:prior.coveragePlan,unreviewedCorrections:prior.correctionCandidates,stageReviews:stages.map(s=>({phase:s.phase,decision:s.decision,notes:s.review?.notes,unknowns:s.unknowns}))},reviewVerdictSchema(finalReviewSchema,prior.reportDraft.findings),{maxOutputTokens:4096,reserveForFollowingKurus:0,validateData:d=>requireGroundedResearch(projectExpertReport(applyFinalReview(prior.reportDraft,normalizeVerdictReview(d,prior.reportDraft.findings),context,competition.peers),context))});
  const finalReview=normalizeVerdictReview(generated.data,prior.reportDraft.findings);
  const finalData=applyFinalReview(prior.reportDraft,finalReview,context,competition.peers),report=projectExpertReport(finalData,context);requireGroundedResearch(report);
  const swot=Object.entries(finalData.swot).flatMap(([quadrant,ids])=>ids.flatMap(id=>{const f=report.findings.find(f=>f.id===id);return f?[{...f,quadrant}]:[];}));

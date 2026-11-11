@@ -12,7 +12,7 @@ import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {hash} from '../src/budget/ledger.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
-import {completePeerSources,requirePeerSources,capturedPeerHosts,balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
+import {completePeerSources,capturedPeerHosts,balancedSequentialUrls} from '../src/bhs/sequential-research.mjs';
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const json=v=>new Response(JSON.stringify(v));
 function modelTransport({mutate,fail}={}){
@@ -316,9 +316,10 @@ test('missing candidate addresses use observed exact-name domains and unresolved
 test('gap research accepts every BHS dimension and still rejects an invented source',async()=>{
  const {runSequentialStage}=await import('../src/bhs/sequential-research.mjs');const {assertSchema}=await import('../src/bhs/schema.mjs');
  const prior={packet:packet(),searches:[],facts:[],swot:[],decision:'accepted',coveragePlan:{priorities:[]}};const context=sequentialContext(brief,prior),proof=context.cards[0].id;
+ const baseline={...prior,packet:{...prior.packet,sources:prior.packet.sources.slice(0,-1)}};
  for(const invented of [false,true]){
   const facts=['financial','operations','funnel','digital','perception','competition'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
-  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async()=>prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
+  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async phase=>phase==='swot'?baseline:prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
   if(invented)await assert.rejects(run());else assert.equal((await run()).correctionCandidates.length,6);
  }
 });
@@ -342,9 +343,9 @@ test('Claude can dispatch an observed Actor during brand research before Gemini 
 test('missing official peer pages use one bounded extraction before any paid peer analysis',async()=>{
  const evidence={plan,packet:packet(),searches:[]};evidence.packet.sources=evidence.packet.sources.filter(s=>!s.finalUrl.includes('peer'));let calls=0;
  const read=await completePeerSources(evidence,{extract:async urls=>{calls++;assert.equal(urls.length,3);return{pages:urls.map((url,i)=>({url,text:'Organic '+['Alpha','Beta','Gamma'][i]+" sells organic oat bars in Türkiye through its public product catalogue. Delivery terms and listed prices are disclosed."}))};}});
- assert.equal(calls,1);assert.equal(capturedPeerHosts(read).size,3);assert.doesNotThrow(()=>requirePeerSources(read));
+ assert.equal(calls,1);assert.equal(capturedPeerHosts(read).size,3);
  await completePeerSources(read,{extract:()=>assert.fail('Complete sources need no new extraction')});
- const unavailable=await completePeerSources(evidence,{extract:async()=>({pages:[],failed:[{reason:'unavailable'}]})});assert.throws(()=>requirePeerSources(unavailable),e=>e.code==='research_stage_incomplete');
+ const unavailable=await completePeerSources(evidence,{extract:async()=>({pages:[],failed:[{reason:'unavailable'}]})});assert.equal(capturedPeerHosts(unavailable).size,0);
 });
 
 test('competition extraction never buys a model response without three captured candidate domains',async()=>{
@@ -352,6 +353,25 @@ test('competition extraction never buys a model response without three captured 
  const prior={plan,packet:packet(),searches:[],facts:[],decision:'accepted',repairNeeded:true};
  prior.packet.sources=prior.packet.sources.filter(s=>!s.finalUrl.includes('peer'));
  for(const phase of ['competition_draft','competition_correction_draft']){
-  await assert.rejects(runSequentialStage({phase,brief,previous:async()=>prior,providers:{worker:()=>assert.fail('Missing source evidence must precede model purchase')}}),e=>e.code==='research_stage_incomplete');
+  const draft=await runSequentialStage({phase,brief,previous:async()=>prior,providers:{worker:()=>assert.fail('Missing source evidence must precede model purchase')}});
+  assert.deepEqual(draft.workerData.facts,[]);
+  assert.ok(draft.workerData.unknowns.length);
  }
+});
+
+test('targeted competitor reading uses observed product pages before any home navigation',async()=>{
+ const {runSequentialStage,selectPeerProductPages}=await import('../src/bhs/sequential-research.mjs');
+ const {createEvidenceCollector}=await import('../src/bhs/evidence.mjs');
+ const names=plan.entities.filter(e=>e.role==='competitor');
+ const product=names.map(e=>({name:e.name,url:new URL('/product/oat-bar',e.website).href}));
+ const published=product.map(p=>({url:p.url,title:p.name+' oat bar'}));
+ const first=await selectPeerProductPages({brief,plan,focus:'oat bar',searches:[{results:published}],providers:{worker:async()=>({data:{pages:[{name:'Unobserved',url:'https://invented.example/one'},...product]}})}});
+ assert.deepEqual(first.prioritySources,product.map(p=>p.url));
+ const prior={...first,packet:{...packet(),sources:packet().sources.filter(s=>!s.url.includes('peer'))},searches:[],facts:[],decision:'accepted',review:{nextTask:{actorRequests:[]}}};
+ const opened=[];
+ const read=async url=>{opened.push(url);return {status:200,headers:{'content-type':'text/html'},body:Buffer.from('<a href="/unrelated">Unrelated product navigation</a><p>'+('Organic oat bar sold in Türkiye. Package and shelf price information. '.repeat(24))+'</p>')};};
+ const collected=await runSequentialStage({phase:'competition_sources',brief,previous:async()=>prior,providers:{},collect:createEvidenceCollector({read,allowPartialPlan:true,preferProductLinks:true})});
+ assert.deepEqual(opened,product.map(p=>p.url));
+ assert.equal(capturedPeerHosts(collected).size,3);
+ assert.deepEqual(collected.packet.sources.slice(0,2),prior.packet.sources);
 });
