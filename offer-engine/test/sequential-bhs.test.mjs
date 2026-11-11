@@ -27,10 +27,11 @@ function modelTransport({mutate,fail}={}){
   const stage=context.qaStage;events.push({type:manager?'manager':'worker',stage});
   if(fail?.(stage))throw new DOMException('Synthetic provider timeout','TimeoutError');
   const answer=modelAnswer(stage,context);let data=mutate?mutate(stage,answer,context):answer;
+  const managerSchema=manager?(b.output_config.format?.schema||JSON.parse(b.system.slice(b.system.lastIndexOf('\n{')+1))):null;
   if(!manager&&stage==='v8-coverage-plan'&&b.generationConfig.responseJsonSchema.properties.queries.items.type==='object')data={...data,queries:data.queries.map(q=>typeof q==='string'?{query:q,target:'operations'}:q),actorRequests:data.actorRequests.map(r=>({target:'digital',...r}))};
-  if(manager&&stage==='v8-swot-review'&&b.output_config.format.schema.properties.patches)data={patches:[],additionalFacts:[],...data};
-  if(manager&&b.output_config.format.schema.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:b.output_config.format.schema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
-  if(manager&&b.output_config.format.schema.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(b.output_config.format.schema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
+  if(manager&&stage==='v8-swot-review'&&managerSchema.properties.patches)data={patches:[],additionalFacts:[],...data};
+  if(managerSchema?.properties.verdicts){const {acceptedIds,rejectedIds,...rest}=data;const rows=[...acceptedIds.map(id=>[id,'accepted']),...rejectedIds.map(id=>[id,'rejected'])];data={...rest,verdicts:managerSchema.properties.verdicts.type==='array'?rows.map(([id,decision])=>({id,decision})):Object.fromEntries(rows)};}
+  if(managerSchema?.properties.fundamentals){const {decision,...rest}=data;data={...rest,fundamentals:Object.fromEntries(managerSchema.properties.fundamentals.required.map(t=>[t,decision==='accepted'?'confirmed':'incomplete']))};}
   const text=JSON.stringify(data),outputTokens=Math.ceil(text.length/4)+128;
   if(manager)return json({model:'claude-sonnet-5-5',stop_reason:'end_turn',usage:{input_tokens:inputTokens,output_tokens:outputTokens},content:[{type:'text',text}]});
   return json({modelVersion:'gemini-3.1-flash-lite',usageMetadata:{promptTokenCount:inputTokens,candidatesTokenCount:outputTokens,thoughtsTokenCount:0,totalTokenCount:inputTokens+outputTokens},candidates:[{finishReason:'STOP',content:{parts:[{text}]}}]});
