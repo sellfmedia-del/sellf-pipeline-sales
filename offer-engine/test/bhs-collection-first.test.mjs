@@ -141,8 +141,8 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   let searches=0,peerReviews=0;
   const peerGap=await runCollectionFirstStage({phase:'synthesis',brief,previous,finish:value=>value,
    collect:async()=>({...fixturePacket(),sources:[{...gamma,url:gammaUrl,finalUrl:gammaUrl}]}),
-   providers:{costStatus:()=>db.ledger.status(),readManagerResult:async(_stage,request)=>request.peers.length?undefined:{data:compact,model:'claude-sonnet-5-5'},withCeiling:limit=>{
-    assert.ok(limit<5000);
+   providers:{costStatus:async()=>({chargedKurus:4777,capKurus:5000}),readManagerResult:async(_stage,request)=>request.peers.length?undefined:{data:compact,model:'claude-sonnet-5-5'},withCeiling:limit=>{
+    assert.ok(limit>=4837&&limit<5000,'one search must fit alongside the compact peer review');
     return {worker:async()=>({data:{product:'organik atıştırmalık',candidates:['Organic Gamma']}}),search:async()=>{searches++;return {results:[{url:gammaUrl}]};}};
    },manager:async(stage,request)=>{
     if(stage==='v8-collection-reserved-peers')return directPeerReply({...request,candidates:request.candidates.filter(([,name])=>['Organic Alpha','Organic Beta'].includes(name))});

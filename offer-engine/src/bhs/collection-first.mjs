@@ -14,6 +14,7 @@ import {researchTariff} from './research-tariff.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
+const peerRepairCall={input:4000,output:600};
 const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
 export function collectionBrandCeiling(capKurus,infrastructureKurus,now){
  return capKurus-infrastructureKurus-Object.values(quoteFinalCalls(now)).reduce((sum,quote)=>sum+quote,0);
@@ -254,7 +255,7 @@ async function reviewCollectedPeers(brief,providers,funding,candidates,alias,rep
   instruction:'Marka ile aynı hedef pazarda aynı ürün veya ihtiyaca hitap eden doğrudan rakipleri belirle. Satıcı, ajans, aynı grubun tekrarı veya benzer olmayan ürün doğrudan rakip sayılmaz. Her aday için sadece o adayın altındaki okunan birincil kaynak kimliğini kullan. Açık ürün ve pazar örtüşmesi varsa direct, yalnız kıyas örneğiyse benchmark, kanıt yetersizse unconfirmed. En fazla dört gerçek doğrudan rakip seç. Her kararın gerekçesini tek kısa cümleyle yaz.'+(repair?' Aynı ürün formatı ve kullanım için somut ikame varsa sertifika veya formül farkını gerekçede belirt. Sertifika eşitliği varsayma ve yalnız geniş kategori ortaklığını doğrudan rakip sayma.':''),
   brand:brief.brandName,market:brief.goals,product:candidates[0].entity.scope,
   candidates:peers.map(({id,entity,cards})=>[id,entity.name,entity.website,cards.map(c=>[alias(c.id),c.quote])])
- },peerVerdictSchema,{...reservedOptions(finalCalls.peers,repair?0:funding.finalQuotes.report+funding.finalQuotes.repair),responseSchema:peerVerdictResponseSchema,normalizeData:data=>{
+ },peerVerdictSchema,{...reservedOptions(repair?peerRepairCall:finalCalls.peers,repair?0:funding.finalQuotes.report+funding.finalQuotes.repair),responseSchema:peerVerdictResponseSchema,normalizeData:data=>{
   if(!Array.isArray(data?.decisions))return data;
   const decisions=data.decisions.filter(row=>{try{assertSchema(row,peerDecisionResponse);return true;}catch{return false;}});
   return {...data,decisions:decisions.slice(0,6)};
@@ -379,7 +380,8 @@ function distinctPeerEntities(entities,peers){
 
 async function repairPeerCoverage({brief,brand,providers,context,funding,product,names,collect,alias,researchSpend}){
  const {chargedKurus,capKurus}=await providers.costStatus();
- const searchCeiling=Math.min(capKurus-funding.finalQuotes.peers,chargedKurus+350,chargedKurus+collectionBudgetKurus-researchSpend);
+ const reviewReserve=reserveStageQuote(quoteSupervised('manager',peerRepairCall.input,peerRepairCall.output,providers.now?.(),researchTariff));
+ const searchCeiling=Math.min(capKurus-reviewReserve,chargedKurus+350,chargedKurus+collectionBudgetKurus-researchSpend);
  if(searchCeiling<=chargedKurus)return {decisions:[],entities:[]};
  const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
  const collected=await comparisonResearch(brief,brand,market,providers.withCeiling(searchCeiling),providers,collect,{product,names});
