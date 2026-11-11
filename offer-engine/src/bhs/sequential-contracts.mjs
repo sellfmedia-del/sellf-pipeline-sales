@@ -31,19 +31,22 @@ export const understandingSchema=obj({facts:arr(conciseFact),unknowns:arr(str(20
 export const reviewSchema=obj({acceptedIds:arr(str(80)),rejectedIds:arr(str(80)),decision:{type:'string',enum:['accepted','limited']},missing:arr(str(400)),notes:str(6000),nextTask:taskSchema,repairTask:taskSchema});
 export const factReviewSchema=obj({...reviewSchema.properties,patches:arr(factSchema),additionalFacts:arr(factSchema)});
 export const understandingTopics=Object.freeze({brand:['identity','products','business_model','market'],sector:['sector','revenue_drivers','customer_behavior']});
-export function reviewVerdictSchema(schema,rows,{phase}={}){
+export function reviewVerdictSchema(schema,rows,{phase,portable=false}={}){
  const result=withoutFindingCeilings(schema),ids=rows.map(r=>r.id);
  if(result.properties.additionalFacts&&factTopics[phase])result.properties.additionalFacts.items.properties.topic.enum=factTopics[phase];
  if(new Set(ids).size!==ids.length)throw new BudgetError('model_output_invalid','Denetim aday kimlikleri yineleniyor.');
  delete result.properties.acceptedIds;delete result.properties.rejectedIds;
- result.properties.verdicts=obj(Object.fromEntries(ids.map(id=>[id,{type:'string',enum:['accepted','rejected']}])));
+ const decision={type:'string',enum:['accepted','rejected']};
+ result.properties.verdicts=portable?arr(obj({id:str(80),decision})):obj(Object.fromEntries(ids.map(id=>[id,decision])));
  result.required=result.required.filter(k=>!['acceptedIds','rejectedIds'].includes(k));result.required.push('verdicts');
  if(phase==='brand'){result.properties.marketContext=obj({basis:{type:'string',enum:['source','brief_declared','unknown']},description:str(600),sourceIds:refs,briefQuote:str(600)});result.required.push('marketContext');}
  if(understandingTopics[phase]){delete result.properties.decision;result.required=result.required.filter(k=>k!=='decision');result.properties.fundamentals=obj(Object.fromEntries(understandingTopics[phase].map(topic=>[topic,{type:'string',enum:['confirmed','incomplete']}] )));result.required.push('fundamentals');}
  return result;
 }
 export function normalizeVerdictReview(data,rows,{phase}={}){
- const {verdicts,...review}=data,ids=rows.map(r=>r.id);
+ const {verdicts:rawVerdicts,...review}=data,ids=rows.map(r=>r.id);
+ const verdicts=Array.isArray(rawVerdicts)?Object.fromEntries(rawVerdicts.map(v=>[v.id,v.decision])):rawVerdicts;
+ if(Array.isArray(rawVerdicts)&&rawVerdicts.length!==ids.length)throw new BudgetError('model_output_invalid','Her aday için ayrı ve eksiksiz denetim kararı gerekli.');
  if(!verdicts||Object.keys(verdicts).length!==ids.length||ids.some(id=>!['accepted','rejected'].includes(verdicts[id])))throw new BudgetError('model_output_invalid','Her aday için ayrı ve eksiksiz denetim kararı gerekli.');
  const topics=understandingTopics[phase];
  if(topics&&(!data.fundamentals||Object.keys(data.fundamentals).sort().join('|')!==[...topics].sort().join('|')||topics.some(t=>!['confirmed','incomplete'].includes(data.fundamentals[t]))))throw new BudgetError('model_output_invalid','Temel anlayış kararları eksik.');
