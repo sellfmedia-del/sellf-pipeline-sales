@@ -334,8 +334,10 @@ test('gap research accepts every BHS dimension and still rejects an invented sou
  const baseline={...prior,packet:{...prior.packet,sources:prior.packet.sources.slice(0,-1)}};
  for(const invented of [false,true]){
   const facts=['financial','operations','funnel','digital','perception','competition'].map((topic,i)=>({id:'gap_'+i,kind:'observation',topic,statement:'Kaynağın doğrudan desteklediği ek araştırma bulgusu.',sourceIds:[invented?'invented-proof':proof],limitation:'Yalnız incelenen kaynak kapsamı.'}));
-  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async phase=>phase==='swot'?baseline:prior,providers:{worker:async(_stage,input,schema,opts)=>{assert.equal(input.areas.length,24);assertSchema({facts,unknowns:[]},schema);opts.validateData({facts,unknowns:[]});return {data:{facts,unknowns:[]}};}}});
-  if(invented)await assert.rejects(run());else assert.equal((await run()).correctionCandidates.length,6);
+  const run=()=>runSequentialStage({phase:'coverage',brief,previous:async phase=>phase==='swot'?baseline:prior,providers:{worker:async(_stage,input,schema)=>{assert.equal(input.areas.length,24);if(!invented)assertSchema({facts,unknowns:[]},schema);return {data:{facts,unknowns:[]}};}}});
+  const result=await run();
+  assert.equal(result.correctionCandidates.length,invented?0:6);
+  assert.equal(result.operatorValidation.rejectedCandidates.length,invented?6:0);
  }
 });
 
