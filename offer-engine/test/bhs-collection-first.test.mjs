@@ -76,6 +76,21 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   assert.equal(result.supervision.reviewMode,'collection-first');
   assert.equal(result.supervision.acceptance.passed,true);
   assert.ok(result.report.dimensions.every(d=>d.findingIds.length<=4));
+  const reviews=[];
+  let compact;
+  const repaired=await runCollectionFirstStage({phase:'synthesis',brief,providers:{costStatus:()=>db.ledger.status(),manager:async(stage,request)=>{
+   reviews.push(stage);
+   if(stage==='v8-collection-final-bhs'){
+    const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
+    const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
+    compact={...data,findings:data.findings.map(f=>({...f,p:remap(f.p)})),peers:data.peers.map(p=>({...p,sourceIds:remap(p.sourceIds)}))};
+    return {data:{...compact,findings:compact.findings.filter(f=>!f.a[0].startsWith('digital_')),peers:[]},model:'claude-sonnet-5-5'};
+   }
+   assert.ok(request.issues.includes('direct_competitors_incomplete'));
+   return {data:{...compact,findings:compact.findings.filter(f=>f.a[0].startsWith('digital_'))},model:'claude-sonnet-5-5'};
+  }},previous,finish:value=>value});
+  assert.deepEqual(reviews,['v8-collection-final-bhs','v8-collection-final-gaps']);
+  assert.equal(repaired.supervision.acceptance.passed,true);
  }finally{await db.close();}
 });
 

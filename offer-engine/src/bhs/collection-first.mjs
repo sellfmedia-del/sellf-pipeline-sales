@@ -28,7 +28,7 @@ const compactReportSchema=obj({
  benchmarks:finalSchema.properties.benchmarks
 });
 const peerSearchSchema=obj({queries:arr(obj({name:str(100),query:str(350)}),4)});
-const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
+const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','quota','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
 async function collectAttempt(run){
  try{return await run();}
@@ -165,6 +165,19 @@ export function expandCollectedReport(data){
   dimensions:dimensions.map(({id})=>({id,score:null,bandReason:'Kamuya açık sinyaller üzerinden değerlendirildi.',findingIds:findings.filter(f=>f.dimension===id).slice(0,4).map(f=>f.id),comparisonFindingIds:[]}))};
 }
 
+function repairSources(context,entities,index,issues){
+ const selected=new Set();
+ if(issues.includes('direct_competitors_incomplete'))for(const entity of entities.filter(e=>e.role==='competitor')){
+  const source=context.input.sources.filter(s=>researchHost(s.url)===researchHost(entity.website)&&s.method!=='search-snippet');
+  const passages=source.flatMap(s=>s.sections).filter(section=>/ürün|product|satın|shop|₺|kategori|category|fiyat|price/i.test(section.text));
+  for(const passage of passages.slice(0,2))selected.add(passage.proofIds[0]);
+ }
+ for(const c of context.cards.filter(card=>card.scope?.startsWith('Apify structured sample')).slice(0,8))selected.add(c.id);
+ for(const [, ,ids] of index.filter(([area,text])=>/^(financial|funnel|competition)_/.test(area)&&/pazar|müşteri|tüketici|e-ticaret|market|consumer|online/i.test(text)).slice(0,8))selected.add(ids[0]);
+ for(const [, ,ids] of index.filter(([area])=>/^(operations|digital)_/.test(area)).slice(0,6))selected.add(ids[0]);
+ return [...selected].map(id=>context.known.get(id)).filter(Boolean);
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const funding=phase===searchStages[0]?await providers.checkpoint('collection-first-funding',brief,async()=>{
@@ -248,17 +261,35 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   brief,entities:entities.map(e=>[e.id,e.role,e.name,e.website]),areas:methodologyAreas.map(a=>[a.key,a.topic]),approvedIdentity,index:index.map(([area,text,ids])=>[area,text,ids.map(alias)]),originalQuotes,unindexedSources
  },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3000,compactReview:true,lowEffort:true});
  const unalias=ids=>ids.map(id=>byAlias.get(id)).filter(Boolean);
- const reply=completion.data;
- const data=expandCollectedReport({...reply,findings:reply.findings.map(f=>({...f,p:unalias(f.p)})),peers:reply.peers.map(p=>({...p,sourceIds:unalias(p.sourceIds)})),benchmarks:reply.benchmarks.map(b=>({...b,sourceIds:unalias(b.sourceIds)}))});
- const report=requireGroundedResearch(projectExpertReport(data,context));
+ const stages=[{phase:'brand',decision:brand.decision},{phase:'collection',decision:'accepted'}];
+ const project=async reply=>{
+  const data=expandCollectedReport({...reply,findings:reply.findings.map(f=>({...f,p:unalias(f.p)})),peers:reply.peers.map(p=>({...p,sourceIds:unalias(p.sourceIds)})),benchmarks:reply.benchmarks.map(b=>({...b,sourceIds:unalias(b.sourceIds)}))});
+  const report=requireGroundedResearch(projectExpertReport(data,context));
+  const swot=Object.entries(data.swot).flatMap(([quadrant,ids])=>ids.flatMap(id=>{
+   const finding=report.findings.find(f=>f.id===id);
+   return finding?[{...finding,quadrant}]:[];
+  }));
+  const budget=await providers.costStatus();
+  return {report,swot,budget,acceptance:qualityAcceptance(report,{stages,swot,budget,reviewMode:'collection-first'})};
+ };
+ let result=await project(completion.data);
+ if(!result.acceptance.passed){
+  const proof=repairSources(context,entities,index,result.acceptance.issues);
+  if(proof.length){
+   const focused=await collectAttempt(()=>providers.manager('v8-collection-final-gaps',{
+    instruction:'Ön BHS son kontrolündeki açıkları aynı arşivde okunmuş kanıtlarla tamamla. Mevcut bulguları tekrarlama. Açık boyut için markaya özgü, ölçüsü sınırlandırılmış kanıt bul. SWOT fırsatı dış pazar veya müşteri davranışına dayanmalı. Elde kanıt varsa eksik sayı için en az üç kısa somut gözlem ekle. Rakipler yalnız kendi okunan ürün kaynağıyla doğrulanabilir. Ürün ikamesi ve hedef ülke kaynağa uymuyorsa benchmark veya unconfirmed kullan. Olası fırsatı gerçekleşmiş sonuç sayma. finding alanları a metodoloji anahtarları, o gözlem, p verilen kanıt kimlikleri, k tür, h ticari yorum, l sınır, w SWOT yönü veya none. O, h ve l alanlarını kısa tut. JSON dışında yazma.',
+    brand:brief.brandName,market:brief.goals,issues:result.acceptance.issues,dimensionStatus:result.report.dimensions.map(d=>[d.id,d.findingIds.length]),existing:result.report.findings.map(f=>f.statement),areas:methodologyAreas.map(a=>[a.key,a.topic]),entities:entities.map(e=>[e.id,e.role,e.name,e.website]),sources:proof.map(c=>[alias(c.id),researchHost(c.url),c.quote])
+   },compactReportSchema,{maxOutputTokens:2400,minimumOutputTokens:1300,compactReview:true,lowEffort:true}));
+   if(focused.data){
+    const previous=completion.data,patch=focused.data;
+    const peers=[...new Map([...previous.peers,...patch.peers].map(peer=>[peer.entityId,peer])).values()];
+    const questions=Object.fromEntries(Object.entries(previous.questions).map(([key,value])=>[key,patch.questions[key]||value]));
+    result=await project({...previous,findings:[...previous.findings,...patch.findings],peers,questions,benchmarks:[...previous.benchmarks,...patch.benchmarks]});
+   }else result.budget=await providers.costStatus();
+  }
+ }
+ const {report,swot,budget,acceptance}=result;
  const citedUrls=new Set(report.sources.map(source=>source.url));
  const analysisPacket={...context.packet,sources:context.packet.sources.filter(source=>citedUrls.has(source.finalUrl)),citationCards:context.packet.citationCards.filter(source=>citedUrls.has(source.url))};
- const swot=Object.entries(data.swot).flatMap(([quadrant,ids])=>ids.flatMap(id=>{
-  const finding=report.findings.find(f=>f.id===id);
-  return finding?[{...finding,quadrant}]:[];
- }));
- const stages=[{phase:'brand',decision:brand.decision},{phase:'collection',decision:'accepted'}];
- const budget=await providers.costStatus();
- const acceptance=qualityAcceptance(report,{stages,swot,budget,reviewMode:'collection-first'});
  return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,fullPacketHash:evidenceHash(context.packet),researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'collection-first',manager:completion.model,worker:'gemini-3.1-flash-lite',stageOrder:['brand','collection','synthesis'],stageDecisions:stages,swot,acceptance,finalDecision:'accepted',researchAccount:closed.researchAccount,costUpperBound:budget,qualityStatus:acceptance.passed?'passed':'requires_content_review'}});
 }
