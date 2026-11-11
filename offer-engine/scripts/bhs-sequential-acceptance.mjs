@@ -7,6 +7,8 @@ import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
+import {runMeteredBhsPhase} from '../src/bhs/job-worker.mjs';
+import {meteredBhsStage,workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 import {localBudget} from '../test/fixtures/local-budget.mjs';
 import {fetchQaCheckpoint} from './qa-checkpoint.mjs';
 import {sequentialQaRequested} from './qa-acceptance-gate.mjs';
@@ -15,17 +17,23 @@ const caseName=process.env.OFFER_BHS_QA_CASE;
 const allowed=sequentialQaRequested;
 export async function runSequentialAcceptance(){
  if(!allowed())return {status:'not_requested'};
- const selected={tadim_final:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
+ const selected={est:{brandName:'Eyüp Sabri Tuncer',website:'https://www.eyupsabrituncer.com/',segment:'corporate'},tadim_final:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim_release:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},tadim:{brandName:'Tadım',website:'https://www.tadim.com.tr/',segment:'corporate'},humm:{brandName:'Humm Organic',website:'https://humm.com.tr/',segment:'kobi'},muratbey:{brandName:'Muratbey',website:'https://www.muratbey.com.tr/',segment:'corporate'},sutas:{brandName:'Sütaş',website:'https://www.sutas.com.tr/',segment:'corporate'},duru:{brandName:'Duru Bulgur',website:'https://www.durubulgur.com/tr',segment:'corporate'}}[caseName];
  const brief=snapshotBrief({...selected,goals:'Türkiye pazarında sürdürülebilir ve kârlı büyüme.',needs:'Marka, sektör, rekabet ve müşteri geri bildirimleri üzerinden kaynaklı darboğaz araştırması.',services:'Büyüme danışmanlığı ve dijital pazarlama',meetingNotes:'Kamuya açık marka için sentetik kabul testi; gerçek CRM, müşteri veya satış verisi kullanılmıyor.'});
  let seed;
  const snapshot=process.env.OFFER_BHS_QA_SEED_SNAPSHOT;
- const snapshots={duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_final:'tadim-final-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
+ const snapshots={est:'est-release-peer-gap',humm:'humm-release-peer-gap',duru:'duru-retained-20261110',tadim:'tadim-retained-20261110',tadim_final:'tadim-final-retained-20261110',tadim_release:'tadim-release-retained-20261110'};
  const allowedSnapshots=caseName==='tadim_release'?[snapshots[caseName],'tadim-release-market-retained-20261110','tadim-release-expert-retained-20261110']:[snapshots[caseName]];
  if(snapshot&&!allowedSnapshots.includes(snapshot))throw Error('Unapproved QA receipt snapshot.');
  const seedData=snapshot?JSON.parse(await readFile(new URL('../test/fixtures/'+snapshot+'.json',import.meta.url),'utf8')).data:process.env.OFFER_BHS_QA_SEED_URL?await fetchQaCheckpoint(process.env.OFFER_BHS_QA_SEED_URL):process.env.OFFER_BHS_QA_SEED;
  if(seedData){
   const payload=JSON.parse(brotliDecompressSync(Buffer.from(seedData,'base64'),{maxOutputLength:12000000}).toString('utf8'));
   if(payload.briefHash!==briefHash(brief)||payload.case!==caseName)throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
+  if(snapshot?.endsWith('-release-peer-gap')){
+   const final=seed.find(r=>r.step_key.startsWith('audit:synthesis:'));
+   const originalCost={est:3408,humm:3477}[caseName];
+   if(final?.charge_kurus!==0||final.state!=='complete'||payload.cost.chargedKurus!==originalCost)throw Error('Unexpected preview checkpoint.');
+   seed=seed.filter(r=>r!==final);
+  }
  }
  const db=await localBudget({lead:'public-'+caseName+'-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
  await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
@@ -41,15 +49,17 @@ export async function runSequentialAcceptance(){
   console.info(JSON.stringify({event:'bhs_v8_public_qa',phase,cost,completed:receipts.filter(r=>r.step_key.startsWith('audit:')&&r.state==='complete').length,paidReceipts:receipts.filter(r=>r.charge_kurus>0).length}));
  }
  try{
-  for(phase of sequentialPhases.slice(0,-2)){
+  for(phase of (snapshot?.endsWith('-release-peer-gap')?['synthesis']:sequentialPhases.slice(0,-1))){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
-   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:500});
-   await runBoundedStage({phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
-   await save();
+   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:workerInfraReservationKurus});
+   const job={id:'public-qa-'+caseName,phase,briefHash:briefHash(brief),...(snapshot?.endsWith('-release-peer-gap')?{budgetRecoveryVersion:'shared-budget-v2',budgetRecoveryPhase:'synthesis'}:{})};
+   await runMeteredBhsPhase(job,{phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'},{meter:args=>meteredBhsStage({...args,region:'iad1'})});
+   console.info(JSON.stringify({event:'bhs_release_qa_phase',phase,cost:await db.ledger.status()}));
   }
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:caseName,status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
  }catch(error){
+  console.info(JSON.stringify({event:'bhs_release_qa_error',phase,name:error.name,code:error.code,cause:error.cause?.code,frames:error.stack?.split('\n').slice(1,7)}));
   result={case:caseName,status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints}:{}),...(error.validationDetail?{validationDetail:error.validationDetail}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
  }finally{
   // The build allowance was reserved before the first paid stage; this is
