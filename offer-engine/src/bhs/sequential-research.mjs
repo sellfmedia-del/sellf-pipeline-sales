@@ -114,6 +114,17 @@ export function capturedPeerHosts(evidence){
  const hosts=new Set((evidence.plan.entities||[]).filter(e=>e.role==='competitor').map(e=>researchHost(e.website)).filter(Boolean));
  return new Set(evidence.packet.sources.filter(s=>hosts.has(researchHost(s.finalUrl))&&!s.metadataOnly&&s.excerpts?.some(p=>p.text.length>=100)).map(s=>researchHost(s.finalUrl)));
 }
+function competitionCoreDecision(brief,evidence,review){
+ const context=sequentialContext(brief,evidence,{completeSources:true});
+ const confirmed=new Set();
+ for(const peer of review.peers||[]){
+  if(peer.relationship!=='direct')continue;
+  const entity=evidence.plan.entities.find(e=>e.id===peer.entityId&&e.role==='competitor');
+  const host=researchHost(entity?.website);
+  if(host&&peer.sourceIds.some(id=>{const source=context.known.get(id);return source&&researchHost(source.url)===host&&!source.metadataOnly&&!['search-snippet','html-signals'].includes(source.method);}))confirmed.add(host);
+ }
+ return confirmed.size>=3?'accepted':'limited';
+}
 export async function completePeerSources(evidence,providers){
  const captured=capturedPeerHosts(evidence),missing=evidence.plan.entities.filter(e=>e.role==='competitor'&&!captured.has(researchHost(e.website)));
  if(captured.size>=3||!missing.length||!providers.extract)return evidence;
@@ -208,6 +219,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(repair){
   const family=repair[1];
   if(repair[2]==='sources'){
+   if(family==='competition'&&competitionCoreDecision(brief,prior,prior.review)==='accepted')return finish({...prior,understandingDecision:'accepted',repairNeeded:false});
    if(prior.understandingDecision==='accepted')return finish({...prior,repairNeeded:false});
    const grant=providers.checkpoint?await providers.checkpoint('targeted-repair:'+family,brief,async()=>({phase:family})):null;
    if(grant?.phase!==family)return finish({...prior,repairNeeded:false});
@@ -334,7 +346,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
    if(!entity||p.sourceIds.some(id=>!context.known.has(id))||p.relationship==='direct'&&(!p.sourceIds.length||!p.sourceIds.some(id=>researchHost(context.known.get(id).url)===researchHost(entity.website)&&!['search-snippet','html-signals'].includes(context.known.get(id).method))))throw new BudgetError('model_output_invalid','Rakip değerlendirmesi doğrulanamadı.');
   }
   const {workerData,...saved}=prior;
-  const decision=check.review.peers.filter(p=>p.relationship==='direct').length>=3?check.review.decision:'limited';
+  const decision=competitionCoreDecision(brief,prior,check.review);
   return finish({...saved,facts:check.facts,peers:check.review.peers,review:check.review,unknowns:workerData.unknowns,understandingDecision:decision,...(phase==='competition'?{peerDiscoveryVersion:'product-v2'}:{})},phase==='competition_review'?'accepted':decision);
  }
  if(phase==='swot_sources'){
@@ -356,7 +368,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  }
  if(phase==='coverage_plan'){
   const actorPlan=await actorPlanning(providers,brief,prior);
-  const plan=await providers.worker('v8-coverage-plan',{instruction:'Claude yöneticisinin emri: '+prior.review.nextTask.instruction+'\nOnaylanan marka → sektör → rekabet → SWOT araştırmasını altı BHS boyutu ve sabit 24 alana grupla. coverage.findingIds içinde yalnız onaylı SWOT kimlikleri kullan. Kritik eksikleri bulmak için en fazla iki hedefli Tavily sorgusu ve yalnız availableActors içinden iki Apify talebi ver. URLler gerçek kaynak/navigation bağlantısı olmalı. Yerel pazar bilinmiyorsa countryCode/language boş olsun; ALL/US varsayma. Teknik kapsam yalnız SEO. Gereksiz tekrar isteme.',...stageModelInput(sequentialContext(brief,prior),{rows:[...approved,...prior.swot],areas:true}),approvedFacts:approved,approvedSwot:prior.swot,...actorPlan},coverageSchema,{maxOutputTokens:4096,validateData:d=>{const ids=new Set(prior.swot.map(f=>f.id));if(Object.values(d.coverage).some(c=>c.findingIds.some(id=>!ids.has(id))))throw Error('Unknown SWOT reference.');}});
+  const plan=await providers.worker('v8-coverage-plan',{instruction:'Claude yöneticisinin emri: '+prior.review.nextTask.instruction+'\nOnaylanan marka → sektör → rekabet → SWOT araştırmasını altı BHS boyutu ve sabit 24 alana grupla. Önceki aşamalardan gelen önemli veri açıklarını ele al. Aynı pazarda karşılaştırılabilir marka ürün/fiyatı veya kaynaklı rekabet riski eksikse bunu öncelikli araştırma görevi olarak değerlendir; bulunamayan sayıları uydurma. coverage.findingIds içinde yalnız onaylı SWOT kimlikleri kullan. Kritik eksikleri bulmak için en fazla iki hedefli Tavily sorgusu ve yalnız availableActors içinden iki Apify talebi ver. URLler gerçek kaynak/navigation bağlantısı olmalı. Yerel pazar bilinmiyorsa countryCode/language boş olsun; ALL/US varsayma. Teknik kapsam yalnız SEO. Gereksiz tekrar isteme.',...stageModelInput(sequentialContext(brief,prior),{rows:[...approved,...prior.swot],areas:true}),approvedFacts:approved,approvedSwot:prior.swot,priorEvidenceGaps:stages.map(s=>({phase:s.phase,missing:s.review?.missing||[]})),...actorPlan},coverageSchema,{maxOutputTokens:4096,validateData:d=>{const ids=new Set(prior.swot.map(f=>f.id));if(Object.values(d.coverage).some(c=>c.findingIds.some(id=>!ids.has(id))))throw Error('Unknown SWOT reference.');}});
   return finish({...prior,coveragePlan:plan.data});
  }
  if(phase==='coverage_sources'){
