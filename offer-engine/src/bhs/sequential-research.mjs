@@ -8,7 +8,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,swotReviewSchema,coverageSchema,targetedCoverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 import {finalEvidenceSchema,finalEvidenceCandidates,finalEvidenceInput,finalizeEvidenceVerdicts,orderedEvidenceVerdicts,essentialEvidenceCandidates} from './final-evidence-review.mjs';
-import {runCollectionFirstStage} from './collection-first.mjs';
+import {collectionBrandCeiling,runCollectionFirstStage} from './collection-first.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000});
@@ -243,6 +243,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
  if(prior?.collectionFirst&&index>sequentialPhases.indexOf('brand'))return runCollectionFirstStage({phase,brief,providers,previous,collect,finish});
+ if(providers.collectionFirst&&index<=sequentialPhases.indexOf('brand')){
+  const {capKurus}=await providers.costStatus();
+  providers=providers.withCeiling(collectionBrandCeiling(capKurus,providers.infrastructureOffsetKurus,providers.now()));
+ }
  const stages=[];for(const name of logicalPhases.filter(p=>sequentialPhases.indexOf(p==='sector'?'sector_validation':p)<index))stages.push({...await previous(name==='sector'?'sector_validation':name),phase:name});
  const approved=stages.flatMap(s=>s.facts||[]);
  const repair=phase.match(/^(brand|sector|competition|swot)_correction_(sources|draft)$/);

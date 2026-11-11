@@ -8,21 +8,25 @@ export class BudgetError extends Error{constructor(code,message){super(message);
 // fail closed. The conversion is a conservative envelope, not a quoted FX rate.
 export const tariff=Object.freeze({version:'sellf-bounded-2026-11-05-v2',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,normalTargetKurus:3000,capKurus:5000,infraKurus:500,
  models:{'gemini-2.5-flash':{input:.30,output:2.50,cachedInput:.03},'gemini-2.5-pro':{input:1.25,output:10,cachedInput:.125},'gemini-3.1-pro-preview':{input:2,output:12,cachedInput:.2},'gemini-4-argon':{input:2,output:10,cachedInput:.1},'gemini-3.8-flash':{input:.75,output:3.75,cachedInput:.075}},tavilyCredit:.008});
-export function tariffReadiness(now=Date.now()){
- const remaining=Date.parse(tariff.expires)-now,valid=Number.isFinite(remaining)&&remaining>0;
- return {status:!valid?'expired':remaining<=7*86400000?'review_due':'valid',expires:tariff.expires,paidCallsAllowed:valid,daysRemaining:Math.max(0,Math.ceil(remaining/86400000))};
+export function tariffReadiness(now=Date.now(),pricing=tariff){
+ if(pricing.reviewAt){
+  const remaining=Date.parse(pricing.reviewAt)-now;
+  return {status:remaining<=7*86400000?'review_due':'valid',reviewAt:pricing.reviewAt,paidCallsAllowed:true,daysRemaining:Math.max(0,Math.ceil(remaining/86400000))};
+ }
+ const remaining=Date.parse(pricing.expires)-now,valid=Number.isFinite(remaining)&&remaining>0;
+ return {status:!valid?'expired':remaining<=7*86400000?'review_due':'valid',expires:pricing.expires,paidCallsAllowed:valid,daysRemaining:Math.max(0,Math.ceil(remaining/86400000))};
 }
-export function quoteModel(model,inputUpper,outputUpper,now=Date.now()){
- if(now>=Date.parse(tariff.expires)||!tariff.models[model])throw new BudgetError('tariff_expired','Maliyet tarifesi doğrulanmadan yeni ücretli işlem başlatılamaz.');
+export function quoteModel(model,inputUpper,outputUpper,now=Date.now(),pricing=tariff){
+ if(now>=Date.parse(pricing.expires)||!pricing.models[model])throw new BudgetError('tariff_expired','Maliyet tarifesi doğrulanmadan yeni ücretli işlem başlatılamaz.');
  if(!Number.isSafeInteger(inputUpper)||inputUpper<0||!Number.isSafeInteger(outputUpper)||outputUpper<0||inputUpper>190000)throw new BudgetError('input_budget','Analiz girdisi güvenli maliyet sınırını aşıyor.');
- const rate=tariff.models[model];return Math.ceil((inputUpper*rate.input+outputUpper*rate.output)/1e6*tariff.usdTry*tariff.overhead*100);
+ const rate=pricing.models[model];return Math.ceil((inputUpper*rate.input+outputUpper*rate.output)/1e6*pricing.usdTry*pricing.overhead*100);
 }
 export const quoteSearch=(depth='advanced')=>{if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');return Math.ceil((depth==='basic'?1:2)*tariff.tavilyCredit*tariff.usdTry*tariff.overhead*100);};
 // Reservation and consumed usage are different quantities. Keep the original
 // conservative ceiling for in-flight requests; settle verified usage at the
 // published FX snapshot plus a visible 3% conversion allowance, not at 72 TRY/USD.
-export function consumedModel(model,input,output,fx,now=Date.now(),cachedInput=0){
- quoteModel(model,input,output,now);
+export function consumedModel(model,input,output,fx,now=Date.now(),cachedInput=0,pricing=tariff){
+ quoteModel(model,input,output,now,pricing);
  if(!Number.isFinite(fx)||fx<=0||fx>tariff.usdTry||!Number.isSafeInteger(cachedInput)||cachedInput<0||cachedInput>input)throw new BudgetError('provider_accounting','Kullanım veya kur kaydı geçersiz.');
  const rate=tariff.models[model],usd=((input-cachedInput)*rate.input+cachedInput*rate.cachedInput+output*rate.output)/1e6;
  return Math.ceil(usd*fx*1.03*100);

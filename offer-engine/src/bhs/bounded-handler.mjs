@@ -17,7 +17,8 @@ import {offerCopy} from '../proposal/composition.mjs';
 import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
 import {supervisedPhases} from './supervised-research.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
-import {createSequentialProviders} from './sequential-providers.mjs';
+import {collectionFirstEnabled,createSequentialProviders} from './sequential-providers.mjs';
+import {researchTariff} from './research-tariff.mjs';
 import {backgroundBhsEnabled,browserBhsJobStore} from './job-store.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
@@ -32,8 +33,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
   if(req.method==='GET'){
-   const supervised=['v7','v8'].includes(getResearchVersion());
-   return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:getResearchVersion()==='v8'&&isBackgroundEnabled()?'background':'browser',costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:tariff.version,tariffReadiness:tariffReadiness(now()),qualityBenchmark:'not_requested',contentReview:false});
+   const version=getResearchVersion(),supervised=['v7','v8'].includes(version),pricing=version==='v8'?researchTariff:tariff;
+   return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:version==='v8'&&isBackgroundEnabled()?'background':'browser',...(version==='v8'?{collectionFirst:collectionFirstEnabled()}:{}),costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:pricing.version,tariffReadiness:tariffReadiness(now(),pricing),qualityBenchmark:'not_requested',contentReview:false});
   }
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});

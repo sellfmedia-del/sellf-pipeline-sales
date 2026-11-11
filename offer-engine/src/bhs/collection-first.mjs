@@ -10,12 +10,17 @@ import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
+import {researchTariff} from './research-tariff.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
+const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
+export function collectionBrandCeiling(capKurus,infrastructureKurus,now){
+ return capKurus-infrastructureKurus-Object.values(quoteFinalCalls(now)).reduce((sum,quote)=>sum+quote,0);
+}
 export function planCollectionFunding({chargedKurus,capKurus},infrastructureKurus=0,now=Date.now()){
  const startKurus=Math.max(tariff.infraKurus,chargedKurus-infrastructureKurus);
- const finalQuotes=Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now))]));
+ const finalQuotes=quoteFinalCalls(now);
  const finalReserveKurus=Object.values(finalQuotes).reduce((sum,quote)=>sum+quote,0);
  const budgetAfterFinal=capKurus-finalReserveKurus-infrastructureKurus;
  if(startKurus>budgetAfterFinal)throw new BudgetError('budget_limit','Marka ve altyapı sonrasında nihai BHS için gereken bütçe ayrılamadı.');
@@ -50,8 +55,8 @@ const reservedReportSchema=obj({
 const reservedReportResponseSchema=obj({...reservedReportSchema.properties,findings:arr(findingSchema)});
 const reservedRepairSchema=obj({findings:arr(reservedReportSchema.properties.findings.items,4)});
 const peerVerdictSchema=obj({decisions:arr(obj({id:str(12),verdict:{type:'string',enum:['direct','benchmark','unconfirmed']},proof:str(16),reason:str(95)}),6)});
-const peerSearchSchema=obj({queries:arr(obj({name:str(100),query:str(350)}),4)});
-const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','quota','provider_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
+const peerSearchSchema=obj({product:str(100),candidates:arr(str(100),6)});
+const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','provider_rejected','provider_error','quota','provider_timeout','fx_unavailable','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
 async function collectAttempt(run){
  try{return await run();}
@@ -126,22 +131,26 @@ async function readResearchPages(brief,plan,targets,providers,collect){
 
 async function comparisonResearch(brief,brand,market,pool,providers,collect){
  const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
-  instruction:'Onaylı marka ürünlerinden ana ikame edilebilir ürün veya hizmeti seç. Hedef pazarda o ürünle ilişkili ve kendi resmî ürün sayfası bulunabilecek, birbirinden bağımsız dört marka için birer arama sorgusu yaz. Aynı grubun alt markalarını ayrı sorgulara koyma. Perakendeci, ajans, arama sitesi veya farklı ürün satan markayı aday gösterme. name sadece adayın marka adı, query ise marka + somut ürün + ülke + resmî ürün sayfası kelimeleri olsun. Bunlar araştırma adaylarıdır. Rakip kararı verme, URL uydurma.',
+  instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts
  },peerSearchSchema,{maxOutputTokens:512}));
- const searches=[],hints=[];
- for(const {name,query} of plan.data?.queries||[]){
-  if(!name.trim()||!query.trim()||nameKey(name)===nameKey(brief.brandName))continue;
+ const searches=[],hints=[],seen=new Set([peerGroupKey(brief.brandName)]),product=plan.data?.product?.trim();
+ const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{4,}/gu)||[];
+ for(const name of product?plan.data.candidates:[]){
+  const group=peerGroupKey(name);
+  if(!group||seen.has(group))continue;
+  seen.add(group);
+  const query=[name,product,market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
   const search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(search);
   const urls=(search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url));
-  const url=urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
+  const url=urls.find(url=>words.some(word=>nameKey(url.split('/').slice(3).join('/')).includes(nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
   if(!url||hints.some(peer=>researchHost(peer.website)===researchHost(url)))continue;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
  const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
- return {searches,pages:packet.sources,peerHints:hints};
+ return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||''};
 }
 
 // Research receipts remain intact. This packet is a compact index for Claude,
@@ -172,10 +181,10 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-function peerCandidates(context,entities,brand){
- const product=brand.facts.find(f=>f.topic==='products')?.statement||'';
+function peerCandidates(context,entities,brand,peerProduct){
+ const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
- const terms=unique(product.toLocaleLowerCase('tr').match(/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
+ const terms=unique(product.toLocaleLowerCase('tr').match(peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
  const productPattern=/ürün|product|satın|shop|₺|kategori|category|fiyat|price|sepet|cart/i;
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
@@ -186,7 +195,7 @@ function peerCandidates(context,entities,brand){
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))};
    }).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
    if(!cards.length)continue;
-   const key=nameKey(candidate.name),score=cards[0].score;
+   const key=peerProduct?peerGroupKey(candidate.name):nameKey(candidate.name),score=cards[0].score;
    if(scored.get(key)?.score>=score)continue;
    const entity={...candidate,website:source.url,scope:product,audienceReason:''};
    scored.set(key,{entity,score,cards:cards.slice(0,2).map(item=>item.card)});
@@ -372,10 +381,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(phase!=='synthesis')return save({});
  const brand=await previous('brand'),closed=await previous('coverage_plan');
  if(!closed.collectionClosed)throw new BudgetError('research_stage_incomplete','Kanıt toplama tamamlanmadan Claude değerlendirmesi başlatılamaz.');
- const [{packet},inventory]=await Promise.all([corpus(previous),sourcesFrom(previous,inventoryStages,'inventory')]);
+ const [{packet},inventory,focused]=await Promise.all([corpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
  const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
  const discovered=comparisonEntities(context,inventory);
- const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand):[];
+ const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct):[];
  const entities=funding.finalQuotes?[...discovered.filter(entity=>entity.role==='brand'),...candidates.map(item=>item.entity)]:discovered;
  context.input.entities=entities;
  const index=proofIndex(context,inventory);
@@ -388,7 +397,6 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  };
  const originalQuotes=Object.fromEntries(selectedIds.map(id=>{const card=context.known.get(id);return [alias(id),[researchHost(card.url),card.quote]];}));
  const indexedUrls=new Set(selectedIds.map(id=>context.known.get(id).url));
- const focused=await previous(scrapeStages[0]);
  const peerHosts=new Set((focused.peerHints||[]).map(e=>researchHost(e.website)));
  const unindexedSources=context.input.sources.filter(source=>source.sections.length&&(!indexedUrls.has(source.url)||peerHosts.has(researchHost(source.url)))).map(source=>{
   const host=researchHost(source.url),peer=peerHosts.has(host);
