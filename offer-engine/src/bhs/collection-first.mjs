@@ -140,7 +140,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
-  const scrapes=await actorRequest({brief,searches,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},scoped(1900),scrapeIndex,market);
+  // The Actor adapter holds the final 6 TRY of this research account for Gemini.
+  const scrapes=await actorRequest({brief,searches,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},scoped(collectionBudgetKurus),scrapeIndex,market);
   return save({scrapes});
  }
  if(inventoryIndex>=0){

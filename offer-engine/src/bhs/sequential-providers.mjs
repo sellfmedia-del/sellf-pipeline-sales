@@ -30,7 +30,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0,phas
 export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date.now,apify,infrastructureOffsetKurus=0,phaseLimitKurus,collectionFirst=process.env.OFFER_BHS_COLLECTION_FIRST==='1',...options}={}){
  const scoped=stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus,phaseLimitKurus}),base=createRuntimeProviders({...options,ledger:scoped,fetchImpl,now});
  // At coverage only the gap extraction, draft and final audit remain.
- const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,retainDataset:collectionFirst&&phaseLimitKurus!==undefined,followingKurus:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):0});
+ const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,retainDataset:collectionFirst&&phaseLimitKurus!==undefined,followingKurus:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):600});
  return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8'}),collectionFirst,infrastructureOffsetKurus,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once('audit:v8:checkpoint:'+name+':'+hash(input),input,0,run),availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
   withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,...options})};
 }
