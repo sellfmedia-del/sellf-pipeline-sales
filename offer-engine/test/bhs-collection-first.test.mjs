@@ -12,7 +12,10 @@ const clock=()=>Date.parse('2026-11-11T10:00:00Z');
 const fixturePacket=()=>{
  const data=packet();
  const domains=new Map(plan.entities.filter(e=>e.role==='competitor').map(e=>[e.website,'https://'+e.name.toLowerCase().replaceAll(' ','')+'.example/']));
- return {...data,entities:data.entities.map(e=>({...e,website:domains.get(e.website)||e.website})),sources:data.sources.map(s=>({...s,url:domains.get(s.url)||s.url,finalUrl:domains.get(s.finalUrl)||s.finalUrl}))};
+ const entities=data.entities.map(e=>({...e,website:domains.get(e.website)||e.website}));
+ const sources=data.sources.map(s=>({...s,url:domains.get(s.url)||s.url,finalUrl:domains.get(s.finalUrl)||s.finalUrl}));
+ const peer=entities.find(e=>e.role==='competitor'),alternateUrl=peer.website.replace('://','://atelier');
+ return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,{...sources.find(s=>s.url===peer.website),id:'alternate-source',url:alternateUrl,finalUrl:alternateUrl}]};
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
 
@@ -86,6 +89,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
   }},previous,finish:value=>value});
   assert.equal(result.supervision.reviewMode,'collection-first');
   assert.equal(result.supervision.acceptance.passed,true);
+  assert.equal(result.supervision.acceptance.directCompetitors,3);
   assert.ok(result.report.dimensions.every(d=>d.findingIds.length<=4));
   const reviews=[];
   let compact;
@@ -99,10 +103,12 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
     return {data:{...compact,findings:compact.findings.filter(f=>!f.a[0].startsWith('digital_')),peers:[]},model:'claude-sonnet-5-5'};
    }
    assert.ok(request.issues.includes('insufficient_dimension_depth'));
-   return {data:{...compact,findings:compact.findings.filter(f=>f.a[0].startsWith('digital_'))},model:'claude-sonnet-5-5'};
+   const findings=compact.findings.filter(f=>f.a[0].startsWith('digital_'));
+   return {data:{...compact,findings:[...findings,{...findings[0],o:'Geçersiz kanıtlı örnek.',p:['existing:2']}]},model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.deepEqual(reviews,['v8-collection-reserved-peers','v8-collection-reserved-report','v8-collection-reserved-gaps']);
   assert.equal(repaired.supervision.acceptance.passed,true);
+  assert.ok(!repaired.report.findings.some(f=>f.statement==='Geçersiz kanıtlı örnek.'));
  }finally{await db.close();}
 });
 
