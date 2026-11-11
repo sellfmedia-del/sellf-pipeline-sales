@@ -60,6 +60,7 @@ async function collectAttempt(run){
 const shard=(rows,index,count)=>rows.filter((_,i)=>i%count===index);
 const unique=items=>[...new Set(items)];
 const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
+const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
 function publisherMatches(name,url){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
  return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand].includes(domain);
@@ -121,7 +122,7 @@ async function readResearchPages(brief,plan,targets,providers,collect){
 
 async function comparisonResearch(brief,brand,market,pool,providers,collect){
  const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
-  instruction:'Onaylı marka ürünlerinden ana ikame edilebilir ürün veya hizmeti seç. Hedef pazarda o ürünün kendi resmî ürün sayfası olabilecek en fazla dört farklı marka için birer arama sorgusu yaz. name sadece adayın marka adı, query ise marka + somut ürün + ülke + resmî ürün sayfası kelimeleri olsun. İnternetten gelen sonuçlar daha sonra kaydedilip doğrulanacak. Rakip kararı verme, URL uydurma.',
+  instruction:'Onaylı marka ürünlerinden ana ikame edilebilir ürün veya hizmeti seç. Hedef pazarda o ürünle ilişkili ve kendi resmî ürün sayfası bulunabilecek, birbirinden bağımsız dört marka için birer arama sorgusu yaz. Aynı grubun alt markalarını ayrı sorgulara koyma. Perakendeci, ajans, arama sitesi veya farklı ürün satan markayı aday gösterme. name sadece adayın marka adı, query ise marka + somut ürün + ülke + resmî ürün sayfası kelimeleri olsun. Bunlar araştırma adaylarıdır. Rakip kararı verme, URL uydurma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts
  },peerSearchSchema,{maxOutputTokens:512}));
  const searches=[],hints=[];
@@ -270,6 +271,27 @@ function repairSources(context,entities,index,issues){
  return [...selected].map(id=>context.known.get(id)).filter(Boolean);
 }
 
+function reservedRepairSources(context,index,issues,verifiedPeers){
+ const sources=repairSources(context,context.input.entities,index,[]);
+ if(!issues.includes('swot_threat_incomplete'))return sources;
+ const peerEvidence=verifiedPeers.flatMap(peer=>peer.sourceIds.map(id=>context.known.get(id))).filter(Boolean);
+ const riskEvidence=context.cards.filter(card=>!card.metadataOnly&&card.method!=='search-snippet'&&/ham\s?madde|tedarik riski|mevzuat|düzenleyici|ithalat bağımlılığı|fiyat baskısı|regulation|supply risk|price pressure/iu.test(card.quote));
+ const riskByPublisher=[...new Map(riskEvidence.map(card=>[researchHost(card.url),card])).values()].slice(0,8);
+ return [...new Set([...peerEvidence,...riskByPublisher,...sources])];
+}
+
+function distinctPeerEntities(entities,peers){
+ const groups=new Set(),duplicates=new Set();
+ for(const peer of peers.filter(peer=>peer.relationship==='direct')){
+  const entity=entities.find(entity=>entity.id===peer.entityId);
+  if(!entity)continue;
+  const group=peerGroupKey(entity.name);
+  if(groups.has(group))duplicates.add(entity.id);
+  else groups.add(group);
+ }
+ return entities.filter(entity=>!duplicates.has(entity.id));
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const funding=phase===searchStages[0]?await providers.checkpoint('collection-first-funding',brief,async()=>planCollectionFunding(await providers.costStatus(),providers.infrastructureOffsetKurus,providers.now?.())):(await previous(searchStages[0])).funding;
@@ -358,6 +380,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  },compactReportSchema,{maxOutputTokens:9000,minimumOutputTokens:3000,compactReview:true,lowEffort:true});
  const unalias=ids=>ids.map(id=>byAlias.get(id)).filter(Boolean);
  const stages=[{phase:'brand',decision:brand.decision},{phase:'collection',decision:'accepted'}];
+ if(funding.finalQuotes)context.input.entities=distinctPeerEntities(entities,peers);
  const project=async reply=>{
   const data=expandCollectedReport({...reply,findings:reply.findings.map(f=>({...f,p:unalias(f.p)})),peers:reply.peers.map(p=>({...p,sourceIds:unalias(p.sourceIds)})),benchmarks:reply.benchmarks.map(b=>({...b,sourceIds:unalias(b.sourceIds)}))});
   const report=requireGroundedResearch(projectExpertReport(data,context));
@@ -372,10 +395,11 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  let result=await project(initial);
  const issues=result.acceptance.issues.filter(issue=>!funding.finalQuotes||issue!=='direct_competitors_incomplete');
  if(issues.length){
-  const proof=repairSources(context,entities,index,issues);
+  const verifiedPeers=(peers||[]).filter(peer=>result.report.competitors.some(entity=>entity.id===peer.entityId));
+  const proof=funding.finalQuotes?reservedRepairSources(context,index,issues,verifiedPeers):repairSources(context,entities,index,issues);
   if(proof.length){
    const focused=funding.finalQuotes?await collectAttempt(()=>providers.manager('v8-collection-reserved-gaps',{
-    instruction:'Eksik BHS boyutu veya SWOT kolunu tamamlayan en fazla dört ayrı kısa bulgu yaz. Eksikleri öncele ve mevcut bulguları tekrarlama. Sadece verilen kanıt kimliklerini kullan. a alan anahtarları, o gözlem, p kanıt kimlikleri, k tür, h ticari yorum, l sınır, w SWOT yönü veya none. Gözlem 150, yorum ve sınır 80 karakteri geçmesin. Kanıt yoksa ilgili bulguyu ekleme. Tam JSON ile bitir.',
+    instruction:'Listelenen eksikleri tamamlayan en fazla dört kısa bulgu yaz. SWOT tehdidi eksikse önce tek bir dış risk yaz. Bir rakibin aynı ihtiyacı karşılayan somut ürünü varsa bunu gözlem olarak ve olası ikame baskısını koşullu ticari yorum olarak kullanabilirsin. Pazar payı, satış kaybı veya güncel hukuki durum varsayma. Mevcut bulguları tekrarlama. p için yalnız sources içindeki gerçek s kimliklerini kullan. a alan anahtarları, o gözlem, k tür, h ticari yorum, l sınır, w SWOT yönü. Gözlem 150, yorum ve sınır 80 karakteri geçmesin. Kanıt yoksa ilgili bulguyu ekleme. Tam JSON ile bitir.',
     brand:brief.brandName,market:brief.goals,issues,dimensionStatus:result.report.dimensions.map(d=>[d.id,d.findingIds.length]),existing:result.report.findings.map(f=>f.statement),areas:methodologyAreas.map(a=>[a.key,a.topic]),sources:proof.map(c=>[alias(c.id),researchHost(c.url),c.quote])
    },reservedRepairSchema,reservedOptions(finalCalls.repair))):await collectAttempt(()=>providers.manager('v8-collection-final-gaps',{
     instruction:'Ön BHS son kontrolündeki açıkları aynı arşivde okunmuş kanıtlarla tamamla. Mevcut bulguları tekrarlama. Açık boyut için markaya özgü, ölçüsü sınırlandırılmış kanıt bul. SWOT fırsatı dış pazar veya müşteri davranışına dayanmalı. Elde kanıt varsa eksik sayı için en az üç kısa somut gözlem ekle. Rakipler yalnız kendi okunan ürün kaynağıyla doğrulanabilir. Ürün ikamesi ve hedef ülke kaynağa uymuyorsa benchmark veya unconfirmed kullan. Olası fırsatı gerçekleşmiş sonuç sayma. finding alanları a metodoloji anahtarları, o gözlem, p verilen kanıt kimlikleri, k tür, h ticari yorum, l sınır, w SWOT yönü veya none. O, h ve l alanlarını kısa tut. JSON dışında yazma.',
@@ -383,9 +407,11 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    },compactReportSchema,{maxOutputTokens:2400,minimumOutputTokens:1300,compactReview:true,lowEffort:true}));
    if(focused.data){
     const patch=focused.data;
+    const allowed=new Set(proof.map(card=>alias(card.id)));
+    const findings=funding.finalQuotes?patch.findings.filter(row=>row.p.length&&row.p.every(id=>allowed.has(id))):patch.findings;
     const mergedPeers=[...new Map([...initial.peers,...(patch.peers||[])].map(peer=>[peer.entityId,peer])).values()];
     const questions=Object.fromEntries(Object.entries(initial.questions).map(([key,value])=>[key,patch.questions?.[key]||value]));
-    result=await project({...initial,findings:[...initial.findings,...patch.findings],peers:mergedPeers,questions,benchmarks:[...initial.benchmarks,...(patch.benchmarks||[])]});
+    result=await project({...initial,findings:[...initial.findings,...findings],peers:mergedPeers,questions,benchmarks:[...initial.benchmarks,...(patch.benchmarks||[])]});
    }else result.budget=await providers.costStatus();
   }
  }
