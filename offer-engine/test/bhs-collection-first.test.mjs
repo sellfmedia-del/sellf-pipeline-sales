@@ -15,7 +15,9 @@ const fixturePacket=()=>{
  const entities=data.entities.map(e=>({...e,website:domains.get(e.website)||e.website}));
  const sources=data.sources.map(s=>({...s,url:domains.get(s.url)||s.url,finalUrl:domains.get(s.finalUrl)||s.finalUrl}));
  const peer=entities.find(e=>e.role==='competitor'),alternateUrl=peer.website.replace('://','://atelier');
- return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,{...sources.find(s=>s.url===peer.website),id:'alternate-source',url:alternateUrl,finalUrl:alternateUrl}]};
+ const peerSource=sources.find(s=>s.url===peer.website);
+ const alternate={...peerSource,id:'alternate-source',url:alternateUrl,finalUrl:alternateUrl,excerpts:peerSource.excerpts.map(({text})=>({text:text.replace(peer.name,'Atelier '+peer.name)}))};
+ return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,alternate]};
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
 
@@ -49,7 +51,7 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
       worker:async(stage,input)=>{
        workers++;
        if(stage==='v8-collection-peer-search')return {data:{queries:[]}};
-       return {data:{observations:input.sources.filter(source=>!source.url.includes('public.example')).flatMap(source=>source.sections.map(section=>({area:'operations_1',text:section.text||'Verbatim research record.',sourceIds:section.proofIds}))),organizations:[]}};
+       return {data:{observations:input.sources.filter(source=>!source.url.includes('public.example')).flatMap(source=>source.sections.map(section=>({area:/Statik HTML|Organic Alpha için/.test(section.text)?'digital_1':'operations_1',text:section.text||'Verbatim research record.',sourceIds:section.proofIds}))),organizations:[]}};
       }
      };
     }
@@ -100,10 +102,11 @@ test('collection preserves raw records under 25 TRY and never calls Claude durin
     const aliases=new Map(Object.entries(request.originalQuotes).map(([alias,[,quote]])=>[quote,alias]));
     const remap=ids=>ids.map(id=>aliases.get(context.known.get(id).quote));
     compact={...data,findings:data.findings.map(f=>({...f,p:remap(f.p)})),peers:data.peers.map(p=>({...p,sourceIds:remap(p.sourceIds)}))};
-    return {data:{...compact,findings:compact.findings.filter(f=>!f.a[0].startsWith('digital_')),peers:[]},model:'claude-sonnet-5-5'};
+    return {data:{...compact,findings:compact.findings.filter(f=>!f.a[0].startsWith('digital_')&&f.w!=='threat'),peers:[]},model:'claude-sonnet-5-5'};
    }
    assert.ok(request.issues.includes('insufficient_dimension_depth'));
-   const findings=compact.findings.filter(f=>f.a[0].startsWith('digital_'));
+   assert.ok(request.issues.includes('swot_threat_incomplete'));
+   const findings=compact.findings.filter(f=>f.a[0].startsWith('digital_')||f.w==='threat');
    return {data:{...compact,findings:[...findings,{...findings[0],o:'Geçersiz kanıtlı örnek.',p:['existing:2']}]},model:'claude-sonnet-5-5'};
   }},previous,finish:value=>value});
   assert.deepEqual(reviews,['v8-collection-reserved-peers','v8-collection-reserved-report','v8-collection-reserved-gaps']);
