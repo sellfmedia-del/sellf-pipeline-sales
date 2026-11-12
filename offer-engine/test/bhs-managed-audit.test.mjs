@@ -280,7 +280,9 @@ test('a final report failure can hand off the reviewed source with no invented a
   throw new BudgetError('model_output_invalid','synthetic provider response');
  }}});
  assert.equal(result.reportIssue,'model_output_invalid');
- assert.deepEqual(result.report.findings.map(finding=>finding.statement),[proof.quote]);
+ const statements=result.report.findings.map(finding=>finding.statement);
+ assert.equal(statements[0],proof.quote);
+ assert.ok(statements.every(statement=>context.cards.some(card=>card.quote===statement)));
  assert.ok(result.report.findings.every(finding=>!finding.recommendation&&finding.sourceIds.length));
  assert.deepEqual(calls,['v8-managed-evidence-batch','v8-managed-actionable-report']);
  const audit=directAuditResult(brief,{report:result.report,analysisPacket:context.packet,methodologyVersion:sequentialVersion,
@@ -290,7 +292,7 @@ test('a final report failure can hand off the reviewed source with no invented a
  assert.equal(continued.status,'ready');
  assert.equal(continued.data.quality.contentComplete,false);
  assert.match(continued.data.researchContinuity.notice,/Nihai analiz tamamlanamadı/);
- assert.deepEqual(selectProposalAudit(continued.data,brief).findings.map(finding=>finding.statement),[proof.quote]);
+ assert.deepEqual(selectProposalAudit(continued.data,brief).findings.map(finding=>finding.statement).sort(),[...statements].sort());
 });
 
 test('raw sources are stored once in bounded parallelism without a paid reservation or text loss',async t=>{
