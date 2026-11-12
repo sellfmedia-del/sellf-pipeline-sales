@@ -241,23 +241,21 @@ test('a missing verdict or an unfunded batch cannot be counted as reviewed',asyn
 test('a truncated initial Claude plan keeps all required source searches active without another model call',async()=>{
  const phases=['sector_sources','sector_draft','sector_review'];
  const brand={facts:[{topic:'products',statement:'Kolonya ve kişisel bakım ürünleri'}],review:{marketContext:{description:'Türkiye'}}};
- for(const resume of [false,true]){
-  const receipts=new Map([['brand',brand]]),searches=[];
-  let calls=0;
-  const providers={managedAudit:true,skipManagedPlanner:resume,costStatus:async()=>({chargedKurus:1985,capKurus:5000}),
-   checkpoint:async(_key,_input,run)=>run(),withCeiling:()=>providers,
-   search:async query=>{searches.push(query);return {query,results:[]};},
-   manager:async()=>{calls++;throw Object.assign(new BudgetError('incomplete','max_tokens'),{paidResponseRetained:true});}};
-  for(const phase of phases)receipts.set(phase,await runCollectionFirstStage({phase,brief,providers,
-   previous:async name=>receipts.get(name),finish:data=>data}));
-  const first=receipts.get('sector_sources');
-  assert.deepEqual(first.toolIssues,['incomplete']);
-  assert.equal(managedResearchHealthy([{state:'complete',value:first}]),false);
-  assert.equal(first.managedPlan.plannerFallback,true);
-  assert.deepEqual(new Set(first.managedPlan.tasks.map(task=>task.section)),new Set(Object.keys(managedSections)));
-  assert.ok(first.managedPlan.tasks.filter(task=>task.section==='digital').every(task=>searches.includes(task.query)));
-  assert.ok(searches.some(query=>query.includes('Kolonya')));
-  assert.equal(calls,resume?0:1);
-  assert.equal(searches.length,first.managedPlan.tasks.length+1);
- }
+ const receipts=new Map([['brand',brand]]),searches=[];
+ let calls=0;
+ const providers={managedAudit:true,costStatus:async()=>({chargedKurus:1985,capKurus:5000}),
+  checkpoint:async(_key,_input,run)=>run(),withCeiling:()=>providers,
+  search:async query=>{searches.push(query);return {query,results:[]};},
+  manager:async()=>{calls++;throw Object.assign(new BudgetError('incomplete','max_tokens'),{paidResponseRetained:true});}};
+ for(const phase of phases)receipts.set(phase,await runCollectionFirstStage({phase,brief,providers,
+  previous:async name=>receipts.get(name),finish:data=>data}));
+ const first=receipts.get('sector_sources');
+ assert.deepEqual(first.toolIssues,['incomplete']);
+ assert.equal(managedResearchHealthy([{state:'complete',value:first}]),false);
+ assert.equal(first.managedPlan.plannerFallback,true);
+ assert.deepEqual(new Set(first.managedPlan.tasks.map(task=>task.section)),new Set(Object.keys(managedSections)));
+ assert.ok(first.managedPlan.tasks.filter(task=>task.section==='digital').every(task=>searches.includes(task.query)));
+ assert.ok(searches.some(query=>query.includes('Kolonya')));
+ assert.equal(calls,1);
+ assert.equal(searches.length,first.managedPlan.tasks.length+1);
 });
