@@ -3,7 +3,7 @@ import {offersEnabled,productionOffers} from '../runtime.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
-import {budgetFor,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
+import {budgetFor,hash as ledgerHash,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
 import {createRuntimeProviders as createBoundedProviders} from '../budget/providers.mjs';
 import {phases,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
@@ -22,6 +22,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {backgroundBhsEnabled,browserBhsJobStore,queuedBhsBrief} from './job-store.mjs';
 import {managedPhaseBudget} from './managed-budget.mjs';
 import {managedBrandContinuation} from './managed-report.mjs';
+import {recoverManagedSectionSynthesis} from './collection-first.mjs';
 import {managedResearchHealthy,resolveManagedGaps} from './managed-gaps.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
@@ -140,9 +141,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=backgroundJob.phase;
     const reason=backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
     const brand=rows[pendingPhases.indexOf('brand')];
-    const managed=(await ledger.get('audit:managed-policy:'+hash))?.state==='complete';
+    const policy=await ledger.get('audit:managed-policy:'+hash);
+    const managed=policy?.state==='complete';
     const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>{
-     const usable=synthesis?.state==='complete'?synthesis.value:managed&&brand?.state==='complete'?managedBrandContinuation(brief,brand.value):undefined;
+     let usable=synthesis?.state==='complete'?synthesis.value:undefined;
+     if(!usable&&phase==='synthesis'&&managed&&policy.value?.version===2){
+      const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
+      try{
+       usable=await recoverManagedSectionSynthesis(brief,previous,{readCheckpoint:async(name,input)=>{
+        const step=await ledger.get('audit:v8:checkpoint:'+name+':'+ledgerHash(input));
+        return step?.state==='complete'?step.value:undefined;
+       }});
+      }catch(error){log('bhs_section_restore_unavailable',{code:error.code||'stage_failed'});}
+     }
+     usable??=managed&&brand?.state==='complete'?managedBrandContinuation(brief,brand.value):undefined;
      return continuationAudit(brief,{synthesis:usable,reason});
     });
     return await finish(await restoreContinuation(brief,partial,ledger,now()));
@@ -189,7 +201,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     }
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     const budget=researchVersion==='v8'?await managedPhaseBudget({ledger,brief,phase,existingBrandPlan:step}):{ledger};
-    const providers=getProviders({ledger:budget.ledger,manualRecoveryRound,researchVersion,phase,managedAudit:budget.managedAudit,phaseLimitKurus:budget.phaseCeiling});
+    const providers=getProviders({ledger:budget.ledger,manualRecoveryRound,researchVersion,phase,managedAudit:budget.managedAudit,managedBudgetVersion:budget.managedBudgetVersion,phaseLimitKurus:budget.phaseCeiling});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
     await runStage({phase,brief,ledger:budget.ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});

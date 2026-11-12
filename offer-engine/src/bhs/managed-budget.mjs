@@ -4,6 +4,8 @@ import {briefHash} from './brief.mjs';
 export const researchCapKurus=3000;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
+export const managedDiscoveryCeilingKurus=2500;
+export const managedInventoryCeilingKurus=2675;
 export const managedReviewPhases=Object.freeze(['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft']);
 export const managedBhsEnabled=()=>process.env.OFFER_BHS_MANAGED==='1'
  || (process.env.OFFER_BHS_MANAGED===undefined&&process.env.VERCEL_ENV==='production'
@@ -28,12 +30,14 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- if(saved?.state!=='complete')await ledger.once(policyKey,{hash},0,async()=>({version:1}));
- if(![...managedReviewPhases,'synthesis','scope'].includes(phase))return {ledger:capBhsLedger(ledger,researchCapKurus),managedAudit:true,phaseCeiling:researchCapKurus};
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:2}));
+ const managedBudgetVersion=policy.version===2?2:1;
+ const reportPhases=managedBudgetVersion===2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
+ if(!reportPhases.includes(phase))return {ledger:capBhsLedger(ledger,researchCapKurus),managedAudit:true,managedBudgetVersion,phaseCeiling:researchCapKurus};
  const boundaryKey='audit:managed-synthesis-baseline:'+hash;
  const baseline=await ledger.once(boundaryKey,{hash},0,async()=>({chargedKurus:(await ledger.status()).chargedKurus}));
  if(!Number.isSafeInteger(baseline.chargedKurus)||baseline.chargedKurus>researchCapKurus)
   throw new BudgetError('budget_limit','BHS araştırma bütçesi doğrulanamadı.');
  const phaseCeiling=Math.min(tariff.capKurus,baseline.chargedKurus+synthesisCapKurus);
- return {ledger:capBhsLedger(ledger,phaseCeiling),managedAudit:true,phaseCeiling};
+ return {ledger:capBhsLedger(ledger,phaseCeiling),managedAudit:true,managedBudgetVersion,phaseCeiling};
 }

@@ -28,7 +28,7 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
    const phaseBudget=job.researchVersion==='v8'
     ?await managedPhaseBudget({ledger,brief,phase:job.phase,existingBrandPlan:step})
     :{ledger,managedAudit:false};
-   const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,phaseLimitKurus:phaseBudget.phaseCeiling});
+   const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,managedBudgetVersion:phaseBudget.managedBudgetVersion,phaseLimitKurus:phaseBudget.phaseCeiling});
    await runStage({phase:job.phase,brief,checkpointHash,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
   }
   const nextPhase=phases[phases.indexOf(job.phase)+1];

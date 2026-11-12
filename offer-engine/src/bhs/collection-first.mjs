@@ -8,14 +8,14 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {actorInput,observedActorTargets} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
-import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
+import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
-import {managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
+import {managedDiscoveryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
+import {managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -153,7 +153,7 @@ export async function readResearchPages(brief,plan,targets,providers,collect){
  }});
 }
 
-export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan){
+export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan,priorSearches=[]){
  const plan=managedPlan?{data:{product:managedPlan.comparableProduct,candidates:managedPlan.peerNames}}:await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
   instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
@@ -183,11 +183,18 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   if(!group||seen.has(group))continue;
   seen.add(group);
   const query=[name,product,managedPlan?.market||market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
-  const search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
-  searches.push(search);
   const owned=results=>(results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url,true));
-  let urls=owned(search.results);
-  if(repair&&!urls.length&&!search.unavailable){
+  let urls=owned(priorSearches.flatMap(search=>search.results||[]).filter(result=>{
+   const text=nameKey([result.title,result.content,result.url].join(' '));
+   return words.some(word=>text.includes(nameKey(word)));
+  }));
+  let search;
+  if(!urls.length){
+   search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
+   searches.push(search);
+   urls=owned(search.results);
+  }
+  if(repair&&!urls.length&&!search?.unavailable){
    const publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" marka resmi web sitesi online mağaza',{depth:'basic',maxResults:12,retainRaw:true}));
    searches.push(publisherSearch);
    urls=owned(publisherSearch.results);
@@ -431,14 +438,35 @@ async function managedCollectionInputs(brief,plan,previous){
  return {brief,brand,plan,context,inventory};
 }
 
+async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSectionsOnly=false}={}){
+ const [args,closed]=await Promise.all([managedCollectionInputs(brief,plan,previous),previous('coverage_plan')]);
+ const batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
+ if(savedSectionsOnly&&!batchReviews)return undefined;
+ const {report,completion,invalidObservations,evidenceCoverage,reportIssue,sectionIssues}=await synthesizeManagedReport({...args,providers,batchReviews,allowPartial:true,sectional,savedSectionsOnly});
+ const {packet}=args.context,urls=new Set(report.sources.map(source=>source.url));
+ const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
+ return {report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,...(reportIssue?{toolIssues:[reportIssue]}:{}),
+  researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:plan,
+   researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage,...(reportIssue?{reportIssue}:{}),
+   ...(sectionIssues?.length?{sectionIssues}:{})}};
+}
+
+export async function recoverManagedSectionSynthesis(brief,previous,providers){
+ const plan=(await previous('sector_sources'))?.managedPlan;
+ if(!plan)return undefined;
+ const result=await managedSynthesis(brief,plan,previous,providers,{sectional:true,savedSectionsOnly:true});
+ return result?{...result,methodologyVersion:sequentialVersion}:undefined;
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const first=phase===searchStages[0];
  const managed=first?providers.managedAudit:(await previous(searchStages[0])).managedPlan;
+ const sectional=managed&&providers.managedBudgetVersion===2;
  const funding=first?await providers.checkpoint(managed?'managed-collection-funding':'collection-first-funding',brief,async()=>{
   const cost=await providers.costStatus();
   if(!managed)return planCollectionFunding(cost,providers.infrastructureOffsetKurus,providers.now?.());
-  const startKurus=Math.min(cost.chargedKurus,researchCapKurus);
+  const startKurus=Math.min(cost.chargedKurus-(sectional?(providers.infrastructureOffsetKurus||0):0),researchCapKurus);
   return {startKurus,capKurus:researchCapKurus,researchLimitKurus:researchCapKurus-startKurus};
  }):(await previous(searchStages[0])).funding;
  const save=data=>finish({collectionFirst:true,...data});
@@ -446,7 +474,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(searchIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
-  const pool=managed?scoped(collectionBudgetKurus):scoped(900);
+  const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):managed?scoped(collectionBudgetKurus):scoped(900);
   const sector=first&&managed?await collectAttempt(()=>pool.search(
    [brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals,'sektör pazar hacmi gelir kanalları rekabet'].join(' ').slice(0,500),
    {depth:'basic',maxResults:8,retainRaw:true})):null;
@@ -471,9 +499,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(managed?.market||brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
-  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(managed?collectionBudgetKurus:1650),providers,collect,null,managed||null):{searches:[],pages:[]};
-  // The Actor adapter holds the final 6 TRY of this research account for Gemini.
-  const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
+  const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):scoped(managed?collectionBudgetKurus:1650);
+  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,pool,providers,collect,null,managed||null,sectional?searches:[]):{searches:[],pages:[]};
+  // V2 has separate envelopes for acquisition, Gemini indexing and Claude review.
+  const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   return save({...comparison,scrapes});
  }
  if(inventoryIndex>=0){
@@ -481,7 +510,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const batch=shard(packet.sources,inventoryIndex,inventoryStages.length);
   if(!batch.length)return save({inventory:[]});
   const context=sequentialContext(brief,{packet:{...packet,sources:batch},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:Boolean(managed)});
-  const found=await collectAttempt(()=>scoped(collectionBudgetKurus).worker('v8-collection-index',{
+  const pool=sectional?providers.withCeiling(managedInventoryCeilingKurus):scoped(collectionBudgetKurus);
+  const found=await collectAttempt(()=>pool.worker('v8-collection-index',{
    instruction:'Bu bir kanıt envanteridir. Kaynakların söylediği bütün ayrı gözlemleri kısa biçimde kaydet. Eleme, puanlama, önem sıralaması, uzlaştırma veya tekilleştirme yapma. Birbirine ters iddiaları ayrı kayıtlarla koru. Her iddiaya özgün proofId ver. areas listesindeki ilgili alanı işaretle. Rakipliği henüz değerlendirme; kaynakta kendi ürününü satan kuruluşun adını ve ilgili proofIdyi organizations içinde kaydet.',
    ...(managed?{researchTasks:managed.tasks}:{}),...stageModelInput(context,{areas:true})
   },schema,{maxOutputTokens:4096}));
@@ -491,32 +521,29 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const cost=await providers.costStatus();
   const committedKurus=Math.max(0,cost.chargedKurus-(managed?0:providers.infrastructureOffsetKurus||0)-funding.startKurus);
   if(committedKurus>(funding.researchLimitKurus??collectionBudgetKurus))throw new BudgetError('provider_accounting','Araştırma harcaması ayrılan bütçeyi aştı.');
-  const reviewBatches=managed?planManagedEvidenceReview(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input):null;
+  const planReview=sectional?planPositionalEvidenceReview:planManagedEvidenceReview;
+  const reviewBatches=managed?planReview(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input):null;
   return save({collectionClosed:true,researchAccount:{...funding,committedKurus},...(reviewBatches!==null?{reviewBatches}:{})});
  }
  const reviewIndex=managedReviewPhases.indexOf(phase);
  if(managed&&reviewIndex>=0){
   const {reviewBatches=[]}=await previous('coverage_plan'),reviews=[];
-  const focus=managed.understanding||brief,signal=AbortSignal.timeout(250000);
-  for(let i=reviewIndex;i<reviewBatches.length;i+=managedReviewPhases.length)
-   reviews.push(...await reviewManagedEvidenceBatch(reviewBatches[i],{focus,providers,signal,useHaiku:managedReviewUsesHaiku(reviewBatches)}));
+  const focus=managed.understanding||brief,signal=AbortSignal.timeout(sectional?170000:250000);
+  if(sectional){
+   const batches=shard(reviewBatches,reviewIndex,managedReviewPhases.length);
+   for(let i=0;i<batches.length;i+=2)
+    reviews.push(...(await Promise.all(batches.slice(i,i+2).map(batch=>reviewPositionalEvidenceBatch(batch,{focus,providers,signal})))).flat());
+  }else{
+   for(let i=reviewIndex;i<reviewBatches.length;i+=managedReviewPhases.length)
+    reviews.push(...await reviewManagedEvidenceBatch(reviewBatches[i],{focus,providers,signal,useHaiku:managedReviewUsesHaiku(reviewBatches)}));
+  }
   const issues=unique(reviews.flatMap(review=>review.issue?[review.issue]:[]));
   return save({reviews,...(issues.length?{toolIssues:issues}:{})});
  }
  if(phase!=='synthesis')return save({});
  const closed=await previous('coverage_plan');
  if(!closed.collectionClosed)throw new BudgetError('research_stage_incomplete','Kanıt toplama tamamlanmadan Claude değerlendirmesi başlatılamaz.');
- if(managed){
-  const args=await managedCollectionInputs(brief,managed,previous);
-  const batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
-  const {report,completion,invalidObservations,evidenceCoverage,reportIssue}=await synthesizeManagedReport({...args,providers,batchReviews,allowPartial:true});
-  const {packet}=args.context;
-  const urls=new Set(report.sources.map(source=>source.url));
-  const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
-  return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,...(reportIssue?{toolIssues:[reportIssue]}:{}),
-   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:managed,
-    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage,...(reportIssue?{reportIssue}:{})}});
- }
+ if(managed)return save(await managedSynthesis(brief,managed,previous,providers,{sectional}));
  const [brand,{packet},inventory,focused]=await Promise.all([previous('brand'),collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
  const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
  context.collectionFirst=true;
