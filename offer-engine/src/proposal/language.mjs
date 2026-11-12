@@ -18,7 +18,9 @@ export function presentationSlots(doc){
  add(doc.bhs,'summary');
  add(doc.bhs.researchContinuity,'notice');
  for(const d of doc.bhs.dimensions||[]){add(d,'rationale');for(const h of d.highlights||[])add(h,'text');}
- for(const f of doc.bhs.findings||[]){add(f,'statement');add(f,'impact');}
+ for(const f of doc.bhs.findings||[]){add(f,'statement');add(f,'impact');add(f.recommendation,'action');add(f.recommendation,'measurement');}
+ for(const section of doc.bhs.bhsSections||[])add(section,'title');
+ for(const i of Object.keys(doc.bhs.meetingQuestions||{}))add(doc.bhs.meetingQuestions,i);
  for(const b of doc.bhs.benchmarks||[])for(const e of b.entries||[]){if(typeof e.value==='string')add(e,'value');add(e,'unit');add(e,'period');}
  for(const key of ['exclusions','notices'])for(let i=0;i<(doc[key]||[]).length;i++)add(doc[key],i);
  for(const key of ['deferred','pending'])for(const s of doc[key]||[]){add(s,'name');add(s,'reason');}

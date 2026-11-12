@@ -67,6 +67,31 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    if(!items.length)add('li',t('Bu öncelikte doğrulanmış bulgu yok.'),list);
    $('#so-count-'+key).textContent=({urgent:t('Acil'),important:t('Önemli'),low:t('Düşük öncelikli')})[key]+' · '+items.length;
   }
+  if(data.bhs.bhsSections){
+   const grouped=add('section','',$('#so-analysis'),'so-benchmark');
+   const byId=new Map(findings.map(f=>[f.id,f]));
+   const quadrants={strength:['Güçlü yön','Strength'],weakness:['Zayıf yön','Weakness'],opportunity:['Fırsat','Opportunity'],threat:['Tehdit','Threat']};
+   for(const section of data.bhs.bhsSections){
+    add('h3',section.title,grouped);
+    if(!section.complete)add('p',english?'This section has findings still to verify.':'Bu bölümde doğrulanacak bulgu eksiği var.',grouped);
+    const list=add('ol','',grouped);
+    for(const id of section.findingIds){
+     const f=byId.get(id);if(!f?.recommendation)continue;
+     const row=add('li','',list);
+     const label=quadrants[f.swotQuadrant]?.[english?1:0];
+     add('strong',(label?label+' · ':'')+f.statement,row);
+     add('p',f.impact,row);
+     add('p',(english?'Recommended action: ':'Önerilen aksiyon: ')+f.recommendation.action,row);
+     add('p',(english?'Success measure: ':'Başarı ölçümü: ')+f.recommendation.measurement,row);
+     add('small',f.sourceIds.join(' · '),row);
+    }
+   }
+   if(data.bhs.meetingQuestions?.length){
+    add('h3',english?'Questions for the meeting':'Toplantıda doğrulanacak sorular',grouped);
+    const questions=add('ul','',grouped);
+    for(const question of data.bhs.meetingQuestions)add('li',question,questions);
+   }
+  }
   const foot=$('.so-chart-foot');foot.replaceChildren();
   add('span',t('Ön BHS: ')+(data.bhs.scoring?.total==null?t('Yeterli veri yok'):data.bhs.scoring.total+'/100'),foot);
   add('span',(data.bhs.sources||[]).length+t(' kaynak · ')+(data.bhs.competitors||[]).length+t(' rakip · Dışsal ön analiz'),foot);

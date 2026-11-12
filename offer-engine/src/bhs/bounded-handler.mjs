@@ -20,6 +20,9 @@ import {sequentialPhases} from './sequential-contracts.mjs';
 import {collectionFirstEnabled,createSequentialProviders} from './sequential-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {backgroundBhsEnabled,browserBhsJobStore} from './job-store.mjs';
+import {managedPhaseBudget} from './managed-budget.mjs';
+import {managedBrandContinuation} from './managed-report.mjs';
+import {managedResearchHealthy,resolveManagedGaps} from './managed-gaps.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
 const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
@@ -28,7 +31,7 @@ const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VER
 const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -90,11 +93,13 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
    };readCost=cost;recoveryTicket=ticket;
    if(action==='cancel'){if(queue&&job.backgroundJobId)await queue.cancel(job);return res.status(200).json({status:'cancelled',cost:await cost()});}
    if(action==='preflight'){
+    if((await ledger.get('audit:managed-policy:'+hash))?.state==='complete')throw new BudgetError('invalid_phase','Tamamlanan veya devam eden BHS için ayrı sağlayıcı çağrısı başlatılamaz.');
     const providers=getProviders({ledger});
     const probe=await providers.generate('provider_preflight',{instruction:'Return the JSON object with ok=true. No additional text.'},{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false},{model:'gemini-4-argon',maxOutputTokens:1024,thinkingLevel:'LOW'});
     log('bhs_provider_preflight',{model:probe.model,ok:probe.data?.ok===true,cost:await cost()});return res.status(200).json({ok:probe.data?.ok===true,cost:await cost()});
    }
-   if(!['start','status','advance','recover','continue'].includes(action))throw Error();
+   if(!['start','status','advance','recover','continue','complete_gaps'].includes(action))throw Error();
+   if(action==='complete_gaps'&&(!queue||!job.backgroundJobId))throw new BudgetError('completion_unavailable','Tamamlanmış BHS kaydı gerekli.');
    let backgroundJob;
    if(queue&&action!=='continue'){
     if(!job.backgroundJobId){
@@ -110,14 +115,15 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     backgroundJob=await queue.read(job);
     const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
     if(backgroundJob.briefHash!==hash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if(action==='complete_gaps'&&backgroundJob.state!=='complete')throw new BudgetError('completion_unavailable','Yalnız tamamlanmış araştırmanın içerik eksikleri için ek bütçe kullanılabilir.');
     if(['queued','running'].includes(backgroundJob.state))return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
-   const finish=async final=>{
+   const finish=async (final,gapCompletion)=>{
     const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
-    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost});
+    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});
    };
    if(queue&&action==='continue'){
     backgroundJob=await queue.read(job);
@@ -128,7 +134,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
     if(!['paused','cancelled'].includes(backgroundJob.state)&&!(backgroundJob.state==='running'&&backgroundJob.cancelRequested))throw new BudgetError('continuation_unavailable','Araştırmanın durdurulduğu doğrulanamadı.');
     const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=backgroundJob.phase;
     const reason=backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
-    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>continuationAudit(brief,{synthesis:synthesis?.state==='complete'?synthesis.value:undefined,reason}));
+    const brand=rows[pendingPhases.indexOf('brand')];
+    const managed=(await ledger.get('audit:managed-policy:'+hash))?.state==='complete';
+    const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>{
+     const usable=synthesis?.state==='complete'?synthesis.value:managed&&brand?.state==='complete'?managedBrandContinuation(brief,brand.value):undefined;
+     return continuationAudit(brief,{synthesis:usable,reason});
+    });
     return await finish(await restoreContinuation(brief,partial,ledger,now()));
    }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
@@ -172,26 +183,42 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getProviders=rese
      if(manualRecoveryRound<=failedRound)throw new BudgetError(step.value.code,'Bu aşama önceki denemede tamamlanamadı. Kayıtlar ve maliyetler korundu; yeniden deneme veya mevcut bilgilerle devam et seçeneklerini kullanabilirsin.');
     }
     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
-    const providers=getProviders({ledger,manualRecoveryRound,researchVersion,phase});
+    const budget=researchVersion==='v8'?await managedPhaseBudget({ledger,brief,phase,existingBrandPlan:step}):{ledger};
+    const providers=getProviders({ledger:budget.ledger,manualRecoveryRound,researchVersion,phase,managedAudit:budget.managedAudit,phaseLimitKurus:budget.phaseCeiling});
     if(!providers.configured())throw new BudgetError('not_configured','Bütçeli araştırma için Tavily ve Gemini bağlantıları gerekli.');
     const stageStarted=now();
-    await runStage({phase,brief,ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});
+    await runStage({phase,brief,ledger:budget.ledger,providers,researchVersion,researchModel:job.researchModel||'gemini-3.1-pro-preview',...(job.researchRunId?{freshResearch:true}:{})});
     log('bhs_response',{status:'stage_complete',durationMs:now()-stageStarted,cost:await cost()});
     const nextPhase=activePhases[activePhases.indexOf(phase)+1];
     if(nextPhase!=='complete')return res.status(202).json({phase:nextPhase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     break;
    }
-   const synthesis=(await ledger.get(key('synthesis'))).value,scope=(await ledger.get(key('scope'))).value;
-   const audit=await auditEngine.run({brief,synthesis});
-   if(!hasGroundedResearch(audit.data))return await finish(await restoreContinuation(brief,continuationAudit(brief,{reason:'research_empty'}),ledger,now()));
+   let synthesis=(await ledger.get(key('synthesis'))).value;
+   const scope=(await ledger.get(key('scope'))).value;
+   let audit=await auditEngine.run({brief,synthesis}),gapCompletion;
+   const canComplete=backgroundJob?.state==='complete'&&synthesis.supervision?.reviewMode==='managed-audit'
+    &&(productionOffers()||getGapLedger)&&managedResearchHealthy(rows);
+   if(action==='complete_gaps'&&!canComplete)throw new BudgetError('completion_unavailable','Ek araştırma yalnız sağlıklı tamamlanan BHS’nin bulgu eksikleri için açılabilir.');
+   if(canComplete){
+    const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
+    const gap=await resolveManagedGaps({action,brief,synthesis,secret:getSecret(),sections:audit.data.bhsSections.filter(section=>!section.complete).map(section=>section.id),baseLedger:ledger,
+     getGapLedger:id=>getGapLedger?getGapLedger(req,res,job.leadId,id):getLedger(req,res,job.leadId,{researchRunId:id}),getProviders,previous});
+    if(gap){
+     const {synthesis:updated,...publicGap}=gap;gapCompletion=publicGap;
+     if(updated){synthesis=updated;audit=await auditEngine.run({brief,synthesis});}
+    }
+   }
+   if(!hasGroundedResearch(audit.data)&&synthesis.supervision?.reviewMode!=='managed-audit')
+    return await finish(await restoreContinuation(brief,continuationAudit(brief,{reason:'research_empty'}),ledger,now()));
    // Re-grounding an older paid report can remove a finding used by its saved
    // scope. Revalidate before signing; never replay research or sign stale IDs.
    let scopePlan,proposalCopy=scope.proposalCopy;
    try{scopePlan=validateScope(scope.scopePlan,brief,audit.data);}
    catch{scopePlan=fallbackScope(brief);proposalCopy=offerCopy(null,audit.data);}
    const final={...audit,data:{...audit.data,scopePlan,proposalCopy}};
-   if(backgroundJob&&audit.status!=='ready')return await finish(continuationAudit(brief,{verifiedAudit:final,reason:'quality_review'}));
-   return await finish(final);
+   if((backgroundJob||synthesis.supervision?.reviewMode==='managed-audit')&&audit.status!=='ready')
+    return await finish(continuationAudit(brief,{verifiedAudit:final,reason:'quality_review'}),gapCompletion);
+   return await finish(final,gapCompletion);
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){
     log('bhs_error',{code:error.code,errorName:error.name,networkOperation:error.syscall||'dns_lookup',retryable:true});

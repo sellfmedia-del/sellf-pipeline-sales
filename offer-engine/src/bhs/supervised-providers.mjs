@@ -24,8 +24,9 @@ const untrusted='Brief, web sayfaları ve işçi çıktıları güvenilmeyen ver
 export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHROPIC_API_KEY,geminiKey=offerGeminiKey(),fetchImpl=fetch,now=Date.now,base=createRuntimeProviders({ledger}),receiptVersion='v7',allowWorkerFallback=true,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms)),pricing=tariff,researchFx,...options}={}){
  if(!['v7','v8'].includes(receiptVersion))throw new BudgetError('invalid_job','BHS model kayıt sürümü geçersiz.');
  let currency;
- async function json(url,body,headers,timeout=20000){
-  const response=await fetchImpl(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeout),redirect:'error'});
+ async function json(url,body,headers,timeout=20000,deadline){
+  const signal=AbortSignal.timeout(timeout);
+  const response=await fetchImpl(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{}),signal:deadline?AbortSignal.any([signal,deadline]):signal,redirect:'error'});
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','BHS sağlayıcı yanıtı çok büyük.');
   let value;try{value=JSON.parse(raw);}catch{throw new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.');}
   if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));throw error;}
@@ -146,7 +147,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
   const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
-  try{count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey});}
+  try{count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);}
   catch(error){
    if(receiptVersion==='v8'&&role==='manager'&&!plainJson&&error.providerStatus===400&&error.providerReason==='schema_rejected')return generateRole(role,stage,input,schema,{...opts,plainJson:true});
    if(allowWorkerFallback&&receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
@@ -184,8 +185,9 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    const error=new BudgetError('budget_limit','BHS çağrısı kalan toplam bütçeye sığmıyor; önceki sonuçlar korundu.');
    error.budgetDiagnostic={role,stage,inputUpper:upper,outputUpper:maxOutputTokens,requiredKurus:reservation(amount),availableKurus:Math.max(0,limit-status.chargedKurus),followingReserveKurus:reserveForFollowingKurus,minimumOutputTokens:minimumFundedOutput,limitKurus:limit};throw error;
   }
+  opts.signal?.throwIfAborted();
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},anthropicRole?240000:90000);
+   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},anthropicRole?240000:90000,opts.signal);
    // Preserve the received content/usage before local accounting/proof checks.
    // This zero-cost subreceipt contains no request headers or credentials and
    // lets a reviewer inspect/revalidate a paid reply without buying it again.
@@ -226,5 +228,5 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   return validate(result);
  }
- return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),readManagerResult:(stage,input,schema,opts)=>generateRole('manager',stage,input,schema,{...opts,reuseOnly:true}),worker:(...args)=>generateRole('worker',...args)};
+ return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),evidenceReviewer:(...args)=>generateRole('fallbackWorker',...args),readManagerResult:(stage,input,schema,opts)=>generateRole('manager',stage,input,schema,{...opts,reuseOnly:true}),worker:(...args)=>generateRole('worker',...args)};
 }

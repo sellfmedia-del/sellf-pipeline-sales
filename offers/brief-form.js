@@ -46,7 +46,7 @@
           </fieldset>
         </form>
         <section class="ob-review" aria-labelledby="ob-review-title" hidden>
-          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Normal maliyet hedefi 20–30 TL’dir; toplam 50 TL üst sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-continuation" hidden><p>Ön BHS tamamlanamadı. Mevcut doğrulanmış bulgular korunur; teklif, görüşme bilgileriyle kontrol için hazırlanır. Bu seçenek ek ücretli model çağrısı yapmaz ve tamamlanmış BHS yerine geçmez.</p><button type="button" class="ob-continue">Mevcut bilgilerle teklife devam et</button></section><section class="ob-service-selection" hidden><h3>Teklife dahil edilecek hizmetleri seç</h3><p class="ob-hint">Her alternatifte veya ayda yalnızca seçtiğin maliyetler hesaplanır. Account ve Growth otomatik eklenmez. Proje bedelleri retainer’dan ayrı gösterilir.</p><fieldset class="ob-monthly-fieldset"><legend>Fiyatlandırma</legend><label class="ob-monthly-choice"><input type="checkbox" class="ob-monthly-toggle"> Ay bazlı fiyatlandır</label><p class="ob-hint">Seçili değilse mevcut iki alternatif hesaplanır. Seçildiğinde hizmet ve projeleri ilgili aylara ekleyebilirsin.</p><div class="ob-standard-editor"></div><div class="ob-monthly-editor" hidden></div><p class="ob-monthly-error ob-error" role="alert"></p></fieldset></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
+          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Normal maliyet hedefi 20–30 TL’dir; toplam 50 TL üst sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-continuation" hidden><p>Ön BHS tamamlanamadı. Mevcut doğrulanmış bulgular korunur; teklif, görüşme bilgileriyle kontrol için hazırlanır. Bu seçenek ek ücretli model çağrısı yapmaz ve tamamlanmış BHS yerine geçmez.</p><button type="button" class="ob-continue">Mevcut bilgilerle teklife devam et</button></section><section class="ob-gap-completion" hidden><p></p><button type="button" class="ob-complete-gaps">Sadece eksik kalan kısımları tamamla</button></section><section class="ob-service-selection" hidden><h3>Teklife dahil edilecek hizmetleri seç</h3><p class="ob-hint">Her alternatifte veya ayda yalnızca seçtiğin maliyetler hesaplanır. Account ve Growth otomatik eklenmez. Proje bedelleri retainer’dan ayrı gösterilir.</p><fieldset class="ob-monthly-fieldset"><legend>Fiyatlandırma</legend><label class="ob-monthly-choice"><input type="checkbox" class="ob-monthly-toggle"> Ay bazlı fiyatlandır</label><p class="ob-hint">Seçili değilse mevcut iki alternatif hesaplanır. Seçildiğinde hizmet ve projeleri ilgili aylara ekleyebilirsin.</p><div class="ob-standard-editor"></div><div class="ob-monthly-editor" hidden></div><p class="ob-monthly-error ob-error" role="alert"></p></fieldset></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
       <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-services-edit" hidden>Hizmet seçimlerini düzenle</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-turkish" hidden>Türkçe taslakla devam et</button><button type="button" class="ob-resume" hidden>Araştırmaya devam et</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
@@ -148,7 +148,10 @@
       dialog.querySelector('.ob-body').scrollTop = 0;
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
     }
+    const gapBox=dialog.querySelector('.ob-gap-completion');
+    let gapAudit=null;
     function stopTask(){
+      gapAudit=null;gapBox.hidden=true;
       pausedAudit=null;recoverableAudit=null;continuableAudit=null;dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('.ob-recovery').hidden=true;dialog.querySelector('.ob-continuation').hidden=true;
       if(!task)return;
       task.stopped=true;
@@ -182,8 +185,26 @@
       paragraph('Ön BHS toplamı: '+(data.scoring.total===null?'Hesaplanmadı':data.scoring.total+'/100'));
       paragraph(data.scoring.note);
       heading('Rakip seti');data.competitors.forEach(p=>paragraph(p.name+' — '+p.scaleReason+' '+p.audienceReason+' '+p.geographyReason));
+      if(data.bhsSections){
+        const findings=new Map(data.findings.map(f=>[f.id,f]));
+        const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
+        for(const section of data.bhsSections){
+          heading(section.title);
+          if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
+          for(const id of section.findingIds){
+            const f=findings.get(id);if(!f?.recommendation)continue;
+            const article=document.createElement('article');box.append(article);
+            paragraph(f.bhsRank+'. '+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,article);
+            paragraph(f.impact,article);
+            paragraph('Önerilen aksiyon: '+f.recommendation.action,article);
+            paragraph('Başarı ölçümü: '+f.recommendation.measurement,article);
+            paragraph('Kaynak: '+f.sourceIds.join(', '),article);
+          }
+        }
+      }else{
       heading('Öncelikli bulgular');data.findings.forEach(f=>paragraph((f.kind==='inference'?'Çıkarım: ':f.kind==='brief'?'Müşteri beyanı: ':'Gözlem: ')+f.statement+' '+f.impact+' ['+f.sourceIds.join(', ')+']'));
       heading('Hizmet hipotezleri');data.serviceRecommendations.forEach(s=>paragraph(s.name+' — '+s.hypothesis+' Ölçüm: '+s.measurement));
+      }
       heading('Doğrulanacak sorular');data.meetingQuestions.forEach(q=>paragraph(q.question));
       heading('Kaynaklar');data.sources.forEach(s=>paragraph(s.id+' · '+(s.title||s.url)+' · '+s.url+' · '+(s.publishedAt||'Yayın tarihi bilinmiyor')+(data.schemaVersion==='bhs-v2-direct'?'':' · '+(s.verification?.status||''))));
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
@@ -339,6 +360,24 @@
       if(task===current){current.stopped=true;current.handedOff=true;runAudit({...current,stopped:false,handedOff:false},'continue');}
       else runAudit(current,'continue');
     });
+    gapBox.querySelector('button').addEventListener('click',async()=>{
+      if(task||!gapAudit)return;
+      const current=gapAudit;
+      gapAudit=null;gapBox.hidden=true;
+      await runAudit(current,'complete_gaps');
+    });
+    function showGapCompletion(current,gap){
+      gapAudit=null;gapBox.hidden=true;
+      if(!gap)return;
+      const notice=dialog.querySelector('.ob-review-notice');
+      if(gap.available&&current.ticket){
+        gapAudit=current;gapBox.hidden=false;
+        gapBox.querySelector('p').textContent='Eksik bölümler: '+gap.sections.join(', ')+'. İstersen bu bölümler için en fazla 30 TL ek araştırma başlatabilirsin.';
+      }else if(Number.isSafeInteger(gap.chargedKurus)){
+        const state=gap.status==='complete'?'Ek araştırma tamamlandı.':gap.status==='reserved'?'Ek araştırma henüz sonuçlanmadı. Mevcut bulgular kullanılabilir.':'Ek araştırmadan mevcut rapora aktarılabilecek yeni sonuç alınmadı.';
+        notice.textContent+=' '+state+' Ek araştırma kullanım ve rezervi: '+(gap.chargedKurus/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2})+' / 30,00 TL.';
+      }
+    }
     function showAuditContinuation(current,active){
       continuableAudit=current;
       const section=dialog.querySelector('.ob-continuation');
@@ -365,14 +404,14 @@
       let action=initialAction||(resume?'status':'start');
       try{
         for(;;){
-          notice.textContent=action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
+          notice.textContent=action==='complete_gaps'?'Yalnız eksik BHS bölümleri araştırılıyor…':action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
           if(response.phase==='complete'&&response.result){
             continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
-            draft.pricingProof=response.pricingProof;renderAudit(response.result);task=null;return;
+            draft.pricingProof=response.pricingProof;renderAudit(response.result);showGapCompletion(current,response.gapCompletion);task=null;return;
           }
           if(response.phase==='complete'){action='status';continue;}
           if(response.nextAction==='advance'){action='advance';continue;}
@@ -386,6 +425,7 @@
         }
       }catch(error){
         if(current.stopped)return;
+        if(initialAction==='complete_gaps'&&draft.audit){renderAudit(draft.audit);notice.textContent+=' Ek araştırmanın sonucu alınamadı. Mevcut BHS ile teklife devam edebilirsin.';return;}
         if(error.cost)showAuditCost(error.cost);
         const transport=error.code==='audit_transport',canResume=transport&&(error.canResume||current.bounded)&&current.ticket;
         dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';

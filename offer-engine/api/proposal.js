@@ -1,5 +1,6 @@
 import {proposalLanguage,localizeProposal} from '../src/proposal/language.mjs';
 import {budgetFor,BudgetError} from '../src/budget/ledger.mjs';
+import {capBhsLedger,synthesisCapKurus} from '../src/bhs/managed-budget.mjs';
 import {createRuntimeProviders as createBoundedProviders} from '../src/budget/providers.mjs';
 import {quoteCurrency} from '../src/pricing/currency.mjs';
 import {offersEnabled,authorizeProduction} from '../src/runtime.mjs';
@@ -43,7 +44,11 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
     let cost;
     if(language==='en'){
      const ledger=await getLedger(req,res,context.leadId,...(approval.budgetResearchRunId?[{researchRunId:approval.budgetResearchRunId}]:[]));
-     try{result={...result,data:await localizeProposal(result.data,language,{providers:getProviders({ledger})})};}
+     try{
+      const baseline=body.audit.data.bhsSections?await ledger.get('audit:managed-synthesis-baseline:'+hash):null;
+      const scoped=baseline?.state==='complete'?capBhsLedger(ledger,baseline.value.chargedKurus+synthesisCapKurus):ledger;
+      result={...result,data:await localizeProposal(result.data,language,{providers:getProviders({ledger:scoped})})};
+     }
      catch(error){try{cost=await ledger.status();}catch{}return res.status(422).json({code:error.code||'translation_unavailable',error:error instanceof BudgetError?error.message:'İngilizce teklif çevirisi tamamlanamadı. BHS ve fiyatlar korundu; Türkçe belge İngilizce olarak sunulmadı.',...(cost?{cost}:{})});}
      cost=await ledger.status();
     }

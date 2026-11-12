@@ -106,7 +106,11 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
     const html=response.body.toString('utf8'),text=/html/.test(contentType)?researchHtmlText(html):normalized(html);
     const title=normalized(plainHtml(Buffer.from(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||new URL(url).hostname))).slice(0,300);
     if(blockedText(title+' '+text))throw Error('access_wall');
-    const technicalSignals=/html/.test(contentType)?{https:new URL(url).protocol==='https:',navigation:sourceLinks(html,url).slice(0,20),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
+    const technicalSignals=/html/.test(contentType)?{https:new URL(url).protocol==='https:',
+     canonicalLink:/<link\b[^>]*\brel\s*=\s*["']canonical["']/i.test(html),
+     noindexMeta:/<meta\b(?=[^>]*\bname\s*=\s*["'](?:robots|googlebot)["'])(?=[^>]*\bcontent\s*=\s*["'][^"']*\bnoindex\b)/i.test(html),
+     structuredData:/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html),
+     navigation:sourceLinks(html,url).slice(0,20),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
     return {url:input,finalUrl:url,title,text,technicalSignals,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
    }
    throw Error('redirect_limit');

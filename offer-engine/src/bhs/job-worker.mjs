@@ -5,17 +5,33 @@ import {runClaimedBhsStage} from './background-runner.mjs';
 import {runBoundedStage} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
+import {managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
  if(job.phase==='scope'){
   const cost=await options.ledger.status();
-  if(cost.capKurus-cost.chargedKurus<workerInfraReservationKurus){
+  if((options.phaseCeiling??cost.capKurus)-cost.chargedKurus<workerInfraReservationKurus){
    // The existing deterministic scope fallback uses no provider and fits the
    // fixed gateway/template reserve. A finished BHS must not wait for a model.
+   options.ledger.issues?.add('budget_limit');
    return runStage({...options,providers:{...options.providers,generate:async()=>{throw new BudgetError('budget_limit','Kalan bütçe için mevcut sıfır maliyetli kapsam şablonu kullanılacak.');}}});
   }
  }
+ if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
+  const remaining=options.phaseCeiling-(await options.ledger.status()).chargedKurus;
+  if(remaining<workerInfraReservationKurus){
+   if(managedReviewPhases.includes(job.phase)){
+    const manager=async()=>{throw new BudgetError('budget_limit','BHS kanıt incelemesi için ayrılan bütçeye ulaşıldı.');};
+    return runStage({...options,providers:{...options.providers,manager,evidenceReviewer:manager}});
+   }
+   if(sequentialPhases.indexOf(job.phase)<=sequentialPhases.indexOf('sector_sources'))
+    throw new BudgetError('budget_limit','Marka ve araştırma planı için ayrılan bütçeye ulaşıldı.');
+   return runStage({...options,skipManagedCollection:true});
+  }
+ }
+ if(options.phaseCeiling&&job.phase==='coverage_plan')return runStage(options);
  return meter({job,ledger:options.ledger,run:()=>runStage(options)});
 }
 

@@ -18,6 +18,7 @@ import {validateGroundedOutput} from './source-gate.mjs';
 import {runExpertStage} from './expert-research.mjs';
 import {runSupervisedStage} from './supervised-research.mjs';
 import {runSequentialStage} from './sequential-research.mjs';
+import {sequentialPhases} from './sequential-contracts.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
@@ -66,13 +67,21 @@ async function searchTogether(providers,queries,options){
  }
  return results.map((r,i)=>r.status==='fulfilled'?r.value:{query:queries[i],results:[],unavailable:true,reason:r.reason?.code||'unavailable'});
 }
-export async function runBoundedStage({phase,brief,ledger,providers,collect,researchVersion='v4',freshResearch=false,researchModel='gemini-3.1-pro-preview'}){
+export async function runBoundedStage({phase,brief,ledger,providers,collect,researchVersion='v4',freshResearch=false,skipManagedCollection=false,researchModel='gemini-3.1-pro-preview'}){
  if(!(['v7','v8'].includes(researchVersion)?researchModel==='claude-sonnet-5-5':['gemini-2.5-pro','gemini-3.1-pro-preview','gemini-4-argon'].includes(researchModel)))throw new BudgetError('model_budget','BHS için onaylı üst model gerekli.');
  const key=name=>stageKey(brief,name,researchVersion);
  return ledger.once(key(phase),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   try{
   const previous=async name=>{const row=await ledger.get(key(name));if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');return row.value;};
-  if(researchVersion==='v8'&&phase!=='scope')return await runSequentialStage({phase,brief,providers,previous,collect});
+  if(skipManagedCollection){
+   const prior=await previous(sequentialPhases[sequentialPhases.indexOf(phase)-1]);
+   return {collectionFirst:true,phase,decision:'accepted',methodologyVersion:prior.methodologyVersion,
+    briefHash:briefHash(brief),parentHash:hash(prior),toolIssues:['budget_limit']};
+  }
+  if(researchVersion==='v8'&&phase!=='scope'){
+   const result=await runSequentialStage({phase,brief,providers,previous,collect});
+   return ledger.issues?.size?{...result,toolIssues:[...new Set([...(result.toolIssues||[]),...ledger.issues])]}:result;
+  }
   if(researchVersion==='v7'&&phase!=='scope')return await runSupervisedStage({phase,brief,providers,previous,collect});
   if(researchVersion==='v6'&&phase!=='scope')return await runExpertStage({phase,brief,providers,previous,collect,researchModel});
   collect??=collector();
@@ -130,7 +139,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect,rese
    guide.audit.researchCoverage=report.researchCoverage||[];
    let generated;try{generated=await providers.generate('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Fiyat veya yeni araştırma üretme. BHS içeriğini yeniden denetleme veya değiştirme.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},{type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false},{maxOutputTokens:3072,thinkingLevel:'LOW',jsonMode:true});}catch(error){if(!['budget_limit','budget_uncertain','model_temporarily_unavailable','model_content_invalid'].includes(error.code)&&!recoverableModelFailure(error))throw error;return {scopePlan:fallbackScope(brief),proposalCopy:offerCopy(null,report),costFallback:true};}
    let scopePlan;try{scopePlan=validateScope(normalizeGeneratedScope(generated.data?.scope,brief,report),brief,report);}catch{scopePlan=fallbackScope(brief);}
-   return {scopePlan,proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(generated.originalText?{originalModelText:generated.originalText}:{})};
+   return {scopePlan,proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(ledger.issues?.size?{toolIssues:[...ledger.issues]}:{}),...(generated.originalText?{originalModelText:generated.originalText}:{})};
   }
   throw new BudgetError('invalid_phase','Araştırma aşaması geçersiz.');
   }catch(error){error.recoveryRound=providers.recoveryRound||0;throw error;}

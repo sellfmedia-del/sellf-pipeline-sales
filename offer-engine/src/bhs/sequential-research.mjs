@@ -243,7 +243,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
  if(prior?.collectionFirst&&index>sequentialPhases.indexOf('brand'))return runCollectionFirstStage({phase,brief,providers,previous,collect,finish});
- if(providers.collectionFirst&&index<=sequentialPhases.indexOf('brand')){
+ if(providers.collectionFirst&&!providers.managedAudit&&index<=sequentialPhases.indexOf('brand')){
   const {capKurus}=await providers.costStatus();
   providers=providers.withCeiling(collectionBrandCeiling(capKurus,providers.infrastructureOffsetKurus,providers.now()));
  }
