@@ -14,7 +14,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {managedActors,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
+import {managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
@@ -481,7 +481,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const {reviewBatches=[]}=await previous('coverage_plan'),reviews=[];
   const focus=managed.understanding||brief,signal=AbortSignal.timeout(250000);
   for(let i=reviewIndex;i<reviewBatches.length;i+=managedReviewPhases.length)
-   reviews.push(...await reviewManagedEvidenceBatch(reviewBatches[i],{focus,providers,signal}));
+   reviews.push(...await reviewManagedEvidenceBatch(reviewBatches[i],{focus,providers,signal,useHaiku:managedReviewUsesHaiku(reviewBatches)}));
   const issues=unique(reviews.flatMap(review=>review.issue?[review.issue]:[]));
   return save({reviews,...(issues.length?{toolIssues:issues}:{})});
  }

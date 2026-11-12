@@ -24,7 +24,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   if(remaining<workerInfraReservationKurus){
    if(managedReviewPhases.includes(job.phase)){
     const manager=async()=>{throw new BudgetError('budget_limit','BHS kanıt incelemesi için ayrılan bütçeye ulaşıldı.');};
-    return runStage({...options,providers:{...options.providers,manager}});
+    return runStage({...options,providers:{...options.providers,manager,evidenceReviewer:manager}});
    }
    if(sequentialPhases.indexOf(job.phase)<=sequentialPhases.indexOf('sector_sources'))
     throw new BudgetError('budget_limit','Marka ve araştırma planı için ayrılan bütçeye ulaşıldı.');

@@ -197,9 +197,9 @@ test('all 1000 observations are reviewed across background phases before the rep
   text:'Verbatim row '+i+' '+('Complete original text and source evidence. '.repeat(7)),sourceIds:[proof.id]}))}];
  const args={brief,brand:{facts:[]},plan:{understanding:{goals:brief.goals}},context,inventory};
  const {input}=managedReportInput(args),batches=planManagedEvidenceReview(input);
- assert.ok(batches.length>1);
+ assert.ok(batches.length>4);
  const seen=new Map(),closed={collectionClosed:true,reviewBatches:batches},receipts=new Map();
- const providers={manager:async(name,payload)=>{
+ const providers={manager:()=>assert.fail('Sonnet is reserved for synthesis on large archives'),evidenceReviewer:async(name,payload)=>{
   assert.equal(name,'v8-managed-evidence-batch');
   const rows=reviewRows(payload);
   for(const row of rows)if(row.text){

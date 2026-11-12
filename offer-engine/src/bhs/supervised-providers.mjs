@@ -228,5 +228,5 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   return validate(result);
  }
- return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),readManagerResult:(stage,input,schema,opts)=>generateRole('manager',stage,input,schema,{...opts,reuseOnly:true}),worker:(...args)=>generateRole('worker',...args)};
+ return {...base,...options,configured:()=>Boolean(base.configured()&&anthropicKey&&geminiKey),manager:(...args)=>generateRole('manager',...args),evidenceReviewer:(...args)=>generateRole('fallbackWorker',...args),readManagerResult:(stage,input,schema,opts)=>generateRole('manager',stage,input,schema,{...opts,reuseOnly:true}),worker:(...args)=>generateRole('worker',...args)};
 }

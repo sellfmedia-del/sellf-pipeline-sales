@@ -4,7 +4,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
-import {isManagedInputLimit,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {isManagedInputLimit,managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -89,9 +89,10 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  const signal=AbortSignal.timeout(250000);
  const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3200,compactReview:true,lowEffort:true};
  if(batchReviews===undefined){
+  const batches=planManagedEvidenceReview(input);
   batchReviews=[];
-  for(const batch of planManagedEvidenceReview(input)){
-   batchReviews.push(...await reviewManagedEvidenceBatch(batch,{focus:plan.understanding||brief,providers,reserveForFollowingKurus:550,signal}));
+  for(const batch of batches){
+   batchReviews.push(...await reviewManagedEvidenceBatch(batch,{focus:plan.understanding||brief,providers,reserveForFollowingKurus:550,signal,useHaiku:managedReviewUsesHaiku(batches)}));
   }
  }
  const reviewed=reviewedManagedEvidence(input,batchReviews);
