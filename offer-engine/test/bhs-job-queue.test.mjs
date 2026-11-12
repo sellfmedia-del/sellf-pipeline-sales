@@ -15,6 +15,10 @@ import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs
 import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
+import {inventoryOutputTokens,inventoryStages} from '../src/bhs/collection-first.mjs';
+import {managedInventoryCeilingKurus} from '../src/bhs/managed-budget.mjs';
+import {minimumV8GeminiReservation} from '../src/bhs/supervised-providers.mjs';
+import {researchTariff} from '../src/bhs/research-tariff.mjs';
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',token='33333333-3333-4333-8333-333333333333',secret='s'.repeat(43),hash=briefHash(brief);
 const res=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(body){this.body=body;return this;}});
 async function fixture(){
@@ -116,6 +120,27 @@ test('a completed BHS can reach the deterministic scope fallback even below one 
   const result=await runMeteredBhsPhase(job,{phase:'scope',brief,ledger:f.ledger,researchVersion:'v8',researchModel:'claude-sonnet-5-5',providers:{generate:()=>assert.fail('no paid scope call')}});
   assert.equal(result.costFallback,true);assert.equal(result.scopePlan.fallback,true);assert.deepEqual(await f.ledger.status(),cost);
  }finally{await f.close();}
+});
+test('all eight unaffordable Gemini inventory phases skip before compute or provider calls',async()=>{
+ const now=()=>Date.parse('2026-11-12T14:23:33Z');
+ const options={phaseCeiling:3000,ledger:{status:async()=>({chargedKurus:2209})},
+  providers:{collectionFirst:true,managedBudgetVersion:2,now}};
+ const skips=[];
+ for(const phase of inventoryStages){
+  await runMeteredBhsPhase({phase,researchVersion:'v8'},{...options,phase},{
+   meter:()=>assert.fail('unaffordable stage must skip before worker reservation'),
+   runStage:async args=>{assert.equal(args.skipManagedCollection,true);skips.push(args.phase);}
+  });
+ }
+ assert.equal(skips.length,8);
+ const phase=inventoryStages[0];
+ const chargedKurus=managedInventoryCeilingKurus-workerInfraReservationKurus-minimumV8GeminiReservation(inventoryOutputTokens,now(),researchTariff);
+ let metered=0;
+ await runMeteredBhsPhase({phase,researchVersion:'v8'},{...options,phase,ledger:{status:async()=>({chargedKurus})}},{
+  meter:async({run})=>{metered++;return run();},
+  runStage:async args=>assert.equal(args.skipManagedCollection,undefined)
+ });
+ assert.equal(metered,1);
 });
 test('the managed report can pass reviewed evidence to the offer when a paid worker reservation cannot fit',async()=>{
  const job={phase:'synthesis'};

@@ -175,13 +175,14 @@ const reportSectionReserveKurus=190;
 async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
  const accepted=new Set(sections),signal=AbortSignal.timeout(195000),evidenceCoverage=reviewed.coverage;
  const drafts=[],issues=[];
- async function write(section,wanted,quadrantFocus,following){
+ async function write(section,wanted,quadrantFocus,following,sourceLimits=[18,9]){
   const responseSchema=obj({
    findings:arr(compactRow,wanted),
    ...(section==='competition'?{peers:arr(peerSchema,wanted)}:{})
   });
   const maxOutputTokens=wanted===4?1650:wanted===3?1320:1050;
-  for(const sourceLimit of [18,9]){
+  let denied;
+  for(const sourceLimit of sourceLimits){
    const focused=reviewed.sectionInput(section,sourceLimit);
    if(!Object.keys(focused.sources).length)return {noEvidence:true};
    const request={instruction:reportInstruction+` Bu çağrı yalnız ${managedSections[section]} bölümünü yazar. Öncelik sırasıyla en fazla ${wanted} bulgu ver. Doğrudan kanıt yoksa sayıyı tamamlamak için bulgu üretme. `+
@@ -197,9 +198,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const cached=await providers.readCheckpoint?.(name,checkpoint);
     if(cached)return cached;
     if(savedSectionsOnly)continue;
+    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue,sourceLimit};
     const result=await providers.manager('v8-managed-section:'+section,request,responseSchema,{
      signal:AbortSignal.any([signal,AbortSignal.timeout(42000)]),maxOutputTokens,minimumOutputTokens:maxOutputTokens,
-     maxInputUpperTokens:section==='competition'?11000:10000,compactReview:true,lowEffort:true,reserveForFollowingKurus:following
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following
     });
     const sourceIds=ids=>list(ids).filter(id=>Object.hasOwn(focused.sources,id));
     const findings=list(result.data.findings).slice(0,wanted).filter(row=>row.proof.length&&sourceIds(row.proof).length===row.proof.length
@@ -208,10 +210,12 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const draft={section,model:result.model??null,usage:result.usage??null,findings,peers,sourceIds:unique([...findings.flatMap(f=>f.proof),...peers.flatMap(p=>p.sourceIds)])};
     return providers.checkpoint?await providers.checkpoint(name,checkpoint,async()=>draft):draft;
    }catch(error){
-    if(isManagedInputLimit(error)&&sourceLimit!==9)continue;
     const issue=managedModelIssue(error,signal);
+    if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==sourceLimits.at(-1)){
+     denied={issue,requestHash:checkpoint.requestHash};continue;
+    }
     if(!reportFailures.has(issue)&&issue!=='input_budget')throw error;
-    return {issue};
+    return {issue,sourceLimit};
    }
   }
   return {issue:'section_not_saved'};
@@ -231,8 +235,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    issues.push(first.issue);continue;
   }
   const groups=section==='swot'?[quadrants.slice(0,2),quadrants.slice(2)]:[[]];
+  const sourceLimits=first.sourceLimit===9?[9]:undefined;
   for(const [i,group] of groups.entries()){
-   const draft=await write(section,2,group,following+(groups.length-i-1)*reportSectionReserveKurus);
+   const draft=await write(section,2,group,following+(groups.length-i-1)*reportSectionReserveKurus,sourceLimits);
    if(draft.issue)issues.push(draft.issue);
    else if(!draft.noEvidence)drafts.push(draft);
   }

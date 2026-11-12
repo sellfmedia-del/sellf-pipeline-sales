@@ -77,13 +77,20 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
  const {input}=managedReportInput(args),batches=planPositionalEvidenceReview(input),rows=batches.flatMap(batch=>batch.rows);
  assert.equal(rows.length,454);
  const omitted=new Set([...rows.slice(0,135).map(row=>row.id),rows.at(-1).id]);
- const resubmitted=new Set(),initialSeen=new Set(),sectionWrites=[],saved=new Map();
+ const resubmitted=new Set(),initialSeen=new Set(),sectionCounts=[],sectionWrites=[],saved=new Map();
  let failed=false;
  const options={anthropicKey:'synthetic',receiptVersion:'v8',now:()=>Date.parse('2026-11-12T12:00:00Z'),
   researchFx:async()=>({usdTry:44}),fetchImpl:async(url,{body})=>{
    const request=JSON.parse(body);
-   if(url.endsWith('/count_tokens'))return Response.json({input_tokens:Math.max(1800,Math.ceil(Buffer.byteLength(request.messages[0].content)/4))});
-   const requestInput=JSON.parse(request.messages[0].content),inputTokens=Math.max(1800,Math.ceil(Buffer.byteLength(request.messages[0].content)/4));
+   const requestInput=JSON.parse(request.messages[0].content);
+   const countBody=Object.fromEntries(Object.entries(request).filter(([key])=>key!=='max_tokens'));
+   // Include the system prompt and structured-output schema, as Anthropic
+   // does. The report counts exercise the range the live writer rejected.
+   const inputTokens=Math.max(requestInput.rows?1800:6500,Math.ceil(Buffer.byteLength(JSON.stringify(countBody))/4));
+   if(url.endsWith('/count_tokens')){
+    if(!requestInput.rows)sectionCounts.push(inputTokens);
+    return Response.json({input_tokens:inputTokens});
+   }
    let data,cut=false;
    if(requestInput.rows){
     const followup=requestInput.rows.every(([id])=>initialSeen.has(id));
@@ -129,6 +136,8 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
  const synthesis=await reportBudget.ledger.once('simulated-writing-worker',{},400,
   ()=>synthesizeManagedReport(inputArgs),{settle:()=>140});
  assert.deepEqual(sectionWrites,['competition','digital','digital','swot','perception','readiness']);
+ assert.equal(sectionCounts.length,sectionWrites.length);
+ assert.ok(sectionCounts.every(tokens=>Math.ceil(tokens*1.2)+4096>11000));
  assert.equal(synthesis.reportIssue,undefined);
  assert.equal(saved.size,5);
  assert.equal((await wire.ledger.status()).chargedKurus<=reportBudget.phaseCeiling,true);
