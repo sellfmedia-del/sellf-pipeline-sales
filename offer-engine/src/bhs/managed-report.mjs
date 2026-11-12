@@ -4,6 +4,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
+import {isManagedInputLimit,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -48,11 +49,10 @@ Zorunlu bölümlerin her birine kanıt varsa önem sırasıyla 2–10 farklı bu
 Her satırda gözlem, gerçek kanıt kimliği, neden önemli olduğu ve hangi mekanizmayla hedefi etkilediğine dair kendi analizini yaz. Action bir iş, test veya proje önermeli: neye müdahale edilecek, hangi çıktı üretilecek ve gerekiyorsa hangi koşul doğrulanacak? Measurement önerinin hangi metrik ve yöntemle değerlendirileceğini söyler. Maliyet, getiri, erişim, oran veya altyapı durumu uydurma. Kanıt yetersizken kesin teşhis koyma. Kararı değiştirecek veri eksikse question alanına toplantıda sorulacak somut soruyu yaz. Yeterli kanıt yoksa daha az bulgu çıkar; rakip, ölçüm veya öneri doldurmak için olgu icat etme.
 Her bulgu tek bir bölüme aittir. Area mevcut metodoloji anahtarlarından biri. SWOT kolu yalnız SWOT için kullanılır. Peer ve benchmark kaynak kimlikleri sadece sources anahtarlarından seçilir. JSON sözleşmesine uy.`;
 
-export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[]}){
+export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls}){
  const aliases=new Map();
  const sources={};
  const observed=[];
- const seen=new Set();
  function addSource(id){
   const card=context.known.get(id);
   if(!card)return null;
@@ -65,42 +65,49 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  }
  for(const row of inventory.flatMap(item=>list(item.observations))){
   const proof=unique(list(row.sourceIds).map(addSource).filter(Boolean));
-  const key=JSON.stringify([row.area,row.text,proof]);
-  if(proof.length&&!seen.has(key)){seen.add(key);observed.push(['o'+(observed.length+1),row.area,row.text,proof]);}
+  observed.push(['o'+(observed.length+1),row.area,row.text,proof]);
  }
+ const inScope=url=>!evidenceUrls||evidenceUrls.has(url);
  const entities=context.input.entities.map(e=>{
-  const proof=context.cards.filter(c=>researchHost(c.url)===researchHost(e.website)&&!c.metadataOnly&&c.method!=='search-snippet').slice(0,12).map(c=>addSource(c.id));
+  const proof=context.cards.filter(c=>inScope(c.url)&&researchHost(c.url)===researchHost(e.website)&&!c.metadataOnly&&c.method!=='search-snippet').slice(0,12).map(c=>addSource(c.id));
   return [e.id,e.role,e.name,e.website,proof];
  });
  // Preserve the archive in its original receipts. Include indexed observations
  // first, then primary and technical evidence that the index may have missed.
- for(const card of context.cards.filter(c=>c.method==='html-signals').slice(0,42))addSource(card.id);
- for(const source of context.input.sources)if(source.sections.length)addSource(source.sections[0].proofIds[0]);
- const reverse=new Map([...aliases].map(([id,alias])=>[alias,id]));
+ for(const card of context.cards.filter(c=>inScope(c.url)&&c.method==='html-signals'))addSource(card.id);
+ for(const source of context.input.sources)if(inScope(source.url)&&source.sections.length)addSource(source.sections[0].proofIds[0]);
+ const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
+  brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
+  sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),
+  existing,entities,observations:observed,sources};
+ return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
+}
+
+export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls}){
+ const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls});
  const accepted=new Set(sections);
- const byArea=new Map();
- for(const item of observed){const rows=byArea.get(item[1])||[];rows.push(item);byArea.set(item[1],rows);}
- const balanced=[];
- for(let i=0;i<Math.max(0,...[...byArea.values()].map(rows=>rows.length));i++){
-  for(const rows of byArea.values())if(rows[i])balanced.push(rows[i]);
+ const signal=AbortSignal.timeout(250000);
+ const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3700,compactReview:true,lowEffort:true};
+ if(batchReviews===undefined){
+  batchReviews=[];
+  for(const batch of planManagedEvidenceReview(input)){
+   batchReviews.push(...await reviewManagedEvidenceBatch(batch,{focus:plan.understanding||brief,providers,reserveForFollowingKurus:550,signal}));
+  }
  }
+ const reviewed=reviewedManagedEvidence(input,batchReviews);
+ const {coverage:evidenceCoverage,invalidObservations}=reviewed;
+ if(evidenceCoverage.evidenceRows&&!evidenceCoverage.reviewedEvidenceRows)
+  throw new BudgetError(batchReviews.find(review=>review.issue)?.issue||'model_output_invalid','Nihai rapor için doğrulanmış kanıt incelemesi bulunamadı.');
  let completion,usedInput;
- for(const [limit,compact] of [[Infinity,false],[Infinity,true],[420,true],[220,true],[115,true],[65,true],[35,true]]){
-  const evidence=balanced.slice(0,limit).map(row=>compact?[row[0],row[1],row[2].slice(0,180),row[3].slice(0,2)]:row);
-  const required=new Set([...evidence.flatMap(row=>row[3]),...entities.flatMap(e=>e[4])]);
-  const additional=Object.keys(sources).filter(id=>!required.has(id)).slice(0,Number.isFinite(limit)?Math.ceil(limit/2):undefined);
-  for(const id of additional)required.add(id);
-  const compressed=([url,title,method,quote])=>[url,title.slice(0,72),method,quote];
-  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
-   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
-   sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),
-   existing,entities,observations:evidence,sources:Object.fromEntries([...required].map(id=>[id,compact?compressed(sources[id]):sources[id]]))};
-  try{
-   completion=await providers.manager('v8-managed-actionable-report',input,schema,{maxOutputTokens:10240,minimumOutputTokens:3700,compactReview:true,lowEffort:true});
-   usedInput=input;break;
-  }catch(error){if(error.code!=='input_budget'&&!(error.code==='budget_limit'&&error.budgetDiagnostic?.role==='manager'))throw error;}
+ // Every row has already reached Claude. If the ranked shortlist cannot be
+ // admitted, preserve the strongest candidates across batches in the report.
+ for(const limit of [...new Set([reviewed.candidates.length,120,72,36].map(size=>Math.min(size,reviewed.candidates.length)))]){
+  usedInput=reviewed.reportInput(limit);
+  usedInput.instruction+=' Kanıtlar ayrı Claude çağrılarında incelendi. Verilen adayların kaynaklarını karşılaştırarak her bölüm için tek bir nihai sıralama oluştur.';
+  try{completion=await providers.manager('v8-managed-actionable-report',usedInput,schema,reportOptions);break;}
+  catch(error){if(!isManagedInputLimit(error))throw error;}
  }
- if(!completion)throw new BudgetError('input_budget','BHS kanıt paketi rapor bütçesine sığmadı.');
+ if(!completion)throw new BudgetError('budget_limit','Claude kanıtları inceledi ancak nihai rapor için ayrılan bütçe yeterli olmadı.');
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const selected=[],seenFindings=new Set(),seenPeers=new Set();
  const sorted=list(completion.data.findings).sort((a,b)=>a.rank-b.rank);
@@ -137,8 +144,8 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);
  report.meetingQuestions=unique([...report.findings.map(f=>f.decisionQuestion).filter(Boolean),...list(completion.data.questions)]).map(question=>({dimension:'operations',question,findingIds:report.findings.filter(f=>f.decisionQuestion===question).map(f=>f.id)}));
  report.bhsSections=managedCoverage(report);
- return {report,completion,invalidObservations:list(completion.data.invalidObservations).filter(id=>usedInput.observations.some(row=>row[0]===id)),
-  evidenceCoverage:{observations:observed.length,reviewed:usedInput.observations.length}};
+ return {report,completion,invalidObservations:unique([...invalidObservations,...list(completion.data.invalidObservations).filter(id=>usedInput.observations.some(row=>row[0]===id))]),
+  evidenceCoverage};
 }
 
 export function managedBrandContinuation(brief,brand){

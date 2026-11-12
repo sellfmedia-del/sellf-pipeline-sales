@@ -12,8 +12,9 @@ import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {managedActors,planManagedResearch} from './managed-research.mjs';
-import {synthesizeManagedReport} from './managed-report.mjs';
-import {researchCapKurus} from './managed-budget.mjs';
+import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
+import {managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
+import {planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
@@ -404,6 +405,16 @@ async function repairPeerCoverage({brief,brand,providers,context,funding,product
  return {decisions:decisions.filter(d=>d.relationship==='direct').slice(0,4-names.length),entities:candidates.map(candidate=>candidate.entity)};
 }
 
+async function managedCollectionInputs(brief,plan,previous){
+ const [brand,{packet},inventory]=await Promise.all([previous('brand'),collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory')]);
+ const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ context.collectionFirst=true;
+ const discovered=comparisonEntities(context,inventory);
+ const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16);
+ context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
+ return {brief,brand,plan,context,inventory};
+}
+
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
  const first=phase===searchStages[0];
@@ -462,25 +473,36 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const cost=await providers.costStatus();
   const committedKurus=Math.max(0,cost.chargedKurus-(managed?0:providers.infrastructureOffsetKurus||0)-funding.startKurus);
   if(committedKurus>(funding.researchLimitKurus??collectionBudgetKurus))throw new BudgetError('provider_accounting','Araştırma harcaması ayrılan bütçeyi aştı.');
-  return save({collectionClosed:true,researchAccount:{...funding,committedKurus}});
+  const reviewBatches=managed?planManagedEvidenceReview(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input):null;
+  return save({collectionClosed:true,researchAccount:{...funding,committedKurus},...(reviewBatches!==null?{reviewBatches}:{})});
+ }
+ const reviewIndex=managedReviewPhases.indexOf(phase);
+ if(managed&&reviewIndex>=0){
+  const {reviewBatches=[]}=await previous('coverage_plan'),reviews=[];
+  const focus=managed.understanding||brief,signal=AbortSignal.timeout(250000);
+  for(let i=reviewIndex;i<reviewBatches.length;i+=managedReviewPhases.length)
+   reviews.push(...await reviewManagedEvidenceBatch(reviewBatches[i],{focus,providers,signal}));
+  const issues=unique(reviews.flatMap(review=>review.issue?[review.issue]:[]));
+  return save({reviews,...(issues.length?{toolIssues:issues}:{})});
  }
  if(phase!=='synthesis')return save({});
- const brand=await previous('brand'),closed=await previous('coverage_plan');
+ const closed=await previous('coverage_plan');
  if(!closed.collectionClosed)throw new BudgetError('research_stage_incomplete','Kanıt toplama tamamlanmadan Claude değerlendirmesi başlatılamaz.');
- const [{packet},inventory,focused]=await Promise.all([collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
- const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:Boolean(managed)});
- context.collectionFirst=true;
- const discovered=comparisonEntities(context,inventory);
  if(managed){
-  const candidates=peerCandidates(context,discovered,brand,managed.comparableProduct,true,16);
-  context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
-  const {report,completion,invalidObservations,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:managed,context,inventory,providers});
+  const args=await managedCollectionInputs(brief,managed,previous);
+  const batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
+  const {report,completion,invalidObservations,evidenceCoverage}=await synthesizeManagedReport({...args,providers,batchReviews});
+  const {packet}=args.context;
   const urls=new Set(report.sources.map(source=>source.url));
-  const analysisPacket={...context.packet,sources:context.packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:context.packet.citationCards.filter(source=>urls.has(source.url))};
+  const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
   return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,
    researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:managed,
     researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage}});
  }
+ const [brand,{packet},inventory,focused]=await Promise.all([previous('brand'),collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
+ const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
+ context.collectionFirst=true;
+ const discovered=comparisonEntities(context,inventory);
  const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct,focused.expandedPeerPublishers):[];
  const entities=funding.finalQuotes?[...discovered.filter(entity=>entity.role==='brand'),...candidates.map(item=>item.entity)]:discovered;
  context.input.entities=entities;

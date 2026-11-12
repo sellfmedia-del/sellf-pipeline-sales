@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,packet,plan} from './fixtures/sequential.mjs';
-import {capBhsLedger,managedPhaseBudget} from '../src/bhs/managed-budget.mjs';
+import {capBhsLedger,managedPhaseBudget,managedReviewPhases} from '../src/bhs/managed-budget.mjs';
 import {managedResearchHealthy,resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
 import {planManagedResearch} from '../src/bhs/managed-research.mjs';
-import {managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
+import {managedReportInput,managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
 import {sequentialContext,sequentialPhases,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {continuationAudit} from '../src/bhs/continuity.mjs';
@@ -18,15 +18,28 @@ import {fallbackScope} from '../src/pricing/scope.mjs';
 import {offerCopy} from '../src/proposal/composition.mjs';
 import {response} from './fixtures/offer.mjs';
 
+import {planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from '../src/bhs/managed-evidence-review.mjs';
+import {runCollectionFirstStage} from '../src/bhs/collection-first.mjs';
+
+const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
+ verdicts:{c:'',d:rows.filter(row=>!exclude.has(row.id)).map(row=>row.id).join(' '),s:'',p:'',r:'',g:'',u:'',
+  x:rows.filter(row=>exclude.has(row.id)).map(row=>row.id).join(' ')},
+ candidates
+}});
+
 test('research and synthesis reserve independently, including parallel calls and persistent policy',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const phase=await managedPhaseBudget({ledger,brief,phase:'brand_plan',enabled:true});
  const claims=await Promise.allSettled([1,2,3].map(i=>phase.ledger.once('research:'+i,{},1250,async()=>i)));
  assert.equal(claims.filter(r=>r.status==='fulfilled').length,2);
  assert.equal((await ledger.status()).chargedKurus,3000);
+ const review=await managedPhaseBudget({ledger,brief,phase:managedReviewPhases[0],enabled:false});
+ assert.equal(review.managedAudit,true);
+ assert.equal(review.phaseCeiling,5000);
+ await review.ledger.once('claude-review',{},300,async()=>({}));
  const synthesis=await managedPhaseBudget({ledger,brief,phase:'synthesis',enabled:false});
- assert.equal(synthesis.managedAudit,true);
- await synthesis.ledger.once('claude',{},1600,async()=>({}));
+ assert.equal(synthesis.phaseCeiling,5000);
+ await synthesis.ledger.once('claude',{},1300,async()=>({}));
  const scope=await managedPhaseBudget({ledger,brief,phase:'scope',enabled:false});
  await assert.rejects(scope.ledger.once('scope-over',{},401,async()=>assert.fail('paid provider called')),error=>error.code==='budget_limit');
  await scope.ledger.once('scope',{},400,async()=>({}));
@@ -53,6 +66,7 @@ test('an incomplete content result enables an explicit, once-only extra account;
  assert.equal(managedResearchHealthy([{state:'complete',value:{scrapes:[{unavailable:true,reason:'actor_api_unavailable'}]}}]),false);
  assert.equal(managedResearchHealthy([{state:'complete',value:{unavailable:['model_temporarily_unavailable']}}]),false);
  assert.equal(managedResearchHealthy([{state:'complete',value:{costFallback:true}}]),false);
+ assert.equal(managedResearchHealthy([{state:'complete',value:{supervision:{evidenceCoverage:{complete:false}}}}]),false);
  assert.equal(managedResearchHealthy([{state:'uncertain',value:{code:'budget_limit'}}]),false);
  let opened=0,modelCalls=0;
  const input={brief,synthesis:{supervision:{reviewMode:'managed-audit',researchPlan:{}},report:{findings:[]}},sections:['digital'],secret:'synthetic-test-secret',baseLedger:base.ledger,
@@ -107,8 +121,9 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  const question='Teslimat sürelerini sipariş bazında hangi kaynaktan izliyorsunuz?';
  const inventory=[{observations:citations.map(c=>({area:'synthetic',text:c.quote,sourceIds:[c.id]}))}];
  const providers={manager:async(name,input)=>{
+  if(name==='v8-managed-evidence-batch')return batchAnswer(input.rows,input.rows.filter(row=>row.text).map(row=>row.id));
   assert.equal(name,'v8-managed-actionable-report');
-  assert.equal(input.observations.length,new Set(citations.map(c=>c.id)).size);
+  assert.equal(input.observations.length,citations.length);
   const alias=card=>Object.keys(input.sources).find(id=>input.sources[id][0]===card.url&&input.sources[id][3]===card.quote);
   return {model:'claude-sonnet-5-5',data:{
    peers:['peer0','peer1'].map((entityId,i)=>({entityId,relationship:'direct',sourceIds:[alias(citations[i])],reason:'Aynı ürün grubunda ve aynı pazarda satış.'})),
@@ -172,4 +187,51 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  assert.equal(denied.code,422);
  assert.equal(denied.data.code,'completion_unavailable');
  assert.equal((await ledger.status()).chargedKurus,500);
+});
+
+test('all 1000 observations are reviewed across background phases before the report and late high-priority evidence survives',async()=>{
+ const evidence=packet(),context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const proof=context.cards[0];
+ const inventory=[{observations:Array.from({length:1000},(_,i)=>({area:'digital_1',
+  text:'Verbatim row '+i+' '+('Complete original text and source evidence. '.repeat(7)),sourceIds:[proof.id]}))}];
+ const args={brief,brand:{facts:[]},plan:{understanding:{goals:brief.goals}},context,inventory};
+ const {input}=managedReportInput(args),batches=planManagedEvidenceReview(input);
+ assert.ok(batches.length>1);
+ const seen=new Map(),closed={collectionClosed:true,reviewBatches:batches},receipts=new Map();
+ const providers={manager:async(name,payload)=>{
+  assert.equal(name,'v8-managed-evidence-batch');
+  for(const row of payload.rows)if(row.text){
+   assert.equal(seen.has(row.id),false);
+   seen.set(row.id,row.text);
+   assert.equal(payload.sources[row.proof[0]][3],proof.quote);
+  }
+  return batchAnswer(payload.rows,[payload.rows.find(row=>row.id==='o1000')?.id||payload.rows[0].id]);
+ }};
+ for(const phase of managedReviewPhases){
+  const result=await runCollectionFirstStage({phase,brief,providers,previous:async name=>
+   name==='sector_sources'?{managedPlan:args.plan,funding:{}}:closed,finish:data=>data});
+  receipts.set(phase,result.reviews);
+ }
+ const report=reviewedManagedEvidence(input,[...receipts.values()].flat());
+ assert.equal(seen.size,1000);
+ for(const [id,,text] of input.observations)assert.equal(seen.get(id),text);
+ assert.equal(report.coverage.reviewed,1000);
+ assert.equal(report.coverage.complete,true);
+ assert.ok(report.reportInput().observations.some(row=>row[0]==='o1000'));
+});
+
+test('a missing verdict or an unfunded batch cannot be counted as reviewed',async()=>{
+ const input={entities:[],observations:[['o1','digital_1','First observation',['s1']],['o2','digital_1','Second observation',['s1']]],
+  sources:{s1:['https://example.test/','Proof','html','Original evidence text']}};
+ const [batch]=planManagedEvidenceReview(input);
+ const [bad]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>batchAnswer(batch.rows.slice(0,1),['o1'])}});
+ assert.equal(bad.issue,'model_output_invalid');
+ assert.equal(reviewedManagedEvidence(input,[bad]).coverage.complete,false);
+ const [stopped]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>{throw new BudgetError('budget_limit','Cannot reserve');}}});
+ assert.equal(stopped.issue,'budget_limit');
+ const [ok]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>batchAnswer(batch.rows,['o2'],new Set(['o1']))}});
+ const reviewed=reviewedManagedEvidence(input,[ok]);
+ assert.equal(reviewed.coverage.complete,true);
+ assert.deepEqual(reviewed.invalidObservations,['o1']);
+ assert.deepEqual(reviewed.reportInput().observations.map(row=>row[0]),['o2']);
 });

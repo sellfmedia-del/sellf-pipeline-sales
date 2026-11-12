@@ -4,6 +4,7 @@ import {briefHash} from './brief.mjs';
 export const researchCapKurus=3000;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
+export const managedReviewPhases=Object.freeze(['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft']);
 export const managedBhsEnabled=()=>process.env.OFFER_BHS_MANAGED==='1'
  || (process.env.OFFER_BHS_MANAGED===undefined&&process.env.VERCEL_ENV==='production'
  &&process.env.OFFER_BHS_SEQUENTIAL_PRODUCTION_ENABLED==='true');
@@ -28,7 +29,7 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
  if(saved?.state!=='complete')await ledger.once(policyKey,{hash},0,async()=>({version:1}));
- if(!['synthesis','scope'].includes(phase))return {ledger:capBhsLedger(ledger,researchCapKurus),managedAudit:true,phaseCeiling:researchCapKurus};
+ if(![...managedReviewPhases,'synthesis','scope'].includes(phase))return {ledger:capBhsLedger(ledger,researchCapKurus),managedAudit:true,phaseCeiling:researchCapKurus};
  const boundaryKey='audit:managed-synthesis-baseline:'+hash;
  const baseline=await ledger.once(boundaryKey,{hash},0,async()=>({chargedKurus:(await ledger.status()).chargedKurus}));
  if(!Number.isSafeInteger(baseline.chargedKurus)||baseline.chargedKurus>researchCapKurus)

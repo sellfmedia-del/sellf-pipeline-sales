@@ -80,7 +80,7 @@ export async function runBoundedStage({phase,brief,ledger,providers,collect,rese
   }
   if(researchVersion==='v8'&&phase!=='scope'){
    const result=await runSequentialStage({phase,brief,providers,previous,collect});
-   return ledger.issues?.size?{...result,toolIssues:[...ledger.issues]}:result;
+   return ledger.issues?.size?{...result,toolIssues:[...new Set([...(result.toolIssues||[]),...ledger.issues])]}:result;
   }
   if(researchVersion==='v7'&&phase!=='scope')return await runSupervisedStage({phase,brief,providers,previous,collect});
   if(researchVersion==='v6'&&phase!=='scope')return await runExpertStage({phase,brief,providers,previous,collect,researchModel});

@@ -216,7 +216,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    try{scopePlan=validateScope(scope.scopePlan,brief,audit.data);}
    catch{scopePlan=fallbackScope(brief);proposalCopy=offerCopy(null,audit.data);}
    const final={...audit,data:{...audit.data,scopePlan,proposalCopy}};
-   if(backgroundJob&&audit.status!=='ready')return await finish(continuationAudit(brief,{verifiedAudit:final,reason:'quality_review'}),gapCompletion);
+   if((backgroundJob||synthesis.supervision?.reviewMode==='managed-audit')&&audit.status!=='ready')
+    return await finish(continuationAudit(brief,{verifiedAudit:final,reason:'quality_review'}),gapCompletion);
    return await finish(final,gapCompletion);
   }catch(error){
    if(phase==='website_check'&&temporaryDnsError(error)){

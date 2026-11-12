@@ -6,6 +6,7 @@ import {runBoundedStage} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
+import {managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
@@ -21,6 +22,10 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
   const remaining=options.phaseCeiling-(await options.ledger.status()).chargedKurus;
   if(remaining<workerInfraReservationKurus){
+   if(managedReviewPhases.includes(job.phase)){
+    const manager=async()=>{throw new BudgetError('budget_limit','BHS kanıt incelemesi için ayrılan bütçeye ulaşıldı.');};
+    return runStage({...options,providers:{...options.providers,manager}});
+   }
    if(sequentialPhases.indexOf(job.phase)<=sequentialPhases.indexOf('sector_sources'))
     throw new BudgetError('budget_limit','Marka ve araştırma planı için ayrılan bütçeye ulaşıldı.');
    return runStage({...options,skipManagedCollection:true});

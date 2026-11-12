@@ -20,7 +20,7 @@ export function managedResearchHealthy(rows){
  return rows.every(row=>{
   if(row?.state!=='complete')return false;
   const value=row.value;
-  if(value?.costFallback||value?.toolIssues?.length||value?.searches?.some(s=>s.unavailable)||value?.scrapes?.some(s=>s.unavailable))return false;
+  if(value?.supervision?.evidenceCoverage?.complete===false||value?.costFallback||value?.toolIssues?.length||value?.searches?.some(s=>s.unavailable)||value?.scrapes?.some(s=>s.unavailable))return false;
   return !value?.unavailable?.some(readError)&&!value?.packet?.unavailable?.some(readError);
  });
 }
@@ -100,7 +100,8 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   instruction:managedIndexInstruction,researchTasks:tasks,
   ...stageModelInput({...context,input:{...context.input,sources:context.input.sources.filter(s=>newUrls.has(s.url))}},{areas:true})
  },indexSchema,{maxOutputTokens:3000})).data]:[];
- const {report:patch}=await synthesizeManagedReport({brief,brand,plan:priorPlan,context,inventory,providers,sections,existing});
+ const {report:patch,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:priorPlan,context,inventory,providers,sections,existing,evidenceUrls:newUrls});
+ if(!evidenceCoverage.complete)throw new BudgetError('incomplete_evidence_review','Ek araştırmanın kanıt incelemesi tamamlanmadı; önceki BHS korundu.');
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
  const existingStatements=new Set(original.findings.map(f=>f.statement.trim().toLowerCase()));
  const additions=patch.findings.filter(f=>sections.includes(f.bhsSection)&&!existingStatements.has(f.statement.trim().toLowerCase())
