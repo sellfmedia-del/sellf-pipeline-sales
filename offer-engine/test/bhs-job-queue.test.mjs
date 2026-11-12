@@ -9,7 +9,8 @@ import {projectExpertReport} from '../src/bhs/expert-report.mjs';
 import {briefHash} from '../src/bhs/brief.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {runClaimedBhsStage} from '../src/bhs/background-runner.mjs';
-import {createBhsJobStore} from '../src/bhs/job-store.mjs';
+import {createLedger} from '../src/budget/ledger.mjs';
+import {createBhsJobStore,queuedBhsBrief} from '../src/bhs/job-store.mjs';
 import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs.mjs';
 import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
@@ -246,4 +247,56 @@ test('recovering measured compute never erases an older unmeasured commitment',a
   const result=await meteredBhsStage({job:recovered,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:()=>({user:0,system:0}),run:async()=>{time+=1000;}});
   assert.equal((await f.ledger.get('infra:v8:competition_review:'+hash)).state,'uncertain');assert.equal((await f.ledger.status()).chargedKurus,before.chargedKurus+result.accountedKurus);assert.ok(result.accountedKurus>0);
  }finally{await f.close();}
+});
+
+test('production starts a new background BHS with the same brief without resuming or charging the paused run',async()=>{
+ const f=await fixture(),env=process.env.VERCEL_ENV,enabled=process.env.OFFER_PRODUCTION_ENABLED;
+ process.env.VERCEL_ENV='production';process.env.OFFER_PRODUCTION_ENABLED='true';
+ try{
+  await f.db.exec('reset role; create table public.pipeline_offer_budgets (like public.pipeline_offer_preview_budgets including all); create table public.pipeline_offer_budget_steps (like public.pipeline_offer_preview_budget_steps including all); create table public.spaces(id text primary key,user_id uuid); create table public.leads(id text primary key,space_id text); grant select on public.spaces,public.leads to service_role; grant select,insert,update on public.pipeline_offer_budgets,public.pipeline_offer_budget_steps to service_role;');
+  await f.db.exec(await readFile(new URL('../schema/offer-variants-budget.sql',import.meta.url),'utf8'));
+  await f.db.query('insert into public.spaces values($1,$2)',['space',owner]);
+  await f.db.query('insert into public.leads values($1,$2)',['synthetic-bhs','space']);
+  await f.db.exec('set role service_role;');
+  const gateway=createBhsGatewayActions({mode:'production',env:k=>k==='BHS_WORKER_SECRET'?secret:undefined,
+   user:async jwt=>{assert.equal(jwt,'synthetic-jwt');return {id:owner};},validateLead:async lead=>assert.equal(lead,'synthetic-bhs'),cryptoImpl:webcrypto,
+   db:async(_path,{body})=>(await f.db.query('select public.pipeline_bhs_job_op($1,$2,$3,$4,$5,$6,$7) as value',
+    [body.p_mode,body.p_op,body.p_owner,body.p_lead,body.p_id,body.p_token,JSON.stringify(body.p_data)])).rows[0].value});
+  const queue=createBhsJobStore({store:{call:(action,body)=>gateway({action,...body})},jwt:'synthetic-jwt',workerSecret:secret});
+  const budget=runId=>createLedger(async(op,args={})=>(await f.db.query('select public.pipeline_offer_additional_budget_op($1,$2,$3,$4,$5,$6,$7,$8,$9) as value',
+   [owner,'synthetic-bhs',runId,op,args.step||null,args.hash||null,args.amount||0,args.token||null,JSON.stringify(args.value??null)])).rows[0].value);
+  const firstId=other,nextId=token,oldLedger=budget(firstId),newLedger=budget(nextId);
+  await oldLedger.begin();
+  await oldLedger.once('prior-paid-research',{},1485,async()=>({retained:true}));
+  const old=await queue.enqueue({leadId:'synthetic-bhs',researchVersion:'v8',researchModel:'claude-sonnet-5-5',researchRunId:firstId},brief,await oldLedger.status());
+  await queue.pause(await queue.claim(),{code:'incomplete'});
+  const h=createBoundedAuditHandler({getQueue:async()=>queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',
+   getSecret:()=>secret,getLedger:async(_req,_res,_lead,{researchRunId})=>{assert.equal(researchRunId,nextId);return newLedger;},
+   validateWebsite:async()=>{},getProviders:()=>assert.fail('no browser-side research'),logger:{}});
+  const request={method:'POST',headers:{host:'sales.example.com',origin:'https://sales.example.com',cookie:'__Host-offer-research='+secret},
+   body:{action:'start',brief,requestId:'synthetic_fresh_start',context:{leadId:'synthetic-bhs',researchRunId:nextId}}};
+  let r=res();await h(request,r);assert.equal(r.code,202,JSON.stringify(r.body));assert.equal(r.body.cost.chargedKurus,500);assert.equal(r.body.cost.capKurus,5000);
+  const fresh=await queue.find('synthetic-bhs',queuedBhsBrief(brief,nextId).hash);
+  assert.notEqual(fresh.id,old.id);assert.notEqual(fresh.budgetId,old.budgetId);assert.equal(fresh.briefHash,hash);assert.deepEqual(fresh.brief,brief);
+  r=res();await h(request,r);assert.equal(r.code,202);assert.equal((await queue.find('synthetic-bhs',fresh.queueBriefHash)).id,fresh.id);
+  const claim=await queue.claim();assert.equal(claim.id,fresh.id);
+  await runClaimedBhsStage({job:claim,queue,getLedger:queue.getLedger,
+   runStage:opts=>runBoundedStage({...opts,collect:fakeCollector()}),
+   getProviders:()=>({checkpoint:(_name,_input,run)=>run(),manager:async(_stage,input)=>{
+    assert.deepEqual(input.brief,brief);
+    return {data:{instruction:'Kaynaklarla markayı anla.',queries:[]}};
+   }})});
+  assert.equal((await queue.read(fresh)).phase,'brand_sources');
+  assert.equal((await newLedger.get(stageKey(brief,'brand_plan','v8',fresh.queueBriefHash))).state,'complete');
+  const statusRequest={...request,body:{action:'status',brief,ticket:r.body.ticket}};
+  r=res();await h(statusRequest,r);assert.equal(r.code,202);assert.equal(r.body.phase,'brand_sources');
+  await queue.pause(await queue.claim(),{code:'incomplete'});
+  r=res();await h(statusRequest,r);assert.equal(r.code,200);assert.equal(r.body.result.data.briefHash,hash);assert.ok(r.body.pricingProof);
+  assert.equal((await queue.read(old)).state,'paused');
+  assert.equal((await oldLedger.status()).chargedKurus,1985);
+ }finally{
+  if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;
+  if(enabled===undefined)delete process.env.OFFER_PRODUCTION_ENABLED;else process.env.OFFER_PRODUCTION_ENABLED=enabled;
+  await f.close();
+ }
 });

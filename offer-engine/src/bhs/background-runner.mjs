@@ -4,6 +4,7 @@ import {runBoundedStage,stageKey} from './direct-research.mjs';
 import {snapshotBrief,briefHash} from './brief.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {managedPhaseBudget} from './managed-budget.mjs';
+import {queuedBhsBrief} from './job-store.mjs';
 
 // Transport-independent, one phase per leased invocation. The DB/queue adapter
 // must validate the lease and bind getLedger to this job's immutable budget.
@@ -12,8 +13,10 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
  const phases=job?.researchVersion==='v8'?sequentialPhases:supervisedPhases;
  if(!['v7','v8'].includes(job?.researchVersion)||job?.researchModel!=='claude-sonnet-5-5'||!phases.includes(job.phase)||job.phase==='complete'||!job.leaseToken||job.leaseUntil<=now())throw new BudgetError('invalid_job','BHS arka plan işi veya kilidi geçersiz.');
  const brief=snapshotBrief(job.brief);
- if(briefHash(brief)!==job.briefHash)throw new BudgetError('changed_brief','BHS iş kaydı brief ile eşleşmiyor.');
- const ledger=await getLedger(job),key=stageKey(brief,job.phase,job.researchVersion);
+ const hash=briefHash(brief),checkpointHash=job.queueBriefHash||hash;
+ if(hash!==job.briefHash||checkpointHash!==hash&&(!job.researchRunId||queuedBhsBrief(brief,job.researchRunId).hash!==checkpointHash))
+  throw new BudgetError('changed_brief','BHS iş kaydı brief ile eşleşmiyor.');
+ const ledger=await getLedger(job),key=stageKey(brief,job.phase,job.researchVersion,checkpointHash);
  // Persist-before-ack: a crash after the phase commits is recovered without
  // replaying any source/model call. A lost paid request is never refunded.
  try{
@@ -26,7 +29,7 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
     ?await managedPhaseBudget({ledger,brief,phase:job.phase,existingBrandPlan:step})
     :{ledger,managedAudit:false};
    const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,phaseLimitKurus:phaseBudget.phaseCeiling});
-   await runStage({phase:job.phase,brief,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
+   await runStage({phase:job.phase,brief,checkpointHash,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
   }
   const nextPhase=phases[phases.indexOf(job.phase)+1];
   await queue.advance(job,{nextPhase,checkpointKey:key});

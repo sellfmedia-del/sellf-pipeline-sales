@@ -19,7 +19,7 @@ import {supervisedPhases} from './supervised-research.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {collectionFirstEnabled,createSequentialProviders} from './sequential-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
-import {backgroundBhsEnabled,browserBhsJobStore} from './job-store.mjs';
+import {backgroundBhsEnabled,browserBhsJobStore,queuedBhsBrief} from './job-store.mjs';
 import {managedPhaseBudget} from './managed-budget.mjs';
 import {managedBrandContinuation} from './managed-report.mjs';
 import {managedResearchHealthy,resolveManagedGaps} from './managed-gaps.mjs';
@@ -42,7 +42,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
   const requestId=/^[a-zA-Z0-9_-]{16,80}$/.test(req.headers['x-offer-request-id']||'')?req.headers['x-offer-request-id']:randomUUID();res.setHeader('X-Offer-Request-Id',requestId);
-  let phase='unknown',action='unknown',readCost,recoveryTicket,activeLedger,activeBrief,activeResearchVersion;
+  let phase='unknown',action='unknown',readCost,recoveryTicket,activeLedger,activeBrief,activeResearchVersion,activeCheckpointHash;
   const log=(event,extra={})=>{try{(event==='bhs_error'?logger.error:logger.info)?.call(logger,JSON.stringify({event,requestId,phase,action,...extra}));}catch{}};
   try{
    if(Number(req.headers['content-length'])>100000)throw new BudgetError('invalid_brief','Brief boyut sınırını aşıyor.');
@@ -71,14 +71,18 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const activePhases=researchVersion==='v8'?sequentialPhases:researchVersion==='v7'?supervisedPhases:phases;
    const queue=researchVersion==='v8'&&isBackgroundEnabled()?await getQueue(req,res):null;
    if(queue&&action==='start'){
-    const existing=await queue.find(job.leadId,hash);
+    if(productionOffers()&&job.researchRunId)job.queueBriefHash=queuedBhsBrief(brief,job.researchRunId).hash;
+    const existing=await queue.find(job.leadId,job.queueBriefHash||hash);
     if(existing){
+     if(job.queueBriefHash&&existing.researchRunId!==job.researchRunId)
+      throw new BudgetError('invalid_job','BHS işi yeni çalışma kimliğiyle eşleşmiyor.');
      job.backgroundJobId=existing.id;
      if(existing.researchRunId)job.researchRunId=existing.researchRunId;else delete job.researchRunId;
      if(existing.sourceOfferId)job.sourceOfferId=existing.sourceOfferId;else delete job.sourceOfferId;
     }
    }
-   const key=name=>stageKey(brief,name,researchVersion);
+   const checkpointHash=job.queueBriefHash||hash;activeCheckpointHash=checkpointHash;
+   const key=name=>stageKey(brief,name,researchVersion,checkpointHash);
    let ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
    if(action==='start'){
     phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
@@ -106,6 +110,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;
      // A concurrent start may have won after find(). Bind to its original account.
      if(saved.budgetId!==(await ledger.status()).id){
+      if(job.queueBriefHash)throw new BudgetError('invalid_job','BHS işi yeni çalışma bütçesiyle eşleşmiyor.');
       if(saved.researchRunId)job.researchRunId=saved.researchRunId;else delete job.researchRunId;
       if(saved.sourceOfferId)job.sourceOfferId=saved.sourceOfferId;else delete job.sourceOfferId;
       ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;
@@ -114,20 +119,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     }
     backgroundJob=await queue.read(job);
     const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
-    if(backgroundJob.briefHash!==hash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if((backgroundJob.queueBriefHash||backgroundJob.briefHash)!==checkpointHash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
     if(action==='complete_gaps'&&backgroundJob.state!=='complete')throw new BudgetError('completion_unavailable','Yalnız tamamlanmış araştırmanın içerik eksikleri için ek bütçe kullanılabilir.');
     if(['queued','running'].includes(backgroundJob.state))return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const finish=async (final,gapCompletion)=>{
-    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash}),cost:await cost()};
+    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});
    };
    if(queue&&action==='continue'){
     backgroundJob=await queue.read(job);
-    if(backgroundJob.briefHash!==hash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
+    if((backgroundJob.queueBriefHash||backgroundJob.briefHash)!==checkpointHash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
     if(['queued','running'].includes(backgroundJob.state))backgroundJob=await queue.cancel(job);
    }
    if(backgroundJob&&backgroundJob.state!=='complete'){
@@ -232,7 +237,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    let recoveryAvailable=false,continuationAvailable=false;
    if(['start','advance','status'].includes(action)&&recoveryTicket&&activeLedger){
     try{
-     const failed=await activeLedger.get(stageKey(activeBrief,phase,activeResearchVersion));
+     const failed=await activeLedger.get(stageKey(activeBrief,phase,activeResearchVersion,activeCheckpointHash));
      continuationAvailable=canContinue(failed,now());
      recoveryAvailable=recoverableAuditCodes.has(code)&&cost?.chargedKurus<cost?.capKurus&&failed?.state==='uncertain'&&failed.charge_kurus===0&&recoverableAuditCodes.has(failed.value?.code)&&!await activeLedger.get(recoveryKey(activeBrief,phase));
     }catch{}
