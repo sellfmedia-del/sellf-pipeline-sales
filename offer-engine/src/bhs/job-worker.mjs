@@ -39,8 +39,14 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    // must fund Gemini's output/reasoning and the worker before it can run.
    const ceiling=Math.min(options.phaseCeiling,managedInventoryCeilingKurus);
    const minimum=minimumV8GeminiReservation(inventoryOutputTokens,options.providers.now?.(),researchTariff);
-   if(chargedKurus+workerInfraReservationKurus+minimum>ceiling)
+   if(chargedKurus+workerInfraReservationKurus+minimum>ceiling){
+    if(job.inventoryBatch){
+     for(const phase of inventoryStages.slice(inventoryStages.indexOf(job.phase)))
+      await runStage({...options,phase,skipManagedCollection:true});
+     return {advanceSkippedInventory:true};
+    }
     return runStage({...options,skipManagedCollection:true});
+   }
   }
   if(remaining<workerInfraReservationKurus){
    if(managedReviewPhases.includes(job.phase)){

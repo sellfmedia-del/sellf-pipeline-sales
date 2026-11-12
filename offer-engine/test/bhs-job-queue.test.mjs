@@ -142,6 +142,42 @@ test('all eight unaffordable Gemini inventory phases skip before compute or prov
  });
  assert.equal(metered,1);
 });
+test('the inventory batch advances one lease only after every zero-cost checkpoint is committed',async t=>{
+ const f=await fixture();t.after(f.close);
+ const initial=await f.enqueue(),phase=inventoryStages[0];
+ await f.db.exec('reset role;');
+ await f.db.exec(await readFile(new URL('../schema/bhs-inventory-batch-advance.sql',import.meta.url),'utf8'));
+ await f.db.exec('set role service_role;');
+ await f.db.query('update public.pipeline_bhs_jobs set phase=$1 where id=$2',[phase,initial.id]);
+ const job=await f.queue.claim(),ledger=await f.queue.getLedger(job);
+ assert.equal(job.inventoryBatch,true);
+ const next={nextPhase:'coverage_plan',checkpointKey:stageKey(brief,phase,'v8',job.queueBriefHash)};
+ await assert.rejects(f.queue.advance(job,next),/checkpoint not committed/);
+ const prior=sequentialPhases[sequentialPhases.indexOf(phase)-1];
+ await ledger.once(stageKey(brief,prior,'v8',job.queueBriefHash),{},0,async()=>({methodologyVersion:sequentialVersion,collectionFirst:true}));
+ await ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:2}));
+ await ledger.once('previous-research',{},1709,async()=>({}));
+ const completed=await ledger.get('previous-research');
+ completed.charge_kurus=0;
+ assert.equal((await ledger.get('previous-research')).charge_kurus,1709);
+ assert.equal(f.calls.filter(call=>call.body.p_data?.op==='get'&&call.body.p_data.step==='previous-research').length,0);
+ const before=await ledger.status();
+ const result=await runClaimedBhsStage({job,queue:f.queue,getLedger:()=>ledger,
+  getProviders:options=>({...options,collectionFirst:true}),runStage:options=>runMeteredBhsPhase(job,options,{
+   meter:()=>assert.fail('skipped inventory has no worker reservation')
+  })});
+ assert.deepEqual(result,{status:'queued',nextPhase:'coverage_plan'});
+ const advanced=await f.queue.read(job);
+ assert.equal(advanced.phase,'coverage_plan');
+ assert.equal(advanced.state,'queued');
+ for(const stage of inventoryStages){
+  const receipt=await f.ledger.get(stageKey(brief,stage,'v8',job.queueBriefHash));
+  assert.equal(receipt.state,'complete');assert.equal(receipt.charge_kurus,0);
+  assert.deepEqual(receipt.value.toolIssues,['budget_limit']);
+ }
+ assert.deepEqual(await f.ledger.status(),before);
+ assert.equal(f.calls.filter(call=>call.body.p_op==='claim').length,1);
+});
 test('the managed report can pass reviewed evidence to the offer when a paid worker reservation cannot fit',async()=>{
  const job={phase:'synthesis'};
  const options={phase:'synthesis',phaseCeiling:4621,ledger:{status:async()=>({chargedKurus:4222,capKurus:5000})},

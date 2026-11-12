@@ -39,10 +39,19 @@ export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=proc
  const call=(op,args={})=>store.call('budget',{jwt:session.accessToken,leadId,...(researchRunId?{researchRunId}:{}),op,...args});
  return createLedger(call);
 }
-export function createLedger(call){
+export function createLedger(call,{reuseCompleted=false}={}){
  const observed=new Map();
  let claims=Promise.resolve();
- const remember=(key,row)=>{if(row&&Number.isSafeInteger(row.charge_kurus)&&row.charge_kurus>=0)observed.set(key,row);return row;};
+ const remember=(key,row)=>{
+  if(row&&Number.isSafeInteger(row.charge_kurus)&&row.charge_kurus>=0)
+   observed.set(key,reuseCompleted&&row.state==='complete'?structuredClone(row):row);
+  return row;
+ };
+ const get=async key=>{
+  const saved=observed.get(key);
+  if(reuseCompleted&&saved?.state==='complete')return structuredClone(saved);
+  return remember(key,await call('get',{step:key}));
+ };
  async function reserve(args,limitKurus){
   if(limitKurus===undefined)return call('reserve',args);
   if(!Number.isSafeInteger(limitKurus)||limitKurus<0||limitKurus>tariff.capKurus)throw new BudgetError('budget_limit','Maliyet üst sınırı geçersiz.');
@@ -50,12 +59,12 @@ export function createLedger(call){
   // keeping network/search execution parallel; the database still enforces 50.
   const previous=claims;let release;claims=new Promise(resolve=>{release=resolve;});await previous;
   try{
-   const existing=remember(args.step,await call('get',{step:args.step}));
+   const existing=await get(args.step);
    if(!existing&&(await call('status')).chargedKurus+args.amount>limitKurus)throw new BudgetError('budget_limit','Otomatik araştırmanın 30 TL maliyet hedefine ulaşıldı. Kayıtlar ve rezervler korundu; yeni ücretli çağrı yapılmadı.');
    return await call('reserve',args);
   }finally{release();}
  }
- return {begin:()=>call('begin'),status:()=>call('status'),get:async key=>remember(key,await call('get',{step:key})),
+ return {begin:()=>call('begin'),status:()=>call('status'),get,
   // A request may not have read every historical receipt. Never present the
   // unclassified remainder as verified spend or silently drop old reservations.
   describe(total){

@@ -192,7 +192,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   opts.signal?.throwIfAborted();
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},anthropicRole?240000:90000,opts.signal);
+   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},opts.generationTimeoutMs??(anthropicRole?240000:90000),opts.signal);
    // Preserve the received content/usage before local accounting/proof checks.
    // This zero-cost subreceipt contains no request headers or credentials and
    // lets a reviewer inspect/revalidate a paid reply without buying it again.

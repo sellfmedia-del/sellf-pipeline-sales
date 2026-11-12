@@ -52,7 +52,7 @@ test('research and synthesis reserve independently, including parallel calls and
  assert.equal((await ledger.status()).chargedKurus,5000);
 });
 
-test('454 evidence rows recover only 136 omitted verdicts and finish each grounded report section after a paid cut',async t=>{
+test('live-sized report responses finish five sections and repair only missing grounded findings after a paid cut',{timeout:30000},async t=>{
  const wire=await localBudget({lead:'managed-replay-454'});t.after(wire.close);
  const evidence=packet();
  const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
@@ -78,7 +78,8 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
  assert.equal(rows.length,454);
  const omitted=new Set([...rows.slice(0,135).map(row=>row.id),rows.at(-1).id]);
  const resubmitted=new Set(),initialSeen=new Set(),sectionCounts=[],sectionWrites=[],saved=new Map();
- let failed=false;
+ const firstPair=Promise.withResolvers();
+ let active=0,peak=0;
  const options={anthropicKey:'synthetic',receiptVersion:'v8',now:()=>Date.parse('2026-11-12T12:00:00Z'),
   researchFx:async()=>({usdTry:44}),fetchImpl:async(url,{body})=>{
    const request=JSON.parse(body);
@@ -86,12 +87,12 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
    const countBody=Object.fromEntries(Object.entries(request).filter(([key])=>key!=='max_tokens'));
    // Include the system prompt and structured-output schema, as Anthropic
    // does. The report counts exercise the range the live writer rejected.
-   const inputTokens=Math.max(requestInput.rows?1800:6500,Math.ceil(Buffer.byteLength(JSON.stringify(countBody))/4));
+   const inputTokens=Math.max(requestInput.rows?1800:7500,Math.ceil(Buffer.byteLength(JSON.stringify(countBody))/4));
    if(url.endsWith('/count_tokens')){
     if(!requestInput.rows)sectionCounts.push(inputTokens);
     return Response.json({input_tokens:inputTokens});
    }
-   let data,cut=false;
+   let data,cut=false,output=460;
    if(requestInput.rows){
     const followup=requestInput.rows.every(([id])=>initialSeen.has(id));
     for(const [id] of requestInput.rows)(followup?resubmitted:initialSeen).add(id);
@@ -100,20 +101,36 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
    }else{
     const section=Object.keys(managedSections).find(id=>request.system.includes('yalnız '+managedSections[id]+' bölümünü'));
     assert.ok(section);
+    const schema=request.output_config.format.schema.properties;
+    const attempt=sectionWrites.filter(id=>id===section).length;
     sectionWrites.push(section);
-    cut=section==='digital'&&!failed;
-    if(cut)failed=true;
-    const relevant=records.filter(row=>row.section===section);
+    peak=Math.max(peak,++active);
+    if(sectionWrites.length===2)firstPair.resolve();
+    if(sectionWrites.length<=2)await firstPair.promise;
+    active--;
+    const relevant=records.filter(row=>row.section===section&&(section!=='swot'||Object.hasOwn(schema,row.quadrant)));
+    cut=section==='readiness'&&attempt===0;
+    output=section==='competition'&&attempt===0?15:section==='swot'&&attempt===0?1730:section==='digital'?1340:section==='perception'?1330:890;
+    assert.ok(cut||request.max_tokens>=output,section+' must fund a live-sized response');
+    if(section==='perception')assert.equal(Object.hasOwn(schema.findings.items.properties,'quadrant'),false);
+    if(section==='swot'&&attempt===1){
+     assert.deepEqual(Object.keys(schema),['weakness']);
+     assert.equal(requestInput.prior.length,3);
+    }
     const alias=card=>Object.keys(requestInput.sources).find(id=>requestInput.sources[id][3]===card.quote&&requestInput.sources[id][0]===card.url);
-    const findings=relevant.map(({card,quadrant,peerId})=>{
+    const findings=relevant.map(({card,peerId})=>{
      assert.ok(alias(card),section+' must receive its evidence');
-     return {area:areas[section],quadrant,peerId,observation:card.quote,proof:[alias(card)],kind:'observation',
+     return {area:areas[section],...(section==='competition'?{peerId}:{}),observation:card.quote,proof:[alias(card)],kind:'observation',
       analysis:'Bu koşul müşterinin satın alma kararını etkileyebilir.',action:'Ürün sayfasında bu koşulu belirginleştir ve kontrollü test et.',
       measurement:'Kontrol ve test grubunun sepete ekleme oranını ölç.',limitation:'Gerçek dönüşüm oranı bu kaynakta ölçülmedi.',question:'Karşılaştırılabilir dönem verisi var mı?'};
     });
-    data={findings,...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
+    data=section==='swot'?Object.fromEntries(relevant.map(({quadrant},i)=>[quadrant,[
+     quadrant==='weakness'&&attempt===0?{...findings[i],observation:'Marka Türkiye genelinde 500 mağaza işletiyor.'}:findings[i]
+    ]])):section==='competition'&&attempt===0?{findings:[],peers:[]}:
+     {findings,...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
    }
-   const tool=Boolean(request.tools),output=cut?request.max_tokens:Math.min(request.max_tokens,requestInput.rows?460:620);
+   const tool=Boolean(request.tools);
+   if(cut)output=request.max_tokens;
    return Response.json({model:request.model,stop_reason:cut?'max_tokens':tool?'tool_use':'end_turn',usage:{input_tokens:inputTokens,output_tokens:output},
     content:tool?[{type:'tool_use',name:'emit_bhs_stage',input:data}]:[{type:'text',text:cut?'{"findings":[':JSON.stringify(data)}]});
   }};
@@ -135,11 +152,16 @@ test('454 evidence rows recover only 136 omitted verdicts and finish each ground
  const inputArgs={...args,providers,batchReviews:reviewed.results,sectional:true,allowPartial:true};
  const synthesis=await reportBudget.ledger.once('simulated-writing-worker',{},400,
   ()=>synthesizeManagedReport(inputArgs),{settle:()=>140});
- assert.deepEqual(sectionWrites,['competition','digital','digital','swot','perception','readiness']);
+ assert.deepEqual(sectionWrites.slice(0,2).sort(),['competition','digital']);
+ assert.deepEqual(sectionWrites.slice(2,4).sort(),['perception','swot']);
+ assert.equal(sectionWrites[4],'readiness');
+ assert.deepEqual(sectionWrites.slice(5,7).sort(),['competition','swot']);
+ assert.equal(sectionWrites[7],'readiness');
+ assert.equal(peak,2);
  assert.equal(sectionCounts.length,sectionWrites.length);
  assert.ok(sectionCounts.every(tokens=>Math.ceil(tokens*1.2)+4096>11000));
  assert.equal(synthesis.reportIssue,undefined);
- assert.equal(saved.size,5);
+ assert.equal(saved.size,7);
  assert.equal((await wire.ledger.status()).chargedKurus<=reportBudget.phaseCeiling,true);
  assert.equal((await wire.ledger.status()).chargedKurus<=5000,true);
  const audit=directAuditResult(brief,{...synthesis,analysisPacket:context.packet,methodologyVersion:sequentialVersion,

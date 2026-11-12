@@ -20,6 +20,7 @@ const choice=values=>({type:'string',enum:values});
 const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size',
  'provider_accounting','provider_rejected','token_count','fx_limit','fx_unavailable','not_configured','tariff_expired','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
+const managedFindingId=(row,proofs)=>'managed_'+hash({section:row.section,observation:row.observation,proofs}).slice(0,22);
 const rowSchema=obj({
  section:choice(sectionKeys),area:choice([...areas.keys()]),rank:{type:'integer',minimum:1,maximum:10},
  quadrant:choice(['none',...quadrants]),peerId:str(80),
@@ -140,7 +141,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
    if(!row.peerId||seenPeers.has(row.peerId)||!context.input.entities.some(e=>e.role==='competitor'&&e.id===row.peerId))continue;
    seenPeers.add(row.peerId);
   }
-  seenFindings.add(key);selected.push({...row,id:'managed_'+hash({section:row.section,observation:row.observation,proofs}).slice(0,22),proofs});
+  seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
  const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area).dimension,kind:row.kind,
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
@@ -168,80 +169,45 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
  return report;
 }
 
-// Compact, independently funded Sonnet responses. Rank and section are
-// derived from the ordered response and request, never generated twice.
-const compactRow=obj(Object.fromEntries(Object.entries(rowSchema.properties).filter(([key])=>!['rank','section'].includes(key))));
-const reportSectionReserveKurus=190;
-async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
- const accepted=new Set(sections),signal=AbortSignal.timeout(195000),evidenceCoverage=reviewed.coverage;
- const drafts=[],issues=[];
- async function write(section,wanted,quadrantFocus,following,sourceLimits=[18,9]){
-  const responseSchema=obj({
-   findings:arr(compactRow,wanted),
-   ...(section==='competition'?{peers:arr(peerSchema,wanted)}:{})
-  });
-  const maxOutputTokens=wanted===4?1650:wanted===3?1320:1050;
-  let denied;
-  for(const sourceLimit of sourceLimits){
+// Old paid checkpoints retain their exact request identity and can be
+// restored without making a model call.
+async function readLegacySection({section,brief,input,reviewed,providers}){
+ async function read(wanted,quadrantFocus){
+  for(const sourceLimit of [18,9]){
    const focused=reviewed.sectionInput(section,sourceLimit);
-   if(!Object.keys(focused.sources).length)return {noEvidence:true};
+   if(!Object.keys(focused.sources).length)return;
    const request={instruction:reportInstruction+` Bu çağrı yalnız ${managedSections[section]} bölümünü yazar. Öncelik sırasıyla en fazla ${wanted} bulgu ver. Doğrudan kanıt yoksa sayıyı tamamlamak için bulgu üretme. `+
     (quadrantFocus.length?` Yalnız şu SWOT kollarını değerlendir: ${quadrantFocus.join(', ')}. `:'')+
     ' Her satırda en çok iki kaynak kullan. Gözlem, analiz, eylem, ölçüm ve sınır için birer kısa cümle kullan. Analysis ve action alanlarını 180, observation 160, measurement ve limitation 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse question alanına kısa toplantı sorusu yaz. Önceki bulguları yineleme. Tam JSON ile bitir.',
-    brief:{brandName:brief.brandName,website:brief.website,goals:brief.goals.slice(0,650),needs:brief.needs.slice(0,650)},
-    brand:focused.approvedBrandFacts,understanding:input.plan.understanding,market:input.plan.market,
-    tasks:list(input.plan.tasks).filter(task=>task.section===section),existing:input.existing.filter(([id])=>id===section),
-    areas:focused.areas,entities:focused.entities,observations:focused.observations,sources:focused.sources};
-   const checkpoint={section,wanted,quadrantFocus,sourceLimit,requestHash:hash(request)};
-   const name='managed-section-v2:'+section;
-   try{
-    const cached=await providers.readCheckpoint?.(name,checkpoint);
-    if(cached)return cached;
-    if(savedSectionsOnly)continue;
-    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue,sourceLimit};
-    const result=await providers.manager('v8-managed-section:'+section,request,responseSchema,{
-     signal:AbortSignal.any([signal,AbortSignal.timeout(42000)]),maxOutputTokens,minimumOutputTokens:maxOutputTokens,
-     compactReview:true,lowEffort:true,reserveForFollowingKurus:following
-    });
-    const sourceIds=ids=>list(ids).filter(id=>Object.hasOwn(focused.sources,id));
-    const findings=list(result.data.findings).slice(0,wanted).filter(row=>row.proof.length&&sourceIds(row.proof).length===row.proof.length
-     &&(!quadrantFocus.length||quadrantFocus.includes(row.quadrant))).map(row=>({...row,section}));
-    const peers=list(result.data.peers).filter(row=>sourceIds(row.sourceIds).length===row.sourceIds.length);
-    const draft={section,model:result.model??null,usage:result.usage??null,findings,peers,sourceIds:unique([...findings.flatMap(f=>f.proof),...peers.flatMap(p=>p.sourceIds)])};
-    return providers.checkpoint?await providers.checkpoint(name,checkpoint,async()=>draft):draft;
-   }catch(error){
-    const issue=managedModelIssue(error,signal);
-    if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==sourceLimits.at(-1)){
-     denied={issue,requestHash:checkpoint.requestHash};continue;
-    }
-    if(!reportFailures.has(issue)&&issue!=='input_budget')throw error;
-    return {issue,sourceLimit};
-   }
-  }
-  return {issue:'section_not_saved'};
- }
- for(const [index,section] of sections.entries()){
-  if(signal.aborted){issues.push('model_timeout');break;}
-  const remaining=sections.length-index-1,following=remaining*reportSectionReserveKurus;
-  const quadrantsForSection=section==='swot'?quadrants:[];
-  const first=await write(section,section==='swot'?4:3,quadrantsForSection,following);
-  if(!first.issue){
-   if(!first.noEvidence)drafts.push(first);
-   continue;
-  }
-  // A definitive short or malformed reply can be retried with a smaller
-  // section contract. Timeouts/uncertain payments are never bought again.
-  if(!['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved'].includes(first.issue)){
-   issues.push(first.issue);continue;
-  }
-  const groups=section==='swot'?[quadrants.slice(0,2),quadrants.slice(2)]:[[]];
-  const sourceLimits=first.sourceLimit===9?[9]:undefined;
-  for(const [i,group] of groups.entries()){
-   const draft=await write(section,2,group,following+(groups.length-i-1)*reportSectionReserveKurus,sourceLimits);
-   if(draft.issue)issues.push(draft.issue);
-   else if(!draft.noEvidence)drafts.push(draft);
+    ...sectionContext(brief,input,section,focused)};
+   const cached=await providers.readCheckpoint?.('managed-section-v2:'+section,{section,wanted,quadrantFocus,sourceLimit,requestHash:hash(request)});
+   if(cached)return cached;
   }
  }
+ const swot=section==='swot',main=await read(swot?4:3,swot?quadrants:[]);
+ if(main)return [main];
+ return (await Promise.all((swot?[quadrants.slice(0,2),quadrants.slice(2)]:[[]]).map(group=>read(2,group)))).filter(Boolean);
+}
+
+function sectionContext(brief,input,section,focused){
+ return {brief:{brandName:brief.brandName,website:brief.website,goals:brief.goals.slice(0,650),needs:brief.needs.slice(0,650)},
+  brand:focused.approvedBrandFacts,understanding:input.plan.understanding,market:input.plan.market,
+  tasks:list(input.plan.tasks).filter(task=>task.section===section),existing:input.existing.filter(([id])=>id===section),
+  areas:focused.areas,entities:focused.entities,observations:focused.observations,sources:focused.sources};
+}
+
+const sectionFields=Object.fromEntries(Object.entries(rowSchema.properties).filter(([key])=>!['rank','section','quadrant','peerId'].includes(key)));
+const reportSectionReserveKurus=220;
+const retryableSections=new Set(['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved']);
+const sectionInstructions={
+ competition:'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Verilen rakip kimliğini kullan. Her rakip için tek bulgu ve peers dizisinde kendi yayıncısından ürün kanıtı ver.',
+ digital:'Hedefe etki eden dijital varlığı ve somut sayfa veya işlevi belirt. HTML etiketi bir çalışırlık veya performans testi değildir.',
+ swot:'İstenen her SWOT koluna kanıt varsa bir ayrı bulgu yaz. Boş kol için boş dizi ver. İç yetkinlikleri dış fırsat ve tehditlerden ayır.',
+ perception:'Geri bildirim temasını ve örneklemin sınırını belirt. Kaynak tek bir yorum ise tüm müşterilere genelleme yapma.',
+ readiness:'Hedefe ulaşmak için somut gerekliliği, mevcut kanıtı ve varsa bağımlılığı belirt.'
+};
+
+function projectSectionDrafts({drafts,input,reverse,context,accepted}){
  const selectedIds=unique(drafts.flatMap(draft=>draft.sourceIds));
  const usedInput={sources:Object.fromEntries(selectedIds.map(id=>[id,input.sources[id]]))};
  const ranks=new Map();
@@ -249,9 +215,105 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const rank=(ranks.get(row.section)||0)+1;ranks.set(row.section,rank);
   return {...row,rank};
  });
- const peers=drafts.flatMap(draft=>draft.peers);
- const report=projectManagedDraft({context,reverse,accepted,usedInput,data:{findings,peers}});
- const reportIssue=issues[0]||(!evidenceCoverage.complete?'incomplete_evidence_review':undefined);
+ return projectManagedDraft({context,reverse,accepted,usedInput,data:{findings,peers:drafts.flatMap(draft=>draft.peers)}});
+}
+
+async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
+ const accepted=new Set(sections),signal=AbortSignal.timeout(225000),evidenceCoverage=reviewed.coverage;
+ const draftsBySection=new Map(),issues=new Map();
+ const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
+
+ async function write({section,wanted,focus,prior,repair},following){
+  const swot=section==='swot',competition=section==='competition';
+  const row=obj({...sectionFields,proof:arr(field(16),2),...(competition?{peerId:str(80)}:{})});
+  const responseSchema=swot?obj(Object.fromEntries(focus.map(quadrant=>[quadrant,arr(row,1)]))):
+   obj({findings:arr(row,wanted),...(competition?{peers:arr(peerSchema,wanted)}:{})});
+  const count=swot?focus.length:wanted;
+  const maxOutputTokens=350+count*550,minimumOutputTokens=200+count*450;
+  let denied;
+  for(const sourceLimit of repair?[24,10]:[18,10]){
+   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2});
+   if(!Object.keys(focused.sources).length)return {noEvidence:true};
+   const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
+    ...sectionContext(brief,input,section,focused),prior};
+   const name='managed-section-v3:'+section;
+   const checkpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
+   const cached=await providers.readCheckpoint?.(name,checkpoint);
+   if(cached)return cached;
+   if(savedSectionsOnly)continue;
+   if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue};
+   if(signal.aborted)return {issue:'model_timeout'};
+   try{
+    const result=await providers.manager('v8-managed-section:'+section,request,responseSchema,{
+     signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following
+    });
+    const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
+     list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
+    const peers=list(result.data.peers);
+    const sourceIds=unique([...findings.flatMap(f=>f.proof),...peers.flatMap(p=>p.sourceIds)]).filter(id=>Object.hasOwn(focused.sources,id));
+    const draft={section,model:result.model??null,usage:result.usage??null,findings,peers,sourceIds};
+    const checked=project([draft],new Set([section]));
+    const ids=new Set(checked.bhsSections.find(item=>item.id===section).findingIds);
+    const valid=findings.filter(f=>ids.has(managedFindingId(f,unique(f.proof.map(id=>reverse.get(id)).filter(Boolean)))));
+    const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};
+    return providers.checkpoint?await providers.checkpoint(name,checkpoint,async()=>retained):retained;
+   }catch(error){
+    const issue=managedModelIssue(error,signal);
+    if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==10){
+     denied={issue,requestHash:checkpoint.requestHash};continue;
+    }
+    if(!reportFailures.has(issue)&&issue!=='input_budget')throw error;
+    return {issue};
+   }
+  }
+  return {issue:'section_not_saved'};
+ }
+
+ function retain(section,draft){
+  if(draft.issue)issues.set(section,draft.issue);
+  else if(!draft.noEvidence)draftsBySection.get(section).push(draft);
+ }
+ // Fund the first pass before repairing any section. Only reservations are
+ // serialised by the ledger; two independent provider requests can overlap.
+ for(let i=0;i<sections.length;i+=2){
+  const group=sections.slice(i,i+2),following=(sections.length-i-group.length)*reportSectionReserveKurus;
+  await Promise.all(group.map(async section=>{
+   draftsBySection.set(section,[]);
+   const result=await write({section,wanted:section==='swot'?4:3,focus:section==='swot'?quadrants:[],prior:[],repair:false},following);
+   if(savedSectionsOnly&&result.issue==='section_not_saved'){
+    const legacy=await readLegacySection({section,brief,input,reviewed,providers});
+    if(legacy.length){draftsBySection.set(section,legacy);return;}
+   }
+   retain(section,result);
+  }));
+ }
+
+ const repairs=[];
+ for(const section of sections){
+  const report=project(draftsBySection.get(section),new Set([section]));
+  const coverage=report.bhsSections.find(item=>item.id===section);
+  const issue=issues.get(section);
+  if(coverage.complete||issue&&!retryableSections.has(issue))continue;
+  issues.delete(section);
+  const prior=report.findings.map(f=>[f.statement,f.swotQuadrant||null,f.peerId||null]);
+  if(section==='swot'){
+   for(let i=0;i<coverage.missingQuadrants.length;i+=2){
+    const focus=coverage.missingQuadrants.slice(i,i+2);
+    repairs.push({section,wanted:focus.length,focus,prior,repair:true});
+   }
+  }else repairs.push({section,wanted:Math.max(1,2-coverage.count),focus:[],prior,repair:true});
+ }
+ for(let i=0;i<repairs.length;i+=2){
+  const group=repairs.slice(i,i+2);
+  const results=await Promise.all(group.map(task=>write(task,(repairs.length-i-group.length)*reportSectionReserveKurus)));
+  group.forEach((task,j)=>retain(task.section,results[j]));
+ }
+ const drafts=sections.flatMap(section=>draftsBySection.get(section));
+ const report=project(drafts);
+ const incomplete=new Set(report.bhsSections.filter(s=>!s.complete).map(s=>s.id));
+ const sectionIssues=unique([...issues].filter(([section])=>incomplete.has(section)).map(([,issue])=>issue));
+ const reportIssue=sectionIssues[0]||(!evidenceCoverage.complete?'incomplete_evidence_review':undefined);
  if(reportIssue&&!allowPartial)throw new BudgetError(reportIssue,'BHS bölüm yazımı veya kanıt incelemesi tamamlanmadı; mevcut bölümler korundu.');
  let result=report;
  if(!result.findings.length&&reportIssue){
@@ -259,7 +321,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   if(!result.findings.length)result=managedBrandContinuation(brief,brand)?.report||result;
  }
  return {report:result,completion:{model:drafts.find(d=>d.model)?.model||batchReviews.find(d=>d.model)?.model||null,usage:drafts.map(d=>d.usage).filter(Boolean)},
-  evidenceCoverage,invalidObservations:reviewed.invalidObservations,reportIssue,sectionIssues:unique(issues)};
+  evidenceCoverage,invalidObservations:reviewed.invalidObservations,reportIssue,sectionIssues};
 }
 
 function reviewedEvidenceReport(input,reviewed,context,reverse){
