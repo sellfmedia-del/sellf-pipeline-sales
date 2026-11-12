@@ -17,7 +17,8 @@ const areas=new Map(methodologyAreas.map(a=>[a.key,a]));
 const list=value=>Array.isArray(value)?value:[];
 const unique=value=>[...new Set(value)];
 const choice=values=>({type:'string',enum:values});
-const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
+const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size',
+ 'provider_accounting','provider_rejected','token_count','fx_limit','fx_unavailable','not_configured','tariff_expired','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
 const rowSchema=obj({
  section:choice(sectionKeys),area:choice([...areas.keys()]),rank:{type:'integer',minimum:1,maximum:10},
@@ -247,8 +248,11 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  const report=projectManagedDraft({context,reverse,accepted,usedInput,data:{findings,peers}});
  const reportIssue=issues[0]||(!evidenceCoverage.complete?'incomplete_evidence_review':undefined);
  if(reportIssue&&!allowPartial)throw new BudgetError(reportIssue,'BHS bölüm yazımı veya kanıt incelemesi tamamlanmadı; mevcut bölümler korundu.');
- const result=report.findings.length||!reportIssue?report:
-  (managedBrandContinuation(brief,brand)?.report||reviewedEvidenceReport(input,reviewed,context,reverse));
+ let result=report;
+ if(!result.findings.length&&reportIssue){
+  result=reviewedEvidenceReport(input,reviewed,context,reverse);
+  if(!result.findings.length)result=managedBrandContinuation(brief,brand)?.report||result;
+ }
  return {report:result,completion:{model:drafts.find(d=>d.model)?.model||batchReviews.find(d=>d.model)?.model||null,usage:drafts.map(d=>d.usage).filter(Boolean)},
   evidenceCoverage,invalidObservations:reviewed.invalidObservations,reportIssue,sectionIssues:unique(issues)};
 }
