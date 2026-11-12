@@ -37,7 +37,8 @@ export function planCollectionFunding({chargedKurus,capKurus},infrastructureKuru
 const searchStages=['sector_sources','sector_draft','sector_review'];
 const readStages=['sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources'];
 const scrapeStages=['competition_draft','competition_review','competition_correction_sources'];
-const inventoryStages=['competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot'];
+export const inventoryStages=Object.freeze(['competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot']);
+export const inventoryOutputTokens=4096;
 const quadrants=['strength','weakness','opportunity','threat'];
 const areasByKey=new Map(methodologyAreas.map(area=>[area.key,area]));
 const markets=[[/Türkiye|Turkey/iu,'Türkiye','TR','tr'],[/United Kingdom|Birleşik Krallık|\bUK\b/iu,'United Kingdom','GB','en'],[/United States|Amerika Birleşik Devletleri|\bUSA\b/iu,'United States','US','en'],[/Germany|Almanya/iu,'Germany','DE','de'],[/France|Fransa/iu,'France','FR','fr']];
@@ -514,7 +515,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const found=await collectAttempt(()=>pool.worker('v8-collection-index',{
    instruction:'Bu bir kanıt envanteridir. Kaynakların söylediği bütün ayrı gözlemleri kısa biçimde kaydet. Eleme, puanlama, önem sıralaması, uzlaştırma veya tekilleştirme yapma. Birbirine ters iddiaları ayrı kayıtlarla koru. Her iddiaya özgün proofId ver. areas listesindeki ilgili alanı işaretle. Rakipliği henüz değerlendirme; kaynakta kendi ürününü satan kuruluşun adını ve ilgili proofIdyi organizations içinde kaydet.',
    ...(managed?{researchTasks:managed.tasks}:{}),...stageModelInput(context,{areas:true})
-  },schema,{maxOutputTokens:4096}));
+  },schema,{maxOutputTokens:inventoryOutputTokens}));
   return save({inventory:found.data?[found.data]:[],...(found.unavailable?{unavailable:[found.reason]}:{})});
  }
  if(phase==='coverage_plan'){

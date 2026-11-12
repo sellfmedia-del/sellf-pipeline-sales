@@ -6,8 +6,11 @@ import {runBoundedStage} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
-import {managedReviewPhases} from './managed-budget.mjs';
+import {managedInventoryCeilingKurus,managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
+import {inventoryOutputTokens,inventoryStages} from './collection-first.mjs';
+import {minimumV8GeminiReservation} from './supervised-providers.mjs';
+import {researchTariff} from './research-tariff.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
  if(job.phase==='synthesis'&&options.phaseCeiling){
@@ -29,7 +32,16 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   }
  }
  if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
-  const remaining=options.phaseCeiling-(await options.ledger.status()).chargedKurus;
+  const {chargedKurus}=await options.ledger.status();
+  const remaining=options.phaseCeiling-chargedKurus;
+  if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion===2&&inventoryStages.includes(job.phase)){
+   // This stage cannot fall back to another model. Even a one-token request
+   // must fund Gemini's output/reasoning and the worker before it can run.
+   const ceiling=Math.min(options.phaseCeiling,managedInventoryCeilingKurus);
+   const minimum=minimumV8GeminiReservation(inventoryOutputTokens,options.providers.now?.(),researchTariff);
+   if(chargedKurus+workerInfraReservationKurus+minimum>ceiling)
+    return runStage({...options,skipManagedCollection:true});
+  }
   if(remaining<workerInfraReservationKurus){
    if(managedReviewPhases.includes(job.phase)){
     const manager=async()=>{throw new BudgetError('budget_limit','BHS kanıt incelemesi için ayrılan bütçeye ulaşıldı.');};
