@@ -72,7 +72,14 @@ export async function runBoundedStage({phase,brief,checkpointHash,ledger,provide
  const key=name=>stageKey(brief,name,researchVersion,checkpointHash);
  return ledger.once(key(phase),{brief,phase,version:'bounded-bhs-v1'},0,async()=>{
   try{
-  const previous=async name=>{const row=await ledger.get(key(name));if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');return row.value;};
+  const receipts=new Map();
+  const previous=name=>{
+   if(!receipts.has(name))receipts.set(name,ledger.get(key(name)).then(row=>{
+    if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');
+    return row.value;
+   }));
+   return receipts.get(name);
+  };
   if(skipManagedCollection){
    const prior=await previous(sequentialPhases[sequentialPhases.indexOf(phase)-1]);
    return {collectionFirst:true,phase,decision:'accepted',methodologyVersion:prior.methodologyVersion,

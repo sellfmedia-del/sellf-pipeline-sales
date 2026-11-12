@@ -4,7 +4,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
-import {isManagedInputLimit,managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -17,6 +17,7 @@ const areas=new Map(methodologyAreas.map(a=>[a.key,a]));
 const list=value=>Array.isArray(value)?value:[];
 const unique=value=>[...new Set(value)];
 const choice=values=>({type:'string',enum:values});
+const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
 const rowSchema=obj({
  section:choice(sectionKeys),area:choice([...areas.keys()]),rank:{type:'integer',minimum:1,maximum:10},
@@ -83,7 +84,7 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls}){
+export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,allowPartial=false}){
  const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls});
  const accepted=new Set(sections);
  const signal=AbortSignal.timeout(250000);
@@ -99,16 +100,26 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  const {coverage:evidenceCoverage,invalidObservations}=reviewed;
  if(evidenceCoverage.evidenceRows&&!evidenceCoverage.reviewedEvidenceRows)
   throw new BudgetError(batchReviews.find(review=>review.issue)?.issue||'model_output_invalid','Nihai rapor için doğrulanmış kanıt incelemesi bulunamadı.');
- let completion,usedInput;
+ let completion,usedInput,reportIssue;
  // Every row has already reached Claude. If the ranked shortlist cannot be
  // admitted, preserve the strongest candidates across batches in the report.
  for(const limit of [...new Set([reviewed.candidates.length,120,72,36].map(size=>Math.min(size,reviewed.candidates.length)))]){
   usedInput=reviewed.reportInput(limit);
   usedInput.instruction+=' Kanıtlar ayrı Claude çağrılarında incelendi. Verilen adayların kaynaklarını karşılaştırarak her bölüm için tek bir nihai sıralama oluştur.';
   try{completion=await providers.manager('v8-managed-actionable-report',usedInput,schema,reportOptions);break;}
-  catch(error){if(!isManagedInputLimit(error))throw error;}
+  catch(error){
+   if(isManagedInputLimit(error))continue;
+   const issue=managedModelIssue(error,signal);
+   if(!allowPartial||!reportFailures.has(issue))throw error;
+   reportIssue=issue;break;
+  }
  }
- if(!completion)throw new BudgetError('budget_limit','Claude kanıtları inceledi ancak nihai rapor için ayrılan bütçe yeterli olmadı.');
+ if(!completion){
+  if(!allowPartial)throw new BudgetError('budget_limit','Claude kanıtları inceledi ancak nihai rapor için ayrılan bütçe yeterli olmadı.');
+  const report=reviewedEvidenceReport(input,reviewed,context,reverse);
+  if(!report.findings.length)throw new BudgetError(reportIssue||'budget_limit','Nihai BHS için gösterilebilecek doğrulanmış bulgu bulunamadı.');
+  return {report,completion:{model:batchReviews.find(review=>review.model)?.model,usage:null},invalidObservations,evidenceCoverage,reportIssue:reportIssue||'budget_limit'};
+ }
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const selected=[],seenFindings=new Set(),seenPeers=new Set();
  const sorted=list(completion.data.findings).sort((a,b)=>a.rank-b.rank);
@@ -147,6 +158,27 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  report.bhsSections=managedCoverage(report);
  return {report,completion,invalidObservations:unique([...invalidObservations,...list(completion.data.invalidObservations).filter(id=>usedInput.observations.some(row=>row[0]===id))]),
   evidenceCoverage};
+}
+
+function reviewedEvidenceReport(input,reviewed,context,reverse){
+ const observations=new Map(input.observations.map(row=>[row[0],row]));
+ const sourceDimensions={c:'competition',d:'digital',p:'perception',r:'operations'};
+ const findings=[],seen=new Set(),counts=new Map();
+ const ranked=unique([...reviewed.candidates,...observations.keys(),...Object.keys(input.sources)]);
+ for(const id of ranked){
+  const code=reviewed.verdict(id);
+  if(!code||code==='u'||code==='x')continue;
+  const row=observations.get(id);
+  const sources=(row?.[3]||[id]).map(alias=>context.known.get(reverse.get(alias))).filter(card=>card&&!card.metadataOnly&&card.method!=='search-snippet');
+  const dimension=areas.get(row?.[1])?.dimension||sourceDimensions[code];
+  if(!dimension||!sources.length||(counts.get(dimension)||0)>=4)continue;
+  const quote=sources.find(card=>row?.[2]===card.quote)||sources[0];
+  if(seen.has(quote.quote))continue;
+  seen.add(quote.quote);counts.set(dimension,(counts.get(dimension)||0)+1);
+  findings.push({id:'reviewed_'+id,dimension,kind:'observation',observation:quote.quote,sourceIds:[quote.id],priority:'medium',
+   limitation:'İncelenen kaynak kesiti. Nihai ticari analiz ve eylem önerisi tamamlanmadı.'});
+ }
+ return projectExpertReport({findings,dimensions:dimensions.map(({id})=>({id,findingIds:findings.filter(f=>f.dimension===id).map(f=>f.id)}))},context);
 }
 
 export function managedBrandContinuation(brief,brand){

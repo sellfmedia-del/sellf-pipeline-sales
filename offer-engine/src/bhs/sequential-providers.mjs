@@ -12,6 +12,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0,phas
  const ceiling=sequentialPhases.includes(phase)&&phase!=='complete'&&Number.isSafeInteger(phaseLimitKurus)&&phaseLimitKurus>0?Math.min(tariff.capKurus,phaseLimitKurus):null;
  if(!ceiling)throw new BudgetError('invalid_phase','BHS aşama bütçesi geçersiz.');
  return {...ledger,status:async()=>{const status=await ledger.status();return {...status,capKurus:Math.min(status.capKurus,ceiling)};},quoteReservation:reserveStageQuote,once:async(key,input,amount,run,options={})=>{
+  if(amount===0)return ledger.once(key,input,0,run,options);
   // Base quotes already contain a 20% envelope at <=60 TRY/USD. Keep that
   // envelope as a tax allowance when settling, plus 3% conversion and integer
   // rounding headroom. Releasing the tax portion would break an all-in cap.
@@ -19,7 +20,7 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0,phas
   const limit=Math.min(ceiling,options.limitKurus??tariff.capKurus),prior=await ledger.get(key);
   if(amount&&!prior){const status=await ledger.status();if(status.chargedKurus+reserved>limit){const error=new BudgetError('budget_limit','Bu çağrı run genelindeki kalan bütçeye sığmıyor; yeni ücretli çağrı başlatılmadı.');error.budgetDiagnostic={phase,requiredKurus:reserved,availableKurus:Math.max(0,limit-status.chargedKurus),runLimitKurus:limit,remainingKurus:status.capKurus-status.chargedKurus};throw error;}}
   return ledger.once(key,input,reserved,async()=>{
-   const value=await run();if(!amount)return value;
+   const value=await run();
    if(options.settle){
     const beforeTax=options.settle(value);
     if(!Number.isSafeInteger(beforeTax)||beforeTax<0)throw new BudgetError('provider_accounting','BHS kullanım kaydı geçersiz.');

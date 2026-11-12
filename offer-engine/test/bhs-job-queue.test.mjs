@@ -117,6 +117,16 @@ test('a completed BHS can reach the deterministic scope fallback even below one 
   assert.equal(result.costFallback,true);assert.equal(result.scopePlan.fallback,true);assert.deepEqual(await f.ledger.status(),cost);
  }finally{await f.close();}
 });
+test('the managed report can pass reviewed evidence to the offer when a paid worker reservation cannot fit',async()=>{
+ const job={phase:'synthesis'};
+ const options={phase:'synthesis',phaseCeiling:4621,ledger:{status:async()=>({chargedKurus:4222,capKurus:5000})},
+  providers:{manager:()=>assert.fail('a paid writer must not run without the reservation')}};
+ const result=await runMeteredBhsPhase(job,options,{meter:()=>assert.fail('the worker reservation does not fit'),runStage:async({providers})=>{
+  await assert.rejects(providers.manager(),error=>error.code==='budget_limit');
+  return 'reviewed evidence handoff';
+ }});
+ assert.equal(result,'reviewed evidence handoff');
+});
 test('existing audit endpoint queues v8 and reconnects to the original budget without running a browser-paid phase',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';let enqueues=0,finds=0;
  try{

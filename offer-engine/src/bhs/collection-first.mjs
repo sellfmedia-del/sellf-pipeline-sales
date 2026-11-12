@@ -1,5 +1,6 @@
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
-import {gzipSync} from 'node:zlib';
+import {gzip} from 'node:zlib';
+import {promisify} from 'node:util';
 import {briefHash,dimensions} from './brief.mjs';
 import {evidenceExcerpts,evidenceHash} from './evidence.mjs';
 import {projectExpertReport} from './expert-report.mjs';
@@ -17,6 +18,8 @@ import {managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
+const compressPage=promisify(gzip);
+const archiveConcurrency=4;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
 const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
 export function collectionBrandCeiling(capKurus,infrastructureKurus,now){
@@ -130,10 +133,23 @@ async function actorRequest(context,providers,index,market,managedPlan){
 export async function readResearchPages(brief,plan,targets,providers,collect){
  if(!targets.length)return {sources:[],unavailable:[]};
  return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
+  const entries=new Map();
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
-   await providers.checkpoint('collection-raw-page',input,async()=>({encoding:'gzip-base64',data:gzipSync(JSON.stringify(page)).toString('base64')}));
+   const key=hash(input);
+   if(!entries.has(key))entries.set(key,{input,page});
   }
+  const pending=entries.values();
+  const workers=Array.from({length:Math.min(archiveConcurrency,entries.size)},async()=>{
+   let failure;
+   for(const {input,page} of pending){
+    try{await providers.checkpoint('collection-raw-page',input,async()=>({encoding:'gzip-base64',data:(await compressPage(JSON.stringify(page))).toString('base64')}));}
+    catch(error){failure??=error;}
+   }
+   if(failure)throw failure;
+  });
+  const failed=(await Promise.allSettled(workers)).find(result=>result.status==='rejected');
+  if(failed)throw failed.reason;
  }});
 }
 
@@ -493,13 +509,13 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(managed){
   const args=await managedCollectionInputs(brief,managed,previous);
   const batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
-  const {report,completion,invalidObservations,evidenceCoverage}=await synthesizeManagedReport({...args,providers,batchReviews});
+  const {report,completion,invalidObservations,evidenceCoverage,reportIssue}=await synthesizeManagedReport({...args,providers,batchReviews,allowPartial:true});
   const {packet}=args.context;
   const urls=new Set(report.sources.map(source=>source.url));
   const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
-  return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,
+  return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,...(reportIssue?{toolIssues:[reportIssue]}:{}),
    researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:managed,
-    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage}});
+    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage,...(reportIssue?{reportIssue}:{})}});
  }
  const [brand,{packet},inventory,focused]=await Promise.all([previous('brand'),collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
  const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
