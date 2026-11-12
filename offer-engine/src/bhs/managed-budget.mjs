@@ -4,6 +4,7 @@ import {briefHash} from './brief.mjs';
 export const researchCapKurus=3000;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
+export const isManagedPlanRecovery=job=>job.budgetRecoveryVersion==='managed-plan-output-v1'&&job.budgetRecoveryPhase==='sector_sources'&&job.phase==='sector_sources';
 export const managedReviewPhases=Object.freeze(['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft']);
 export const managedBhsEnabled=()=>process.env.OFFER_BHS_MANAGED==='1'
  || (process.env.OFFER_BHS_MANAGED===undefined&&process.env.VERCEL_ENV==='production'

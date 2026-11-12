@@ -247,3 +247,28 @@ test('recovering measured compute never erases an older unmeasured commitment',a
   assert.equal((await f.ledger.get('infra:v8:competition_review:'+hash)).state,'uncertain');assert.equal((await f.ledger.status()).chargedKurus,before.chargedKurus+result.accountedKurus);assert.ok(result.accountedKurus>0);
  }finally{await f.close();}
 });
+
+test('an explicitly recovered truncated planner advances the original job and preserves the charged response',async()=>{
+ const f=await fixture();try{
+  await f.enqueue();const initial=await f.queue.claim();
+  await f.queue.pause(initial,{code:'incomplete'});
+  await f.db.query("update public.pipeline_bhs_jobs set phase='sector_sources' where id=$1",[initial.id]);
+  const input={brief,phase:'sector_sources',version:'bounded-bhs-v1'},key=stageKey(brief,'sector_sources','v8');
+  await f.ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:1}));
+  await f.ledger.once('paid-truncated-response',{},382,async()=>({rejectedOutput:'incomplete'}));
+  await assert.rejects(f.ledger.once(key,input,0,async()=>{throw Object.assign(Error(),{code:'incomplete'});}));
+  const before=await f.ledger.status();
+  const options={queue:f.queue,getLedger:f.queue.getLedger,getProviders:opts=>{
+   assert.equal(opts.skipManagedPlanner,true);assert.equal(opts.phaseLimitKurus,3000);return {};
+  },runStage:opts=>opts.ledger.once(key,input,0,async()=>({collectionFirst:true,phase:'sector_sources'}))};
+  await f.db.query("update public.pipeline_bhs_jobs set state='queued' where id=$1",[initial.id]);
+  await assert.rejects(runClaimedBhsStage({job:await f.queue.claim(),...options}),error=>error.code==='stage_paused');
+  await f.db.query("update public.pipeline_bhs_jobs set state='queued',spec=spec||$2::jsonb where id=$1",
+   [initial.id,JSON.stringify({budgetRecoveryVersion:'managed-plan-output-v1',budgetRecoveryPhase:'sector_sources'})]);
+  const recovered=await f.queue.claim();
+  await runClaimedBhsStage({job:recovered,...options});
+  assert.equal((await f.queue.read(recovered)).phase,'sector_draft');
+  assert.deepEqual(await f.ledger.status(),before);
+  assert.equal((await f.ledger.get('paid-truncated-response')).charge_kurus,382);
+ }finally{await f.close();}
+});

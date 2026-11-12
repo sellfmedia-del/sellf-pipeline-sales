@@ -11,7 +11,7 @@ import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stage
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
-import {managedActors,planManagedResearch} from './managed-research.mjs';
+import {groundedManagedResearchPlan,managedActors,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch} from './managed-evidence-review.mjs';
@@ -150,7 +150,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   if(!host||host===researchHost(brief.website)||hints.some(peer=>researchHost(peer.website)===host))return;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  };
- if(repair&&product){
+ if((repair||managedPlan?.plannerFallback)&&product){
   const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
   const query=[format,managedPlan?.market||market?.[1],market?.[3]==='tr'?'markalar ürün çeşitleri satın al':'brands product range shop'].filter(Boolean).join(' ');
   const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
@@ -434,13 +434,17 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const sector=first&&managed?await collectAttempt(()=>pool.search(
    [brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals,'sektör pazar hacmi gelir kanalları rekabet'].join(' ').slice(0,500),
    {depth:'basic',maxResults:8,retainRaw:true})):null;
-  const managedPlan=first&&managed?await planManagedResearch({brief,brand,sector,providers:pool}):managed||null;
+  const planned=first&&managed?providers.skipManagedPlanner
+   ?{unavailable:true,reason:'incomplete'}
+   :await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool})):null;
+  const managedPlan=planned?.unavailable?groundedManagedResearchPlan(brief,brand):planned||managed||null;
   const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
   const searches=sector?[sector]:[];
   for(let i=0;i<topics.length;i+=3){
    searches.push(...await Promise.all(topics.slice(i,i+3).map(({topic,query})=>collectAttempt(()=>pool.search(query||queryFor(brief,topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
   }
-  return save({funding,searches,...(first&&managedPlan?{managedPlan}: {})});
+  return save({funding,searches,...(first&&managedPlan?{managedPlan}: {}),
+   ...(planned?.unavailable?{toolIssues:[planned.reason]}:{})});
  }
  if(readIndex>=0){
   const brand=await previous('brand'),searches=await sourcesFrom(previous,searchStages,'searches');

@@ -1,11 +1,12 @@
 import {BudgetError} from '../budget/ledger.mjs';
+import {isManagedPlanRecovery} from './managed-budget.mjs';
 // Reviewed 2026-11-10; twice the iad1 Fluid rates are a safety envelope.
 // Covers at most 2 vCPU / 4 GB / 300s. This is incremental worker compute, separate from the existing 5 TRY reserve
 // for gateway, polling and storage overhead. No fixed subscription is allocated.
 export const workerInfraReservationKurus=400;
 export async function meteredBhsStage({job,ledger,run,region=process.env.VERCEL_REGION,clock=Date.now,cpu=process.cpuUsage}){
  if(region!=='iad1')throw new BudgetError('infra_tariff_unverified','BHS çalışanının bölge maliyeti doğrulanmalı.');
- const recovery=['shared-budget-v1','shared-budget-v2'].includes(job.budgetRecoveryVersion)&&job.budgetRecoveryPhase===job.phase;
+ const recovery=isManagedPlanRecovery(job)||['shared-budget-v1','shared-budget-v2'].includes(job.budgetRecoveryVersion)&&job.budgetRecoveryPhase===job.phase;
  // An explicitly authorized recovery keeps the old unmeasured commitment.
  // The new attempt has its own once-only receipt in the SAME capped account.
  const key='infra:v8:'+job.phase+':'+job.briefHash+(recovery?':'+job.budgetRecoveryVersion:'');
