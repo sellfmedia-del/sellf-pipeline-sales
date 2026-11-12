@@ -19,8 +19,9 @@ Scraper listesinden görevle ilgili olanları, hangi platformu ve hangi amacı i
 Yalnız kısa plan JSON'u üret. Önce beş bölümün her biri için tek görev yaz. Yalnız farklı bir veri kaynağı araştırılacaksa en çok üç görev ekle. Her göreve en çok üç kısa metrik ve tek cümle amaç yaz. Açıklamaları tekrarlama. Toplam yanıt hedefi 1.800 token.`;
 
 export async function planManagedResearch({brief,brand,sector,providers}){
+ const {marketContext,fundamentals,missing}=brand.review||{};
  const result=await providers.manager('v8-managed-research-plan',{instruction,brief,
-  brandFacts:brand.facts,brandReview:brand.review,
+  brandFacts:brand.facts,brandReview:providers.managedBudgetVersion===2?{marketContext,fundamentals,missing}:brand.review,
   sectorEvidence:(sector?.results||[]).slice(0,8).map(({url,title,content})=>[url,title,content.slice(0,350)]),
   sections:managedSections,availableActors:managedActors
  },planSchema,{maxOutputTokens:3200,minimumOutputTokens:2400,compactReview:true,lowEffort:true});

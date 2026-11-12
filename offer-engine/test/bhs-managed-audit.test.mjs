@@ -21,7 +21,7 @@ import {createSupervisedProviders} from '../src/bhs/supervised-providers.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
 import {gunzipSync} from 'node:zlib';
 
-import {planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from '../src/bhs/managed-evidence-review.mjs';
+import {planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from '../src/bhs/managed-evidence-review.mjs';
 import {readResearchPages,runCollectionFirstStage} from '../src/bhs/collection-first.mjs';
 
 const reviewRows=({rows,sources})=>rows.map(([id,area,text,proof])=>({id,area,text:text?.quote?sources[text.quote][3]:text,proof}));
@@ -34,20 +34,121 @@ const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
 test('research and synthesis reserve independently, including parallel calls and persistent policy',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const phase=await managedPhaseBudget({ledger,brief,phase:'brand_plan',enabled:true});
- const claims=await Promise.allSettled([1,2,3].map(i=>phase.ledger.once('research:'+i,{},1250,async()=>i)));
+ const claims=await Promise.allSettled([1,2,3].map(i=>phase.ledger.once('research:'+i,{},1000,async()=>i)));
  assert.equal(claims.filter(r=>r.status==='fulfilled').length,2);
- assert.equal((await ledger.status()).chargedKurus,3000);
+ assert.equal((await ledger.status()).chargedKurus,2500);
  const review=await managedPhaseBudget({ledger,brief,phase:managedReviewPhases[0],enabled:false});
  assert.equal(review.managedAudit,true);
- assert.equal(review.phaseCeiling,5000);
- await review.ledger.once('claude-review',{},300,async()=>({}));
+ assert.equal(review.managedBudgetVersion,2);
+ assert.equal(review.phaseCeiling,3000);
+ await assert.rejects(review.ledger.once('oversized-review',{},501,async()=>assert.fail('review cannot borrow report funds')),error=>error.code==='budget_limit');
+ await review.ledger.once('claude-review',{},500,async()=>({}));
  const synthesis=await managedPhaseBudget({ledger,brief,phase:'synthesis',enabled:false});
  assert.equal(synthesis.phaseCeiling,5000);
- await synthesis.ledger.once('claude',{},1300,async()=>({}));
+ await synthesis.ledger.once('claude',{},1600,async()=>({}));
  const scope=await managedPhaseBudget({ledger,brief,phase:'scope',enabled:false});
  await assert.rejects(scope.ledger.once('scope-over',{},401,async()=>assert.fail('paid provider called')),error=>error.code==='budget_limit');
  await scope.ledger.once('scope',{},400,async()=>({}));
  assert.equal((await ledger.status()).chargedKurus,5000);
+});
+
+test('454 evidence rows recover only 136 omitted verdicts and finish each grounded report section after a paid cut',async t=>{
+ const wire=await localBudget({lead:'managed-replay-454'});t.after(wire.close);
+ const evidence=packet();
+ const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const specifications={
+  competition:[['none','peer0',/Organic Alpha Türkiye/],['none','peer1',/Organic Beta Türkiye/]],
+  digital:[['none','',/başlık ve açıklama meta verileri/],['none','',/e-posta bültenine/]],
+  swot:[['strength','',/doğrudan tüketiciye satılır/],['weakness','',/teslimat gecikmesini/],['opportunity','',/tekrar satın alma/],['threat','',/hammadde maliyetleri/]],
+  perception:[['none','',/teslimat gecikmesini/],['none','',/müşterileri içerik açıklaması/]],
+  readiness:[['none','',/teslimat süresi/],['none','',/ekip büyüklüğü/]]
+ };
+ const types={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
+ const areas={competition:'competition_1',digital:'digital_1',swot:'operations_1',perception:'perception_1',readiness:'financial_1'};
+ const records=Object.entries(specifications).flatMap(([section,rows])=>rows.map(([quadrant,peerId,match])=>{
+  const card=context.cards.find(item=>match.test(item.quote));
+  assert.ok(card,section);
+  return {section,quadrant,peerId,card};
+ }));
+ const inventory=[{observations:records.map(record=>({area:areas[record.section],text:record.card.quote,sourceIds:[record.card.id]}))}];
+ const args={brief,brand:{facts:[]},plan:{understanding:{goals:brief.goals},tasks:[]},context,inventory};
+ const initial=planPositionalEvidenceReview(managedReportInput(args).input).flatMap(batch=>batch.rows).length;
+ inventory[0].observations.push(...Array.from({length:454-initial},(_,i)=>({area:'operations_2',text:'Kaynaklı arşiv satırı '+i+'.',sourceIds:[records.at(-1).card.id]})));
+ const {input}=managedReportInput(args),batches=planPositionalEvidenceReview(input),rows=batches.flatMap(batch=>batch.rows);
+ assert.equal(rows.length,454);
+ const omitted=new Set([...rows.slice(0,135).map(row=>row.id),rows.at(-1).id]);
+ const resubmitted=new Set(),initialSeen=new Set(),sectionWrites=[],saved=new Map();
+ let failed=false;
+ const options={anthropicKey:'synthetic',receiptVersion:'v8',now:()=>Date.parse('2026-11-12T12:00:00Z'),
+  researchFx:async()=>({usdTry:44}),fetchImpl:async(url,{body})=>{
+   const request=JSON.parse(body);
+   if(url.endsWith('/count_tokens'))return Response.json({input_tokens:Math.max(1800,Math.ceil(Buffer.byteLength(request.messages[0].content)/4))});
+   const requestInput=JSON.parse(request.messages[0].content),inputTokens=Math.max(1800,Math.ceil(Buffer.byteLength(request.messages[0].content)/4));
+   let data,cut=false;
+   if(requestInput.rows){
+    const followup=requestInput.rows.every(([id])=>initialSeen.has(id));
+    for(const [id] of requestInput.rows)(followup?resubmitted:initialSeen).add(id);
+    data={verdicts:Object.fromEntries(requestInput.rows.filter(([id])=>followup||!omitted.has(id)).map(([id])=>[id,types[records[Number(id.slice(1))-1]?.section]||'g'])),
+     candidates:requestInput.rows.map(([id])=>id).filter(id=>Number(id.slice(1))<=records.length&&id.startsWith('o'))};
+   }else{
+    const section=Object.keys(managedSections).find(id=>request.system.includes('yalnız '+managedSections[id]+' bölümünü'));
+    assert.ok(section);
+    sectionWrites.push(section);
+    cut=section==='digital'&&!failed;
+    if(cut)failed=true;
+    const relevant=records.filter(row=>row.section===section);
+    const alias=card=>Object.keys(requestInput.sources).find(id=>requestInput.sources[id][3]===card.quote&&requestInput.sources[id][0]===card.url);
+    const findings=relevant.map(({card,quadrant,peerId})=>{
+     assert.ok(alias(card),section+' must receive its evidence');
+     return {area:areas[section],quadrant,peerId,observation:card.quote,proof:[alias(card)],kind:'observation',
+      analysis:'Bu koşul müşterinin satın alma kararını etkileyebilir.',action:'Ürün sayfasında bu koşulu belirginleştir ve kontrollü test et.',
+      measurement:'Kontrol ve test grubunun sepete ekleme oranını ölç.',limitation:'Gerçek dönüşüm oranı bu kaynakta ölçülmedi.',question:'Karşılaştırılabilir dönem verisi var mı?'};
+    });
+    data={findings,...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
+   }
+   const tool=Boolean(request.tools),output=cut?request.max_tokens:Math.min(request.max_tokens,requestInput.rows?460:620);
+   return Response.json({model:request.model,stop_reason:cut?'max_tokens':tool?'tool_use':'end_turn',usage:{input_tokens:inputTokens,output_tokens:output},
+    content:tool?[{type:'tool_use',name:'emit_bhs_stage',input:data}]:[{type:'text',text:cut?'{"findings":[':JSON.stringify(data)}]});
+  }};
+ const research=await managedPhaseBudget({ledger:wire.ledger,brief,phase:'brand_plan',enabled:true});
+ await research.ledger.once('existing-research-cost',{},1750,async()=>({}));
+ const reviewBudget=await managedPhaseBudget({ledger:wire.ledger,brief,phase:'coverage_sources'});
+ const reviewed=await reviewBudget.ledger.once('simulated-review-worker',{},400,async()=>{
+  const providers=createSupervisedProviders({...options,ledger:stageBudgetLedger(reviewBudget.ledger,'coverage_sources',{phaseLimitKurus:3000})}),results=[];
+  for(const batch of batches)results.push(...await reviewPositionalEvidenceBatch(batch,{providers,focus:{goals:brief.goals}}));
+  assert.ok((await wire.ledger.status()).chargedKurus<=3000);
+  return {results};
+ },{settle:()=>150});
+ assert.deepEqual(resubmitted,omitted);
+ assert.equal(reviewedManagedEvidence(input,reviewed.results).coverage.reviewedEvidenceRows,454);
+ const reportBudget=await managedPhaseBudget({ledger:wire.ledger,brief,phase:'synthesis'});
+ const providers={...createSupervisedProviders({...options,ledger:stageBudgetLedger(reportBudget.ledger,'synthesis',{phaseLimitKurus:reportBudget.phaseCeiling})}),
+  checkpoint:async(name,key,save)=>{const value=await save();saved.set(JSON.stringify([name,key]),value);return value;},
+  readCheckpoint:async(name,key)=>saved.get(JSON.stringify([name,key]))};
+ const inputArgs={...args,providers,batchReviews:reviewed.results,sectional:true,allowPartial:true};
+ const synthesis=await reportBudget.ledger.once('simulated-writing-worker',{},400,
+  ()=>synthesizeManagedReport(inputArgs),{settle:()=>140});
+ assert.deepEqual(sectionWrites,['competition','digital','digital','swot','perception','readiness']);
+ assert.equal(synthesis.reportIssue,undefined);
+ assert.equal(saved.size,5);
+ assert.equal((await wire.ledger.status()).chargedKurus<=reportBudget.phaseCeiling,true);
+ assert.equal((await wire.ledger.status()).chargedKurus<=5000,true);
+ const audit=directAuditResult(brief,{...synthesis,analysisPacket:context.packet,methodologyVersion:sequentialVersion,
+  supervision:{reviewMode:'managed-audit',evidenceCoverage:synthesis.evidenceCoverage}});
+ assert.equal(audit.status,'ready');
+ assert.ok(audit.data.bhsSections.every(section=>section.complete));
+ const proposal=selectProposalAudit(audit.data,brief);
+ assert.equal(proposal.findings.length,12);
+ assert.ok(proposal.findings.every(row=>row.recommendation.action&&row.recommendation.measurement&&row.sourceIds.length));
+ const recovered=await synthesizeManagedReport({...inputArgs,savedSectionsOnly:true,providers:{...providers,manager:()=>assert.fail('restoring an offer cannot buy a call')}});
+ assert.deepEqual(recovered.report.bhsSections,synthesis.report.bhsSections);
+ for(const [key,value] of saved)if(value.section==='readiness')saved.delete(key);
+ const partial=await synthesizeManagedReport({...inputArgs,savedSectionsOnly:true,providers:{...providers,manager:()=>assert.fail('restoring a partial offer cannot buy a call')}});
+ const partialAudit=continuationAudit(brief,{reason:partial.reportIssue,synthesis:{...partial,analysisPacket:context.packet,methodologyVersion:sequentialVersion,
+  supervision:{reviewMode:'managed-audit',evidenceCoverage:partial.evidenceCoverage,reportIssue:partial.reportIssue}}});
+ assert.equal(partialAudit.status,'ready');
+ assert.deepEqual(partialAudit.data.bhsSections.filter(section=>section.complete).map(section=>section.id),['competition','digital','swot','perception']);
+ assert.equal(selectProposalAudit(partialAudit.data,brief).findings.length,10);
 });
 
 test('unused research budget cannot increase the synthesis or offer allowance',async t=>{

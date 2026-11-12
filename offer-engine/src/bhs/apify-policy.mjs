@@ -40,7 +40,7 @@ export function actorChargeLimit({actor,task,actorId,requestedUsd,remainingKurus
  // Only standard event-only PPE is supported; usage-priced/rental Actors
  // and explicit extra-platform-usage pricing are never admitted.
  if(!eventOnlyPricing(pricing))throw new BudgetError('actor_pricing_unverified','Aktörün tüm çalışma ücretlerini kapsayan limiti doğrulanmalı.');
- if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<600||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
+ if(!Number.isSafeInteger(remainingKurus)||!Number.isSafeInteger(followingKurus)||remainingKurus<=followingKurus||followingKurus<0||!Number.isFinite(requestedUsd)||requestedUsd<=0)throw new BudgetError('budget_limit','Aktör için kalan BHS bütçesi yetersiz.');
  const remainingUsd=Math.floor((remainingKurus-followingKurus)/(tariff.usdTry*tariff.overhead*100)*1e6)/1e6;
  const maxTotalChargeUsd=Math.min(cap,defaultActorMaxUsd,requestedUsd,remainingUsd);
  if(maxTotalChargeUsd<=0||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&maxTotalChargeUsd<pricing.minimalMaxTotalChargeUsd)throw new BudgetError('budget_limit','Aktörün minimum ücreti kalan bütçeye sığmıyor.');

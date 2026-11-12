@@ -42,7 +42,12 @@ export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date
  }
  const scoped=stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus,phaseLimitKurus}),base=createRuntimeProviders({...options,ledger:scoped,fetchImpl,now,pricing:researchTariff,researchFx});
  // At coverage only the gap extraction, draft and final audit remain.
- const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,retainDataset:collectionFirst&&phaseLimitKurus!==undefined,followingKurus:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):600});
- return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8',pricing:researchTariff,researchFx,allowWorkerFallback:!(collectionFirst&&phaseLimitKurus!==undefined&&sequentialPhases.indexOf(phase)>sequentialPhases.indexOf('brand'))}),collectionFirst,managedAudit:options.managedAudit===true,infrastructureOffsetKurus,now,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once('audit:v8:checkpoint:'+name+':'+hash(input),input,0,run),availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
+ const followingKurus=options.managedBudgetVersion===2?40:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):600;
+ const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,retainDataset:collectionFirst&&phaseLimitKurus!==undefined,followingKurus});
+ const checkpointKey=(name,input)=>'audit:v8:checkpoint:'+name+':'+hash(input);
+ return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8',pricing:researchTariff,researchFx,allowWorkerFallback:!(collectionFirst&&phaseLimitKurus!==undefined&&sequentialPhases.indexOf(phase)>sequentialPhases.indexOf('brand'))}),collectionFirst,managedAudit:options.managedAudit===true,infrastructureOffsetKurus,now,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once(checkpointKey(name,input),input,0,run),readCheckpoint:async(name,input)=>{
+  const receipt=await scoped.get(checkpointKey(name,input));
+  return receipt?.state==='complete'?receipt.value:undefined;
+ },availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
   withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,researchFx,...options})};
 }

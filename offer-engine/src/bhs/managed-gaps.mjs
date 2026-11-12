@@ -100,7 +100,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   instruction:managedIndexInstruction,researchTasks:tasks,
   ...stageModelInput({...context,input:{...context.input,sources:context.input.sources.filter(s=>newUrls.has(s.url))}},{areas:true})
  },indexSchema,{maxOutputTokens:3000})).data]:[];
- const {report:patch,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:priorPlan,context,inventory,providers,sections,existing,evidenceUrls:newUrls});
+ const {report:patch,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:priorPlan,context,inventory,providers,sections,existing,evidenceUrls:newUrls,sectional:true});
  if(!evidenceCoverage.complete)throw new BudgetError('incomplete_evidence_review','Ek araştırmanın kanıt incelemesi tamamlanmadı; önceki BHS korundu.');
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
  const existingStatements=new Set(original.findings.map(f=>f.statement.trim().toLowerCase()));
