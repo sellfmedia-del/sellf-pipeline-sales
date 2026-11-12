@@ -47,11 +47,11 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    doc.bhs.sources=[{id:'evidence-example',title:'Ürün sayfası',url:'https://synthetic.example/urun'}];
    PipelineProposal.mount(document.querySelector('#offer'),doc);
   });
-  await page.locator('.so-bhs-bar').click();
   await page.getByText('Önerilen aksiyon: Teslimat bilgisi modülünü ürün sayfasında test edin.',{exact:true}).waitFor();
   await page.getByText('Başarı ölçümü: Sepete ekleme oranını karşılaştırın.',{exact:true}).waitFor();
   await page.getByText('Teslimat performansını hangi sistemden izliyorsunuz?',{exact:true}).waitFor();
-  assert.equal(await page.locator('a[href="https://synthetic.example/urun"]').count(),1);
+  await page.getByText('Seçili bulguların kaynakları',{exact:true}).click();
+  await page.locator('a[href="https://synthetic.example/urun"]').waitFor();
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });

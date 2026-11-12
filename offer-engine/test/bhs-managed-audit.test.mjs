@@ -6,12 +6,17 @@ import {capBhsLedger,managedPhaseBudget} from '../src/bhs/managed-budget.mjs';
 import {managedResearchHealthy,resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
 import {planManagedResearch} from '../src/bhs/managed-research.mjs';
 import {managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
-import {sequentialContext} from '../src/bhs/sequential-contracts.mjs';
+import {sequentialContext,sequentialPhases,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {continuationAudit} from '../src/bhs/continuity.mjs';
 import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {methodologyAreas} from '../src/bhs/methodology-areas.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
+import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
+import {stageKey} from '../src/bhs/direct-research.mjs';
+import {fallbackScope} from '../src/pricing/scope.mjs';
+import {offerCopy} from '../src/proposal/composition.mjs';
+import {response} from './fixtures/offer.mjs';
 
 test('research and synthesis reserve independently, including parallel calls and persistent policy',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
@@ -81,7 +86,7 @@ test('Claude receives the complete brief and specifies platforms and measures fo
  await assert.rejects(planManagedResearch({brief:focusedBrief,brand:{facts:[],review:{}},providers:{manager:async()=>({data:{tasks:tasks.slice(1)}})}}),error=>error.code==='model_output_invalid');
 });
 
-test('ranked actions, metrics, questions and proofs survive report and partial offer handoff',async()=>{
+test('ranked actions, metrics, questions and proofs survive report and partial offer handoff',async t=>{
  const evidence=packet();
  const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
  const specs=[
@@ -118,7 +123,8 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
   }};
  }};
  const {report}=await synthesizeManagedReport({brief,brand:{facts:[],plan},plan:{},context,inventory,providers});
- const audit=directAuditResult(brief,{report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:'v8',supervision:{reviewMode:'managed-audit'}});
+ const synthesis={report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:sequentialVersion,supervision:{reviewMode:'managed-audit'}};
+ const audit=directAuditResult(brief,synthesis);
  assert.deepEqual(audit.data.bhsSections.map(s=>[s.id,s.count,s.complete]),[
   ['competition',2,true],['digital',2,true],['swot',4,true],['perception',1,false],['readiness',2,true]
  ]);
@@ -129,4 +135,41 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  assert.equal(selected.bhsSections.find(s=>s.id==='perception').complete,false);
  assert.ok(selected.findings.every(f=>f.recommendation.action&&f.recommendation.measurement&&f.sourceIds.length));
  assert.deepEqual(selected.meetingQuestions,[question]);
+
+ const priorEnv=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ t.after(()=>{if(priorEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=priorEnv;});
+ const db=await localBudget();t.after(db.close);
+ const cost=await db.ledger.status(),host='managed.preview.example',secret='managed-integration-test-secret';
+ const phases=sequentialPhases.filter(phase=>phase!=='complete');
+ const checkpoints=new Map(phases.map(phase=>[stageKey(brief,phase,'v8'),{state:'complete',value:
+  phase==='synthesis'?synthesis:phase==='scope'?{scopePlan:fallbackScope(brief),proposalCopy:offerCopy(null,report)}:{}}]));
+ const ledger={...db.ledger,get:key=>checkpoints.get(key)||db.ledger.get(key)};
+ const completed={id:'synthetic-job',state:'complete',briefHash:audit.data.briefHash,budgetId:cost.id};
+ const handler=createBoundedAuditHandler({
+  getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,getGapLedger:()=>assert.fail('extra research before opt-in'),
+  isBackgroundEnabled:()=>true,getQueue:async()=>({find:async()=>completed,read:async()=>completed}),
+  getProviders:()=>assert.fail('no provider expected'),validateWebsite:async()=>{},logger:{}
+ });
+ let cookie;
+ const request=async body=>{
+  const res=response();
+  await handler({method:'POST',headers:{host,origin:'https://'+host,cookie},body:{brief,...body}},res);
+  if(res.headers['Set-Cookie'])cookie=res.headers['Set-Cookie'][0].split(';')[0];
+  return res;
+ };
+ const initial=await request({action:'start',requestId:'managed_bhs_test_request',context:{leadId:'lead',spaceId:'space'}});
+ assert.equal(initial.code,200,JSON.stringify(initial.data));
+ assert.equal(initial.data.result.status,'ready');
+ assert.equal(initial.data.gapCompletion.available,true);
+ assert.ok(initial.data.pricingProof);
+ checkpoints.get(stageKey(brief,'sector_draft','v8')).value.toolIssues=['provider_error'];
+ const affected=await request({action:'status',ticket:initial.data.ticket});
+ assert.equal(affected.code,200);
+ assert.equal(affected.data.gapCompletion,undefined);
+ assert.ok(affected.data.pricingProof);
+ assert.equal(affected.data.result.data.findings.length,specs.length);
+ const denied=await request({action:'complete_gaps',ticket:initial.data.ticket});
+ assert.equal(denied.code,422);
+ assert.equal(denied.data.code,'completion_unavailable');
+ assert.equal((await ledger.status()).chargedKurus,500);
 });
