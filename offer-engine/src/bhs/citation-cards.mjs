@@ -18,6 +18,8 @@ export function technicalCitations(source,shared={}){
  if(typeof t.https==='boolean'||typeof t.mobileViewport==='boolean')rows.push({htmlSignals:{...(typeof t.https==='boolean'?{https:t.https}:{}),...(typeof t.mobileViewport==='boolean'?{mobileViewport:t.mobileViewport}:{})},limit:'HTML signals only; mobile layout and speed were not tested.'});
  if(Array.isArray(t.platformHints)&&t.platformHints.length)rows.push({htmlSignals:{platformHints:t.platformHints},limit:'Platform hint only; operational scalability was not tested.'});
  if(typeof t.analyticsTags==='boolean'||typeof t.metaPixelTag==='boolean')rows.push({htmlSignals:{...(typeof t.analyticsTags==='boolean'?{analyticsTags:t.analyticsTags}:{}),...(typeof t.metaPixelTag==='boolean'?{metaPixelTag:t.metaPixelTag}:{})},limit:'Downloaded HTML only; false does not prove absence or failure.'});
+ const metadata=Object.fromEntries(['canonicalLink','noindexMeta','structuredData'].filter(key=>typeof t[key]==='boolean').map(key=>[key,t[key]]));
+ if(Object.keys(metadata).length)rows.push({htmlSignals:metadata,limit:'HTML metadata only; search indexing and schema validity were not tested.'});
  return rows.map(row=>JSON.stringify(row)).filter(quote=>quote.length>=24&&quote.length<=200);
 }
 const card=(source,quote)=>({id:'proof_'+hash({url:source.url,quote}).slice(0,20),url:source.url,title:source.title,quote,method:source.method,scope:source.method==='html-signals'?'Sunucunun indirilen HTMLde gözlediği teknik sinyaller; web sayfasından alıntı veya çalışırlık testi değildir.':source.method==='search-snippet'?'Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.':'Araştırmada okunmuş kaynak kesiti.'});

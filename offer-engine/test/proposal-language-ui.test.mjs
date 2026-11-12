@@ -37,6 +37,21 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    assert.equal(await page.locator('.so-request-status').textContent(),en?'The email draft could not be prepared.':'E-posta taslağı hazırlanamadı.');
    await page.evaluate(()=>{delete HTMLAnchorElement.prototype.click;});
   }
+  await page.evaluate(()=>{
+   const doc=structuredClone(docs.tr.TRY);
+   doc.bhs.findings=[{id:'digital-example',kind:'observation',dimension:'digital',priority:'high',
+    statement:'Ürün sayfasında teslimat koşulları yer alıyor.',impact:'Teslimat koşulları satın alma kararını etkileyebilir.',
+    recommendation:{action:'Teslimat bilgisi modülünü ürün sayfasında test edin.',measurement:'Sepete ekleme oranını karşılaştırın.'},sourceIds:['evidence-example']}];
+   doc.bhs.bhsSections=[{id:'digital',title:'Dijital varlıklar',findingIds:['digital-example'],complete:false}];
+   doc.bhs.meetingQuestions=['Teslimat performansını hangi sistemden izliyorsunuz?'];
+   doc.bhs.sources=[{id:'evidence-example',title:'Ürün sayfası',url:'https://synthetic.example/urun'}];
+   PipelineProposal.mount(document.querySelector('#offer'),doc);
+  });
+  await page.locator('.so-bhs-bar').click();
+  await page.getByText('Önerilen aksiyon: Teslimat bilgisi modülünü ürün sayfasında test edin.',{exact:true}).waitFor();
+  await page.getByText('Başarı ölçümü: Sepete ekleme oranını karşılaştırın.',{exact:true}).waitFor();
+  await page.getByText('Teslimat performansını hangi sistemden izliyorsunuz?',{exact:true}).waitFor();
+  assert.equal(await page.locator('a[href="https://synthetic.example/urun"]').count(),1);
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });

@@ -11,6 +11,9 @@ import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,stage
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
+import {managedActors,planManagedResearch} from './managed-research.mjs';
+import {synthesizeManagedReport} from './managed-report.mjs';
+import {researchCapKurus} from './managed-budget.mjs';
 
 export const collectionBudgetKurus=2500;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
@@ -85,7 +88,7 @@ function providerSource({url,title,text,method,asOf,scope,provenance}){
  return {url,finalUrl:url,title:title||url,method,retrievedAt:asOf,scope,provenance,contentHash:hash(text),excerpts:evidenceExcerpts(text,{maxChunks:40})};
 }
 
-async function corpus(previous){
+export async function collectionCorpus(previous){
  const brand=await previous('brand');
  const [searches,pages,scrapes]=await Promise.all([
   sourcesFrom(previous,[...searchStages,scrapeStages[0]],'searches'),
@@ -104,25 +107,26 @@ function queryFor(brief,topic,market){
  return ('"'+name+'" '+topic+' '+(market?.[1]||'')).trim().slice(0,500);
 }
 
-async function actorRequest(context,providers,index,market){
+async function actorRequest(context,providers,index,market,managedPlan){
  const available=await providers.availableActors?.()||[];
  const known=observedActorTargets(context);
- const order=['logiover/website-seo-audit-crawler','apify/website-content-crawler','compass/crawler-google-places','apify/instagram-profile-scraper','harvestapi/linkedin-company-search','jmlp/meta-ad-library-scraper'];
+ const order=managedPlan?[...new Set(managedPlan.actors.map(a=>a.id))]:managedActors;
  const targets=[];
  const geo=market?{countryCode:market[2],language:market[3]}:null;
+ const unavailable=managedPlan?shard(order.filter(id=>!available.includes(id)),index,scrapeStages.length).map(()=>({unavailable:true,reason:'actor_api_unavailable'})):[];
  for(const actor of order.filter(name=>available.includes(name))){
   const target=[...known.urls].find(url=>{
    try{actorInput({actor,url,...geo},{...context,geo},known);return true;}
    catch(error){if(['actor_source_unverified','actor_locale_unverified'].includes(error.code))return false;throw error;}
   });
-  if(target)targets.push({actor,url:target,purpose:'Marka ve hedef pazar için kamuya açık kaynak.',...geo});
+  if(target)targets.push({actor,url:target,purpose:managedPlan?.actors.find(a=>a.id===actor)?.purpose||'Marka ve hedef pazar için kamuya açık kaynak.',...geo});
  }
  const scrapes=[];
  for(const request of shard(targets,index,scrapeStages.length))scrapes.push(await collectAttempt(()=>providers.enrich(request,{...context,geo})));
- return scrapes;
+ return [...scrapes,...unavailable];
 }
 
-async function readResearchPages(brief,plan,targets,providers,collect){
+export async function readResearchPages(brief,plan,targets,providers,collect){
  if(!targets.length)return {sources:[],unavailable:[]};
  return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
   for(const page of pages){
@@ -132,8 +136,8 @@ async function readResearchPages(brief,plan,targets,providers,collect){
  }});
 }
 
-async function comparisonResearch(brief,brand,market,pool,providers,collect,repair){
- const plan=await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
+export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan){
+ const plan=managedPlan?{data:{product:managedPlan.comparableProduct,candidates:managedPlan.peerNames}}:await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
   instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
   ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Mevcut ürün ifadesi genişse kaynaklı marka ürünlerinden tek bir somut format seç ve product alanında yaz. Hedef pazarda ürün sayfası bulunan bağımsız markaları öncele. Aynı kullanıma uygun benzer ürünü olan markalar, sertifika veya içerikleri farklı olsa da araştırma adayı olabilir.'}:{})
@@ -147,7 +151,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
  };
  if(repair&&product){
   const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
-  const query=[format,market?.[1],market?.[3]==='tr'?'markalar ürün çeşitleri satın al':'brands product range shop'].filter(Boolean).join(' ');
+  const query=[format,managedPlan?.market||market?.[1],market?.[3]==='tr'?'markalar ürün çeşitleri satın al':'brands product range shop'].filter(Boolean).join(' ');
   const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(found);
   for(const result of found.results||[]){
@@ -161,7 +165,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
   const group=peerGroupKey(name);
   if(!group||seen.has(group))continue;
   seen.add(group);
-  const query=[name,product,market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
+  const query=[name,product,managedPlan?.market||market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
   const search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(search);
   const owned=results=>(results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url,true));
@@ -176,7 +180,7 @@ async function comparisonResearch(brief,brand,market,pool,providers,collect,repa
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
  const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
- return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true};
+ return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true,...(managedPlan?{unavailable:packet.unavailable}:{})};
 }
 
 // Research receipts remain intact. This packet is a compact index for Claude,
@@ -207,7 +211,7 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false){
+export function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false,limit=6){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
  const brandHost=researchHost(context.input.brief.website);
@@ -231,7 +235,7 @@ function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=fa
    scored.set(key,{entity,score,cards:cards.slice(0,2).map(item=>item.card)});
   }
  }
- return [...scored.values()].sort((a,b)=>b.score-a.score).slice(0,6);
+ return [...scored.values()].sort((a,b)=>b.score-a.score).slice(0,limit);
 }
 
 function reservedOptions(call,reserveForFollowingKurus=0){
@@ -402,19 +406,30 @@ async function repairPeerCoverage({brief,brand,providers,context,funding,product
 
 export async function runCollectionFirstStage({phase,brief,providers,previous,collect,finish}){
  const searchIndex=searchStages.indexOf(phase),readIndex=readStages.indexOf(phase),scrapeIndex=scrapeStages.indexOf(phase),inventoryIndex=inventoryStages.indexOf(phase);
- const funding=phase===searchStages[0]?await providers.checkpoint('collection-first-funding',brief,async()=>planCollectionFunding(await providers.costStatus(),providers.infrastructureOffsetKurus,providers.now?.())):(await previous(searchStages[0])).funding;
+ const first=phase===searchStages[0];
+ const managed=first?providers.managedAudit:(await previous(searchStages[0])).managedPlan;
+ const funding=first?await providers.checkpoint(managed?'managed-collection-funding':'collection-first-funding',brief,async()=>{
+  const cost=await providers.costStatus();
+  if(!managed)return planCollectionFunding(cost,providers.infrastructureOffsetKurus,providers.now?.());
+  const startKurus=Math.min(cost.chargedKurus,researchCapKurus);
+  return {startKurus,capKurus:researchCapKurus,researchLimitKurus:researchCapKurus-startKurus};
+ }):(await previous(searchStages[0])).funding;
  const save=data=>finish({collectionFirst:true,...data});
  const scoped=amount=>providers.withCeiling(Math.min(funding.capKurus,funding.startKurus+amount));
  if(searchIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
-  const pool=scoped(900);
-  const topics=shard(methodologyAreas,searchIndex,searchStages.length);
-  const searches=[];
+  const pool=managed?scoped(collectionBudgetKurus):scoped(900);
+  const sector=first&&managed?await collectAttempt(()=>pool.search(
+   [brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals,'sektör pazar hacmi gelir kanalları rekabet'].join(' ').slice(0,500),
+   {depth:'basic',maxResults:8,retainRaw:true})):null;
+  const managedPlan=first&&managed?await planManagedResearch({brief,brand,sector,providers:pool}):managed||null;
+  const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
+  const searches=sector?[sector]:[];
   for(let i=0;i<topics.length;i+=3){
-   searches.push(...await Promise.all(topics.slice(i,i+3).map(({topic})=>collectAttempt(()=>pool.search(queryFor(brief,topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
+   searches.push(...await Promise.all(topics.slice(i,i+3).map(({topic,query})=>collectAttempt(()=>pool.search(query||queryFor(brief,topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
   }
-  return save({funding,searches});
+  return save({funding,searches,...(first&&managedPlan?{managedPlan}: {})});
  }
  if(readIndex>=0){
   const brand=await previous('brand'),searches=await sourcesFrom(previous,searchStages,'searches');
@@ -425,37 +440,47 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }
  if(scrapeIndex>=0){
   const brand=await previous('brand');
-  const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
+  const market=markets.find(([pattern])=>pattern.test(managed?.market||brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
-  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(1650),providers,collect):{searches:[],pages:[]};
+  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,scoped(managed?collectionBudgetKurus:1650),providers,collect,null,managed||null):{searches:[],pages:[]};
   // The Actor adapter holds the final 6 TRY of this research account for Gemini.
-  const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},scoped(collectionBudgetKurus),scrapeIndex,market);
+  const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   return save({...comparison,scrapes});
  }
  if(inventoryIndex>=0){
-  const {packet}=await corpus(previous);
+  const {packet}=await collectionCorpus(previous);
   const batch=shard(packet.sources,inventoryIndex,inventoryStages.length);
   if(!batch.length)return save({inventory:[]});
-  const context=sequentialContext(brief,{packet:{...packet,sources:batch},searches:[],peerDiscoveryVersion:'product-v2'});
+  const context=sequentialContext(brief,{packet:{...packet,sources:batch},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:Boolean(managed)});
   const found=await collectAttempt(()=>scoped(collectionBudgetKurus).worker('v8-collection-index',{
    instruction:'Bu bir kanıt envanteridir. Kaynakların söylediği bütün ayrı gözlemleri kısa biçimde kaydet. Eleme, puanlama, önem sıralaması, uzlaştırma veya tekilleştirme yapma. Birbirine ters iddiaları ayrı kayıtlarla koru. Her iddiaya özgün proofId ver. areas listesindeki ilgili alanı işaretle. Rakipliği henüz değerlendirme; kaynakta kendi ürününü satan kuruluşun adını ve ilgili proofIdyi organizations içinde kaydet.',
-   ...stageModelInput(context,{areas:true})
+   ...(managed?{researchTasks:managed.tasks}:{}),...stageModelInput(context,{areas:true})
   },schema,{maxOutputTokens:4096}));
   return save({inventory:found.data?[found.data]:[],...(found.unavailable?{unavailable:[found.reason]}:{})});
  }
  if(phase==='coverage_plan'){
   const cost=await providers.costStatus();
-  const committedKurus=Math.max(0,cost.chargedKurus-(providers.infrastructureOffsetKurus||0)-funding.startKurus);
+  const committedKurus=Math.max(0,cost.chargedKurus-(managed?0:providers.infrastructureOffsetKurus||0)-funding.startKurus);
   if(committedKurus>(funding.researchLimitKurus??collectionBudgetKurus))throw new BudgetError('provider_accounting','Araştırma harcaması ayrılan bütçeyi aştı.');
   return save({collectionClosed:true,researchAccount:{...funding,committedKurus}});
  }
  if(phase!=='synthesis')return save({});
  const brand=await previous('brand'),closed=await previous('coverage_plan');
  if(!closed.collectionClosed)throw new BudgetError('research_stage_incomplete','Kanıt toplama tamamlanmadan Claude değerlendirmesi başlatılamaz.');
- const [{packet},inventory,focused]=await Promise.all([corpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
- const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'});
+ const [{packet},inventory,focused]=await Promise.all([collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory'),previous(scrapeStages[0])]);
+ const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:Boolean(managed)});
  context.collectionFirst=true;
  const discovered=comparisonEntities(context,inventory);
+ if(managed){
+  const candidates=peerCandidates(context,discovered,brand,managed.comparableProduct,true,16);
+  context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
+  const {report,completion,invalidObservations,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:managed,context,inventory,providers});
+  const urls=new Set(report.sources.map(source=>source.url));
+  const analysisPacket={...context.packet,sources:context.packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:context.packet.citationCards.filter(source=>urls.has(source.url))};
+  return save({report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,
+   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:managed,
+    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage}});
+ }
  const candidates=funding.finalQuotes?peerCandidates(context,discovered,brand,focused.peerProduct,focused.expandedPeerPublishers):[];
  const entities=funding.finalQuotes?[...discovered.filter(entity=>entity.role==='brand'),...candidates.map(item=>item.entity)]:discovered;
  context.input.entities=entities;

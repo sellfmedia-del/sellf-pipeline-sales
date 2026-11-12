@@ -10,6 +10,7 @@ import {methodologyAreas,methodologyAreasSchema} from './methodology-areas.mjs';
 import {groundOfferReport} from './source-gate.mjs';
 import {isExpertMethodology} from './expert-report.mjs';
 import {sequentialVersion,qualityAcceptance} from './sequential-contracts.mjs';
+import {managedCoverage} from './managed-report.mjs';
 
 export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
@@ -49,12 +50,15 @@ export function directAuditResult(brief,synthesis){
  const total=dimensions.every(d=>byId.get(d.id).score!==null)?Math.round(dimensions.reduce((sum,d)=>sum+byId.get(d.id).score*d.weight,0)*100)/100:null;
  const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
+ const managed=synthesis.supervision?.reviewMode==='managed-audit';
+ if(managed)report.bhsSections=managedCoverage(report);
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
- const acceptance=synthesis.methodologyVersion===sequentialVersion?qualityAcceptance(report,{stages:synthesis.supervision?.stageDecisions||[],swot:synthesis.supervision?.swot||[],budget:synthesis.supervision?.costUpperBound,finalDecision:synthesis.supervision?.finalDecision,reviewMode:synthesis.supervision?.reviewMode}):null;
+ const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];
+ const acceptance=managed?{passed:!missingSections.length,issues:missingSections.map(id=>'incomplete_'+id)}:synthesis.methodologyVersion===sequentialVersion?qualityAcceptance(report,{stages:synthesis.supervision?.stageDecisions||[],swot:synthesis.supervision?.swot||[],budget:synthesis.supervision?.costUpperBound,finalDecision:synthesis.supervision?.finalDecision,reviewMode:synthesis.supervision?.reviewMode}):null;
  const ready=useful&&(!acceptance||acceptance.passed);
  return {status:ready?'ready':'review',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),...(synthesis.supervision?{supervision:{...synthesis.supervision,...(acceptance?{acceptance}:{} )}}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
-  quality:{checksPassed:ready,contentComplete:report.transfer.contentComplete&&(!acceptance||acceptance.passed),issues:[...report.transfer.issues,...(acceptance?.issues||[]).map(reason=>({path:'sequentialAcceptance',reason}))],scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
+  quality:{checksPassed:ready,contentComplete:managed?ready:report.transfer.contentComplete&&(!acceptance||acceptance.passed),issues:[...report.transfer.issues,...(acceptance?.issues||[]).map(reason=>({path:'sequentialAcceptance',reason}))],scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
   researchAsOf:synthesis.reuse?.researchedAt||synthesis.analysisPacket?.asOf||null,
   researchContext:synthesis.researchContext?.brief?{brandName:synthesis.researchContext.brief.brandName,website:synthesis.researchContext.brief.website,briefHash:synthesis.researchContext.briefHash}:null,
   researchMethod:synthesis.supervision?'claude-gemini-supervised':'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,
