@@ -4,7 +4,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
-import {isManagedInputLimit,managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -17,7 +17,7 @@ const areas=new Map(methodologyAreas.map(a=>[a.key,a]));
 const list=value=>Array.isArray(value)?value:[];
 const unique=value=>[...new Set(value)];
 const choice=values=>({type:'string',enum:values});
-const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
+const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
 const rowSchema=obj({
  section:choice(sectionKeys),area:choice([...areas.keys()]),rank:{type:'integer',minimum:1,maximum:10},
@@ -109,8 +109,9 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
   try{completion=await providers.manager('v8-managed-actionable-report',usedInput,schema,reportOptions);break;}
   catch(error){
    if(isManagedInputLimit(error))continue;
-   if(!allowPartial||!reportFailures.has(error.code)&&!signal.aborted)throw error;
-   reportIssue=error.code||'model_timeout';break;
+   const issue=managedModelIssue(error,signal);
+   if(!allowPartial||!reportFailures.has(issue))throw error;
+   reportIssue=issue;break;
   }
  }
  if(!completion){

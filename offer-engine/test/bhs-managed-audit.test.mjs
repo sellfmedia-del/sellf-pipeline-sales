@@ -247,6 +247,8 @@ test('a missing verdict or an unfunded batch cannot be counted as reviewed',asyn
  assert.equal(reviewedManagedEvidence(input,[bad]).coverage.complete,false);
  const [stopped]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>{throw new BudgetError('budget_limit','Cannot reserve');}}});
  assert.equal(stopped.issue,'budget_limit');
+ const [network]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>{throw new TypeError('fetch failed');}}});
+ assert.equal(network.issue,'provider_error');
  const [ok]=await reviewManagedEvidenceBatch(batch,{focus:{},providers:{manager:async()=>batchAnswer(batch.rows,['o2'],new Set(['o1']))}});
  const reviewed=reviewedManagedEvidence(input,[ok]);
  assert.equal(reviewed.coverage.complete,true);
@@ -277,9 +279,9 @@ test('a final report failure can hand off the reviewed source with no invented a
  const result=await synthesizeManagedReport({brief,brand:{facts:[]},plan:{},context,inventory,allowPartial:true,providers:{manager:async(name,input)=>{
   calls.push(name);
   if(input.rows)return batchAnswer(reviewRows(input),['o1']);
-  throw new BudgetError('model_output_invalid','synthetic provider response');
+  throw new DOMException('synthetic provider timeout','TimeoutError');
  }}});
- assert.equal(result.reportIssue,'model_output_invalid');
+ assert.equal(result.reportIssue,'model_timeout');
  const statements=result.report.findings.map(finding=>finding.statement);
  assert.equal(statements[0],proof.quote);
  assert.ok(statements.every(statement=>context.cards.some(card=>card.quote===statement)));
