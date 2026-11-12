@@ -87,7 +87,7 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls});
  const accepted=new Set(sections);
  const signal=AbortSignal.timeout(250000);
- const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3700,compactReview:true,lowEffort:true};
+ const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3200,compactReview:true,lowEffort:true};
  if(batchReviews===undefined){
   batchReviews=[];
   for(const batch of planManagedEvidenceReview(input)){

@@ -21,6 +21,7 @@ import {response} from './fixtures/offer.mjs';
 import {planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from '../src/bhs/managed-evidence-review.mjs';
 import {runCollectionFirstStage} from '../src/bhs/collection-first.mjs';
 
+const reviewRows=({rows,sources})=>rows.map(([id,area,text,proof])=>({id,area,text:text?.quote?sources[text.quote][3]:text,proof}));
 const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
  verdicts:{c:'',d:rows.filter(row=>!exclude.has(row.id)).map(row=>row.id).join(' '),s:'',p:'',r:'',g:'',u:'',
   x:rows.filter(row=>exclude.has(row.id)).map(row=>row.id).join(' ')},
@@ -121,7 +122,7 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  const question='Teslimat sürelerini sipariş bazında hangi kaynaktan izliyorsunuz?';
  const inventory=[{observations:citations.map(c=>({area:'synthetic',text:c.quote,sourceIds:[c.id]}))}];
  const providers={manager:async(name,input)=>{
-  if(name==='v8-managed-evidence-batch')return batchAnswer(input.rows,input.rows.filter(row=>row.text).map(row=>row.id));
+  if(name==='v8-managed-evidence-batch'){const rows=reviewRows(input);return batchAnswer(rows,rows.filter(row=>row.text).map(row=>row.id));}
   assert.equal(name,'v8-managed-actionable-report');
   assert.equal(input.observations.length,citations.length);
   const alias=card=>Object.keys(input.sources).find(id=>input.sources[id][0]===card.url&&input.sources[id][3]===card.quote);
@@ -200,12 +201,13 @@ test('all 1000 observations are reviewed across background phases before the rep
  const seen=new Map(),closed={collectionClosed:true,reviewBatches:batches},receipts=new Map();
  const providers={manager:async(name,payload)=>{
   assert.equal(name,'v8-managed-evidence-batch');
-  for(const row of payload.rows)if(row.text){
+  const rows=reviewRows(payload);
+  for(const row of rows)if(row.text){
    assert.equal(seen.has(row.id),false);
    seen.set(row.id,row.text);
    assert.equal(payload.sources[row.proof[0]][3],proof.quote);
   }
-  return batchAnswer(payload.rows,[payload.rows.find(row=>row.id==='o1000')?.id||payload.rows[0].id]);
+  return batchAnswer(rows,[rows.find(row=>row.id==='o1000')?.id||rows[0].id]);
  }};
  for(const phase of managedReviewPhases){
   const result=await runCollectionFirstStage({phase,brief,providers,previous:async name=>
