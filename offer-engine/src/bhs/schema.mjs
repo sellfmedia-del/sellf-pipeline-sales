@@ -36,7 +36,7 @@ export const providerReportSchema=providerSchema(reportSchema);
 export function assertSchema(value,schema=reportSchema,path='report'){
   if(schema.anyOf){if(!schema.anyOf.some(s=>{try{assertSchema(value,s,path);return true;}catch{return false;}}))throw Error('BHS veri biçimi geçersiz: '+path);return;}
   const type=Array.isArray(value)?'array':value===null?'null':typeof value;
-  if(type!==schema.type)throw Error('BHS veri türü geçersiz: '+path);
+  if(schema.type==='integer'?!Number.isSafeInteger(value):type!==schema.type)throw Error('BHS veri türü geçersiz: '+path);
   if(schema.enum&&!schema.enum.includes(value))throw Error('BHS seçenek geçersiz: '+path);
   if(type==='string'&&(value.trim().length<(schema.minLength||0)||value.length>schema.maxLength))throw Error('BHS metin sınırı: '+path);
   if(type==='number'&&(!Number.isFinite(value)||value<schema.minimum||value>schema.maximum))throw Error('BHS sayı sınırı: '+path);

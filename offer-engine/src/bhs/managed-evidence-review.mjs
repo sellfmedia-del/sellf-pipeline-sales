@@ -38,19 +38,21 @@ const instruction=`Her kanıt satırını hedef ve kaynakları ışığında ayr
 
 export async function reviewManagedEvidenceBatch(batch,{focus,providers,reserveForFollowingKurus=finalReserveKurus,signal,useHaiku=false}){
  const ids=batch.rows.map(row=>row.id),digest=hash(batch),expected=new Set(ids);
- function verdictCodes({verdicts,candidates}){
+ function readVerdicts({verdicts,candidates}){
   const byId=new Map();
   for(const code of decisions){
    if(typeof verdicts?.[code]!=='string')throw new BudgetError('model_output_invalid','BHS kanıt inceleme grupları eksik.');
    for(const id of verdicts[code].trim().split(/\s+/).filter(Boolean)){
-    if(!expected.has(id)||byId.has(id))
-     throw new BudgetError('model_output_invalid','BHS kanıt incelemesinde bilinmeyen veya yinelenen bulgu kimliği var.');
-    byId.set(id,code);
+    if(!expected.has(id))continue;
+    const previous=byId.get(id);
+    // Group labels describe topics. Only an unambiguous rejection can remove evidence.
+    const conflicting=previous!==undefined&&previous!==code&&[previous,code].some(value=>value==='x'||value==='u');
+    byId.set(id,conflicting?'u':previous??code);
    }
   }
-  if(byId.size!==ids.length||!Array.isArray(candidates)||new Set(candidates).size!==candidates.length||candidates.some(id=>!byId.has(id)||byId.get(id)==='x'))
-   throw new BudgetError('model_output_invalid','Claude her BHS kanıt satırı için geçerli bir inceleme kararı vermelidir.');
-  return ids.map(id=>byId.get(id)).join('');
+  return {verdicts:ids.map(id=>byId.get(id)??'?').join(''),
+   candidates:[...new Set(candidates)].filter(id=>byId.has(id)&&byId.get(id)!=='x'),
+   ...(byId.size!==ids.length?{issue:'model_output_invalid'}:{})};
  }
  const rows=batch.rows.map(({id,area,text,proof})=>{
   const quote=proof.find(alias=>batch.sources[alias][3]===text);
@@ -61,9 +63,9 @@ export async function reviewManagedEvidenceBatch(batch,{focus,providers,reserveF
   if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
   const review=useHaiku&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
   const {data,model}=await review('v8-managed-evidence-batch',{instruction,focus,rows,sources:batch.sources},schema,{
-   maxOutputTokens,minimumOutputTokens:maxOutputTokens,compactReview:true,lowEffort:true,reserveForFollowingKurus,signal,validateData:verdictCodes
+   maxOutputTokens,minimumOutputTokens:maxOutputTokens,compactReview:true,lowEffort:true,reserveForFollowingKurus,signal,validateData:readVerdicts
   });
-  return [{digest,ids,verdicts:verdictCodes(data),candidates:data.candidates,model}];
+  return [{digest,ids,...readVerdicts(data),model}];
  }catch(error){
   if(!useHaiku&&providers.evidenceReviewer&&error.code==='budget_limit'&&error.budgetDiagnostic?.role==='manager'&&!error.paidResponseRetained)
    return reviewManagedEvidenceBatch(batch,{focus,providers,reserveForFollowingKurus,signal,useHaiku:true});
@@ -88,7 +90,7 @@ export function reviewedManagedEvidence(input,reviews){
  const covered=new Map(),candidatesByRank=[];
  for(const review of reviews){
   if(!review.verdicts)continue;
-  for(const [i,id] of review.ids.entries())covered.set(id,review.verdicts[i]);
+  for(const [i,id] of review.ids.entries())if(decisions.includes(review.verdicts[i]||'?'))covered.set(id,review.verdicts[i]);
   for(const [rank,id] of review.candidates.entries())(candidatesByRank[rank]??=[]).push(id);
  }
  const candidates=[...new Set(candidatesByRank.flat())].filter(id=>covered.has(id)&&covered.get(id)!=='x');
@@ -98,7 +100,7 @@ export function reviewedManagedEvidence(input,reviews){
   .flatMap(id=>rows.get(id)?.[3]||(Object.hasOwn(input.sources,id)?[id]:[])));
  const invalidObservations=[...rows.keys()].filter(id=>covered.get(id)==='x');
  const reviewedEvidenceRows=expected.filter(id=>covered.has(id)).length;
- return {candidates,invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
+ return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput(limit=candidates.length){
    const shortlist=candidates.slice(0,limit);

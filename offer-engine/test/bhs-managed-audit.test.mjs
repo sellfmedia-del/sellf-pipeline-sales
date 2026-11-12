@@ -17,9 +17,12 @@ import {stageKey} from '../src/bhs/direct-research.mjs';
 import {fallbackScope} from '../src/pricing/scope.mjs';
 import {offerCopy} from '../src/proposal/composition.mjs';
 import {response} from './fixtures/offer.mjs';
+import {createSupervisedProviders} from '../src/bhs/supervised-providers.mjs';
+import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
+import {gunzipSync} from 'node:zlib';
 
 import {planManagedEvidenceReview,reviewManagedEvidenceBatch,reviewedManagedEvidence} from '../src/bhs/managed-evidence-review.mjs';
-import {runCollectionFirstStage} from '../src/bhs/collection-first.mjs';
+import {readResearchPages,runCollectionFirstStage} from '../src/bhs/collection-first.mjs';
 
 const reviewRows=({rows,sources})=>rows.map(([id,area,text,proof])=>({id,area,text:text?.quote?sources[text.quote][3]:text,proof}));
 const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
@@ -121,9 +124,12 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  assert.ok(citations.every(Boolean));
  const question='Teslimat sürelerini sipariş bazında hangi kaynaktan izliyorsunuz?';
  const inventory=[{observations:citations.map(c=>({area:'synthetic',text:c.quote,sourceIds:[c.id]}))}];
- const providers={manager:async(name,input)=>{
-  if(name==='v8-managed-evidence-batch'){const rows=reviewRows(input);return batchAnswer(rows,rows.filter(row=>row.text).map(row=>row.id));}
-  assert.equal(name,'v8-managed-actionable-report');
+ const answer=input=>{
+  if(input.rows){
+   const rows=reviewRows(input),result=batchAnswer(rows,rows.filter(row=>row.text).map(row=>row.id));
+   result.data.verdicts.r=rows.slice(0,3).map(row=>row.id).join(' ');
+   return result;
+  }
   assert.equal(input.observations.length,citations.length);
   const alias=card=>Object.keys(input.sources).find(id=>input.sources[id][0]===card.url&&input.sources[id][3]===card.quote);
   return {model:'claude-sonnet-5-5',data:{
@@ -137,8 +143,18 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
     measurement:'Teslimat bilgisi görüntüleyen oturumlarda sepete ekleme oranını karşılaştır.',limitation:'Gerçek müşteri davranışı ölçülmedi.',question:i===8?question:''
    }))
   }};
- }};
+ };
+ const wire=await localBudget({lead:'managed-wire'});t.after(wire.close);
+ const providers=createSupervisedProviders({ledger:stageBudgetLedger(wire.ledger,'synthesis'),anthropicKey:'synthetic',receiptVersion:'v8',
+  now:()=>Date.parse('2026-11-12T12:00:00Z'),researchFx:async()=>({usdTry:44}),fetchImpl:async(url,{body})=>{
+   if(url.endsWith('/count_tokens'))return Response.json({input_tokens:2500});
+   assert.ok(url.endsWith('/v1/messages'));
+   const input=JSON.parse(JSON.parse(body).messages[0].content);
+   return Response.json({model:'claude-sonnet-5-5',stop_reason:'end_turn',usage:{input_tokens:2500,output_tokens:input.rows?230:1950},
+    content:[{type:'text',text:JSON.stringify(answer(input).data)}]});
+  }});
  const {report}=await synthesizeManagedReport({brief,brand:{facts:[],plan},plan:{},context,inventory,providers});
+ assert.ok((await wire.ledger.status()).chargedKurus<2500);
  const synthesis={report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:sequentialVersion,supervision:{reviewMode:'managed-audit'}};
  const audit=directAuditResult(brief,synthesis);
  assert.deepEqual(audit.data.bhsSections.map(s=>[s.id,s.count,s.complete]),[
@@ -236,6 +252,66 @@ test('a missing verdict or an unfunded batch cannot be counted as reviewed',asyn
  assert.equal(reviewed.coverage.complete,true);
  assert.deepEqual(reviewed.invalidObservations,['o1']);
  assert.deepEqual(reviewed.reportInput().observations.map(row=>row[0]),['o2']);
+});
+
+test('each paid evidence batch retains known rows across topic overlap and preserves genuinely conflicting decisions',async()=>{
+ const rows=['o1','o2','o3'].map(id=>({id,area:'digital_1',text:id,proof:['s1']}));
+ const sources={s1:['https://example.test/','Proof','html','Original evidence text']};
+ const input={entities:[],observations:rows.map(row=>[row.id,row.area,row.text,row.proof]),sources};
+ const [review]=await reviewManagedEvidenceBatch({rows,sources},{focus:{},providers:{manager:async()=>({data:{
+  verdicts:{c:'o1 o2',d:'o1',s:'',p:'unknown',r:'',g:'',u:'',x:'o2 o3'},candidates:['o2','o1','o1','o3','unknown']
+ }})}});
+ assert.equal(review.issue,undefined);
+ const saved=reviewedManagedEvidence(input,[review]);
+ assert.equal(saved.coverage.complete,true);
+ assert.deepEqual(saved.invalidObservations,['o3']);
+ assert.deepEqual(saved.candidates,['o2','o1']);
+ assert.equal(saved.verdict('o2'),'u');
+});
+
+test('a final report failure can hand off the reviewed source with no invented action or extra model call',async()=>{
+ const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const proof=context.cards.find(card=>/başlık ve açıklama meta verileri/.test(card.quote));
+ const inventory=[{observations:[{area:'digital_1',text:proof.quote,sourceIds:[proof.id]}]}];
+ const calls=[];
+ const result=await synthesizeManagedReport({brief,brand:{facts:[]},plan:{},context,inventory,allowPartial:true,providers:{manager:async(name,input)=>{
+  calls.push(name);
+  if(input.rows)return batchAnswer(reviewRows(input),['o1']);
+  throw new BudgetError('model_output_invalid','synthetic provider response');
+ }}});
+ assert.equal(result.reportIssue,'model_output_invalid');
+ assert.deepEqual(result.report.findings.map(finding=>finding.statement),[proof.quote]);
+ assert.ok(result.report.findings.every(finding=>!finding.recommendation&&finding.sourceIds.length));
+ assert.deepEqual(calls,['v8-managed-evidence-batch','v8-managed-actionable-report']);
+ const audit=directAuditResult(brief,{report:result.report,analysisPacket:context.packet,methodologyVersion:sequentialVersion,
+  supervision:{reviewMode:'managed-audit',reportIssue:result.reportIssue,evidenceCoverage:result.evidenceCoverage}});
+ assert.equal(audit.status,'review');
+ const continued=continuationAudit(brief,{verifiedAudit:audit,reason:result.reportIssue});
+ assert.equal(continued.status,'ready');
+ assert.equal(continued.data.quality.contentComplete,false);
+ assert.match(continued.data.researchContinuity.notice,/Nihai analiz tamamlanamadı/);
+ assert.deepEqual(selectProposalAudit(continued.data,brief).findings.map(finding=>finding.statement),[proof.quote]);
+});
+
+test('raw sources are stored once in bounded parallelism without a paid reservation or text loss',async t=>{
+ const db=await localBudget({lead:'managed-archive'});t.after(db.close);
+ const ledger=stageBudgetLedger(db.ledger,'sector_correction_sources',{phaseLimitKurus:3000});
+ const pages=Array.from({length:11},(_,index)=>({finalUrl:`https://example.test/source-${index}`,method:'html',text:`Full unmodified page ${index}`}));
+ const written=[];let active=0,peak=0;
+ const providers={checkpoint:async(name,input,run)=>{
+  active++;peak=Math.max(peak,active);
+  try{
+   const value=await ledger.once(`${name}:${input.url}`,input,0,run);
+   written.push(JSON.parse(gunzipSync(Buffer.from(value.data,'base64'))));
+  }finally{active--;}
+ }};
+ const collector=async(_brief,_plan,{archivePages})=>{await archivePages([...pages,pages[0]]);return {sources:pages};};
+ const result=await readResearchPages(brief,plan,pages.map(page=>page.finalUrl),providers,collector);
+ assert.equal(peak,4);
+ assert.equal(result.sources.length,pages.length);
+ assert.deepEqual(new Set(written.map(page=>JSON.stringify(page))),new Set(pages.map(page=>JSON.stringify(page))));
+ assert.equal(written.length,pages.length);
+ assert.equal((await ledger.status()).chargedKurus,500);
 });
 
 test('a truncated initial Claude plan keeps all required source searches active without another model call',async()=>{

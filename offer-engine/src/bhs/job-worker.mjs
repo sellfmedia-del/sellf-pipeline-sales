@@ -10,6 +10,15 @@ import {managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
+ if(job.phase==='synthesis'&&options.phaseCeiling){
+  const cost=await options.ledger.status();
+  if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus){
+   // The paid drafting reserve may not fit. Keep the reviewed source handoff
+   // available under the fixed gateway/template reserve, without a paid call.
+   const manager=async()=>{throw new BudgetError('budget_limit','Kalan bütçe için incelenmiş kanıtlar kullanılacak.');};
+   return runStage({...options,providers:{...options.providers,manager}});
+  }
+ }
  if(job.phase==='scope'){
   const cost=await options.ledger.status();
   if((options.phaseCeiling??cost.capKurus)-cost.chargedKurus<workerInfraReservationKurus){
