@@ -72,7 +72,7 @@ test('publisher discovery keeps Claude-selected public results when brand names 
   assert.deepEqual(options.prioritySources,[alpha,beta]);
   return {sources:[],unavailable:[]};
  },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']});
- assert.equal(partial.peerHints.length,0);
+ assert.deepEqual(partial.peerHints.map(p=>p.name),['Alpha','Beta']);
  assert.ok(partial.searches.length>0);
  const recovered=await comparisonResearch(brief,brand,null,{...pool,extract:async urls=>{
   assert.deepEqual(urls,[beta]);
