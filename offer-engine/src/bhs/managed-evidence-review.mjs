@@ -141,6 +141,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    candidates:[...new Set(Array.isArray(value?.candidates)?value.candidates:[])].filter(id=>ids.includes(id)).slice(0,36)
   });
   const budget=Math.max(600,ids.length*12+220);
+  const workerBudget=Math.max(750,ids.length*22+300);
   const method=recovery&&ids.length<=8?providers.manager:providers.evidenceReviewer||providers.manager;
   const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
   const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
@@ -153,7 +154,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    }catch(error){
     if(!canSwitchBhsProvider(error,signal))throw error;
     if(providers.worker&&providers.managedBudgetVersion===3){
-     completion=await providers.worker(stage+':cross-provider',request,modelSchema,{...options,compactWorker:true,generationTimeoutMs:22000});
+     completion=await providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
     }else if(method!==providers.manager&&error.providerOperation==='countTokens'){
      completion=await providers.manager(stage,request,modelSchema,options);
     }else throw error;

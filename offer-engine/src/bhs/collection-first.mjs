@@ -276,6 +276,8 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    let selection=await collectAttempt(()=>choosePublishers('v8-managed-peer-publishers',request,publisherSelectionSchema,options));
    if(selection.unavailable&&pool.manager&&choosePublishers!==pool.manager&&['provider_format','model_output_invalid','provider_error','provider_timeout','token_count'].includes(selection.reason))
     selection=await collectAttempt(()=>pool.manager('v8-managed-peer-publishers',request,publisherSelectionSchema,options));
+   if(selection.unavailable&&providers.managedBudgetVersion===3&&pool.worker&&['provider_format','model_output_invalid','provider_error','provider_timeout','token_count','quota'].includes(selection.reason))
+    selection=await collectAttempt(()=>pool.worker('v8-managed-peer-publishers-cross-provider',request,publisherSelectionSchema,{...options,compactWorker:true}));
    for(const row of selection.data?.pages||[]){
     const match=row.resultId.match(/^u([1-9]\d?)$/),source=match&&observed[Number(match[1])-1];
     if(!source||!row.name.trim()||peerGroupKey(row.name)===peerGroupKey(brief.brandName)||repair?.names.some(name=>peerGroupKey(name)===peerGroupKey(row.name)))continue;
@@ -736,6 +738,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   if(planned?.unavailable&&providers.managedBudgetVersion===3&&pool.evidenceReviewer){
    const fallback=await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool,compactFallback:true}));
    if(!fallback.unavailable)planned=fallback;
+   else if(pool.worker&&['provider_format','model_output_invalid','provider_error','provider_timeout','token_count','quota'].includes(fallback.reason)){
+    const independent=await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool,compactFallback:true,crossProvider:true}));
+    if(!independent.unavailable)planned=independent;
+   }
   }
   const managedPlan=planned?.unavailable?{...groundedManagedResearchPlan(brief,brand),coveragePolicy:2}:planned||managed||null;
   const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
