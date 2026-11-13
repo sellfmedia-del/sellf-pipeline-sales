@@ -53,7 +53,7 @@ Zorunlu bölümlerin her birine kanıt varsa önem sırasıyla 2–10 farklı bu
 Her satırda gözlem, gerçek kanıt kimliği, neden önemli olduğu ve hangi mekanizmayla hedefi etkilediğine dair kendi analizini yaz. Action bir iş, test veya proje önermeli: neye müdahale edilecek, hangi çıktı üretilecek ve gerekiyorsa hangi koşul doğrulanacak? Measurement önerinin hangi metrik ve yöntemle değerlendirileceğini söyler. Maliyet, getiri, erişim, oran veya altyapı durumu uydurma. Kanıt yetersizken kesin teşhis koyma. Kararı değiştirecek veri eksikse question alanına toplantıda sorulacak somut soruyu yaz. Yeterli kanıt yoksa daha az bulgu çıkar; rakip, ölçüm veya öneri doldurmak için olgu icat etme.
 Her bulgu tek bir bölüme aittir. Area mevcut metodoloji anahtarlarından biri. SWOT kolu yalnız SWOT için kullanılır. Peer ve benchmark kaynak kimlikleri sadece sources anahtarlarından seçilir. JSON sözleşmesine uy.`;
 
-export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls,retainedProofs}){
+export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls,retainedProofs,coverageEvidence}){
  const aliases=new Map();
  const sources={};
  const observed=[];
@@ -95,15 +95,16 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
    }
   }
  }
+ const evidenceByQuestion=coverageEvidence&&Object.fromEntries(Object.entries(coverageEvidence).map(([question,ids])=>[question,unique(ids.map(addSource).filter(Boolean))]));
  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
-  sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),
+  sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),...(evidenceByQuestion?{evidenceByQuestion}:{}),
   existing,entities,observations:observed,sources,...(brandProofs.length?{brandProofs}:{})};
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,allowPartial=false,sectional=false,savedSectionsOnly=false}){
- const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs});
+export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,coverageEvidence,allowPartial=false,sectional=false,savedSectionsOnly=false}){
+ const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs,coverageEvidence});
  const accepted=new Set(sections);
  const signal=AbortSignal.timeout(250000);
  const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3200,compactReview:true,lowEffort:true};
@@ -249,8 +250,17 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const responseSchema=swot?obj(Object.fromEntries(focus.map(quadrant=>[quadrant,arr(row,1)]))):
    obj({findings:arr(row,wanted),...(competition?{peers:arr(peerSchema,wanted)}:{})});
   const modelSchema=combinedPeer?obj({findings:arr(obj({...row.properties,overlap:field(180)}),wanted)}):responseSchema;
+  const normalizeRow=item=>{
+   if(!input.evidenceByQuestion||!item||typeof item!=='object')return item;
+   return Object.fromEntries(Object.entries(row.properties).map(([key,schema])=>{
+    const value=item[key];
+    if(key==='question'&&value==null)return [key,''];
+    if(key==='proof'&&Array.isArray(value))return [key,unique(value.filter(id=>typeof id==='string')).slice(0,schema.maxItems)];
+    return [key,typeof value==='string'&&schema.maxLength?value.trim().slice(0,schema.maxLength).toWellFormed():value];
+   }));
+  };
   const normalizeRows=value=>Object.fromEntries(Object.entries(responseSchema.properties).map(([field,schema])=>[
-   field,list(value?.[field]).filter(item=>{
+   field,list(value?.[field]).map(item=>field==='peers'?item:normalizeRow(item)).filter(item=>{
     try{assertSchema(item,schema.items);return true;}catch{return false;}
    }).slice(0,schema.maxItems)
   ]));
@@ -271,6 +281,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const relevantDimension={competition:'competition',digital:'digital',perception:'perception'}[section];
     if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
     if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
+    if(input.evidenceByQuestion&&(swot||section==='readiness'))request.proofsByQuestion=Object.fromEntries((swot?focus:['readiness']).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
    if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
@@ -285,11 +296,14 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(saved)return saved;
    }
    if(minimumFirst&&swot)request.instruction+=' İstenen SWOT kolları: '+focus.join(', ')+'. Güçlü ve zayıf yönü markanın mevcut koşullarından, fırsat ve tehdidi hedef pazardaki dış koşullardan çıkar. Gözlem alanına somut kaynak bilgisini yaz. SWOT yorumunu analysis alanına yaz. Bir risk ancak olasıysa koşulunu ve görüşmede nasıl doğrulanacağını belirt.';
+   if(request.proofsByQuestion)request.instruction+=' proofsByQuestion içindeki kimlikleri ilgili soru için önce değerlendir. Kanıtlanan mevcut durumu observation alanına, bunun hangi koşulda ticari etki yaratacağına ilişkin görüşünü analysis alanına yaz. Belirsiz iç performansı limitation veya question alanına koy.';
+   if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Kaynak ürün veya satış kanalı gibi mevcut bir koşulu gösteriyorsa, hedefe ulaşmak için bunun üzerine gereken pilotu veya ölçümü bir çıkarım olarak yaz. Başka bir iç veri bulunmaması kaynaklı çıkarımı engellemez.';
    const normalizeData=value=>{
     if(!combinedPeer)return normalizeRows(value);
     const byPeer=new Map(focused.entities.filter(([,role])=>role==='competitor').map(([id,,, ,ids])=>[id,ids]));
     const findings=[],peers=[];
-    for(const {overlap,...finding} of list(value?.findings).filter(item=>item&&typeof item==='object')){
+    for(const {overlap,...rawFinding} of list(value?.findings).filter(item=>item&&typeof item==='object')){
+     const finding=normalizeRow(rawFinding);
      const proof=byPeer.get(finding.peerId)?.filter(id=>list(finding.proof).includes(id));
      if(!proof?.length||typeof overlap!=='string'||!overlap.trim()||peers.some(p=>p.entityId===finding.peerId))continue;
      try{assertSchema(finding,row);}catch{continue;}

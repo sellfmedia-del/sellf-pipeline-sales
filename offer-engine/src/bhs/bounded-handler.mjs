@@ -185,7 +185,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const policy=await ledger.get('audit:managed-policy:'+hash);
     const managed=policy?.state==='complete';
     let usable=synthesis?.state==='complete'?synthesis.value:undefined;
-    if(!usable&&phase==='synthesis'&&managed&&policy.value?.version===2){
+    if(!usable&&phase==='synthesis'&&managed&&policy.value?.version>=2){
      try{
       usable=await recoverManagedSectionSynthesis(brief,previous,{readCheckpoint:async(name,input)=>{
         const step=await ledger.get('audit:v8:checkpoint:'+name+':'+ledgerHash(input));

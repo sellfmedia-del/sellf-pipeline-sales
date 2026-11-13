@@ -221,6 +221,12 @@ export function reviewedManagedEvidence(input,reviews){
    };
    const priority=new Set(priorityProofs);
    const priorityRows=ranked.filter(id=>priority.has(id)||rows.get(id)?.[3].some(proof=>priority.has(proof)));
+   const questionRows=id=>{
+    const proofs=new Set(input.evidenceByQuestion?.[id]||[]);
+    return ranked.filter(row=>covered.get(row)!=='u'&&(proofs.has(row)||rows.get(row)?.[3].some(proof=>proofs.has(proof))));
+   };
+   const focused=section==='swot'?swotFocus.map(questionRows):section==='readiness'?[questionRows(section)]:[];
+   const focusedRows=[...new Set([0,1,2,3].flatMap(index=>focused.map(group=>group[index])).filter(Boolean))].slice(0,Math.ceil(limit/2));
    if(targeted&&section==='swot'&&swotFocus.length){
     const internalIds=new Set(priorityRows);
     const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));
@@ -238,11 +244,11 @@ export function reviewedManagedEvidence(input,reviews){
     const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
     const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
     const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
-    const selected=[...new Set([...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
+    const selected=[...new Set([...focusedRows,...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
     return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
    }
-   const local=[...new Set([...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
+   const local=[...new Set([...focusedRows,...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
    const other=ranked.filter(id=>!localIds.has(id));
    // Always include context/counter-evidence alongside the focused observations.
    const primary=local.slice(0,Math.ceil(limit*.75));

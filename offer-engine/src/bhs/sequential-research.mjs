@@ -242,7 +242,7 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
  const productSignals=/kolonya|cologne|fiyat|price|₺|\bTL\b|satın|sepete|catalog|product|ürün|hizmet|service|katalog/i;
  const peerRows=readPeerPages.flatMap(s=>[...new Set([s.sections[0],...s.sections.filter(p=>productSignals.test(p.text)),...s.sections])].slice(0,5).map(p=>({sourceIds:p.proofIds})));
  const peerEvidence=peers.map(e=>({entityId:e.id,name:e.name,plannedUrl:e.website,readUrls:readPeerPages.filter(s=>researchHost(s.url)===researchHost(e.website)).map(s=>s.url)}));
- const compactBrand=phase==='brand'&&providers.managedBudgetVersion===2;
+ const compactBrand=phase==='brand'&&providers.managedBudgetVersion>=2;
  const official=['brand','sector'].includes(phase)?context.cards.filter(c=>phase==='sector'&&!candidates.length||researchHost(c.url)===researchHost(brief.website)):[];
  // Send every candidate proof. On an already indexed brand, sample the
  // supplementary official pages rather than resending every page paragraph.
