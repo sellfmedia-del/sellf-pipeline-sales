@@ -50,6 +50,14 @@ export function planPositionalEvidenceReview(input,reusedIds=new Set()){
  });
 }
 
+export function prioritizeManagedProofs(input){
+ const ids=[...new Set([
+  ...input.entities.filter(([,role])=>role==='competitor').flatMap(([, , , ,proof])=>proof.slice(0,2)),
+  ...Object.values(input.evidenceByQuestion||{}).flat(),...Object.keys(input.sources)
+ ])];
+ return {...input,sources:Object.fromEntries(ids.filter(id=>Object.hasOwn(input.sources,id)).map(id=>[id,input.sources[id]]))};
+}
+
 function evidenceSubset(batch,rows){
  const ids=new Set(rows.flatMap(row=>row.proof));
  return {rows,sources:Object.fromEntries([...ids].map(id=>[id,batch.sources[id]]))};

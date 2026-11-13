@@ -6,7 +6,7 @@ import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
-import {canSwitchBhsProvider,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {canSwitchBhsProvider,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -112,7 +112,7 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
  if(batchReviews===undefined){
   const reused=[...reverse].filter(([,id])=>retainedProofs?.has(id));
   const reusedIds=new Set(reused.map(([alias])=>alias));
-  const batches=sectional?planPositionalEvidenceReview(input,reusedIds):planManagedEvidenceReview(input);
+  const batches=sectional?planPositionalEvidenceReview(providers.managedBudgetVersion===3?prioritizeManagedProofs(input):input,reusedIds):planManagedEvidenceReview(input);
   batchReviews=reused.length?[{ids:[...reusedIds],verdicts:reused.map(([,id])=>retainedProofs.get(id)).join(''),candidates:[...reusedIds]}]:[];
   for(const batch of batches){
    const review=sectional?reviewPositionalEvidenceBatch:reviewManagedEvidenceBatch;
@@ -363,7 +363,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     try{result=await generate(stage,request,modelSchema,options);}
     catch(error){
      if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!canSwitchBhsProvider(error,signal))throw error;
-     result=await providers.worker(stage+':cross-provider',request,modelSchema,{...options,compactWorker:true});
+     const fallbackRequest={...request,instruction:request.instruction+' Verilen özgün kanıt kimliğini aynen kopyala. Bir sayıya ihtiyaç duyulmadığında ürün, kanal, davranış veya çalışma koşulunu nitel anlat.'};
+     const fallbackSchema=combinedPeer&&peerIds.size?obj({findings:arr(obj({...modelSchema.properties.findings.items.properties,peerId:choice([...peerIds.keys()])}),wanted)}):modelSchema;
+     result=await providers.worker(stage+':cross-provider',fallbackRequest,fallbackSchema,{...options,compactWorker:true,maxOutputTokens:maxOutputTokens+450});
     }
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
@@ -445,6 +447,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const focus=missingQuadrants.slice(i,i+2);
     repairs.push({section,wanted:focus.length,focus,prior,repair:true,rejected:rejected.filter(row=>focus.includes(row.quadrant))});
    }
+  }else if(section==='competition'&&providers.managedBudgetVersion===3&&minimumFirst&&count===0){
+   repairs.push({section,wanted:1,focus:[],prior,repair:true,rejected});
   }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected});
  }
  if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
@@ -453,6 +457,14 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const following=minimumFirst?0:(repairs.length-i-group.length)*reportSectionReserveKurus;
   const results=await Promise.all(group.map(task=>write(task,following)));
   group.forEach((task,j)=>retain(task.section,results[j]));
+ }
+ const competitionDrafts=draftsBySection.get('competition');
+ if(providers.managedBudgetVersion===3&&minimumFirst&&competitionDrafts&&repairs.some(task=>task.section==='competition'&&task.wanted===1&&!task.prior.length)&&!signal.aborted){
+  const competition=project(competitionDrafts,new Set(['competition']));
+  if(competition.competitors.length===1){
+   const prior=competition.findings.map(f=>[f.statement,null,f.peerId||null]);
+   retain('competition',await write({section:'competition',wanted:1,focus:[],prior,repair:true},0));
+  }
  }
  const swotDrafts=draftsBySection.get('swot');
  if(input.evidenceByQuestion&&swotDrafts&&!savedSectionsOnly&&!signal.aborted){
