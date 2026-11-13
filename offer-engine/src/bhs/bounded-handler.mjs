@@ -32,6 +32,14 @@ const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VER
 const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
+function backgroundHandoffReason(job,now){
+ if(job.cancelRequested)return 'research_cancelled';
+ if(now-job.createdAt>=20*60000)return 'research_deadline';
+ if(job.state==='queued'&&now-job.updatedAt>=3*60000)return 'queue_stalled';
+ if(job.state==='running'&&now-job.leaseUntil>=30000)return 'lease_expired';
+ return null;
+}
+
 export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
@@ -85,8 +93,18 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const checkpointHash=job.queueBriefHash||hash;activeCheckpointHash=checkpointHash;
    const key=name=>stageKey(brief,name,researchVersion,checkpointHash);
    let ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
+   let websiteUnavailable=false;
    if(action==='start'){
-    phase='website_check';await validateWebsite(brief);phase='budget_init';await ledger.begin();
+    phase='website_check';
+    try{await validateWebsite(brief);}
+    catch(error){
+     if(!queue||!temporaryDnsError(error))throw error;
+     // A transient DNS lookup cannot authorize research. An existing job can
+     // still be read, and a new offer can use the signed zero-cost handoff.
+     websiteUnavailable=!job.backgroundJobId;
+     log('bhs_website_lookup_deferred',{code:error.code});
+    }
+    phase='budget_init';await ledger.begin();
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
    }
    // Display baseline only: never reset the durable ledger or its reservations.
@@ -105,7 +123,16 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    }
    if(!['start','status','advance','recover','continue','complete_gaps'].includes(action))throw Error();
    if(action==='complete_gaps'&&(!queue||!job.backgroundJobId))throw new BudgetError('completion_unavailable','Tamamlanmış BHS kaydı gerekli.');
-   let backgroundJob;
+   const finish=async (final,gapCompletion)=>{
+    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
+    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
+    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});
+   };
+   if(websiteUnavailable){
+    const partial=continuationAudit(brief,{reason:'website_network_busy',managed:true});
+    return await finish(await restoreContinuation(brief,partial,ledger,now()));
+   }
+   let backgroundJob,handoffReason;
    if(queue&&action!=='continue'){
     if(!job.backgroundJobId){
      const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;
@@ -122,15 +149,15 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
     if((backgroundJob.queueBriefHash||backgroundJob.briefHash)!==checkpointHash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
     if(action==='complete_gaps'&&!['complete','paused'].includes(backgroundJob.state))throw new BudgetError('completion_unavailable','Ek araştırma için incelenmiş bir BHS sonucu gerekli.');
-    if(['queued','running'].includes(backgroundJob.state))return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
+    if(['queued','running'].includes(backgroundJob.state)){
+     handoffReason=backgroundHandoffReason(backgroundJob,now());
+     if(!handoffReason)return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
+     if(!backgroundJob.cancelRequested)backgroundJob=await queue.cancel(job);
+     log('bhs_automatic_continuation',{reason:handoffReason,jobPhase:backgroundJob.phase});
+    }
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
-   const finish=async (final,gapCompletion)=>{
-    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
-    const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
-    log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});
-   };
    const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
    const finishGaps=async(synthesis,audit)=>{
     const canComplete=['complete','paused'].includes(backgroundJob?.state)&&synthesis?.supervision?.reviewMode==='managed-audit'
@@ -153,7 +180,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    if(backgroundJob&&backgroundJob.state!=='complete'){
     if(!['paused','cancelled'].includes(backgroundJob.state)&&!(backgroundJob.state==='running'&&backgroundJob.cancelRequested))throw new BudgetError('continuation_unavailable','Araştırmanın durdurulduğu doğrulanamadı.');
     const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=backgroundJob.phase;
-    const reason=backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
+    const reason=handoffReason||backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
     const brand=rows[pendingPhases.indexOf('brand')];
     const policy=await ledger.get('audit:managed-policy:'+hash);
     const managed=policy?.state==='complete';
@@ -168,7 +195,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     }
     const partial=await ledger.once('audit:continuation:v1:'+phase+':'+hash,{briefHash:hash,phase},0,async()=>{
      usable??=managed&&brand?.state==='complete'?managedBrandContinuation(brief,brand.value):undefined;
-     return continuationAudit(brief,{synthesis:usable,reason});
+     return continuationAudit(brief,{synthesis:usable,reason,managed});
     });
     const {updated,gapCompletion}=await finishGaps(usable,partial);
     if(updated){
@@ -253,7 +280,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const code=error.code||'invalid_report',internalDetail=/^(Test|Kanıt|Marka|En az|sourcePlan|Invalid URL|Cannot |The operation|fetch failed)/.test(error.message||'')?error.message.slice(0,180):undefined;log('bhs_error',{code,errorName:error.name,...(internalDetail?{validationDetail:internalDetail}:{}),...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}:{})});
    if(error.budgetDiagnostic)log('bhs_budget_preflight',error.budgetDiagnostic);
    if(error.modelAttempts)log('bhs_model_attempts',{attempts:error.modelAttempts});
-   if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:typeof req.body==='object'?req.body.ticket:undefined});
+   if(code==='budget_pending')return res.status(202).json({phase,status:'in_progress',ticket:recoveryTicket});
    let cost;try{if(readCost)cost=await readCost();}catch{/* Preserve the original failure if cost status is unavailable. */}
    let recoveryAvailable=false,continuationAvailable=false;
    if(['start','advance','status'].includes(action)&&recoveryTicket&&activeLedger){

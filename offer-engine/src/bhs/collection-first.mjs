@@ -12,7 +12,7 @@ import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,seque
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
-import {groundedManagedResearchPlan,managedActors,planManagedResearch} from './managed-research.mjs';
+import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
@@ -563,6 +563,10 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const searches=sector?[sector]:[];
   for(let i=0;i<topics.length;i+=3){
    searches.push(...await Promise.all(topics.slice(i,i+3).map(({topic,query})=>collectAttempt(()=>pool.search(query||queryFor(brief,topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
+  }
+  if(searchIndex===searchStages.length-1&&sectional&&managedPlan?.coveragePolicy===2){
+   const extra=managedCoverageSearches(brief,managedPlan);
+   searches.push(...await Promise.all(extra.map(query=>collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:6,retainRaw:true})))));
   }
   return save({funding,searches,...(first&&managedPlan?{managedPlan}: {}),
    ...(planned?.unavailable?{toolIssues:[planned.reason]}:{})});

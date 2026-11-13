@@ -10,13 +10,15 @@ export function canContinue(step,now){
  return abandonedStage(step,now)||step?.state==='uncertain'&&step.charge_kurus===0&&continuationCodes.has(step.value?.code);
 }
 // Zero-cost handoff. A completed report keeps its checked scope and copy.
-export function continuationAudit(brief,{synthesis,reason,verifiedAudit}){
- const audit=verifiedAudit||directAuditResult(brief,synthesis||{report:{summary:'',sources:[],findings:[]},methodologyVersion:'research-unavailable'});
+export function continuationAudit(brief,{synthesis,reason,verifiedAudit,managed=false}){
+ const saved=synthesis||{report:{summary:'',sources:[],findings:[]},methodologyVersion:'research-unavailable'};
+ const audit=verifiedAudit||directAuditResult(brief,managed?{...saved,supervision:{...saved.supervision,reviewMode:'managed-audit'}}:saved);
  const partial=hasGroundedResearch(audit.data);
  audit.status='ready';
  const missing=audit.data.bhsSections?.filter(section=>!section.complete).map(section=>section.title)||[];
- const notice=partial?'Doğrulanan bulgular hazır. Fiyatlandırmaya geçebilirsin.'+(missing.length?' Ek kanıt gereken bölümler: '+missing.join(', ')+'.':'')
-  :'Teklif hazırlığına görüşme hedefleri ve hizmet kapsamıyla devam edebilirsin. Bu araştırmada teklife aktarılabilecek doğrulanmış bulgu bulunmuyor.';
+ const notice=(partial?'Doğrulanan bulgular hazır. Fiyatlandırmaya geçebilirsin.'
+  :'Teklif hazırlığına görüşme hedefleri ve hizmet kapsamıyla devam edebilirsin. Bu araştırmada teklife aktarılabilecek doğrulanmış bulgu bulunmuyor.')
+  +(missing.length?' Ek kanıt gereken bölümler: '+missing.join(', ')+'.':'');
  audit.data.researchContinuity={status:partial?'partial':'unavailable',reason,additionalPaidCalls:0,notice};
  audit.data.quality.contentComplete=false;audit.data.quality.issues.push({path:'research',reason:'incomplete_handoff'});
  audit.data.report.transfer.contentComplete=false;

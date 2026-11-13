@@ -7,13 +7,14 @@
    if(data?.session?.access_token)headers.Authorization='Bearer '+data.session.access_token;
   }
   const audit=path==='audit',readOnly=audit&&payload.action==='status';
+  const startsAudit=audit&&payload.action==='start';
   if(audit)headers['X-Offer-Request-Id']=crypto.randomUUID();
-  // Only status reads can be retried. A lost start/advance response may have
-  // already created a billable provider interaction on another function instance.
+  // Retry status reads here. The BHS UI can reconnect a start with its original
+  // run ID. Requests that advance paid work are never retried by this client.
   for(let attempt=0;;attempt++){
    let response,result;
    try{
-    response=await fetch((window.PipelineOfferServiceBase||'')+'/api/'+path,{method:'POST',headers,body:JSON.stringify(payload),credentials:'same-origin',...(readOnly?{signal:AbortSignal.timeout(45000)}:{})});
+    response=await fetch((window.PipelineOfferServiceBase||'')+'/api/'+path,{method:'POST',headers,body:JSON.stringify(payload),credentials:'same-origin',...(readOnly||startsAudit?{signal:AbortSignal.timeout(45000)}:{})});
     if(readOnly&&[502,503,504].includes(response.status))throw Error('temporary_status_failure');
     try{result=await response.json();}catch(error){
      if(audit)throw error;

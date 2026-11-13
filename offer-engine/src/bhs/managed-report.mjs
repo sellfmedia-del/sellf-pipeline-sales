@@ -89,9 +89,9 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
   if(plan.coveragePolicy===2&&source.method!=='search-snippet'){
    // Preserve distinct customer, channel and market excerpts when the operator
    // could not index the page. The raw archive remains available independently.
-   for(const pattern of [/yorum|reviews?|şikâyet|şikayet|complaint|rating|müşteri/iu,/pazar|market|talep|distribution|dağıtım|toptan|wholesale/iu]){
-    const relevant=source.sections.find(section=>pattern.test(section.text));
-    if(relevant)addSource(relevant.proofIds[0]);
+   for(const pattern of [/yorum|reviews?|şik[âa]yet|complaint|rating|müşteri geri bildirim/iu,/pazar|market|talep|distribution|dağıtım|toptan|wholesale|bayi|teslimat|ihracat/iu]){
+    const relevant=source.sections.filter(section=>pattern.test(section.text)).slice(0,2);
+    for(const section of relevant)addSource(section.proofIds[0]);
    }
   }
  }

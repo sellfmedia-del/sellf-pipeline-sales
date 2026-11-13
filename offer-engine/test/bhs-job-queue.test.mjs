@@ -212,6 +212,52 @@ test('a paused background job automatically keeps the offer open without misrepr
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 
+test('an unclaimed job or expired worker automatically opens pricing and retains the original budget',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ const f=await fixture();
+ try{
+  await f.enqueue();
+  let clock=Date.now();
+  const h=createBoundedAuditHandler({getQueue:async()=>f.queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>f.ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('handoff must not call a provider'),now:()=>clock,logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'synthetic-bhs'}}};
+  const pending=res();await h(request,pending);assert.equal(pending.code,202);
+  const cookie=pending.headers['Set-Cookie'][0].split(';')[0];
+  const status={...request,headers:{...request.headers,cookie},body:{action:'status',brief,ticket:pending.body.ticket}};
+  await f.ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:2}));
+  const before=await f.ledger.status();
+  const check=async reason=>{
+   const response=res();await h(status,response);
+   assert.equal(response.code,200);assert.equal(response.body.result.data.researchContinuity.reason,reason);
+   assert.ok(response.body.pricingProof);
+   assert.equal(response.body.result.data.bhsSections.filter(section=>!section.complete).length,5);
+   assert.match(response.body.result.data.researchContinuity.notice,/Rakip araştırması.*SWOT/);
+   assert.deepEqual(await f.ledger.status(),before);
+  };
+  const job=await f.queue.find('synthetic-bhs',hash);
+  await f.db.query("update public.pipeline_bhs_jobs set updated_at=now()-interval '4 minutes' where id=$1",[job.id]);
+  await check('queue_stalled');
+  assert.equal((await f.queue.read(job)).state,'cancelled');
+  await f.db.query("update public.pipeline_bhs_jobs set state='queued',phase='brand_sources',updated_at=now() where id=$1",[job.id]);
+  const worker=await f.queue.claim();
+  clock=worker.leaseUntil+31000;
+  await check('lease_expired');
+  assert.equal((await f.queue.read(worker)).cancelRequested,true);
+ }finally{await f.close();if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
+test('a temporary DNS failure before queueing offers pricing without starting provider work',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const queue={find:async()=>null,enqueue:()=>assert.fail('a site with unresolved DNS cannot start research')};
+  const ledger={begin:async()=>{},status:async()=>({id:token,capKurus:5000,chargedKurus:500}),get:async()=>null};
+  const h=createBoundedAuditHandler({getQueue:async()=>queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,validateWebsite:async()=>{throw Object.assign(Error('temporary DNS error'),{code:'EAI_AGAIN'});},getProviders:()=>assert.fail('no provider'),logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'lead1'}}};
+  const response=res();await h(request,response);
+  assert.equal(response.code,200);assert.equal(response.body.result.data.researchContinuity.reason,'website_network_busy');
+  assert.ok(response.body.pricingProof);assert.equal(response.body.cost.attemptChargedKurus,0);
+ }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
 test('an active background job can hand off to the offer and refuses any subsequent paid reservation',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  const f=await fixture();

@@ -4,7 +4,7 @@ import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,packet,plan} from './fixtures/sequential.mjs';
 import {capBhsLedger,managedPhaseBudget,managedReviewPhases} from '../src/bhs/managed-budget.mjs';
 import {mergeManagedGapReport,resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
-import {managedActors,planManagedResearch} from '../src/bhs/managed-research.mjs';
+import {managedActors,managedCoverageSearches,planManagedResearch} from '../src/bhs/managed-research.mjs';
 import {managedReportInput,managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
 import {sequentialContext,sequentialPhases,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
@@ -267,6 +267,17 @@ test('an oversized market and five actors preserve the paid Claude plan and its 
  assert.deepEqual(missing.tasks.slice(1),tasks.slice(1));
  assert.equal(missing.tasks[0].section,'competition');
  assert.deepEqual(missing.peerNames,peerNames);
+});
+
+test('single perception and readiness tasks receive different, brand-scoped research questions',()=>{
+ const perception={section:'perception',query:'"Test Marka" müşteri şikayetleri'};
+ const readiness={section:'readiness',query:'"Test Marka" ihracat gereklilikleri'};
+ const plan={tasks:[perception,readiness],market:'Türkiye',comparableProduct:'yulaf barı',understanding:{requirements:['Bayi edinimi']}};
+ const [reviews,channels]=managedCoverageSearches(brief,plan);
+ assert.match(reviews,/Türkiye.*müşteri değerlendirmeleri/);
+ assert.match(channels,/Bayi edinimi.*Türkiye.*dağıtım kanalları/);
+ assert.notEqual(reviews,perception.query);assert.notEqual(channels,readiness.query);
+ assert.deepEqual(managedCoverageSearches(brief,{...plan,tasks:[...plan.tasks,{...perception,query:reviews},{...readiness,query:channels}]}),[]);
 });
 
 test('ranked actions, metrics, questions and proofs survive report and partial offer handoff',async t=>{

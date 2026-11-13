@@ -18,7 +18,7 @@ function jobRow(row){
  if(!row)return null;
  const brief=JSON.parse(row.brief_text);
  return {...row.spec,id:row.id,leadId:row.lead_id,budgetId:row.budget_id,briefHash:briefHash(snapshotBrief(brief)),queueBriefHash:row.brief_hash,
-  brief,phase:row.phase,state:row.state,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),diagnostic:row.diagnostic,cancelRequested:row.cancel_requested===true,inventoryBatch:row.inventory_batch===true};
+  brief,phase:row.phase,state:row.state,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),createdAt:Date.parse(row.created_at),updatedAt:Date.parse(row.updated_at),diagnostic:row.diagnostic,cancelRequested:row.cancel_requested===true,inventoryBatch:row.inventory_batch===true};
 }
 export function createBhsJobStore({store=runtimeStore(),jwt,workerSecret=process.env.BHS_WORKER_SECRET}={}){
  const browser=(op,args)=>store.call('bhs_job_'+op,{jwt,...args});

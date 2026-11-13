@@ -57,6 +57,22 @@ function normalizePlan(value,fallback){
   peerNames:distinct(list(value?.peerNames).map(name=>compact(name,70)).filter(Boolean)).slice(0,6),tasks,actors:[...actors.values()]};
 }
 
+export function managedCoverageSearches(brief,plan){
+ const brand='"'+compact(brief.brandName,140).replaceAll('"','')+'"';
+ const tasks=plan.tasks;
+ const queries=[];
+ if(tasks.filter(task=>task.section==='perception').length<2){
+  const first=tasks.find(task=>task.section==='perception');
+  const channel=/şikayetvar|complaint|şik[âa]yet/iu.test(first?.query||'')?'ürün satın alan müşteri değerlendirmeleri puan yorum':'ürün deneyimi müşteri şikayetleri marka yanıtı';
+  queries.push([brand,plan.comparableProduct,plan.market,channel].filter(Boolean).join(' '));
+ }
+ if(tasks.filter(task=>task.section==='readiness').length<2){
+  queries.push([brand,compact(plan.understanding.requirements?.[0]||brief.goals,100),plan.market,'mevcut satış dağıtım kanalları iş ortakları operasyon'].filter(Boolean).join(' '));
+ }
+ const prior=new Set(tasks.map(task=>task.query.trim().toLocaleLowerCase('tr')));
+ return queries.map(query=>compact(query,380)).filter(query=>!prior.has(query.toLocaleLowerCase('tr')));
+}
+
 export function groundedManagedResearchPlan(brief,brand){
  const fact=(topics,max)=>compact(brand.facts.find(f=>topics.includes(f.topic))?.statement,max);
  const company='"'+compact(brief.brandName,140).replaceAll('"','')+'"',host=researchHost(brief.website);
