@@ -33,7 +33,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const signal=AbortSignal.timeout(timeout);
   const response=await fetchImpl(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{}),signal:deadline?AbortSignal.any([signal,deadline]):signal,redirect:'error'});
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','BHS sağlayıcı yanıtı çok büyük.');
-  let value;try{value=JSON.parse(raw);}catch{throw new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.');}
+  let value;try{value=JSON.parse(raw);}catch{throw Object.assign(new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.'),{providerStatus:response.status});}
   if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));throw error;}
   return value;
  }
@@ -152,17 +152,27 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
   const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
-  try{count=await json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);}
+  const countTokens=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);
+  try{
+   try{count=await countTokens();}
+   catch(error){
+    const retryable=transientStatus(error.providerStatus)||[429,504].includes(error.providerStatus)||error.code==='provider_format'||error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed';
+    if(!opts.retryTokenCount||!retryable||opts.signal?.aborted)throw error;
+    await delay(800);
+    count=await countTokens();
+   }
+  }
   catch(error){
    if(receiptVersion==='v8'&&role==='manager'&&!plainJson&&error.providerStatus===400&&error.providerReason==='schema_rejected')return generateRole(role,stage,input,schema,{...opts,plainJson:true});
    if(allowWorkerFallback&&receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
     await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected',operation:'countTokens'}));
     return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
    }
+   if(error instanceof Error)error.providerOperation='countTokens';
    throw error;
   }
   const tokens=anthropicRole?count.input_tokens:count.totalTokens;
-  if(!integer(tokens,1))throw new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.');
+  if(!integer(tokens,1))throw Object.assign(new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.'),{providerOperation:'countTokens'});
   const upper=inputTokenUpperBound(tokens);
   if(opts.maxInputUpperTokens!==undefined&&upper>opts.maxInputUpperTokens){
    const error=new BudgetError('input_budget','BHS kaynağı bu çağrı için ayrılmış girdi bütçesini aşıyor.');

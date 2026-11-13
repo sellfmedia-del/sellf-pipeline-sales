@@ -12,7 +12,7 @@ import {collectionBrandCeiling,runCollectionFirstStage} from './collection-first
 import {assertSchema} from './schema.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
-const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000});
+const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000,hardDeadline:true});
 const queryBrand=b=>'"'+b.brandName.replace(/["\n\r]/g,' ').trim()+'"';
 const researchTargetCount=4;
 const seoActor='logiover/website-seo-audit-crawler';

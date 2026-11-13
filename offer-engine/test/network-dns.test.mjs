@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
 import {createDnsLookup} from '../src/network-dns.mjs';
-import {resolveTarget} from '../src/network.mjs';
+import {createPublicFetcher,resolveTarget} from '../src/network.mjs';
 const address={address:'8.8.8.8',family:4};
 const failure=code=>Object.assign(new Error('synthetic DNS failure'),{code,syscall:'getaddrinfo'});
 
@@ -33,4 +34,23 @@ test('successful retries still reject any private DNS answer and preserve IPv4 p
  let calls=0;const lookup=createDnsLookup({resolve:async()=>{if(!calls++)throw failure('EBUSY');return [address,{address:'10.0.0.1',family:4}];},wait:async()=>{}});
  await assert.rejects(resolveTarget('https://brand.example/',lookup),/herkese açık değil/);
  const target=await resolveTarget('https://brand.example/',createDnsLookup({resolve:async()=>[{address:'2606:4700:4700::1111',family:6},address]}));assert.deepEqual(target.address,address);
+});
+
+test('a BHS source deadline bounds both a stalled lookup and a continuously active response',async t=>{
+ const keepAlive=setTimeout(()=>{},1000);t.after(()=>clearTimeout(keepAlive));
+ const never=Promise.withResolvers();
+ const stalled=createPublicFetcher({deadline:Date.now()+40,hardDeadline:true,resolve:()=>never.promise});
+ await assert.rejects(stalled('https://brand.example/'),error=>error.name==='TimeoutError');
+ never.resolve({url:new URL('https://brand.example/'),address});
+
+ const server=createServer((request,response)=>{
+  response.writeHead(200,{'Content-Type':'text/plain'});
+  const interval=setInterval(()=>response.write('ongoing'),10);
+  response.once('close',()=>clearInterval(interval));
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const resolve=async()=>({url:new URL('http://127.0.0.1:'+server.address().port),address:{address:'127.0.0.1',family:4}});
+ const read=createPublicFetcher({deadline:Date.now()+100,hardDeadline:true,resolve});
+ await assert.rejects(read('https://brand.example/'),error=>error.name==='AbortError');
 });
