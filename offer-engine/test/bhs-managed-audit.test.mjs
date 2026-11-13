@@ -575,4 +575,15 @@ test('a truncated initial Claude plan keeps all required source searches active 
  assert.ok(searches.some(query=>query.includes('Kolonya')));
  assert.equal(calls,1);
  assert.equal(searches.length,first.managedPlan.tasks.length+1);
+ let fallbacks=0;
+ Object.assign(providers,{managedBudgetVersion:3,evidenceReviewer:async(stage,_input,_schema,options)=>{
+  assert.equal(stage,'v8-managed-research-plan-fallback');
+  fallbacks++;
+  return {data:options.normalizeData({market:'Türkiye',comparableProduct:'Kolonya',peerNames:['Alpha','Beta']})};
+ }});
+ const recovered=await runCollectionFirstStage({phase:'sector_sources',brief,providers,
+  previous:async name=>receipts.get(name),finish:data=>data});
+ assert.equal(fallbacks,1);
+ assert.equal(recovered.managedPlan.comparableProduct,'Kolonya');
+ assert.deepEqual(recovered.managedPlan.peerNames,['Alpha','Beta']);
 });
