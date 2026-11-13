@@ -44,8 +44,8 @@ function modelTransport({mutate,fail}={}){
  };
  return {events,fetchImpl};
 }
-function providerFor(db,phase,transport,apify){
- const p=createSequentialProviders({ledger:db.ledger,phase,geminiKey:'test-worker',anthropicKey:'test-manager',tavilyKey:'test-search',fetchImpl:transport.fetchImpl,now,apify:apify||{availableActors:async()=>[],enrich:async()=>{throw Error('Unexpected actor');},mergeEvidence:p=>p}});
+function providerFor(db,phase,transport,apify,options){
+ const p=createSequentialProviders({ledger:db.ledger,phase,geminiKey:'test-worker',anthropicKey:'test-manager',tavilyKey:'test-search',fetchImpl:transport.fetchImpl,now,apify:apify||{availableActors:async()=>[],enrich:async()=>{throw Error('Unexpected actor');},mergeEvidence:p=>p},...options});
  return {...p,manager:(stage,input,schema,opts)=>p.manager(stage,{...input,qaStage:stage},schema,opts),worker:(stage,input,schema,opts)=>p.worker(stage,{...input,qaStage:stage},schema,opts)};
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
@@ -158,6 +158,25 @@ test('an exact client-declared analysis market is separate from sourced sales cl
    else{const out=await advance('brand_review');assert.equal(out.understandingDecision,'accepted');assert.equal(out.review.marketContext.basis,'brief_declared');assert.equal(out.review.marketContext.validated,true);assert.ok(!out.facts.some(f=>f.topic==='market'));}
   }finally{await db.close();}
  }
+});
+test('managed brand review retains checked facts when an optional market quote and another fact are invalid',async t=>{
+ const db=await localBudget();t.after(db.close);
+ const transport=modelTransport({mutate:(stage,data,input)=>stage==='v8-brand-review'?{
+  ...data,marketContext:{basis:'brief_declared',description:'ABD pazarı',sourceIds:[],briefQuote:'ABD pazarında büyüme.'},
+  additionalFacts:[{...input.candidates[0],id:'unverified',sourceIds:['invented-proof']}],
+  nextTask:{...data.nextTask,queries:['sector demand','market distribution','extra query']}
+ }:data});
+ let review;
+ for(const phase of ['brand_plan','brand_sources','brand_draft','brand_review']){
+  const providers=providerFor(db,phase,transport,null,{managedBudgetVersion:2});
+  review=await runBoundedStage({phase,brief,ledger:db.ledger,providers,collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+ }
+ assert.equal(review.understandingDecision,'accepted');
+ assert.equal(review.review.marketContext.basis,'unknown');
+ assert.deepEqual(review.review.nextTask.queries,['sector demand','market distribution']);
+ assert.ok(review.facts.some(fact=>fact.topic==='market'));
+ assert.ok(review.facts.every(fact=>fact.id!=='unverified'));
+ assert.equal(transport.events.filter(event=>event.stage==='v8-brand-review').length,1);
 });
 test('Claude can order one targeted correction per stage within the same total account',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,context)=>stage==='v8-brand-review'&&!context.repairRound||stage==='v8-sector-review'?{...data,decision:'limited',missing:['Kaynaklı hedef davranış netleşmeli.']}:data});
