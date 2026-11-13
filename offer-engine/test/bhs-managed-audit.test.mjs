@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,packet,plan} from './fixtures/sequential.mjs';
 import {capBhsLedger,managedPhaseBudget,managedReviewPhases} from '../src/bhs/managed-budget.mjs';
-import {managedResearchHealthy,resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
-import {planManagedResearch} from '../src/bhs/managed-research.mjs';
+import {resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
+import {managedActors,planManagedResearch} from '../src/bhs/managed-research.mjs';
 import {managedReportInput,managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
 import {sequentialContext,sequentialPhases,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
@@ -71,7 +71,7 @@ test('live-sized report responses finish five sections and repair only missing g
   return {section,quadrant,peerId,card};
  }));
  const inventory=[{observations:records.map(record=>({area:areas[record.section],text:record.card.quote,sourceIds:[record.card.id]}))}];
- const args={brief,brand:{facts:[]},plan:{understanding:{goals:brief.goals},tasks:[]},context,inventory};
+ const args={brief,brand:{facts:[]},plan:{understanding:{goals:brief.goals},tasks:[],coveragePolicy:2},context,inventory};
  const initial=planPositionalEvidenceReview(managedReportInput(args).input).flatMap(batch=>batch.rows).length;
  inventory[0].observations.push(...Array.from({length:454-initial},(_,i)=>({area:'operations_2',text:'Kaynaklı arşiv satırı '+i+'.',sourceIds:[records.at(-1).card.id]})));
  const {input}=managedReportInput(args),batches=planPositionalEvidenceReview(input),rows=batches.flatMap(batch=>batch.rows);
@@ -127,7 +127,8 @@ test('live-sized report responses finish five sections and repair only missing g
     data=section==='swot'?Object.fromEntries(relevant.map(({quadrant},i)=>[quadrant,[
      quadrant==='weakness'&&attempt===0?{...findings[i],observation:'Marka Türkiye genelinde 500 mağaza işletiyor.'}:findings[i]
     ]])):section==='competition'&&attempt===0?{findings:[],peers:[]}:
-     {findings,...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
+     {findings:section==='digital'?[{...findings[0],area:'unknown_area'},...findings]:findings,
+      ...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
    }
    const tool=Boolean(request.tools);
    if(cut)output=request.max_tokens;
@@ -192,18 +193,10 @@ test('unused research budget cannot increase the synthesis or offer allowance',a
  assert.equal((await ledger.status()).chargedKurus,1800);
 });
 
-test('an incomplete content result enables an explicit, once-only extra account; failed tools do not',async t=>{
+test('an incomplete result enables an explicit, once-only extra account',async t=>{
  const base=await localBudget({lead:'managed-base'});t.after(base.close);
  const child=await localBudget({lead:'managed-extra'});t.after(child.close);
  await base.ledger.once('test-base',{},4500,async()=>({}));
- const rows=[{state:'complete',value:{searches:[{results:[]}]}}];
- assert.equal(managedResearchHealthy(rows),true);
- assert.equal(managedResearchHealthy([...rows,{state:'complete',value:{toolIssues:['provider_error']}}]),false);
- assert.equal(managedResearchHealthy([{state:'complete',value:{scrapes:[{unavailable:true,reason:'actor_api_unavailable'}]}}]),false);
- assert.equal(managedResearchHealthy([{state:'complete',value:{unavailable:['model_temporarily_unavailable']}}]),false);
- assert.equal(managedResearchHealthy([{state:'complete',value:{costFallback:true}}]),false);
- assert.equal(managedResearchHealthy([{state:'complete',value:{supervision:{evidenceCoverage:{complete:false}}}}]),false);
- assert.equal(managedResearchHealthy([{state:'uncertain',value:{code:'budget_limit'}}]),false);
  let opened=0,modelCalls=0;
  const input={brief,synthesis:{supervision:{reviewMode:'managed-audit',researchPlan:{}},report:{findings:[]}},sections:['digital'],secret:'synthetic-test-secret',baseLedger:base.ledger,
   getGapLedger:async()=>{opened++;return child.ledger;},previous:async()=>({}),
@@ -222,18 +215,29 @@ test('an incomplete content result enables an explicit, once-only extra account;
  assert.equal((await base.ledger.status()).chargedKurus+(await child.ledger.status()).chargedKurus,8000);
 });
 
-test('Claude receives the complete brief and specifies platforms and measures for all five areas',async()=>{
+test('an oversized market and five actors preserve the paid Claude plan and its six candidate names',async()=>{
  const focusedBrief={...brief,goals:'Fransa B2B dağıtımı',needs:'Depolama ve bayi edinimi',meetingNotes:'Mevcut ihracat ekibi ile yürütülecek.'};
  const tasks=Object.keys(managedSections).map(section=>({section,platform:'Fransa B2B toptancı siteleri',query:section+' barres avoine grossiste France',metrics:['Minimum sipariş adedi'],purpose:'Bayi uyumunu değerlendirmek'}));
- const providers={manager:async(name,input)=>{
+ const peerNames=Array.from({length:6},(_,i)=>'Research candidate '+i);
+ const actors=managedActors.slice(0,5).map(id=>({id,platform:'Resmî kanal',purpose:'Kaynağı doğrula'}));
+ const market='Fransa B2B dağıtımı '+ 'a'.repeat(93);
+ const providers={manager:async(name,input,schema,options)=>{
   assert.equal(name,'v8-managed-research-plan');
   assert.deepEqual(input.brief,focusedBrief);
   assert.equal(input.sectorEvidence[0][0],'https://industry.example/report');
-  return {data:{tasks}};
+  assert.equal(schema.properties.actors.maxItems,managedActors.length);
+  return {data:options.normalizeData({tasks,peerNames,actors,market})};
  }};
  const result=await planManagedResearch({brief:focusedBrief,brand:{facts:[],review:{}},sector:{results:[{url:'https://industry.example/report',title:'Industry',content:'Source excerpt'}]},providers});
  assert.deepEqual(result.tasks,tasks);
- await assert.rejects(planManagedResearch({brief:focusedBrief,brand:{facts:[],review:{}},providers:{manager:async()=>({data:{tasks:tasks.slice(1)}})}}),error=>error.code==='model_output_invalid');
+ assert.equal(market.length,113);
+ assert.equal(result.market.length,110);
+ assert.deepEqual(result.actors,actors);
+ assert.deepEqual(result.peerNames,peerNames);
+ const missing=await planManagedResearch({brief:focusedBrief,brand:{facts:[],review:{}},providers:{manager:async()=>({data:{tasks:tasks.slice(1),peerNames}})}});
+ assert.deepEqual(missing.tasks.slice(1),tasks.slice(1));
+ assert.equal(missing.tasks[0].section,'competition');
+ assert.deepEqual(missing.peerNames,peerNames);
 });
 
 test('ranked actions, metrics, questions and proofs survive report and partial offer handoff',async t=>{
@@ -329,12 +333,10 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  checkpoints.get(stageKey(brief,'sector_draft','v8')).value.toolIssues=['provider_error'];
  const affected=await request({action:'status',ticket:initial.data.ticket});
  assert.equal(affected.code,200);
- assert.equal(affected.data.gapCompletion,undefined);
+ assert.equal(affected.data.gapCompletion.available,true);
+ assert.deepEqual(affected.data.gapCompletion.sections,[managedSections.perception]);
  assert.ok(affected.data.pricingProof);
  assert.equal(affected.data.result.data.findings.length,specs.length);
- const denied=await request({action:'complete_gaps',ticket:initial.data.ticket});
- assert.equal(denied.code,422);
- assert.equal(denied.data.code,'completion_unavailable');
  assert.equal((await ledger.status()).chargedKurus,500);
 });
 
@@ -425,7 +427,7 @@ test('a final report failure can hand off the reviewed source with no invented a
  const continued=continuationAudit(brief,{verifiedAudit:audit,reason:result.reportIssue});
  assert.equal(continued.status,'ready');
  assert.equal(continued.data.quality.contentComplete,false);
- assert.match(continued.data.researchContinuity.notice,/Nihai analiz tamamlanamadı/);
+ assert.match(continued.data.researchContinuity.notice,/Doğrulanan bulgular hazır/);
  assert.deepEqual(selectProposalAudit(continued.data,brief).findings.map(finding=>finding.statement).sort(),[...statements].sort());
 });
 
@@ -463,7 +465,6 @@ test('a truncated initial Claude plan keeps all required source searches active 
   previous:async name=>receipts.get(name),finish:data=>data}));
  const first=receipts.get('sector_sources');
  assert.deepEqual(first.toolIssues,['incomplete']);
- assert.equal(managedResearchHealthy([{state:'complete',value:first}]),false);
  assert.equal(first.managedPlan.plannerFallback,true);
  assert.deepEqual(new Set(first.managedPlan.tasks.map(task=>task.section)),new Set(Object.keys(managedSections)));
  assert.ok(first.managedPlan.tasks.filter(task=>task.section==='digital').every(task=>searches.includes(task.query)));

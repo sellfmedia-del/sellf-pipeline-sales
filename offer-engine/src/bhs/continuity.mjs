@@ -14,8 +14,9 @@ export function continuationAudit(brief,{synthesis,reason,verifiedAudit}){
  const audit=verifiedAudit||directAuditResult(brief,synthesis||{report:{summary:'',sources:[],findings:[]},methodologyVersion:'research-unavailable'});
  const partial=hasGroundedResearch(audit.data);
  audit.status='ready';
- const incompleteReview=audit.data.supervision?.evidenceCoverage?.complete===false;
- const notice=audit.data.supervision?.reportIssue?'Nihai analiz tamamlanamadı. İncelenen kaynak bulgularıyla teklif hazırlanabilir.':incompleteReview?'Kanıt incelemesinin bir bölümü tamamlanamadı. Doğrulanan bulgularla teklif hazırlanabilir.':verifiedAudit?'Ön BHS’de doğrulama bekleyen alanlar var. Kaynakla desteklenen bulgular ve teklif kapsamı hazır.':partial?'Ön BHS tamamlanamadı. Yalnız doğrulanmış mevcut bulgular korundu; teklif kapsamı görüşme bilgilerine göre kontrol bekliyor.':'Ön BHS tamamlanamadı. Bu teklif araştırma bulgusu veya BHS skoru içermez; görüşmede belirtilen hedef ve hizmet kapsamıyla hazırlanır.';
+ const missing=audit.data.bhsSections?.filter(section=>!section.complete).map(section=>section.title)||[];
+ const notice=partial?'Doğrulanan bulgular hazır. Fiyatlandırmaya geçebilirsin.'+(missing.length?' Ek kanıt gereken bölümler: '+missing.join(', ')+'.':'')
+  :'Teklif hazırlığına görüşme hedefleri ve hizmet kapsamıyla devam edebilirsin. Bu araştırmada teklife aktarılabilecek doğrulanmış bulgu bulunmuyor.';
  audit.data.researchContinuity={status:partial?'partial':'unavailable',reason,additionalPaidCalls:0,notice};
  audit.data.quality.contentComplete=false;audit.data.quality.issues.push({path:'research',reason:'incomplete_handoff'});
  audit.data.report.transfer.contentComplete=false;

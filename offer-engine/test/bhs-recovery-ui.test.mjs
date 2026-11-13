@@ -55,7 +55,7 @@ test('desktop/mobile continue without completed research or extra paid retries, 
    if(kind==='active')await page.evaluate(()=>{const original=window.PipelineAuditRequest;window.PipelineAuditRequest=async payload=>{const result=await original(payload);return payload.action==='start'?{...result,phase:'brand_plan',nextAction:undefined,execution:'background',continuationAvailable:true}:result;};});
    await page.locator('#review-'+(kind==='active'?'continuity':kind)).click();await page.locator('.ob-continuation:not([hidden])').waitFor();
    await page.locator('.ob-continue').evaluate(button=>{button.click();button.click();});
-   await page.locator('.ob-price:not([hidden])').waitFor();assert.match(await page.locator('#ob-review-title').textContent(),/BHS tamamlanamadı/);
+   await page.locator('.ob-price:not([hidden])').waitFor();assert.match(await page.locator('#ob-review-title').textContent(),/Görüşme bilgileriyle teklif hazırlığı/);
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),expected);
    assert.equal(await page.locator('.ob-research-report article').count(),0,'unavailable research must not render six empty dimension cards');
    assert.equal(await page.locator('.ob-research-report h3').count(),0,'unavailable research must not render empty report headings');
@@ -68,7 +68,7 @@ test('desktop/mobile continue without completed research or extra paid retries, 
     await page.locator('.ob-turkish').evaluate(button=>{button.click();button.click();});
    }
    try{await page.locator('.ob-proposal:not([hidden])').waitFor({timeout:8000});}catch(error){throw Error(JSON.stringify({width,kind,errors,notice:await page.locator('.ob-review-notice').textContent(),composeCalls:await page.evaluate(()=>reviewComposeCalls.length)}));}
-   assert.match(await page.locator('.so-bhs-brief').textContent(),/tamamlanamadı/);
+   assert.match(await page.locator('.so-bhs-brief').textContent(),/doğrulanmış bulgu bulunmuyor/);
    assert.equal(await page.locator('.ob-scope-approved').isChecked(),false);assert.equal(await page.locator('.ob-publish').isVisible(),false);
    const calls=await page.evaluate(()=>reviewComposeCalls.map(c=>({language:c.brief.language,audit:c.audit,pricing:c.pricing})));
    assert.deepEqual(calls.map(c=>c.language),kind==='english'?['en','tr']:['tr']);

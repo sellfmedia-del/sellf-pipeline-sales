@@ -15,7 +15,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch} from './managed-evidence-review.mjs';
+import {managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -96,11 +96,11 @@ function providerSource({url,title,text,method,asOf,scope,provenance}){
 export async function collectionCorpus(previous){
  const brand=await previous('brand');
  const [searches,pages,scrapes]=await Promise.all([
-  sourcesFrom(previous,[...searchStages,scrapeStages[0]],'searches'),
-  sourcesFrom(previous,[...readStages,scrapeStages[0]],'pages'),
+  sourcesFrom(previous,[...searchStages,...scrapeStages],'searches'),
+  sourcesFrom(previous,[...readStages,...scrapeStages],'pages'),
   sourcesFrom(previous,scrapeStages,'scrapes')
  ]);
- const {peerHints=[]}=await previous(scrapeStages[0]);
+ const peerHints=await sourcesFrom(previous,scrapeStages,'peerHints');
  const asOf=brand.packet.asOf;
  const searchSources=searches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:'Tavily arama alıntısı'}))).filter(Boolean);
  const actorSources=scrapes.flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId}}))).filter(Boolean);
@@ -154,7 +154,7 @@ export async function readResearchPages(brief,plan,targets,providers,collect){
  }});
 }
 
-export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan,priorSearches=[]){
+export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan,priorSearches=[],archivedUrls=new Set()){
  const plan=managedPlan?{data:{product:managedPlan.comparableProduct,candidates:managedPlan.peerNames}}:await collectAttempt(()=>pool.worker('v8-collection-peer-search',{
   instruction:'Onaylı marka ürünlerinden markanın tanındığı tek bir somut ürün veya hizmet kategorisini product olarak seç. Sertifika, değer önermesi veya geniş sektör adı kullanma. Hedef pazarda aynı ürünü veya hizmeti sunan, birbirinden bağımsız en fazla altı marka adını candidates içinde ver. Her aday seçilen tek kategoride satıcıya ikame olabilmeli. Bir grubun alt markaları, perakendeci, ajans ve pazaryeri aday değildir. Yalnızca araştırma adayları üret; rakip kararı verme, URL yazma.',
   brand:brief.brandName,market:market?.[1]||'',identity:brand.facts,
@@ -167,9 +167,9 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   if(!host||host===researchHost(brief.website)||hints.some(peer=>researchHost(peer.website)===host))return;
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  };
- if((repair||managedPlan?.plannerFallback)&&product){
+ async function discoverPublishers(){
   const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
-  const query=[format,managedPlan?.market||market?.[1],market?.[3]==='tr'?'markalar ürün çeşitleri satın al':'brands product range shop'].filter(Boolean).join(' ');
+  const query=[format,managedPlan?.market||market?.[1],market?.[3]==='tr'?'üretici markalar resmî ürün kataloğu':'manufacturer brands official product catalogue'].filter(Boolean).join(' ');
   const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
   searches.push(found);
   for(const result of found.results||[]){
@@ -179,9 +179,9 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    addHint(name,url);
   }
  }
- for(const name of product?(plan.data?.candidates||[]):[]){
+ async function findPublisher(name){
   const group=peerGroupKey(name);
-  if(!group||seen.has(group))continue;
+  if(!group||seen.has(group))return null;
   seen.add(group);
   const query=[name,product,managedPlan?.market||market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
   const owned=results=>(results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&publisherMatches(name,url,true));
@@ -189,22 +189,29 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    const text=nameKey([result.title,result.content,result.url].join(' '));
    return words.some(word=>text.includes(nameKey(word)));
   }));
-  let search;
+  let search,publisherSearch;
   if(!urls.length){
    search=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
-   searches.push(search);
    urls=owned(search.results);
   }
-  if(repair&&!urls.length&&!search?.unavailable){
-   const publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" marka resmi web sitesi online mağaza',{depth:'basic',maxResults:12,retainRaw:true}));
-   searches.push(publisherSearch);
+  if((repair||managedPlan)&&!urls.length&&!search?.unavailable){
+   publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" '+(managedPlan?.market||market?.[1]||'')+' official products services website',{depth:'basic',maxResults:12,retainRaw:true}));
    urls=owned(publisherSearch.results);
   }
   const url=urls.find(url=>words.some(word=>new URL(url).pathname.split(/[^\p{L}]+/u).some(part=>nameKey(part)===nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
-  addHint(name,url);
+  return {name,url,searches:[search,publisherSearch].filter(Boolean)};
  }
+ const names=product?(plan.data?.candidates||[]):[];
+ for(let i=0;i<names.length;i+=3){
+  const results=await Promise.all(names.slice(i,i+3).map(findPublisher));
+  for(const result of results.filter(Boolean)){
+   searches.push(...result.searches);
+   addHint(result.name,result.url);
+  }
+ }
+ if(product&&(repair||managedPlan&&hints.length<2))await discoverPublishers();
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
- const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
+ const packet=await readResearchPages(brief,brand.plan,targets.filter(url=>!archivedUrls.has(url)),providers,collect);
  return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true,...(managedPlan?{unavailable:packet.unavailable}:{})};
 }
 
@@ -436,7 +443,28 @@ async function managedCollectionInputs(brief,plan,previous){
  const discovered=comparisonEntities(context,inventory);
  const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16);
  context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
+ context.peerProofs=new Map(candidates.map(({entity,cards})=>[entity.id,cards.map(card=>card.id)]));
  return {brief,brand,plan,context,inventory};
+}
+
+export async function retainedManagedProofs(brief,plan,previous){
+ const args=await managedCollectionInputs(brief,plan,previous);
+ const {input,reverse}=managedReportInput(args);
+ const batches=await sourcesFrom(previous,managedReviewPhases,'reviews');
+ const reviewed=reviewedManagedEvidence(input,batches);
+ const proofs=new Map();
+ for(const [alias,id] of reverse){
+  const verdict=reviewed.verdict(alias);
+  if(verdict&&verdict!=='x')proofs.set(id,verdict);
+ }
+ for(const [observation,,,aliases] of input.observations){
+  const verdict=reviewed.verdict(observation);
+  if(verdict&&verdict!=='x')for(const alias of aliases){
+   const id=reverse.get(alias);
+   if(id&&reviewed.verdict(alias)!=='x'&&!proofs.has(id))proofs.set(id,verdict);
+  }
+ }
+ return proofs;
 }
 
 async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSectionsOnly=false}={}){
@@ -480,7 +508,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    [brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals,'sektör pazar hacmi gelir kanalları rekabet'].join(' ').slice(0,500),
    {depth:'basic',maxResults:8,retainRaw:true})):null;
   const planned=first&&managed?await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool})):null;
-  const managedPlan=planned?.unavailable?groundedManagedResearchPlan(brief,brand):planned||managed||null;
+  const managedPlan=planned?.unavailable?{...groundedManagedResearchPlan(brief,brand),coveragePolicy:2}:planned||managed||null;
   const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
   const searches=sector?[sector]:[];
   for(let i=0;i<topics.length;i+=3){
@@ -501,7 +529,19 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const market=markets.find(([pattern])=>pattern.test(managed?.market||brand.review?.marketContext?.description||brief.goals));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
   const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):scoped(managed?collectionBudgetKurus:1650);
-  const comparison=scrapeIndex===0?await comparisonResearch(brief,brand,market,pool,providers,collect,null,managed||null,sectional?searches:[]):{searches:[],pages:[]};
+  let comparison={searches:[],pages:[]};
+  const archived=new Set([...brand.packet.sources,...pages].filter(page=>page.method!=='search-snippet'&&!page.metadataOnly).map(page=>page.finalUrl));
+  if(scrapeIndex===0)comparison=await comparisonResearch(brief,brand,market,pool,providers,collect,null,managed||null,sectional?searches:[],managed?.coveragePolicy===2?archived:undefined);
+  if(scrapeIndex===1&&managed?.coveragePolicy===2){
+   const prior=await previous(scrapeStages[0]);
+   const evidence=sequentialContext(brief,{packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...(prior.pages||[])],entities:[...brand.packet.entities,...(prior.peerHints||[])]},searches:[],peerDiscoveryVersion:'product-v2'});
+   const supported=peerCandidates(evidence,evidence.input.entities,brand,managed.comparableProduct,true);
+   if(supported.length<2){
+    const names=supported.map(peer=>peer.entity.name);
+    for(const page of prior.pages||[])if(!page.metadataOnly)archived.add(page.finalUrl);
+    comparison=await comparisonResearch(brief,brand,market,pool,providers,collect,{names,product:managed.comparableProduct},managed,[...searches,...(prior.searches||[])],archived);
+   }
+  }
   // V2 has separate envelopes for acquisition, Gemini indexing and Claude review.
   const scrapes=await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   return save({...comparison,scrapes});

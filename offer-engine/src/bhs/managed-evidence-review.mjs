@@ -29,11 +29,12 @@ export function planManagedEvidenceReview(input){
  return batches;
 }
 
-export function planPositionalEvidenceReview(input){
+export function planPositionalEvidenceReview(input,reusedIds=new Set()){
  return planManagedEvidenceReview(input).flatMap(batch=>{
   const result=[];
-  for(let i=0;i<batch.rows.length;i+=56){
-   const rows=batch.rows.slice(i,i+56);
+  const pending=batch.rows.filter(row=>!reusedIds.has(row.id));
+  for(let i=0;i<pending.length;i+=56){
+   const rows=pending.slice(i,i+56);
    result.push(evidenceSubset(batch,rows));
   }
   return result;
@@ -172,10 +173,10 @@ export function reviewedManagedEvidence(input,reviews){
   .flatMap(id=>rows.get(id)?.[3]||(Object.hasOwn(input.sources,id)?[id]:[])));
  const invalidObservations=[...rows.keys()].filter(id=>covered.get(id)==='x');
  const reviewedEvidenceRows=expected.filter(id=>covered.has(id)).length;
- function reportInput(shortlist,section,peerProofs=1){
+ function reportInput(shortlist,section,peerProofs=1,excludedPeers){
    const observations=shortlist.filter(id=>rows.has(id)).map(id=>rows.get(id));
    const proofs=new Set([...observations.flatMap(row=>row[3]),...shortlist.filter(id=>Object.hasOwn(input.sources,id))]);
-   const eligible=input.entities.filter(([,role])=>!section||section==='competition'||role==='brand');
+   const eligible=input.entities.filter(([id,role])=>(!section||section==='competition'||role==='brand')&&!excludedPeers?.has(id));
    const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&
     (peerProofs===1||role!=='competitor'||!['html-signals','search-snippet'].includes(input.sources[id]?.[2])));
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
@@ -197,7 +198,7 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
@@ -211,6 +212,6 @@ export function reviewedManagedEvidence(input,reviews){
    // Always include context/counter-evidence alongside the focused observations.
    const primary=local.slice(0,Math.ceil(limit*.75));
    const context=[...other.slice(0,limit-primary.length),...local.slice(primary.length)];
-   return reportInput([...primary,...context].slice(0,limit),section,peerProofs);
+   return reportInput([...primary,...context].slice(0,limit),section,peerProofs,excludedPeers);
   }};
 }

@@ -4,6 +4,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
+import {assertSchema} from './schema.mjs';
 import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -52,7 +53,7 @@ Zorunlu bölümlerin her birine kanıt varsa önem sırasıyla 2–10 farklı bu
 Her satırda gözlem, gerçek kanıt kimliği, neden önemli olduğu ve hangi mekanizmayla hedefi etkilediğine dair kendi analizini yaz. Action bir iş, test veya proje önermeli: neye müdahale edilecek, hangi çıktı üretilecek ve gerekiyorsa hangi koşul doğrulanacak? Measurement önerinin hangi metrik ve yöntemle değerlendirileceğini söyler. Maliyet, getiri, erişim, oran veya altyapı durumu uydurma. Kanıt yetersizken kesin teşhis koyma. Kararı değiştirecek veri eksikse question alanına toplantıda sorulacak somut soruyu yaz. Yeterli kanıt yoksa daha az bulgu çıkar; rakip, ölçüm veya öneri doldurmak için olgu icat etme.
 Her bulgu tek bir bölüme aittir. Area mevcut metodoloji anahtarlarından biri. SWOT kolu yalnız SWOT için kullanılır. Peer ve benchmark kaynak kimlikleri sadece sources anahtarlarından seçilir. JSON sözleşmesine uy.`;
 
-export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls}){
+export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls,retainedProofs}){
  const aliases=new Map();
  const sources={};
  const observed=[];
@@ -70,15 +71,28 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
   const proof=unique(list(row.sourceIds).map(addSource).filter(Boolean));
   observed.push(['o'+(observed.length+1),row.area,row.text,proof]);
  }
+ for(const id of retainedProofs?.keys()||[])addSource(id);
  const inScope=url=>!evidenceUrls||evidenceUrls.has(url);
  const entities=context.input.entities.map(e=>{
-  const proof=context.cards.filter(c=>inScope(c.url)&&researchHost(c.url)===researchHost(e.website)&&!c.metadataOnly&&c.method!=='search-snippet').slice(0,12).map(c=>addSource(c.id));
+  const cards=context.cards.filter(c=>(inScope(c.url)||retainedProofs?.has(c.id))&&researchHost(c.url)===researchHost(e.website)&&!c.metadataOnly&&c.method!=='search-snippet');
+  const preferred=plan.coveragePolicy===2?list(context.peerProofs?.get(e.id)).filter(id=>cards.some(card=>card.id===id)):[];
+  const proof=unique([...preferred,...cards.map(c=>c.id)]).slice(0,12).map(addSource);
   return [e.id,e.role,e.name,e.website,proof];
  });
  // Preserve the archive in its original receipts. Include indexed observations
  // first, then primary and technical evidence that the index may have missed.
  for(const card of context.cards.filter(c=>inScope(c.url)&&c.method==='html-signals'))addSource(card.id);
- for(const source of context.input.sources)if(inScope(source.url)&&source.sections.length)addSource(source.sections[0].proofIds[0]);
+ for(const source of context.input.sources)if(inScope(source.url)&&source.sections.length){
+  addSource(source.sections[0].proofIds[0]);
+  if(plan.coveragePolicy===2&&source.method!=='search-snippet'){
+   // Preserve distinct customer, channel and market excerpts when the operator
+   // could not index the page. The raw archive remains available independently.
+   for(const pattern of [/yorum|reviews?|şikâyet|şikayet|complaint|rating|müşteri/iu,/pazar|market|talep|distribution|dağıtım|toptan|wholesale/iu]){
+    const relevant=source.sections.find(section=>pattern.test(section.text));
+    if(relevant)addSource(relevant.proofIds[0]);
+   }
+  }
+ }
  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
   sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),
@@ -86,14 +100,16 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,allowPartial=false,sectional=false,savedSectionsOnly=false}){
- const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls});
+export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,allowPartial=false,sectional=false,savedSectionsOnly=false}){
+ const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs});
  const accepted=new Set(sections);
  const signal=AbortSignal.timeout(250000);
  const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3200,compactReview:true,lowEffort:true};
  if(batchReviews===undefined){
-  const batches=sectional?planPositionalEvidenceReview(input):planManagedEvidenceReview(input);
-  batchReviews=[];
+  const reused=[...reverse].filter(([,id])=>retainedProofs?.has(id));
+  const reusedIds=new Set(reused.map(([alias])=>alias));
+  const batches=sectional?planPositionalEvidenceReview(input,reusedIds):planManagedEvidenceReview(input);
+  batchReviews=reused.length?[{ids:[...reusedIds],verdicts:reused.map(([,id])=>retainedProofs.get(id)).join(''),candidates:[...reusedIds]}]:[];
   for(const batch of batches){
    const review=sectional?reviewPositionalEvidenceBatch:reviewManagedEvidenceBatch;
    batchReviews.push(...await review(batch,{focus:plan.understanding||brief,providers,reserveForFollowingKurus:sectional?1100:550,signal,useHaiku:managedReviewUsesHaiku(batches)}));
@@ -220,6 +236,7 @@ function projectSectionDrafts({drafts,input,reverse,context,accepted}){
 
 async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
  const accepted=new Set(sections),signal=AbortSignal.timeout(225000),evidenceCoverage=reviewed.coverage;
+ const minimumFirst=input.plan.coveragePolicy===2;
  const draftsBySection=new Map(),issues=new Map();
  const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
 
@@ -228,14 +245,26 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const row=obj({...sectionFields,proof:arr(field(16),2),...(competition?{peerId:str(80)}:{})});
   const responseSchema=swot?obj(Object.fromEntries(focus.map(quadrant=>[quadrant,arr(row,1)]))):
    obj({findings:arr(row,wanted),...(competition?{peers:arr(peerSchema,wanted)}:{})});
+  const normalizeData=value=>Object.fromEntries(Object.entries(responseSchema.properties).map(([field,schema])=>[
+   field,list(value?.[field]).filter(item=>{
+    try{assertSchema(item,schema.items);return true;}catch{return false;}
+   }).slice(0,schema.maxItems)
+  ]));
   const count=swot?focus.length:wanted;
   const maxOutputTokens=350+count*550,minimumOutputTokens=200+count*450;
   let denied;
-  for(const sourceLimit of repair?[24,10]:[18,10]){
-   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2});
-   if(!Object.keys(focused.sources).length)return {noEvidence:true};
+  const sourceLimits=minimumFirst?(repair?[14,7]:[12,7]):repair?[24,10]:[18,10];
+  for(const sourceLimit of sourceLimits){
+   const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
+   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2,excludedPeers});
+   if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,focused),prior};
+   if(minimumFirst){
+    const usefulAreas=new Set(focused.observations.map(([,area])=>area));
+    const relevantDimension={competition:'competition',digital:'digital',perception:'perception'}[section];
+    if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
+   }
    const name='managed-section-v3:'+section;
    const checkpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
    const cached=await providers.readCheckpoint?.(name,checkpoint);
@@ -246,7 +275,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    try{
     const result=await providers.manager('v8-managed-section:'+section,request,responseSchema,{
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
-     compactReview:true,lowEffort:true,reserveForFollowingKurus:following
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData}:{})
     });
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
@@ -260,7 +289,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     return providers.checkpoint?await providers.checkpoint(name,checkpoint,async()=>retained):retained;
    }catch(error){
     const issue=managedModelIssue(error,signal);
-    if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==10){
+    if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==sourceLimits.at(-1)){
      denied={issue,requestHash:checkpoint.requestHash};continue;
     }
     if(!reportFailures.has(issue)&&issue!=='input_budget')throw error;
@@ -280,7 +309,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const group=sections.slice(i,i+2),following=(sections.length-i-group.length)*reportSectionReserveKurus;
   await Promise.all(group.map(async section=>{
    draftsBySection.set(section,[]);
-   const result=await write({section,wanted:section==='swot'?4:3,focus:section==='swot'?quadrants:[],prior:[],repair:false},following);
+   const prior=input.existing.filter(([id])=>id===section).map(([,statement,quadrant,peerId])=>[statement,quadrant||null,peerId||null]);
+   const focus=section==='swot'?quadrants.filter(quadrant=>!prior.some(([,saved])=>saved===quadrant)):[];
+   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst?2:3;
+   const result=await write({section,wanted,focus,prior,repair:false},following);
    if(savedSectionsOnly&&result.issue==='section_not_saved'){
     const legacy=await readLegacySection({section,brief,input,reviewed,providers});
     if(legacy.length){draftsBySection.set(section,legacy);return;}
@@ -294,19 +326,24 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const report=project(draftsBySection.get(section),new Set([section]));
   const coverage=report.bhsSections.find(item=>item.id===section);
   const issue=issues.get(section);
-  if(coverage.complete||issue&&!retryableSections.has(issue))continue;
+  const saved=input.existing.filter(([id])=>id===section).map(([,statement,quadrant,peerId])=>[statement,quadrant||null,peerId||null]);
+  const missingQuadrants=coverage.missingQuadrants.filter(quadrant=>!saved.some(([,priorQuadrant])=>priorQuadrant===quadrant));
+  const count=coverage.count+saved.length;
+  if(count>=2&&!missingQuadrants.length||issue&&!retryableSections.has(issue))continue;
   issues.delete(section);
-  const prior=report.findings.map(f=>[f.statement,f.swotQuadrant||null,f.peerId||null]);
+  const prior=[...saved,...report.findings.map(f=>[f.statement,f.swotQuadrant||null,f.peerId||null])];
   if(section==='swot'){
-   for(let i=0;i<coverage.missingQuadrants.length;i+=2){
-    const focus=coverage.missingQuadrants.slice(i,i+2);
+   for(let i=0;i<missingQuadrants.length;i+=2){
+    const focus=missingQuadrants.slice(i,i+2);
     repairs.push({section,wanted:focus.length,focus,prior,repair:true});
    }
-  }else repairs.push({section,wanted:Math.max(1,2-coverage.count),focus:[],prior,repair:true});
+  }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true});
  }
+ if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
  for(let i=0;i<repairs.length;i+=2){
   const group=repairs.slice(i,i+2);
-  const results=await Promise.all(group.map(task=>write(task,(repairs.length-i-group.length)*reportSectionReserveKurus)));
+  const following=minimumFirst?0:(repairs.length-i-group.length)*reportSectionReserveKurus;
+  const results=await Promise.all(group.map(task=>write(task,following)));
   group.forEach((task,j)=>retain(task.section,results[j]));
  }
  const drafts=sections.flatMap(section=>draftsBySection.get(section));
@@ -316,7 +353,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  const reportIssue=sectionIssues[0]||(!evidenceCoverage.complete?'incomplete_evidence_review':undefined);
  if(reportIssue&&!allowPartial)throw new BudgetError(reportIssue,'BHS bölüm yazımı veya kanıt incelemesi tamamlanmadı; mevcut bölümler korundu.');
  let result=report;
- if(!result.findings.length&&reportIssue){
+ if(!result.findings.length&&(reportIssue||minimumFirst&&incomplete.size)){
   result=reviewedEvidenceReport(input,reviewed,context,reverse);
   if(!result.findings.length)result=managedBrandContinuation(brief,brand)?.report||result;
  }

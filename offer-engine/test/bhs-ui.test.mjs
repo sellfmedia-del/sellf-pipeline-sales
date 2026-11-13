@@ -53,7 +53,7 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
    await frame.locator('.ol-result:not([hidden])').waitFor();
    assert.equal(await frame.locator('.ol-review input').count(),0,'No premature logo approval');
    await frame.locator('.ob-next').click();
-   await frame.getByText('BHS araştırması tamamlanamadı',{exact:true}).waitFor();
+   await frame.getByText('Araştırma durumu',{exact:true}).waitFor();
    assert.match(await frame.locator('.ob-review-notice').textContent(),/bağlantısı henüz tanımlı değil/);
    assert.equal(auditBodies.length,1);assert.equal(auditBodies[0].brief.goals,'Bayi büyümesi');
    assert.equal(auditBodies[0].brief.logo,undefined);assert.equal(auditBodies[0].brief.source,undefined);

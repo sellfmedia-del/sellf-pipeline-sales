@@ -11,7 +11,7 @@ const coreTask=obj({...task.properties,platform:str(65),query:{...str(240),minLe
 const planSchema=obj({
  understanding:obj({business:str(150),revenue:str(150),scale:str(100),sector:str(180),goals:str(180),requirements:arr(str(100),4)}),
  market:str(110),comparableProduct:str(100),peerNames:arr(str(70),6),
- tasks:{...arr(coreTask,8),minItems:5},actors:arr(obj({id:{type:'string',enum:managedActors},platform:str(65),purpose:str(100)}),4)
+ tasks:{...arr(coreTask,8),minItems:5},actors:arr(obj({id:{type:'string',enum:managedActors},platform:str(65),purpose:str(100)}),managedActors.length)
 });
 const instruction=`Claude, bu marka ve satış hedefi için BHS araştırmasını sen yönetiyorsun. Önce iş alanını/ürünleri, gelir kaynaklarını, ölçeği ve sektörü verilen kanıtla özetle. Ardından brief ve görüşme notlarından hedefleri çıkar. Mevcut durumla hedef arasındaki gereklilikleri, olası açıkları ve doğrulanacak soruları belirle. Doğrulanmamış ciro, kapasite veya ülke faaliyetini kesin olgu olarak kullanma.
 Sonra her zorunlu bölüm için en az bir hedefli araştırma görevi planla. Her görevde araştırma sorusu, bakılacak pazar/kanal/platform, Tavily sorgusu ve ölçülecek metrikleri belirt. Metrikleri iş modeli ve hedefe göre belirle. Hedef pazarda satışı yapılan ürün/hizmet, benzer alıcı ve kanal rakip seçiminde belirleyici. Doğrudan ikame sunabilecek markaları aday yaz; bunlar henüz doğrulanmış rakip değildir. Digital görevlerinde tespit edilen resmî web alanları, pazar yerleri ve sosyal varlıklarda hedefi etkileyen altyapı ve işlevleri tanımla. Teknik işaretlerin çalışırlığını ayrı doğrula.
@@ -20,19 +20,44 @@ Yalnız kısa plan JSON'u üret. Önce beş bölümün her biri için tek görev
 
 export async function planManagedResearch({brief,brand,sector,providers}){
  const {marketContext,fundamentals,missing}=brand.review||{};
+ const fallback=groundedManagedResearchPlan(brief,brand);
+ const normalizeData=data=>normalizePlan(data,fallback);
  const result=await providers.manager('v8-managed-research-plan',{instruction,brief,
   brandFacts:brand.facts,brandReview:providers.managedBudgetVersion===2?{marketContext,fundamentals,missing}:brand.review,
   sectorEvidence:(sector?.results||[]).slice(0,8).map(({url,title,content})=>[url,title,content.slice(0,350)]),
   sections:managedSections,availableActors:managedActors
- },planSchema,{maxOutputTokens:3200,minimumOutputTokens:2400,compactReview:true,lowEffort:true});
- const plan=result.data;
- if(ids.some(id=>!plan.tasks.some(t=>t.section===id&&t.metrics.some(m=>m.trim())&&t.platform.trim()&&t.purpose.trim())))
-  throw Object.assign(Error('Claude araştırma planında zorunlu kapsam eksik.'),{code:'model_output_invalid'});
- return plan;
+ },planSchema,{maxOutputTokens:3200,minimumOutputTokens:2400,compactReview:true,lowEffort:true,normalizeData});
+ return {...normalizeData(result.data),coveragePolicy:2};
+}
+
+const list=value=>Array.isArray(value)?value:[];
+const compact=(value,max)=>typeof value==='string'?value.replace(/\s+/g,' ').trim().slice(0,max).trim():'';
+const distinct=values=>[...new Set(values)];
+
+function normalizePlan(value,fallback){
+ const candidates=list(value?.tasks).flatMap(raw=>{
+  if(!ids.includes(raw?.section))return [];
+  const task={section:raw.section,platform:compact(raw.platform,65),query:compact(raw.query,240),
+   metrics:distinct(list(raw.metrics).map(metric=>compact(metric,65)).filter(Boolean)).slice(0,3),purpose:compact(raw.purpose,100)};
+  return task.platform&&task.query.length>=5&&task.metrics.length&&task.purpose?[task]:[];
+ });
+ const primary=ids.map(id=>candidates.find(task=>task.section===id)||fallback.tasks.find(task=>task.section===id));
+ const tasks=[...new Map([...primary,...candidates].map(task=>[task.section+' '+task.query.toLocaleLowerCase('tr'),task])).values()].slice(0,8);
+ const actors=new Map();
+ for(const actor of list(value?.actors)){
+  if(!managedActors.includes(actor?.id)||actors.has(actor.id))continue;
+  const platform=compact(actor.platform,65),purpose=compact(actor.purpose,100);
+  if(platform&&purpose)actors.set(actor.id,{id:actor.id,platform,purpose});
+ }
+ const understanding=Object.fromEntries(Object.entries(planSchema.properties.understanding.properties).map(([key,schema])=>[key,key==='requirements'
+  ?distinct(list(value?.understanding?.requirements).map(item=>compact(item,100)).filter(Boolean)).slice(0,4)
+  :compact(value?.understanding?.[key],schema.maxLength)||fallback.understanding[key]]));
+ return {understanding,market:compact(value?.market,110)||fallback.market,
+  comparableProduct:compact(value?.comparableProduct,100)||fallback.comparableProduct,
+  peerNames:distinct(list(value?.peerNames).map(name=>compact(name,70)).filter(Boolean)).slice(0,6),tasks,actors:[...actors.values()]};
 }
 
 export function groundedManagedResearchPlan(brief,brand){
- const compact=(value,max)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
  const fact=(topics,max)=>compact(brand.facts.find(f=>topics.includes(f.topic))?.statement,max);
  const company='"'+compact(brief.brandName,140).replaceAll('"','')+'"',host=researchHost(brief.website);
  const product=fact(['products'],100);

@@ -23,7 +23,7 @@ import {backgroundBhsEnabled,browserBhsJobStore,queuedBhsBrief} from './job-stor
 import {managedPhaseBudget} from './managed-budget.mjs';
 import {managedBrandContinuation} from './managed-report.mjs';
 import {recoverManagedSectionSynthesis} from './collection-first.mjs';
-import {managedResearchHealthy,resolveManagedGaps} from './managed-gaps.mjs';
+import {resolveManagedGaps} from './managed-gaps.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
 const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
@@ -214,8 +214,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const scope=(await ledger.get(key('scope'))).value;
    let audit=await auditEngine.run({brief,synthesis}),gapCompletion;
    const canComplete=backgroundJob?.state==='complete'&&synthesis.supervision?.reviewMode==='managed-audit'
-    &&(productionOffers()||getGapLedger)&&managedResearchHealthy(rows);
-   if(action==='complete_gaps'&&!canComplete)throw new BudgetError('completion_unavailable','Ek araştırma yalnız sağlıklı tamamlanan BHS’nin bulgu eksikleri için açılabilir.');
+    &&(productionOffers()||getGapLedger);
+   if(action==='complete_gaps'&&!canComplete)throw new BudgetError('completion_unavailable','Ek araştırma için kaydedilmiş bir BHS sonucu gerekli.');
    if(canComplete){
     const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
     const gap=await resolveManagedGaps({action,brief,synthesis,secret:getSecret(),sections:audit.data.bhsSections.filter(section=>!section.complete).map(section=>section.id),baseLedger:ledger,

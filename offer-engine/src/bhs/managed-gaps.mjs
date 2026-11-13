@@ -4,7 +4,7 @@ import {briefHash} from './brief.mjs';
 import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
 import {focusedResearchPlan} from './managed-research.mjs';
-import {collectionCorpus,comparisonResearch,peerCandidates,readResearchPages} from './collection-first.mjs';
+import {collectionCorpus,comparisonResearch,peerCandidates,readResearchPages,retainedManagedProofs} from './collection-first.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {researchUrl} from './research-url.mjs';
 import {arr,obj,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
@@ -13,17 +13,7 @@ const receiptKey='audit:managed-gap-result';
 
 const indexSchema=obj({observations:arr(obj({area:str(80),text:str(350),sourceIds:arr(str(80))})),organizations:arr(obj({name:str(120),sourceId:str(80)}))});
 const unique=values=>[...new Set(values)];
-
-export function managedResearchHealthy(rows){
- const error=value=>typeof value==='string'?value:value?.reason;
- const readError=value=>/^(?:HTTP_5|source_unreadable|render_failed|render_unavailable|provider_|timeout|[E]AI_|ECONN|ETIMEDOUT|budget_|quota|model_|actor_|fx_)/i.test(error(value)||'');
- return rows.every(row=>{
-  if(row?.state!=='complete')return false;
-  const value=row.value;
-  if(value?.supervision?.evidenceCoverage?.complete===false||value?.costFallback||value?.toolIssues?.length||value?.searches?.some(s=>s.unavailable)||value?.scrapes?.some(s=>s.unavailable))return false;
-  return !value?.unavailable?.some(readError)&&!value?.packet?.unavailable?.some(readError);
- });
-}
+const recoverable=error=>error instanceof BudgetError||['TimeoutError','AbortError'].includes(error.name)||error instanceof TypeError&&error.message==='fetch failed';
 
 function gapRunId(baseId,brief,secret){
  const id=createHmac('sha256',secret).update('bhs-content-gap:'+baseId+':'+briefHash(brief)).digest('hex').slice(0,32);
@@ -64,7 +54,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  }
  const {chargedKurus}=await ledger.status();
  return {available:false,chargedKurus,capKurus:gapCapKurus,status:receipt?.state||'authorized',
-  ...(receipt?.state==='complete'?{synthesis:{...synthesis,...receipt.value}}:{})};
+   ...(receipt?.state==='complete'?{synthesis:{...synthesis,...receipt.value}}:{})};
 }
 
 async function completeSections({brief,synthesis,sections,ledger,getProviders,previous,collect}){
@@ -74,34 +64,52 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const existing=original.findings.map(f=>[f.bhsSection,f.statement]);
+ const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&f.recommendation?.measurement)
+  .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  const planned=(await focusedResearchPlan({brief,sections,priorPlan,findings:existing,providers})).data;
- const priorCorpus=await collectionCorpus(previous);
- const knownQueries=new Set(priorCorpus.searches.map(s=>s.query?.trim().toLowerCase()));
- const tasks=planned.tasks.filter(t=>sections.includes(t.section)&&!knownQueries.has(t.query.trim().toLowerCase()));
+ const [priorCorpus,reviewedProofs]=await Promise.all([collectionCorpus(previous),retainedManagedProofs(brief,priorPlan,previous)]);
+ const topics={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
+ const retainedProofs=new Map([...reviewedProofs].filter(([,verdict])=>sections.some(section=>topics[section]===verdict)));
+ const queryKey=query=>query?.trim().toLocaleLowerCase('tr');
+ const priorSearches=new Map(priorCorpus.searches.filter(search=>!search.unavailable).map(search=>[queryKey(search.query),search]));
+ const tasks=[...new Map(planned.tasks.filter(t=>sections.includes(t.section)).map(task=>[queryKey(task.query),task])).values()];
  const pool=providers.withCeiling(1700);
  const searches=[];
- for(let i=0;i<tasks.length;i+=3)searches.push(...await Promise.all(tasks.slice(i,i+3).map(task=>
-  pool.search(task.query,{depth:'basic',maxResults:12,retainRaw:true}))));
- const knownUrls=new Set(priorCorpus.packet.sources.map(source=>researchUrl(source.finalUrl)));
+ for(let i=0;i<tasks.length;i+=3){
+  const batch=await Promise.allSettled(tasks.slice(i,i+3).map(async task=>priorSearches.get(queryKey(task.query))||
+   pool.search(task.query,{depth:'basic',maxResults:12,retainRaw:true})));
+  for(const result of batch){
+   if(result.status==='fulfilled')searches.push(result.value);
+   else if(!recoverable(result.reason))throw result.reason;
+  }
+ }
+ const knownUrls=new Set(priorCorpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly)
+  .map(source=>researchUrl(source.finalUrl)));
  const urls=unique(searches.flatMap(s=>s.results.map(r=>researchUrl(r.url))).filter(url=>url&&!knownUrls.has(url)));
  const fresh=await readResearchPages(brief,brand.plan,urls,pool,collect);
  const names=unique(planned.peerNames).filter(name=>!original.competitors.some(peer=>peer.name.toLowerCase()===name.toLowerCase()));
- const peers=sections.includes('competition')&&names.length
-  ?await comparisonResearch(brief,brand,null,pool,providers,collect,null,{...priorPlan,peerNames:names}):{pages:[],peerHints:[]};
- const evidence={...synthesis.analysisPacket,entities:[...synthesis.analysisPacket.entities,...peers.peerHints],
-  sources:[...synthesis.analysisPacket.sources,...fresh.sources,...peers.pages],citationCards:[]};
+ const collectedUrls=new Set([...knownUrls,...fresh.sources.map(source=>source.finalUrl)]);
+ const peers=sections.includes('competition')
+  ?await comparisonResearch(brief,brand,null,pool,providers,collect,null,{...priorPlan,peerNames:names},[...priorCorpus.searches,...searches],collectedUrls)
+  :{pages:[],peerHints:[]};
+ const evidence={...priorCorpus.packet,entities:[...priorCorpus.packet.entities,...peers.peerHints],
+  sources:[...priorCorpus.packet.sources,...fresh.sources,...peers.pages],citationCards:[]};
  const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
  context.collectionFirst=true;
  const candidates=peerCandidates(context,context.input.entities,brand,priorPlan.comparableProduct,true,10);
  context.input.entities=[...context.input.entities.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
+ context.peerProofs=new Map(candidates.map(({entity,cards})=>[entity.id,cards.map(card=>card.id)]));
  const newUrls=new Set([...fresh.sources,...peers.pages].map(source=>source.finalUrl));
- const inventory=newUrls.size?[(await pool.worker('v8-managed-gap-index',{
-  instruction:managedIndexInstruction,researchTasks:tasks,
-  ...stageModelInput({...context,input:{...context.input,sources:context.input.sources.filter(s=>newUrls.has(s.url))}},{areas:true})
- },indexSchema,{maxOutputTokens:3000})).data]:[];
- const {report:patch,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:priorPlan,context,inventory,providers,sections,existing,evidenceUrls:newUrls,sectional:true});
- if(!evidenceCoverage.complete)throw new BudgetError('incomplete_evidence_review','Ek araştırmanın kanıt incelemesi tamamlanmadı; önceki BHS korundu.');
+ let inventory=[];
+ if(newUrls.size){
+  try{
+   inventory=[(await pool.worker('v8-managed-gap-index',{
+    instruction:managedIndexInstruction,researchTasks:tasks,
+    ...stageModelInput({...context,input:{...context.input,sources:context.input.sources.filter(s=>newUrls.has(s.url))}},{areas:true})
+   },indexSchema,{maxOutputTokens:3000})).data];
+  }catch(error){if(!recoverable(error))throw error;}
+ }
+ const {report:patch}=await synthesizeManagedReport({brief,brand,plan:{...priorPlan,coveragePolicy:2},context,inventory,providers,sections,existing,evidenceUrls:newUrls,retainedProofs,sectional:true,allowPartial:true});
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
  const existingStatements=new Set(original.findings.map(f=>f.statement.trim().toLowerCase()));
  const additions=patch.findings.filter(f=>sections.includes(f.bhsSection)&&!existingStatements.has(f.statement.trim().toLowerCase())
@@ -120,5 +128,8 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};
  const cited=new Set(report.sources.map(s=>s.url));
- return {report,analysisPacket:{...context.packet,sources:context.packet.sources.filter(s=>cited.has(s.finalUrl)),citationCards:context.packet.citationCards.filter(s=>cited.has(s.url))}};
+ const priorPacket=synthesis.analysisPacket;
+ return {report,analysisPacket:{...context.packet,
+  sources:[...new Map([...priorPacket.sources,...context.packet.sources].filter(s=>cited.has(s.finalUrl||s.url)).map(s=>[(s.finalUrl||s.url)+' '+s.contentHash,s])).values()],
+  citationCards:[...new Map([...(priorPacket.citationCards||[]),...context.packet.citationCards].filter(s=>cited.has(s.url)).map(s=>[s.id,s])).values()]}};
 }

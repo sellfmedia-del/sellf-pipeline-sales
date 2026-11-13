@@ -213,7 +213,7 @@
       }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
-      if(data.researchContinuity){dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'BHS tamamlanamadı · Teklif hazırlığına devam':'Kısmi BHS ile teklif hazırlığı';dialog.querySelector('.ob-review-notice').textContent=data.researchContinuity.notice;}
+      if(data.researchContinuity){dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';dialog.querySelector('.ob-review-notice').textContent=data.researchContinuity.notice;}
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
       dialog.querySelector('.ob-service-selection').hidden=result.status!=='ready';
       if(result.status==='ready')ensureSelection().catch(error=>{monthlyError.textContent=error.message;});
@@ -381,7 +381,7 @@
     function showAuditContinuation(current,active){
       continuableAudit=current;
       const section=dialog.querySelector('.ob-continuation');
-      section.querySelector('p').textContent=active?'Araştırmayı durdurup görüşme bilgileriyle teklife geçebilirsin. Başlatılmış işlemlerin maliyetleri korunur.':'Ön BHS tamamlanamadı. Mevcut doğrulanmış bulgular korunur. Teklif, görüşme bilgileriyle kontrol için hazırlanır. Bu adım ek ücretli model çağrısı yapmaz.';
+      section.querySelector('p').textContent=active?'Araştırmayı durdurup görüşme bilgileriyle teklife geçebilirsin. Başlatılmış işlemlerin maliyetleri korunur.':'Doğrulanan bulgular ve görüşme bilgileriyle teklif hazırlığına geçebilirsin. Bu adım ek ücretli model çağrısı yapmaz.';
       section.hidden=false;
     }
     function showAuditCost(cost){
@@ -425,10 +425,18 @@
         }
       }catch(error){
         if(current.stopped)return;
-        if(initialAction==='complete_gaps'&&draft.audit){renderAudit(draft.audit);notice.textContent+=' Ek araştırmanın sonucu alınamadı. Mevcut BHS ile teklife devam edebilirsin.';return;}
+        if(initialAction==='complete_gaps'&&draft.audit){
+          renderAudit(draft.audit);
+          if(current.ticket){
+            pausedAudit=current;
+            dialog.querySelector('.ob-resume').hidden=false;
+            notice.textContent+=' Ek araştırmanın durumunu “Araştırmaya devam et” ile kontrol edebilirsin.';
+          }
+          return;
+        }
         if(error.cost)showAuditCost(error.cost);
         const transport=error.code==='audit_transport',canResume=transport&&(error.canResume||current.bounded)&&current.ticket;
-        dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'BHS araştırması tamamlanamadı';
+        dialog.querySelector('#ob-review-title').textContent=canResume?'BHS bağlantısı kesildi':'Araştırma durumu';
         notice.textContent=(error.message||'Araştırma servisine ulaşılamadı.')+(canResume?' Aynı araştırmanın durumunu yeniden kontrol etmek için “Araştırmaya devam et” seçeneğini kullan.':' Yeni araştırma otomatik başlatılmadı.')+(transport&&!canResume?' İsteğin sunucuda işlenip işlenmediği belirsiz; tekrar başlatılmadı.':'');
         if(canResume){pausedAudit=current;dialog.querySelector('.ob-resume').hidden=false;}
         if(error.recoveryAvailable&&error.ticket){current.ticket=error.ticket;recoverableAudit=current;dialog.querySelector('.ob-recovery').hidden=false;}
