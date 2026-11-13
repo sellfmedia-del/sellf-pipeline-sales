@@ -79,7 +79,7 @@ test('live-sized report responses finish five sections and repair only missing g
  const omitted=new Set([...rows.slice(0,135).map(row=>row.id),rows.at(-1).id]);
  const resubmitted=new Set(),initialSeen=new Set(),sectionCounts=[],sectionWrites=[],saved=new Map();
  const firstPair=Promise.withResolvers();
- let active=0,peak=0;
+ let active=0,peak=0,readinessCountRetry=false;
  const options={anthropicKey:'synthetic',receiptVersion:'v8',now:()=>Date.parse('2026-11-12T12:00:00Z'),
   researchFx:async()=>({usdTry:44}),fetchImpl:async(url,{body})=>{
    const request=JSON.parse(body);
@@ -89,6 +89,10 @@ test('live-sized report responses finish five sections and repair only missing g
    // does. The report counts exercise the range the live writer rejected.
    const inputTokens=Math.max(requestInput.rows?1800:7500,Math.ceil(Buffer.byteLength(JSON.stringify(countBody))/4));
    if(url.endsWith('/count_tokens')){
+    if(request.system.includes('yalnız '+managedSections.readiness+' bölümünü')&&!readinessCountRetry){
+     readinessCountRetry=true;
+     return new Response('temporary proxy error',{status:503});
+    }
     if(!requestInput.rows)sectionCounts.push(inputTokens);
     return Response.json({input_tokens:inputTokens});
    }
@@ -158,6 +162,7 @@ test('live-sized report responses finish five sections and repair only missing g
  assert.deepEqual(sectionWrites.slice(5,7).sort(),['competition','swot']);
  assert.equal(sectionWrites[7],'readiness');
  assert.equal(peak,2);
+ assert.equal(readinessCountRetry,true);
  assert.equal(sectionCounts.length,sectionWrites.length);
  assert.ok(sectionCounts.every(tokens=>Math.ceil(tokens*1.2)+4096>11000));
  assert.equal(synthesis.reportIssue,undefined);

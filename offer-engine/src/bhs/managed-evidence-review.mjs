@@ -130,11 +130,15 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   });
   const budget=Math.max(600,ids.length*12+220);
   const method=recovery&&ids.length<=8?providers.manager:providers.evidenceReviewer||providers.manager;
+  const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
+  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true};
+  const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   try{
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
-   const completion=await method(recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position',{
-    instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources
-   },modelSchema,{maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema});
+   const completion=await method(stage,request,modelSchema,options).catch(error=>{
+    if(method===providers.manager||signal?.aborted||error.providerOperation!=='countTokens')throw error;
+    return providers.manager(stage,request,modelSchema,options);
+   });
    const data=normalizeData(completion.data),verdicts=ids.map(id=>data.verdicts[id]).join('');
    const missing=part.rows.filter(row=>data.verdicts[row.id]==='?');
    results.push({digest,ids,verdicts,candidates:data.candidates.filter(id=>!['?','x'].includes(data.verdicts[id])),model:completion.model,

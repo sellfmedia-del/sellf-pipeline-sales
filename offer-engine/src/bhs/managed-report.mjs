@@ -216,7 +216,7 @@ function sectionContext(brief,input,section,focused){
 
 const sectionFields=Object.fromEntries(Object.entries(rowSchema.properties).filter(([key])=>!['rank','section','quadrant','peerId'].includes(key)));
 const reportSectionReserveKurus=220;
-const retryableSections=new Set(['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved']);
+const retryableSections=new Set(['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved','token_count']);
 const sectionInstructions={
  competition:'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Verilen rakip kimliğini kullan. Her rakip için tek bulgu ve peers dizisinde kendi yayıncısından ürün kanıtı ver.',
  digital:'Hedefe etki eden dijital varlığı ve somut sayfa veya işlevi belirt. HTML etiketi bir çalışırlık veya performans testi değildir.',
@@ -302,7 +302,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    try{
     const result=await providers.manager('v8-managed-section:'+section,request,modelSchema,{
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
-     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema}:{})
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
     });
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
@@ -315,7 +315,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};
     return providers.checkpoint?await providers.checkpoint(name,checkpoint,async()=>retained):retained;
    }catch(error){
-    const issue=managedModelIssue(error,signal);
+    const issue=error.providerOperation==='countTokens'&&!signal.aborted?'token_count':managedModelIssue(error,signal);
     if(['budget_limit','input_budget'].includes(issue)&&sourceLimit!==sourceLimits.at(-1)){
      denied={issue,requestHash:checkpoint.requestHash};continue;
     }
