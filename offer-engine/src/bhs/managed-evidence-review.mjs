@@ -65,6 +65,9 @@ export function managedModelIssue(error,signal){
  return error.code;
 }
 
+export const canSwitchBhsProvider=(error,signal)=>!signal?.aborted&&
+ ['provider_error','provider_format','provider_timeout','provider_size','quota','token_count','model_timeout','invalid_report','incomplete','model_output_invalid'].includes(managedModelIssue(error,signal));
+
 const evidenceFailures=new Set(['budget_limit','budget_pending','budget_uncertain','input_budget','model_output_invalid','provider_error',
  'provider_accounting','provider_rejected','provider_format','provider_size','token_count','model_timeout','quota','fx_limit','fx_unavailable','not_configured','tariff_expired']);
 
@@ -140,14 +143,21 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   const budget=Math.max(600,ids.length*12+220);
   const method=recovery&&ids.length<=8?providers.manager:providers.evidenceReviewer||providers.manager;
   const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
-  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true};
+  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   try{
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
-   const completion=await method(stage,request,modelSchema,options).catch(error=>{
-    if(method===providers.manager||signal?.aborted||error.providerOperation!=='countTokens')throw error;
-    return providers.manager(stage,request,modelSchema,options);
-   });
+   let completion;
+   try{
+    completion=await method(stage,request,modelSchema,options);
+   }catch(error){
+    if(!canSwitchBhsProvider(error,signal))throw error;
+    if(providers.worker&&providers.managedBudgetVersion===3){
+     completion=await providers.worker(stage+':cross-provider',request,modelSchema,{...options,compactWorker:true,generationTimeoutMs:22000});
+    }else if(method!==providers.manager&&error.providerOperation==='countTokens'){
+     completion=await providers.manager(stage,request,modelSchema,options);
+    }else throw error;
+   }
    const data=normalizeData(completion.data),verdicts=ids.map(id=>data.verdicts[id]).join('');
    const missing=part.rows.filter(row=>data.verdicts[row.id]==='?');
    results.push({digest,ids,verdicts,candidates:data.candidates.filter(id=>!['?','x'].includes(data.verdicts[id])),model:completion.model,

@@ -60,7 +60,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const compactReview=receiptVersion==='v8'&&role==='manager'&&opts.compactReview===true;
   const minimumFundedOutput=receiptVersion==='v8'&&role==='manager'?(opts.minimumOutputTokens??(compactReview?requestedOutputTokens:Math.min(requestedOutputTokens,stage==='v8-final-report'?2048:1024))):requestedOutputTokens;
   if(!integer(minimumFundedOutput,1)||minimumFundedOutput>requestedOutputTokens)throw new BudgetError('input_budget','BHS asgari çıktı sınırı geçersiz.');
-  const reasoningAllowance=receiptVersion==='v8'&&!compactReview?(role==='fallbackWorker'?0:role==='worker'?geminiV8ReasoningTokens:stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
+  const reasoningAllowance=receiptVersion==='v8'&&!compactReview?(role==='fallbackWorker'?0:role==='worker'?(opts.compactWorker?384:geminiV8ReasoningTokens):stage==='v8-brand-plan'?0:stage==='v8-final-report'?8192:4096):0;
   let maxOutputTokens=Math.min(16384,requestedOutputTokens+reasoningAllowance);
   const anthropicRole=role!=='worker',model=supervisedModels[role],secret=anthropicRole?anthropicKey:geminiKey;
   if(!secret||!ledger)throw new BudgetError('not_configured','Claude ve Gemini bağlantıları gerekli.');

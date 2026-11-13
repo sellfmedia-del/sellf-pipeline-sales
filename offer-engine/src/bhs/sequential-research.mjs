@@ -267,7 +267,7 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
   try{reviewed=await providers.evidenceReviewer('v8-managed-brand-review-fallback',reviewInput,contract,reviewOptions);}
   catch(failure){
    if(!providers.worker||!retryable(failure))throw failure;
-   const task=await providers.worker('v8-managed-brand-review-cross-provider',reviewInput,contract,{...reviewOptions,retryTokenCount:false});
+   const task=await providers.worker('v8-managed-brand-review-cross-provider',reviewInput,contract,{...reviewOptions,retryTokenCount:false,compactWorker:true});
    reviewed={...task,data:reviewOptions.normalizeData?.(task.data)||task.data};
   }
  }

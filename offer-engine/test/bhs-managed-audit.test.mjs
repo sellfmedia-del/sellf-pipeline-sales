@@ -98,6 +98,21 @@ test('a missing review source cannot count as customer feedback and a provider f
  assert.equal(report.bhsSections.find(section=>section.id==='perception').complete,false);
 });
 
+test('the managed evidence review can recover an entire batch when Claude is unavailable',async()=>{
+ const rows=[{id:'s1',proof:['s1']},{id:'s2',proof:['s2']}];
+ const sources={s1:['https://example.test/a','Ürün','html','Kamuya açık ürün bilgisi.'],s2:['https://example.test/b','Kanal','html','Kamuya açık kanal bilgisi.']};
+ const providers={managedBudgetVersion:3,evidenceReviewer:async()=>{throw new BudgetError('provider_error','Upstream unavailable.');},
+  worker:async(stage,request,_schema,options)=>{
+   assert.equal(stage,'v8-managed-evidence-position:cross-provider');
+   assert.equal(options.compactWorker,true);
+   assert.deepEqual(request.sources,sources);
+   return {data:{verdicts:{s1:'c',s2:'d'},candidates:['s2']}};
+  }};
+ const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers});
+ assert.equal(review.verdicts,'cd');
+ assert.deepEqual(review.candidates,['s2']);
+});
+
 test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const key='audit:synthesis:unicode-replay';

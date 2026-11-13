@@ -6,7 +6,7 @@ import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
-import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {canSwitchBhsProvider,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -354,10 +354,17 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(signal.aborted)return {issue:'model_timeout'};
    try{
     const generate=repair&&(issues.has(section)||rejected.some(row=>row.reason==='quantity_unit_unconfirmed'))&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
-    const result=await generate('v8-managed-section:'+section,request,modelSchema,{
+    const options={
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
      compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
-    });
+    };
+    const stage='v8-managed-section:'+section;
+    let result;
+    try{result=await generate(stage,request,modelSchema,options);}
+    catch(error){
+     if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!canSwitchBhsProvider(error,signal))throw error;
+     result=await providers.worker(stage+':cross-provider',request,modelSchema,{...options,compactWorker:true});
+    }
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
     const peers=list(result.data.peers);
