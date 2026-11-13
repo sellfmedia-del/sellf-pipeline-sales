@@ -272,7 +272,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const sourceLimits=minimumFirst?(repair?[14,7]:[12,7]):repair?[24,10]:[18,10];
   for(const sourceLimit of sourceLimits){
    const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
-   const priorityProofs=minimumFirst&&['readiness','swot'].includes(section)?input.brandProofs:[];
+   const priorityProofs=minimumFirst&&(['readiness','swot'].includes(section)||focusedWriting&&competition)?input.brandProofs:[];
    const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,priorityProofs,targeted:minimumFirst};
    const focused=reviewed.sectionInput(section,sourceLimit,{...sectionOptions,swotFocus:focus});
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
@@ -302,13 +302,14 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Kaynak ürün veya satış kanalı gibi mevcut bir koşulu gösteriyorsa, hedefe ulaşmak için bunun üzerine gereken pilotu veya ölçümü bir çıkarım olarak yaz. Başka bir iç veri bulunmaması kaynaklı çıkarımı engellemez.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
-    if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
+    if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Bir müşteri deneyimini yalnız o deneyim olarak belirt ve tekrarlanma sıklığını ölçmeyi öner. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
     if(swot&&focus.includes('threat'))request.instruction+=' Aynı müşteri ihtiyacına hizmet eden başka bir ürünün belgelenmiş kanal, dağıtım veya teklif koşulu da rekabet tehdidinin dayanağı olabilir. Ticari etkisini koşullu anlat.';
     if(repair){
      request.instruction+=' İlk yazımdan kalan boşluk için tek, kısa, bağımsız bir bulgu üret. Eldeki kanıtı değerlendirmek için gerçekleşmiş performans rakamı şart değildir. Önceki öneriyi tekrarlamak yerine farklı dayanak veya farklı iş bağımlılığı kullan.';
      if(rejected.length){
       request.rejected=rejected;
       request.instruction+=' Rejected alanındaki eski metin doğrulanmış veri değildir. Kaynağa dön ve yalnız atıfla desteklenen kısmı yeniden yaz veya daha sağlam bir kanıt seç.';
+      if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed'].includes(reason)))request.instruction+=' Miktarı ve kıyas derecesini çıkar. Kaynakta doğrulanan ürün, faaliyet, kanal veya süreç koşulunu sayısız ve nitel biçimde yaz. Önceki miktarı hiçbir alanda tekrar etme.';
      }
     }
    }
@@ -338,7 +339,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     return {findings,peers};
    };
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
-   if(focusedWriting&&combinedPeer)request.instruction+=' Türkiye veya hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala.';
+   if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
    const changedRequest=minimumFirst&&(competition||swot);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){

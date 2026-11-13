@@ -192,7 +192,8 @@ export function reviewedManagedEvidence(input,reviews){
     const [id,role,name,url]=entity;
     const preferred=peerProofs>1&&role==='competitor'&&input.evidenceByQuestion?entity[4].slice(0,2):[];
     const score=alias=>Number(proofs.has(alias))+Number(peerProofs>1&&role==='competitor'&&input.sources[alias]?.[0]===url)*2+Number(preferred.includes(alias))*4;
-    const citations=reviewedPeerProofs(entity).sort((a,b)=>score(b)-score(a)).slice(0,section==='competition'&&role==='competitor'?peerProofs:section?1:2);
+    const maxProofs=section==='competition'&&(role==='competitor'||input.evidenceByQuestion)?peerProofs:section?1:2;
+    const citations=reviewedPeerProofs(entity).sort((a,b)=>score(b)-score(a)).slice(0,maxProofs);
     for(const alias of citations)proofs.add(alias);
     return [id,role,name,url,citations];
    });
@@ -214,7 +215,7 @@ export function reviewedManagedEvidence(input,reviews){
     const row=rows.get(id),source=input.sources[id];
     const evidence=[row?.[2],source?.[1],source?.[3]].filter(Boolean).join(' ');
     if(section==='digital')return row?.[1]?.startsWith('digital_')||source?.[2]==='html-signals'||targeted&&digitalEvidence.test(evidence);
-    if(section==='competition')return row?.[1]?.startsWith('competition_');
+    if(section==='competition')return row?.[1]?.startsWith('competition_')||targeted&&priorityProofs.includes(id);
     if(section==='perception')return row?.[1]?.startsWith('perception_')||reputationEvidence.test(targeted?evidence:source?.[1]||'');
     if(targeted&&section==='readiness')return /^(operations|funnel|financial)_/.test(row?.[1]||'')||readinessEvidence.test(evidence);
     if(targeted&&section==='swot')return marketEvidence.test(evidence);

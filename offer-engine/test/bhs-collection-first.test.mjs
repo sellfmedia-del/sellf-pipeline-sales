@@ -81,6 +81,16 @@ test('publisher discovery keeps Claude-selected public results when brand names 
  {market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']},[],new Set([alpha]));
  assert.equal(recovered.pages[0].finalUrl,beta);
  assert.equal(recovered.pages[0].method,'extracted');
+ const news='https://news.example/products/alpha';
+ const modern=await comparisonResearch(brief,brand,null,{search:async()=>({results:[
+  {url:news,title:'News about Alpha and Gamma',content:'Alpha oat snack bars sold in Türkiye.'},
+  {url:'https://www.gamma.example/products/bar',title:'Products',content:'Gamma oat snack bars in Türkiye.'}
+ ]}),manager:async(_stage,input)=>({data:{pages:[
+  {name:'Alpha',resultId:input.results.find(row=>row[1]===news)[0]},
+  {name:'Gamma Organic',resultId:input.results.find(row=>row[1].includes('gamma.example'))[0]}
+ ]}})},{managedBudgetVersion:3},async()=>({sources:[],unavailable:[]}),null,
+ {market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:[]});
+ assert.deepEqual(modern.peerHints.map(({name,website})=>[name,website]),[['Gamma Organic','https://www.gamma.example/products/bar']]);
 });
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{

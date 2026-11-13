@@ -82,7 +82,9 @@ export async function runSequentialAcceptance(){
    const {audit}=result;
    if(audit?.data){
     const data=audit.data;
-    console.info(JSON.stringify({event:'bhs_v8_qa_content',case:caseName,peers:data.competitors?.map(({name,website})=>[name,website]),findings:data.findings?.map(f=>({section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,sources:f.sourceIds.map(id=>data.sources.find(source=>source.id===id)?.url).filter(Boolean)})),questionCoverage:data.supervision.questionCoverage}));
+    console.info(JSON.stringify({event:'bhs_v8_qa_content',case:caseName,peers:data.competitors?.map(({name,website})=>[name,website]),questionCoverage:data.supervision.questionCoverage}));
+    for(const f of data.findings||[])console.info(JSON.stringify({event:'bhs_v8_qa_finding',case:caseName,section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,source:data.sources.find(source=>source.id===f.sourceIds[0])?.url}));
+
    }
    result={case:caseName,status:result.status,phase,code:result.code,elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
     reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete,missingQuadrants})=>({id,count,complete,missingQuadrants})),
