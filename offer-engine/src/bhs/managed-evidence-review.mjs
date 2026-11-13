@@ -182,7 +182,7 @@ export function reviewedManagedEvidence(input,reviews){
    const observations=shortlist.filter(id=>rows.has(id)).map(id=>rows.get(id));
    const proofs=new Set([...observations.flatMap(row=>row[3]),...shortlist.filter(id=>Object.hasOwn(input.sources,id))]);
    const eligible=input.entities.filter(([id,role])=>(!section||section==='competition'||role==='brand')&&!excludedPeers?.has(id));
-   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&
+   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&
     (peerProofs===1||role!=='competitor'||!['html-signals','search-snippet'].includes(input.sources[id]?.[2])));
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
     .filter(([,role])=>role==='competitor')
@@ -190,7 +190,8 @@ export function reviewedManagedEvidence(input,reviews){
     .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,6)]:eligible;
    const entities=selected.map(entity=>{
     const [id,role,name,url]=entity;
-    const score=alias=>Number(proofs.has(alias))+Number(peerProofs>1&&role==='competitor'&&input.sources[alias]?.[0]===url)*2;
+    const preferred=peerProofs>1&&role==='competitor'&&input.evidenceByQuestion?entity[4].slice(0,2):[];
+    const score=alias=>Number(proofs.has(alias))+Number(peerProofs>1&&role==='competitor'&&input.sources[alias]?.[0]===url)*2+Number(preferred.includes(alias))*4;
     const citations=reviewedPeerProofs(entity).sort((a,b)=>score(b)-score(a)).slice(0,section==='competition'&&role==='competitor'?peerProofs:section?1:2);
     for(const alias of citations)proofs.add(alias);
     return [id,role,name,url,citations];
@@ -223,7 +224,7 @@ export function reviewedManagedEvidence(input,reviews){
    const priorityRows=ranked.filter(id=>priority.has(id)||rows.get(id)?.[3].some(proof=>priority.has(proof)));
    const questionRows=id=>{
     const proofs=new Set(input.evidenceByQuestion?.[id]||[]);
-    return ranked.filter(row=>covered.get(row)!=='u'&&(proofs.has(row)||rows.get(row)?.[3].some(proof=>proofs.has(proof))));
+    return ranked.filter(row=>proofs.has(row)||rows.get(row)?.[3].some(proof=>proofs.has(proof)&&covered.get(proof)!=='x'));
    };
    const focused=section==='swot'?swotFocus.map(questionRows):section==='readiness'?[questionRows(section)]:[];
    const focusedRows=[...new Set([0,1,2,3].flatMap(index=>focused.map(group=>group[index])).filter(Boolean))].slice(0,Math.ceil(limit/2));

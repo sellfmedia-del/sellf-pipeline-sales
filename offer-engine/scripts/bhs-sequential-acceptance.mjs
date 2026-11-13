@@ -77,11 +77,15 @@ export async function runSequentialAcceptance(){
     const stage=(name)=>rows.find(row=>row.state==='complete'&&row.step_key.startsWith('audit:'+name+':')&&row.value?.phase===name)?.value||{};
     const plan=stage('sector_sources').managedPlan;
     const captures=['competition_draft','competition_review'].map(name=>{const value=stage(name);return {name,hints:value.peerHints?.length||0,pages:value.pages?.length||0,searches:value.searches?.length||0};});
-    const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length}));
+    const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length,returned:row.value.returned,rejected:row.value.rejected?.map(({quadrant,reason})=>[quadrant,reason])}));
     console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts}));
    const {audit}=result;
+   if(audit?.data){
+    const data=audit.data;
+    console.info(JSON.stringify({event:'bhs_v8_qa_content',case:caseName,peers:data.competitors?.map(({name,website})=>[name,website]),findings:data.findings?.map(f=>({section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,sources:f.sourceIds.map(id=>data.sources.find(source=>source.id===id)?.url).filter(Boolean)})),questionCoverage:data.supervision.questionCoverage}));
+   }
    result={case:caseName,status:result.status,phase,code:result.code,elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
-    reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete})=>({id,count,complete})),
+    reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete,missingQuadrants})=>({id,count,complete,missingQuadrants})),
     evidenceCoverage:audit?.data.supervision.evidenceCoverage,scopeSaved:rows.some(row=>row.step_key.startsWith('audit:scope:')&&row.state==='complete'),
     productionWrites:0};
   }

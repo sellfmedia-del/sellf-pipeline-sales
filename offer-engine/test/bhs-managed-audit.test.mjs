@@ -31,6 +31,32 @@ const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
  candidates
 }});
 
+test('focused SWOT repairs keep sourced uncertainties and pass a rejected claim back to Claude',async()=>{
+ const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
+ const excerpts={strength:/doğrudan tüketiciye satılır/,weakness:/teslimat gecikmesini/,opportunity:/tekrar satın alma/,threat:/hammadde maliyetleri/};
+ const coverageEvidence=Object.fromEntries(Object.entries(excerpts).map(([id,pattern])=>[id,[context.cards.find(card=>pattern.test(card.quote)).id]]));
+ const args={brief,brand:{facts:[]},plan:{understanding:{},tasks:[],coveragePolicy:2},context,inventory:[],coverageEvidence,sections:['swot'],sectional:true};
+ const {input}=managedReportInput(args),ids=Object.keys(input.sources);
+ const batchReviews=[{ids,verdicts:ids.map(id=>input.evidenceByQuestion.threat.includes(id)?'u':'s').join(''),candidates:ids}];
+ let calls=0;
+ const providers={manager:async(_stage,request,_schema,options)=>{
+  const repair=++calls>1;
+  if(repair){
+   assert.deepEqual(Object.keys(request.proofsByQuestion),['weakness']);
+   assert.equal(request.rejected[0].reason,'unsupported_quantity');
+  }else assert.ok(request.proofsByQuestion.threat.length);
+  const answer=Object.fromEntries(Object.entries(request.proofsByQuestion).map(([quadrant,[id]])=>[quadrant,[{
+   area:'operations_1',proof:[id],kind:'inference',observation:quadrant==='weakness'&&!repair?'Marka Türkiye genelinde 500 mağaza işletiyor.':request.sources[id][3],
+   analysis:'Bu koşul satın alma kararını etkileyebilir.',action:'Kanal bazında kontrollü pilot uygula.',measurement:'Pilot sipariş oranını ölç.',limitation:'Ticari etki ölçülmedi.'
+  }]]));
+  return {data:options.normalizeData(answer)};
+ }};
+ const {report}=await synthesizeManagedReport({...args,batchReviews,providers});
+ assert.equal(calls,2);
+ assert.equal(report.bhsSections.find(section=>section.id==='swot').complete,true);
+ assert.ok(report.findings.every(row=>!row.statement.includes('500')&&row.recommendation.measurement));
+});
+
 test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const key='audit:synthesis:unicode-replay';
