@@ -70,7 +70,8 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  const browser=await playwright.launch({args:chromium.args.filter(arg=>!['--disable-web-security','--single-process'].includes(arg)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
  try{for(const viewport of [{width:1440,height:1000},{width:390,height:844}].flatMap(viewport=>['TRY','USD'].map(currency=>({...viewport,currency})))){
-  const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[],priceActions=[];let disconnected=0,completionReads=0;
+  const context=await browser.newContext({viewport}),page=await context.newPage(),actions=[],errors=[],priceActions=[],starts=[];let disconnected=0,completionReads=0;
+  const reconnectStart=viewport.width===1440&&viewport.currency==='TRY';
   const previewFixture={user:{id:'test-user'},rows:{spaces:[{id:'test-space',name:'Teklif Test Alanı',color:'#378ADD',created_at:Date.now()}],columns:[{id:'test-column',space_id:'test-space',title:'Teklif Aşamasında',dot:'#BA7517'}],leads:[{id:'test-lead',space_id:'test-space',col_id:'test-column',company:'Test Marka',name:'Test Yetkilisi',value:'',notes:'Toplantı bağlamı korunmalı.',contacts:[],timeline:[]}]}};
   const session='c'.repeat(43),secret='test-ui-pricing-secret';let completeAudit;
   const proposalHandler=createProposalHandler({getSecret:()=>secret,getProvider:()=>({configured:()=>true,async composeProposal(){return {id:'ui_proposal_12345678'};},async poll(){return {status:'completed',steps:[{type:'model_output',content:[{type:'text',text:JSON.stringify({headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Bayi ağını ölçüm ve uygulamayla geliştirelim.',findingIds:['f0']})}]}]};}})});
@@ -98,6 +99,10 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
    }
    if(url.pathname==='/api/audit'){
     const body=req.postDataJSON();actions.push(body.action);
+    if(body.action==='start'){
+     starts.push([body.requestId,body.context.researchRunId]);
+     if(reconnectStart&&starts.length===1)return route.abort('failed');
+    }
     if(viewport.width===390&&body.action==='status'&&disconnected<3){disconnected++;return route.abort('failed');}
     const phases=['research','source_plan','synthesis','revision','semantic'];let response;
     if(body.action==='start')response={phase:'research',ticket:'0',...(viewport.width===390&&viewport.currency==='USD'?{execution:'background'}:{})};
@@ -117,7 +122,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-currency').selectOption(viewport.currency);await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
   if(viewport.width===390&&viewport.currency==='TRY'){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
-  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(starts.length,reconnectStart?2:1);if(reconnectStart)assert.deepEqual(starts[0],starts[1]);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   if(viewport.width===390&&viewport.currency==='USD'){assert.equal(disconnected,3);assert.equal(await frame.locator('.ob-resume').isVisible(),false);}
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
