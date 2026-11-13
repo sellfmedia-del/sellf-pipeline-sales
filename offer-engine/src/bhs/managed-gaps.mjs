@@ -109,26 +109,34 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   }catch(error){if(!recoverable(error))throw error;}
  }
  const {report:patch}=await synthesizeManagedReport({brief,brand,plan:{...priorPlan,coveragePolicy:2},context,inventory,providers,sections,existing,evidenceUrls:newUrls,retainedProofs,sectional:true,allowPartial:true});
- const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
- const existingStatements=new Set(original.findings.map(f=>f.statement.trim().toLowerCase()));
- const additions=patch.findings.filter(f=>sections.includes(f.bhsSection)&&!existingStatements.has(f.statement.trim().toLowerCase())
-  &&(!f.peerId||patch.competitors.some(p=>p.id===f.peerId&&!acceptedPeers.has(p.website))));
- const peersAdded=new Set(additions.map(f=>f.peerId).filter(Boolean));
- const findings=[...original.findings];
- for(const f of additions){
-  const count=findings.filter(prior=>prior.bhsSection===f.bhsSection).length;
-  if(count<10)findings.push({...f,bhsRank:count+1});
- }
- const addedIds=new Set(findings.slice(original.findings.length).map(f=>f.id));
- const sourceIds=new Set(findings.flatMap(f=>f.sourceIds));
- const report={...original,findings,
-  sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
-  competitors:[...original.competitors,...patch.competitors.filter(p=>peersAdded.has(p.id)&&findings.some(f=>f.peerId===p.id))].slice(0,10),
-  meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
-  dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};
+ const report=mergeManagedGapReport(original,patch,sections);
  const cited=new Set(report.sources.map(s=>s.url));
  const priorPacket=synthesis.analysisPacket;
  return {report,analysisPacket:{...context.packet,
   sources:[...new Map([...priorPacket.sources,...context.packet.sources].filter(s=>cited.has(s.finalUrl||s.url)).map(s=>[(s.finalUrl||s.url)+' '+s.contentHash,s])).values()],
   citationCards:[...new Map([...(priorPacket.citationCards||[]),...context.packet.citationCards].filter(s=>cited.has(s.url)).map(s=>[s.id,s])).values()]}};
+}
+
+export function mergeManagedGapReport(original,patch,sections){
+ const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
+ const peerCandidates=new Map(patch.competitors.filter(peer=>!acceptedPeers.has(peer.website)).map(peer=>[peer.id,peer]));
+ const statementKey=f=>[f.bhsSection,f.swotQuadrant||'',f.peerId||'',f.statement.trim().toLocaleLowerCase('tr')].join('\0');
+ const existingStatements=new Set(original.findings.map(statementKey));
+ const findings=[...original.findings];
+ const competitors=[...original.competitors];
+ for(const f of patch.findings){
+  const key=statementKey(f),peer=peerCandidates.get(f.peerId);
+  if(!sections.includes(f.bhsSection)||existingStatements.has(key)||f.peerId&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
+  const count=findings.filter(prior=>prior.bhsSection===f.bhsSection).length;
+  if(count>=10)continue;
+  findings.push({...f,bhsRank:count+1});
+  existingStatements.add(key);
+  if(peer){competitors.push(peer);acceptedPeers.add(peer.website);}
+ }
+ const addedIds=new Set(findings.slice(original.findings.length).map(f=>f.id));
+ const sourceIds=new Set([...findings,...competitors].flatMap(f=>f.sourceIds));
+ return {...original,findings,competitors,
+  sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
+  meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
+  dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};
 }

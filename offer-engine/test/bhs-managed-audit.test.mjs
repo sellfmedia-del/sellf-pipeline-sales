@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,packet,plan} from './fixtures/sequential.mjs';
 import {capBhsLedger,managedPhaseBudget,managedReviewPhases} from '../src/bhs/managed-budget.mjs';
-import {resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
+import {mergeManagedGapReport,resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
 import {managedActors,planManagedResearch} from '../src/bhs/managed-research.mjs';
 import {managedReportInput,managedSections,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
 import {sequentialContext,sequentialPhases,sequentialVersion} from '../src/bhs/sequential-contracts.mjs';
@@ -217,6 +217,20 @@ test('an incomplete result enables an explicit, once-only extra account',async t
  assert.equal((await child.ledger.status()).chargedKurus,3000);
  await assert.rejects(capBhsLedger(child.ledger,3000).once('over',{},1,async()=>assert.fail('extra provider called')),error=>error.code==='budget_limit');
  assert.equal((await base.ledger.status()).chargedKurus+(await child.ledger.status()).chargedKurus,8000);
+});
+
+test('gap completion preserves prior findings and the new rival publisher citations',()=>{
+ const fact={id:'existing',bhsSection:'digital',dimension:'digital',statement:'Verified product claim',sourceIds:['saved']};
+ const peer={id:'peer-new',website:'https://rival.example',sourceIds:['publisher']};
+ const rival={...fact,id:'rival-finding',bhsSection:'competition',dimension:'competition',peerId:peer.id,sourceIds:['comparison']};
+ const original={findings:[fact],competitors:[],sources:[{id:'saved'}],meetingQuestions:[],dimensions:[{id:'competition',findingIds:[]}]};
+ const patch={findings:[rival,{...rival,id:'duplicate'},{...fact,id:'out-of-scope'}],competitors:[peer],sources:[{id:'publisher'},{id:'comparison'}],meetingQuestions:[]};
+ const merged=mergeManagedGapReport(original,patch,['competition']);
+ assert.deepEqual(merged.findings,[fact,{...rival,bhsRank:1}]);
+ assert.deepEqual(merged.competitors,[peer]);
+ assert.deepEqual(merged.sources.map(s=>s.id),['saved','publisher','comparison']);
+ assert.deepEqual(merged.dimensions[0].findingIds,['rival-finding']);
+ assert.deepEqual(original.findings,[fact]);
 });
 
 test('an oversized market and five actors preserve the paid Claude plan and its six candidate names',async()=>{
