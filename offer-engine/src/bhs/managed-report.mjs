@@ -244,10 +244,12 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
 
  async function write({section,wanted,focus,prior,repair},following){
   const swot=section==='swot',competition=section==='competition';
+  const combinedPeer=minimumFirst&&competition;
   const row=obj({...sectionFields,proof:arr(field(16),2),...(competition?{peerId:str(80)}:{})});
   const responseSchema=swot?obj(Object.fromEntries(focus.map(quadrant=>[quadrant,arr(row,1)]))):
    obj({findings:arr(row,wanted),...(competition?{peers:arr(peerSchema,wanted)}:{})});
-  const normalizeData=value=>Object.fromEntries(Object.entries(responseSchema.properties).map(([field,schema])=>[
+  const modelSchema=combinedPeer?obj({findings:arr(obj({...row.properties,overlap:field(180)}),wanted)}):responseSchema;
+  const normalizeRows=value=>Object.fromEntries(Object.entries(responseSchema.properties).map(([field,schema])=>[
    field,list(value?.[field]).filter(item=>{
     try{assertSchema(item,schema.items);return true;}catch{return false;}
    }).slice(0,schema.maxItems)
@@ -271,16 +273,36 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
    }
    const name='managed-section-v3:'+section;
-   const checkpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
-   const cached=await providers.readCheckpoint?.(name,checkpoint);
+   const previousCheckpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
+   const cached=await providers.readCheckpoint?.(name,previousCheckpoint);
    if(cached)return cached;
+   const normalizeData=value=>{
+    if(!combinedPeer)return normalizeRows(value);
+    const byPeer=new Map(focused.entities.filter(([,role])=>role==='competitor').map(([id,,, ,ids])=>[id,ids]));
+    const findings=[],peers=[];
+    for(const {overlap,...finding} of list(value?.findings).filter(item=>item&&typeof item==='object')){
+     const proof=byPeer.get(finding.peerId)?.filter(id=>list(finding.proof).includes(id));
+     if(!proof?.length||typeof overlap!=='string'||!overlap.trim()||peers.some(p=>p.entityId===finding.peerId))continue;
+     try{assertSchema(finding,row);}catch{continue;}
+     findings.push(finding);
+     peers.push({entityId:finding.peerId,relationship:'direct',sourceIds:proof,reason:overlap.trim().slice(0,180)});
+     if(findings.length===wanted)break;
+    }
+    return {findings,peers};
+   };
+   if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
+   const checkpoint=combinedPeer?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
+   if(combinedPeer){
+    const saved=await providers.readCheckpoint?.(name,checkpoint);
+    if(saved)return saved;
+   }
    if(savedSectionsOnly)continue;
    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue};
    if(signal.aborted)return {issue:'model_timeout'};
    try{
-    const result=await providers.manager('v8-managed-section:'+section,request,responseSchema,{
+    const result=await providers.manager('v8-managed-section:'+section,request,modelSchema,{
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
-     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData}:{})
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema}:{})
     });
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));

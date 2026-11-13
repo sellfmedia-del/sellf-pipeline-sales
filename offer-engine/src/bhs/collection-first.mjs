@@ -253,6 +253,20 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
+export function managedCollectionContext(brief,packet){
+ const peerHosts=new Set(packet.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
+ const brandHost=researchHost(brief.website);
+ const primary=[],other=[];
+ for(const source of packet.sources){
+  const host=researchHost(source.finalUrl||source.url);
+  const isPrimary=host===brandHost||peerHosts.has(host);
+  (isPrimary&&!source.metadataOnly&&source.method!=='search-snippet'?primary:other).push(source);
+ }
+ const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ context.collectionFirst=true;
+ return context;
+}
+
 export function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false,limit=6){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
@@ -450,7 +464,7 @@ async function repairPeerCoverage({brief,brand,providers,context,funding,product
 
 async function managedCollectionInputs(brief,plan,previous){
  const [brand,{packet},inventory]=await Promise.all([previous('brand'),collectionCorpus(previous),sourcesFrom(previous,inventoryStages,'inventory')]);
- const context=sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
  context.collectionFirst=true;
  const discovered=comparisonEntities(context,inventory);
  const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16);
@@ -549,7 +563,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   if(scrapeIndex===0)comparison=await comparisonResearch(brief,brand,market,peerPool,providers,collect,null,managed||null,sectional?searches:[],managed?.coveragePolicy===2?archived:undefined);
   if(scrapeIndex===1&&managed?.coveragePolicy===2){
    const prior=await previous(scrapeStages[0]);
-   const evidence=sequentialContext(brief,{packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...(prior.pages||[])],entities:[...brand.packet.entities,...(prior.peerHints||[])]},searches:[],peerDiscoveryVersion:'product-v2'});
+   const evidence=managedCollectionContext(brief,{...brand.packet,sources:[...brand.packet.sources,...pages,...(prior.pages||[])],entities:[...brand.packet.entities,...(prior.peerHints||[])]});
    const supported=peerCandidates(evidence,evidence.input.entities,brand,managed.comparableProduct,true);
    if(supported.length<2){
     const names=supported.map(peer=>peer.entity.name);

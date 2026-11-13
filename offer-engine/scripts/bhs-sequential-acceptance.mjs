@@ -74,6 +74,11 @@ export async function runSequentialAcceptance(){
   result.costBreakdown={verifiedProviderAllowanceKurus:rows.filter(r=>r.value?.accountedKurus===r.charge_kurus&&r.value?.model||r.value?.accountedKurus===r.charge_kurus&&r.value?.credits!==undefined).reduce((n,r)=>n+r.charge_kurus,0),uncertainCommitmentKurus:rows.filter(r=>['reserved','uncertain'].includes(r.state)).reduce((n,r)=>n+r.charge_kurus,0),actorCommitmentKurus:rows.filter(r=>r.step_key.startsWith('apify:')).reduce((n,r)=>n+r.charge_kurus,0),infrastructureAllowanceKurus:1000};
   result.modelDiagnostics=rows.filter(r=>r.value?.rejectedOutput).map(r=>({model:r.value.model,role:r.value.role,rejection:r.value.rejectedOutput,usage:r.value.usage,committedKurus:r.charge_kurus}));
   if(managed){
+    const stage=(name)=>rows.find(row=>row.state==='complete'&&row.step_key.startsWith('audit:'+name+':')&&row.value?.phase===name)?.value||{};
+    const plan=stage('sector_sources').managedPlan;
+    const captures=['competition_draft','competition_review'].map(name=>{const value=stage(name);return {name,hints:value.peerHints?.length||0,pages:value.pages?.length||0,searches:value.searches?.length||0};});
+    const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length}));
+    console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts}));
    const {audit}=result;
    result={case:caseName,status:result.status,phase,code:result.code,elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
     reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete})=>({id,count,complete})),

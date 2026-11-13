@@ -4,10 +4,10 @@ import {briefHash} from './brief.mjs';
 import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
 import {focusedResearchPlan} from './managed-research.mjs';
-import {collectionCorpus,comparisonResearch,peerCandidates,readResearchPages,retainedManagedProofs} from './collection-first.mjs';
+import {collectionCorpus,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,retainedManagedProofs} from './collection-first.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {researchUrl} from './research-url.mjs';
-import {arr,obj,sequentialContext,stageModelInput,str} from './sequential-contracts.mjs';
+import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
 
 const receiptKey='audit:managed-gap-result';
 
@@ -94,8 +94,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   :{pages:[],peerHints:[]};
  const evidence={...priorCorpus.packet,entities:[...priorCorpus.packet.entities,...peers.peerHints],
   sources:[...priorCorpus.packet.sources,...fresh.sources,...peers.pages],citationCards:[]};
- const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
- context.collectionFirst=true;
+ const context=managedCollectionContext(brief,evidence);
  const candidates=peerCandidates(context,context.input.entities,brand,priorPlan.comparableProduct,true,10);
  context.input.entities=[...context.input.entities.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
  context.peerProofs=new Map(candidates.map(({entity,cards})=>[entity.id,cards.map(card=>card.id)]));
