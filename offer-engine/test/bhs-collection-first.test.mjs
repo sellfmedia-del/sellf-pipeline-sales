@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BudgetError,tariff,tariffReadiness} from '../src/budget/ledger.mjs';
-import {runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {comparisonResearch,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {createResearchFx,researchTariff} from '../src/bhs/research-tariff.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
@@ -22,6 +22,22 @@ const fixturePacket=()=>{
  return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,alternate]};
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
+
+test('publisher discovery keeps Claude-selected public results when brand names differ from parent-company domains',async()=>{
+ const alpha='https://foodgroup.example/products/alpha',beta='https://brandhouse.example/products/beta';
+ const results=[{url:alpha,title:'Our Alpha product',content:'Alpha oat snack bars sold in Türkiye.'},{url:beta,title:'Our Beta product',content:'Beta oat snack bars sold in Türkiye.'}];
+ const pool={search:async()=>({results}),manager:async(stage,input)=>{
+  assert.equal(stage,'v8-managed-peer-publishers');
+  return {data:{pages:[{name:'Alpha',resultId:input.results.find(row=>row[1]===alpha)[0]},{name:'Beta',resultId:input.results.find(row=>row[1]===beta)[0]},{name:'Invented',resultId:'u99'}]}};
+ }};
+ const brand={plan:{...plan,entities:plan.entities.filter(e=>e.role==='brand')}};
+ const selected=await comparisonResearch(brief,brand,null,pool,{},async(_brief,readPlan,options)=>{
+  assert.deepEqual(readPlan.entities.filter(e=>e.role==='competitor').map(e=>e.website),[alpha,beta]);
+  assert.deepEqual(options.prioritySources.slice(0,2),[alpha,beta]);
+  return {sources:[],unavailable:[]};
+ },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']});
+ assert.deepEqual(selected.peerHints.map(p=>p.name),['Alpha','Beta']);
+});
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
  const db=await localBudget(),seen=new Map();
