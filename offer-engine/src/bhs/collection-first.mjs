@@ -98,7 +98,7 @@ function publisherMatches(name,url,expanded=false){
 function publisherCandidate(name,result){
  const url=researchUrl(result.url),host=researchHost(url);
  if(!host)return '';
- const core=name.replace(/\s+(?:organic|organik|Türkiye|Turkey|TR)$/iu,'');
+ const core=name.replace(/\s+(?:organic|organik|Türkiye|Turkey|TR|süt(?: ürünleri)?|gıda|food(?:s)?|dairy)$/iu,'');
  if(publisherMatches(name,url,true)||core!==name&&publisherMatches(core,url,true))return url;
  const brand=nameKey(name),domain=nameKey(host.split('.')[0]);
  const publisher=nameKey([result.title,result.content].filter(Boolean).join(' '));
@@ -190,10 +190,13 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
  };
  async function discoverPublishers(){
   const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
-  const target=managedPlan?.market||market?.[1];
+  const target=market?.[1]||managedPlan?.market;
   const language=market?.[3]==='tr'||/Türkiye|Turkey/iu.test(target||'');
   const queries=[[format,target,language?'üretici markalar resmî ürün kataloğu':'manufacturer brands official product catalogue']];
-  if(providers.managedBudgetVersion===3)queries.push([format,target,language?'marka resmî mağaza ürünler':'brand official shop products']);
+  if(providers.managedBudgetVersion===3){
+   const head=format.trim().split(/\s+/).slice(-2).join(' ');
+   queries.push([head,target,language?'marka resmî mağaza ürünler':'brand official shop products']);
+  }
   const results=await Promise.all(queries.map(parts=>collectAttempt(()=>pool.search(parts.filter(Boolean).join(' '),{depth:'basic',maxResults:12,retainRaw:true}))));
   searches.unshift(...results);
   for(const result of results.flatMap(search=>search.results||[])){
@@ -207,7 +210,8 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   const group=peerGroupKey(name);
   if(!group||seen.has(group))return null;
   seen.add(group);
-  const query=[name,product,managedPlan?.market||market?.[1],'resmî ürün sayfası'].filter(Boolean).join(' ');
+  const target=providers.managedBudgetVersion===3?market?.[1]||managedPlan?.market:managedPlan?.market||market?.[1];
+  const query=[name,product,target,'resmî ürün sayfası'].filter(Boolean).join(' ');
   const owned=results=>(results||[]).map(result=>managedPlan?.coveragePolicy===2?publisherCandidate(name,result):
    (publisherMatches(name,result.url,true)?researchUrl(result.url):'')).filter(Boolean);
   let urls=owned(priorSearches.flatMap(search=>search.results||[]).filter(result=>{
@@ -220,7 +224,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    urls=owned(search.results);
   }
   if((repair||managedPlan)&&!urls.length&&!search?.unavailable){
-   publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" '+(managedPlan?.market||market?.[1]||'')+' official products services website',{depth:'basic',maxResults:12,retainRaw:true}));
+   publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" '+(target||'')+' official products services website',{depth:'basic',maxResults:12,retainRaw:true}));
    urls=owned(publisherSearch.results);
   }
   const url=urls.find(url=>words.some(word=>new URL(url).pathname.split(/[^\p{L}]+/u).some(part=>nameKey(part)===nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
