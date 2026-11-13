@@ -73,6 +73,8 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  }
  for(const id of retainedProofs?.keys()||[])addSource(id);
  const inScope=url=>!evidenceUrls||evidenceUrls.has(url);
+ const brandProofs=plan.coveragePolicy===2?unique(brand.facts.flatMap(fact=>list(fact.sourceIds)))
+  .filter(id=>inScope(context.known.get(id)?.url)||retainedProofs?.has(id)).map(addSource).filter(Boolean):[];
  const entities=context.input.entities.map(e=>{
   const cards=context.cards.filter(c=>(inScope(c.url)||retainedProofs?.has(c.id))&&researchHost(c.url)===researchHost(e.website)&&!c.metadataOnly&&c.method!=='search-snippet');
   const preferred=plan.coveragePolicy===2?list(context.peerProofs?.get(e.id)).filter(id=>cards.some(card=>card.id===id)):[];
@@ -96,7 +98,7 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
   sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),
-  existing,entities,observations:observed,sources};
+  existing,entities,observations:observed,sources,...(brandProofs.length?{brandProofs}:{})};
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
@@ -256,7 +258,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const sourceLimits=minimumFirst?(repair?[14,7]:[12,7]):repair?[24,10]:[18,10];
   for(const sourceLimit of sourceLimits){
    const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
-   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2,excludedPeers});
+   const priorityProofs=minimumFirst&&['readiness','swot'].includes(section)?input.brandProofs:[];
+   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,priorityProofs,targeted:minimumFirst});
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,focused),prior};
@@ -264,6 +267,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const usefulAreas=new Set(focused.observations.map(([,area])=>area));
     const relevantDimension={competition:'competition',digital:'digital',perception:'perception'}[section];
     if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
+    if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
+    if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
    }
    const name='managed-section-v3:'+section;
    const checkpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};

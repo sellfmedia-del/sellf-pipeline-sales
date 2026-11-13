@@ -366,6 +366,12 @@
       gapAudit=null;gapBox.hidden=true;
       await runAudit(current,'complete_gaps');
     });
+    function applyAuditResponse(current,response){
+      if(draft.pricing&&draft.audit&&JSON.stringify(draft.audit)!==JSON.stringify(response.result))invalidatePricing();
+      draft.pricingProof=response.pricingProof;
+      renderAudit(response.result);
+      showGapCompletion(current,response.gapCompletion);
+    }
     function showGapCompletion(current,gap){
       gapAudit=null;gapBox.hidden=true;
       if(!gap)return;
@@ -411,7 +417,7 @@
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
           if(response.phase==='complete'&&response.result){
             continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
-            draft.pricingProof=response.pricingProof;renderAudit(response.result);showGapCompletion(current,response.gapCompletion);task=null;return;
+            applyAuditResponse(current,response);task=null;return;
           }
           if(response.phase==='complete'){action='status';continue;}
           if(response.nextAction==='advance'){action='advance';continue;}

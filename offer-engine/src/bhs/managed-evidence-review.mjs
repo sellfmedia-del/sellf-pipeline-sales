@@ -194,20 +194,28 @@ export function reviewedManagedEvidence(input,reviews){
     batchReview:{total:expected.length,reviewed:reviewedEvidenceRows,candidates:shortlist.length}};
  }
  const categories={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
+ const readinessEvidence=/teslimat|shipping|delivery|bayi|dealer|distribut|toptan|wholesale|depo|warehouse|ürün|product|satış|sales|kapasite|capacity|sertifika|certif|pazar|market|ihracat|export/iu;
+ const reputationEvidence=/yorum|reviews?|şik[âa]yet|complaint|rating|müşteri geri bildirimi|customer feedback/iu;
+ const marketEvidence=/pazar|market|talep|demand|regulat|mevzuat|hammadde|raw material|rekabet|competit|tüketici|consumer/iu;
  const ranked=[...new Set([...candidates,...expected])].filter(id=>covered.has(id)&&covered.get(id)!=='x');
  return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1,excludedPeers}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers,priorityProofs=[],targeted=false}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
+    const evidence=[row?.[2],source?.[1],source?.[3]].filter(Boolean).join(' ');
     if(section==='digital')return row?.[1]?.startsWith('digital_')||source?.[2]==='html-signals';
     if(section==='competition')return row?.[1]?.startsWith('competition_');
-    if(section==='perception')return row?.[1]?.startsWith('perception_')||/yorum|review|şikayet|complaint|rating/i.test(source?.[1]||'');
+    if(section==='perception')return row?.[1]?.startsWith('perception_')||reputationEvidence.test(targeted?evidence:source?.[1]||'');
+    if(targeted&&section==='readiness')return /^(operations|funnel|financial)_/.test(row?.[1]||'')||readinessEvidence.test(evidence);
+    if(targeted&&section==='swot')return marketEvidence.test(evidence);
     return false;
    };
-   const local=[...new Set([...exact,...ranked.filter(supports)])],localIds=new Set(local);
+   const priority=new Set(priorityProofs);
+   const priorityRows=ranked.filter(id=>priority.has(id)||rows.get(id)?.[3].some(proof=>priority.has(proof)));
+   const local=[...new Set([...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
    const other=ranked.filter(id=>!localIds.has(id));
    // Always include context/counter-evidence alongside the focused observations.
    const primary=local.slice(0,Math.ceil(limit*.75));
