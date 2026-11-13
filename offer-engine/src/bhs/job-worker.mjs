@@ -6,9 +6,9 @@ import {runBoundedStage} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
-import {managedInventoryCeilingKurus,managedReviewPhases} from './managed-budget.mjs';
+import {managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
-import {inventoryOutputTokens,inventoryStages} from './collection-first.mjs';
+import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages} from './collection-first.mjs';
 import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 
@@ -34,6 +34,22 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
   const {chargedKurus}=await options.ledger.status();
   const remaining=options.phaseCeiling-chargedKurus;
+  if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion===3&&inventoryStages.includes(job.phase)){
+   if(job.phase!==inventoryStages[0]){
+    if(job.inventoryBatch){
+     for(const phase of inventoryStages.slice(inventoryStages.indexOf(job.phase)))
+      await runStage({...options,phase,skipManagedCollection:true});
+     return {advanceSkippedInventory:true};
+    }
+    return runStage(options);
+   }
+   if(remaining>=workerInfraReservationKurus){
+    const ceiling=Math.min(options.phaseCeiling,managedFocusedInventoryCeilingKurus);
+    const minimum=minimumV8GeminiReservation(focusedInventoryOutputTokens,options.providers.now?.(),researchTariff);
+    const providers=chargedKurus+workerInfraReservationKurus+minimum<=ceiling?options.providers:{...options.providers,focusedIndexUnavailable:true};
+    return meter({job,ledger:options.ledger,run:()=>runStage({...options,providers})});
+   }
+  }
   if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion===2&&inventoryStages.includes(job.phase)){
    // This stage cannot fall back to another model. Even a one-token request
    // must fund Gemini's output/reasoning and the worker before it can run.

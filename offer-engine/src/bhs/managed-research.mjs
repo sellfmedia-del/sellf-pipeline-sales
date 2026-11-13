@@ -23,7 +23,7 @@ export async function planManagedResearch({brief,brand,sector,providers}){
  const fallback=groundedManagedResearchPlan(brief,brand);
  const normalizeData=data=>normalizePlan(data,fallback);
  const result=await providers.manager('v8-managed-research-plan',{instruction,brief,
-  brandFacts:brand.facts,brandReview:providers.managedBudgetVersion===2?{marketContext,fundamentals,missing}:brand.review,
+  brandFacts:brand.facts,brandReview:providers.managedBudgetVersion>=2?{marketContext,fundamentals,missing}:brand.review,
   sectorEvidence:(sector?.results||[]).slice(0,8).map(({url,title,content})=>[url,title,content.slice(0,350)]),
   sections:managedSections,availableActors:managedActors
  },planSchema,{maxOutputTokens:3200,minimumOutputTokens:2400,compactReview:true,lowEffort:true,normalizeData});
@@ -71,6 +71,29 @@ export function managedCoverageSearches(brief,plan){
  }
  const prior=new Set(tasks.map(task=>task.query.trim().toLocaleLowerCase('tr')));
  return queries.map(query=>compact(query,380)).filter(query=>!prior.has(query.toLocaleLowerCase('tr')));
+}
+
+export const managedEvidenceQuestions=Object.freeze({
+ strength:'Markanın belgelenmiş yetkinliği, dağıtımı veya ürünü hangi ticari avantajı sağlayabilir?',
+ weakness:'Markanın hangi mevcut kanal, erişim veya operasyon koşulu hedefe ulaşmayı sınırlayabilir?',
+ opportunity:'Hedef pazarda hangi dış talep veya kanal değişimi markaya fırsat açabilir?',
+ threat:'Hedef pazarda hangi dış rekabet, maliyet veya düzenleme değişimi markayı zorlayabilir?',
+ readiness:'Briefteki hedef, markanın hangi mevcut ürün, kanal veya operasyon koşuluna dayanıyor ve ilerlemek için ne gerekli?'
+});
+
+export function managedEvidenceQuery(brief,plan,target,language){
+ const brand='"'+compact(brief.brandName,100).replaceAll('"','')+'"';
+ const product=plan.comparableProduct||brand;
+ const market=plan.market;
+ const turkish=language==='tr';
+ const terms={
+  strength:[brand,turkish?'üretim tesis sertifika kapasite dağıtım bayi ürün':'production facility certification distribution retail partners'],
+  weakness:[brand,turkish?'bayi satış noktaları sipariş teslimat ihracat koşulları':'stockists ordering delivery export terms'],
+  opportunity:[product,market,turkish?'talep trendi tüketici kanal sektör raporu':'consumer demand trends distribution industry report'],
+  threat:[product,market,turkish?'hammadde maliyeti mevzuat rekabet sektör raporu':'input costs regulation competition industry report'],
+  readiness:[brand,compact(plan.understanding.requirements?.[0]||brief.goals,105),market,turkish?'resmî ürün satış dağıtım iş ortakları':'official products sales distribution partners']
+ };
+ return compact(terms[target]?.filter(Boolean).join(' '),380);
 }
 
 export function groundedManagedResearchPlan(brief,brand){

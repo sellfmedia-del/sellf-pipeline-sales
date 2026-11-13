@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BudgetError,tariff,tariffReadiness} from '../src/budget/ledger.mjs';
-import {comparisonResearch,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {comparisonResearch,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,inventoryStages,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {createResearchFx,researchTariff} from '../src/bhs/research-tariff.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
@@ -22,6 +22,37 @@ const fixturePacket=()=>{
  return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,alternate]};
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
+
+test('the evidence check searches only uncovered questions and passes original proof to the funded index',async()=>{
+ const data=fixturePacket(),brandHost=new URL(brief.website).hostname;
+ const source=(url,text)=>({id:'ev1',url,finalUrl:url,title:'Original source',method:'html',excerpts:[{text}],contentHash:url,retrievedAt:data.asOf});
+ const own=source('https://'+brandHost+'/distribution','Markanın üretim tesisi ve dağıtım ortakları müşterilere teslimat sağlar.');
+ const external=source('https://industry.example/market','Türkiye pazarında tüketici talebi ve hammadde maliyeti incelenmiştir.');
+ const added=source('https://industry.example/regulation','Hammadde maliyetleri ve rekabet sektör koşullarını etkileyebilir.');
+ const brand={facts:[],packet:{...data,sources:[own,external]},plan};
+ const managedPlan={market:'Türkiye',comparableProduct:'Organik bar',understanding:{requirements:['Bayi erişimi']},tasks:[],coveragePolicy:2};
+ const calls=[];
+ const providers={managedBudgetVersion:3,withCeiling:()=>providers,
+  evidenceReviewer:async(_stage,input)=>{
+   const {strength,weakness,opportunity,readiness}=input.candidates;
+   return {data:{strength,weakness,opportunity,readiness,threat:['p_invented']}};
+  },
+  search:async query=>{calls.push(query);return {query,results:query.includes('hammadde')?[{url:added.url,title:'Market',content:added.excerpts[0].text}]:[]};},
+  worker:async(_stage,input)=>{
+   const threat=input.rows.find(([question,,url])=>question==='threat'&&url===added.url);
+   assert.ok(threat);return {data:{observations:[{area:'financial_1',text:threat[3],sourceIds:[threat[1],'p_invented']}],organizations:[]}};
+  }
+ };
+ const result=await runCollectionFirstStage({phase:inventoryStages[0],brief,providers,finish:value=>value,
+  previous:async phase=>phase==='brand'?brand:phase==='sector_sources'?{managedPlan,funding:{}}:{},
+  collect:async(_brief,_plan,options)=>{assert.deepEqual(options.prioritySources,[added.url]);return {sources:[added],unavailable:[]};}
+ });
+ assert.deepEqual(result.questionCoverage.missingBeforeSearch,['threat','readiness']);
+ assert.equal(calls.length,2);
+ assert.equal(result.questionSources.pages[0].url,added.url);
+ assert.equal(result.inventory[0].observations[0].sourceIds.length,1);
+ assert.ok(result.questionEvidence.threat.includes(result.inventory[0].observations[0].sourceIds[0]));
+});
 
 test('publisher discovery keeps Claude-selected public results when brand names differ from parent-company domains',async()=>{
  const alpha='https://foodgroup.example/products/alpha',beta='https://brandhouse.example/products/beta';
