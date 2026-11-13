@@ -83,15 +83,16 @@ export const managedEvidenceQuestions=Object.freeze({
 
 export function managedEvidenceQuery(brief,plan,target,language){
  const brand='"'+compact(brief.brandName,100).replaceAll('"','')+'"';
+ const site='site:'+researchHost(brief.website);
  const product=plan.comparableProduct||brand;
  const market=plan.market;
  const turkish=language==='tr';
  const terms={
-  strength:[brand,turkish?'üretim tesis sertifika kapasite dağıtım bayi ürün':'production facility certification distribution retail partners'],
-  weakness:[brand,turkish?'bayi satış noktaları sipariş teslimat ihracat koşulları':'stockists ordering delivery export terms'],
+  strength:[site,brand,turkish?'üretim tesis sertifika kapasite dağıtım bayi ürün':'production facility certification distribution retail partners'],
+  weakness:[site,brand,turkish?'bayi satış noktaları sipariş teslimat ihracat koşulları':'stockists ordering delivery export terms'],
   opportunity:[product,market,turkish?'talep trendi tüketici kanal sektör raporu':'consumer demand trends distribution industry report'],
   threat:[product,market,turkish?'hammadde maliyeti mevzuat rekabet sektör raporu':'input costs regulation competition industry report'],
-  readiness:[brand,compact(plan.understanding.requirements?.[0]||brief.goals,105),market,turkish?'resmî ürün satış dağıtım iş ortakları':'official products sales distribution partners']
+  readiness:[site,brand,product,turkish?'satış noktaları sipariş bayi distribütör iş ortakları':'stockists ordering wholesale distribution partners']
  };
  return compact(terms[target]?.filter(Boolean).join(' '),380);
 }

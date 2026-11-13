@@ -232,8 +232,9 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    addHint(result.name,result.url);
   }
  }
- if(product&&(repair||managedPlan&&hints.length<2))await discoverPublishers();
- if(product&&managedPlan?.coveragePolicy===2&&hints.length<2){
+ const discoveryTarget=providers.managedBudgetVersion===3?4:2;
+ if(product&&(repair||managedPlan&&hints.length<discoveryTarget))await discoverPublishers();
+ if(product&&managedPlan?.coveragePolicy===2&&hints.length<discoveryTarget){
   const findings=new Map();
   const groups=[discoverySearch,...searches,...priorSearches].filter(Boolean);
   for(let i=0;i<6;i++)for(const group of groups){
@@ -261,6 +262,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    for(const row of selection.data?.pages||[]){
     const match=row.resultId.match(/^u([1-9]\d?)$/),source=match&&observed[Number(match[1])-1];
     if(!source||!row.name.trim()||peerGroupKey(row.name)===peerGroupKey(brief.brandName)||repair?.names.some(name=>peerGroupKey(name)===peerGroupKey(row.name)))continue;
+    if(providers.managedBudgetVersion===3&&hints.some(peer=>peerGroupKey(peer.name)===peerGroupKey(row.name)))continue;
     addHint(row.name.trim(),source[0]);
    }
   }
@@ -553,7 +555,12 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   return {id,search:await collectAttempt(()=>queryPool.search(query,{depth:'basic',maxResults:6,retainRaw:true}))};
  }));
  const archived=new Set(corpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly).map(source=>source.finalUrl));
- const targets=unique(searches.flatMap(({search})=>(search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!archived.has(url)).slice(0,2)));
+ const targets=unique(searches.flatMap(({id,search})=>{
+  const urls=unique((search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!archived.has(url)));
+  const needsBrand=['strength','weakness','readiness'].includes(id);
+  const ownUrl=url=>researchHost(url)===researchHost(brief.website);
+  return [...urls.filter(url=>ownUrl(url)===needsBrand),...urls.filter(url=>ownUrl(url)!==needsBrand)].slice(0,2);
+ }));
  const fresh=await readResearchPages(brief,brand.plan,targets,providers,collect);
  const newContext=managedCollectionContext(brief,{...corpus.packet,sources:fresh.sources});
  const freshCandidates=questionCandidates(brief,newContext);
@@ -695,7 +702,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    const prior=await previous(scrapeStages[0]);
    const evidence=managedCollectionContext(brief,{...brand.packet,sources:[...brand.packet.sources,...pages,...(prior.pages||[])],entities:[...brand.packet.entities,...(prior.peerHints||[])]});
    const supported=peerCandidates(evidence,evidence.input.entities,brand,managed.comparableProduct,true);
-   if(supported.length<2){
+   if(supported.length<(providers.managedBudgetVersion===3?3:2)){
     const names=supported.map(peer=>peer.entity.name);
     for(const page of prior.pages||[])if(!page.metadataOnly)archived.add(page.finalUrl);
     comparison=await comparisonResearch(brief,brand,market,peerPool,providers,collect,{names,product:managed.comparableProduct},managed,[...searches,...(prior.searches||[])],archived);
