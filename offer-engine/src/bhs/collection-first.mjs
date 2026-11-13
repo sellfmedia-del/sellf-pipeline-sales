@@ -670,7 +670,11 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const sector=first&&managed?await collectAttempt(()=>pool.search(
    [brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals,'sektör pazar hacmi gelir kanalları rekabet'].join(' ').slice(0,500),
    {depth:'basic',maxResults:8,retainRaw:true})):null;
-  const planned=first&&managed?await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool})):null;
+  let planned=first&&managed?await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool})):null;
+  if(planned?.unavailable&&providers.managedBudgetVersion===3&&pool.evidenceReviewer){
+   const fallback=await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool,compactFallback:true}));
+   if(!fallback.unavailable)planned=fallback;
+  }
   const managedPlan=planned?.unavailable?{...groundedManagedResearchPlan(brief,brand),coveragePolicy:2}:planned||managed||null;
   const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
   const searches=sector?[sector]:[];
