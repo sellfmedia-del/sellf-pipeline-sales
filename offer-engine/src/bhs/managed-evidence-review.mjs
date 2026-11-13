@@ -205,7 +205,7 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1,excludedPeers,priorityProofs=[],targeted=false}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers,priorityProofs=[],targeted=false,swotFocus=[]}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
@@ -219,6 +219,16 @@ export function reviewedManagedEvidence(input,reviews){
    };
    const priority=new Set(priorityProofs);
    const priorityRows=ranked.filter(id=>priority.has(id)||rows.get(id)?.[3].some(proof=>priority.has(proof)));
+   if(targeted&&section==='swot'&&swotFocus.length){
+    const internalIds=new Set(priorityRows);
+    const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));
+    const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
+    const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
+    const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
+    const selected=[...new Set([...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
+     ...(wantsExternal?external.slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
+    return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
+   }
    const local=[...new Set([...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
    const other=ranked.filter(id=>!localIds.has(id));
    // Always include context/counter-evidence alongside the focused observations.

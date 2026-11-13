@@ -261,7 +261,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   for(const sourceLimit of sourceLimits){
    const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
    const priorityProofs=minimumFirst&&['readiness','swot'].includes(section)?input.brandProofs:[];
-   const focused=reviewed.sectionInput(section,sourceLimit,{peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,priorityProofs,targeted:minimumFirst});
+   const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,priorityProofs,targeted:minimumFirst};
+   const focused=reviewed.sectionInput(section,sourceLimit,{...sectionOptions,swotFocus:focus});
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,focused),prior};
@@ -276,6 +277,13 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const previousCheckpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
    const cached=await providers.readCheckpoint?.(name,previousCheckpoint);
    if(cached)return cached;
+   if(minimumFirst&&swot&&providers.readCheckpoint){
+    const oldFocus=reviewed.sectionInput(section,sourceLimit,sectionOptions);
+    const oldRequest={...request,...sectionContext(brief,input,section,oldFocus),approvedFactProofs:priorityProofs?.filter(id=>Object.hasOwn(oldFocus.sources,id))||[]};
+    const saved=await providers.readCheckpoint(name,{...previousCheckpoint,requestHash:hash(oldRequest)});
+    if(saved)return saved;
+   }
+   if(minimumFirst&&swot)request.instruction+=' İstenen SWOT kolları: '+focus.join(', ')+'. Güçlü ve zayıf yönü markanın mevcut koşullarından, fırsat ve tehdidi hedef pazardaki dış koşullardan çıkar. Gözlem alanına somut kaynak bilgisini yaz. SWOT yorumunu analysis alanına yaz. Bir risk ancak olasıysa koşulunu ve görüşmede nasıl doğrulanacağını belirt.';
    const normalizeData=value=>{
     if(!combinedPeer)return normalizeRows(value);
     const byPeer=new Map(focused.entities.filter(([,role])=>role==='competitor').map(([id,,, ,ids])=>[id,ids]));
@@ -291,8 +299,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     return {findings,peers};
    };
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
-   const checkpoint=combinedPeer?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
-   if(combinedPeer){
+   const changedRequest=minimumFirst&&(competition||swot);
+   const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
+   if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
     const saved=await providers.readCheckpoint?.(name,checkpoint);
     if(saved)return saved;
    }

@@ -233,6 +233,17 @@ test('gap completion preserves prior findings and the new rival publisher citati
  assert.deepEqual(original.findings,[fact]);
 });
 
+test('SWOT repairs receive reviewed market evidence when an external quadrant is missing',()=>{
+ const input={observations:[],entities:[],sources:Object.fromEntries(Array.from({length:12},(_,i)=>['s'+i,[
+  'https://'+(i<6?'brand':'industry')+'.example/'+i,'Public source','html',i<6?'Brand product description.':'Market demand and competition data.'
+ ]]))};
+ const ids=Object.keys(input.sources);
+ const reviewed=reviewedManagedEvidence(input,[{ids,verdicts:'ssssssgggggg',candidates:ids}]);
+ const scoped=reviewed.sectionInput('swot',6,{targeted:true,priorityProofs:ids.slice(0,6),swotFocus:['threat']});
+ assert.equal(Object.keys(scoped.sources).filter(id=>ids.slice(6).includes(id)).length,4);
+ assert.ok(Object.hasOwn(scoped.sources,'s0'));
+});
+
 test('an oversized market and five actors preserve the paid Claude plan and its six candidate names',async()=>{
  const focusedBrief={...brief,goals:'Fransa B2B dağıtımı',needs:'Depolama ve bayi edinimi',meetingNotes:'Mevcut ihracat ekibi ile yürütülecek.'};
  const tasks=Object.keys(managedSections).map(section=>({section,platform:'Fransa B2B toptancı siteleri',query:section+' barres avoine grossiste France',metrics:['Minimum sipariş adedi'],purpose:'Bayi uyumunu değerlendirmek'}));
