@@ -191,6 +191,25 @@ test('managed brand review retains checked facts when an optional market quote a
  assert.ok(review.facts.every(fact=>fact.id!=='unverified'));
  assert.equal(transport.events.filter(event=>event.stage==='v8-brand-review').length,1);
 });
+test('managed brand review uses a second provider when both Claude reviewers fail',async t=>{
+ const db=await localBudget();t.after(db.close);
+ const transport=modelTransport();
+ for(const phase of ['brand_plan','brand_sources','brand_draft'])await runBoundedStage({phase,brief,ledger:db.ledger,
+  providers:providerFor(db,phase,transport,null,{managedBudgetVersion:3}),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+ const calls=[];
+ const failed=stage=>{calls.push(stage);throw Object.assign(Error('Provider unavailable.'),{code:'provider_error'});};
+ const providers={...providerFor(db,'brand_review',transport,null,{managedBudgetVersion:3}),manager:failed,evidenceReviewer:failed,
+  worker:async(stage,input)=>{
+   calls.push(stage);
+   const {acceptedIds,rejectedIds,decision,...data}=modelAnswer('v8-brand-review',input);
+   return {data:{...data,verdicts:acceptedIds.map(id=>({id,decision:'accepted'})),
+    fundamentals:{identity:'confirmed',products:'confirmed',business_model:'confirmed',market:'confirmed'}}};
+  }};
+ const result=await runBoundedStage({phase:'brand_review',brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+ assert.deepEqual(calls,['v8-brand-review','v8-managed-brand-review-fallback','v8-managed-brand-review-cross-provider']);
+ assert.equal(result.understandingDecision,'accepted');
+ assert.ok(result.facts.some(fact=>fact.topic==='products'&&fact.sourceIds.length));
+});
 test('Claude can order one targeted correction per stage within the same total account',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,context)=>stage==='v8-brand-review'&&!context.repairRound||stage==='v8-sector-review'?{...data,decision:'limited',missing:['Kaynaklı hedef davranış netleşmeli.']}:data});
  try{
