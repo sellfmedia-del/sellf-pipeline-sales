@@ -332,8 +332,14 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(phase==='brand_plan'){
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
   const packet=providers.checkpoint?await providers.checkpoint('identity-input',brief,read):await read();
-  const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true}),...await actorPlanning(providers,brief,{packet,searches:[]})},taskSchema,{maxOutputTokens:2048});
-  return finish({packet,searches:[],plan,managerPlan:task.data,peerDiscoveryVersion:'product-v2',...(providers.collectionFirst?{collectionFirst:true}:{})});
+  const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true}),...await actorPlanning(providers,brief,{packet,searches:[]})},taskSchema,{maxOutputTokens:2048,retryTokenCount:providers.managedAudit}).catch(error=>{
+   const recoverable=['provider_format','provider_error','model_output_invalid','incomplete','invalid_report','quota','token_count'].includes(error.code)||error.name==='TimeoutError';
+   if(!providers.managedAudit||!recoverable)throw error;
+   // Only the discovery task is replaced. Claude still reviews every claimed
+   // brand fact and the managed research plan before sector work proceeds.
+   return {data:{instruction:'Markanın resmî kaynaklarından ürünleri, satış ve gelir kanallarını, faaliyet pazarını, ölçeğini ve şirket bağlantılarını çıkar. İç verisi eksik başlıkları açıkça belirt.',queries:[],actorRequests:[]},issue:error.code||'provider_timeout'};
+  });
+  return finish({packet,searches:[],plan,managerPlan:task.data,peerDiscoveryVersion:'product-v2',...(task.issue?{toolIssues:[task.issue]}:{}),...(providers.collectionFirst?{collectionFirst:true}:{})});
  }
  if(phase==='brand_sources'){
   const queries=[...(prior.managerPlan.queries.length?prior.managerPlan.queries:[`site:${researchHost(brief.website)} ${queryBrand(brief)} products about company target market ownership`]),queryBrand(brief)+' official corporate company about manufacturing sales markets'];
