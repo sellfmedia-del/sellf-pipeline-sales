@@ -120,15 +120,14 @@ test('live-sized report responses finish five sections and repair only missing g
     const alias=card=>Object.keys(requestInput.sources).find(id=>requestInput.sources[id][3]===card.quote&&requestInput.sources[id][0]===card.url);
     const findings=relevant.map(({card,peerId})=>{
      assert.ok(alias(card),section+' must receive its evidence');
-     return {area:areas[section],...(section==='competition'?{peerId}:{}),observation:card.quote,proof:[alias(card)],kind:'observation',
+     return {area:areas[section],...(section==='competition'?{peerId,overlap:'Türkiye pazarında aynı ürün grubunun üreticisi.'}:{}),observation:card.quote,proof:[alias(card)],kind:'observation',
       analysis:'Bu koşul müşterinin satın alma kararını etkileyebilir.',action:'Ürün sayfasında bu koşulu belirginleştir ve kontrollü test et.',
       measurement:'Kontrol ve test grubunun sepete ekleme oranını ölç.',limitation:'Gerçek dönüşüm oranı bu kaynakta ölçülmedi.',question:'Karşılaştırılabilir dönem verisi var mı?'};
     });
     data=section==='swot'?Object.fromEntries(relevant.map(({quadrant},i)=>[quadrant,[
      quadrant==='weakness'&&attempt===0?{...findings[i],observation:'Marka Türkiye genelinde 500 mağaza işletiyor.'}:findings[i]
-    ]])):section==='competition'&&attempt===0?{findings:[],peers:[]}:
-     {findings:section==='digital'?[{...findings[0],area:'unknown_area'},...findings]:findings,
-      ...(section==='competition'?{peers:relevant.map(({peerId,card})=>({entityId:peerId,relationship:'direct',sourceIds:[alias(card)],reason:'Türkiye pazarında aynı ürün grubunun üreticisi.'}))}:{})};
+    ]])):section==='competition'&&attempt===0?{findings:findings.map((finding,i)=>({...finding,proof:findings[1-i].proof}))}:
+     {findings:section==='digital'?[{...findings[0],area:'unknown_area'},...findings]:findings};
    }
    const tool=Boolean(request.tools);
    if(cut)output=request.max_tokens;
