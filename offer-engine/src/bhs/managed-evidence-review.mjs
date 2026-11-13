@@ -172,16 +172,20 @@ export function reviewedManagedEvidence(input,reviews){
   .flatMap(id=>rows.get(id)?.[3]||(Object.hasOwn(input.sources,id)?[id]:[])));
  const invalidObservations=[...rows.keys()].filter(id=>covered.get(id)==='x');
  const reviewedEvidenceRows=expected.filter(id=>covered.has(id)).length;
- function reportInput(shortlist,section){
+ function reportInput(shortlist,section,peerProofs=1){
    const observations=shortlist.filter(id=>rows.has(id)).map(id=>rows.get(id));
    const proofs=new Set([...observations.flatMap(row=>row[3]),...shortlist.filter(id=>Object.hasOwn(input.sources,id))]);
    const eligible=input.entities.filter(([,role])=>!section||section==='competition'||role==='brand');
+   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&
+    (peerProofs===1||role!=='competitor'||!['html-signals','search-snippet'].includes(input.sources[id]?.[2])));
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
     .filter(([,role])=>role==='competitor')
-    .filter(([, , , ,proof])=>proof.some(id=>reviewedProofs.has(id)))
-    .sort((a,b)=>Number(b[4].some(id=>proofs.has(id)))-Number(a[4].some(id=>proofs.has(id)))).slice(0,6)]:eligible;
-   const entities=selected.map(([id,role,name,url,proof])=>{
-    const citations=proof.filter(alias=>reviewedProofs.has(alias)).sort((a,b)=>Number(proofs.has(b))-Number(proofs.has(a))).slice(0,section?1:2);
+    .filter(entity=>reviewedPeerProofs(entity).length)
+    .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,6)]:eligible;
+   const entities=selected.map(entity=>{
+    const [id,role,name,url]=entity;
+    const score=alias=>Number(proofs.has(alias))+Number(peerProofs>1&&role==='competitor'&&input.sources[alias]?.[0]===url)*2;
+    const citations=reviewedPeerProofs(entity).sort((a,b)=>score(b)-score(a)).slice(0,section==='competition'&&role==='competitor'?peerProofs:section?1:2);
     for(const alias of citations)proofs.add(alias);
     return [id,role,name,url,citations];
    });
@@ -193,7 +197,7 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit){
+  sectionInput(section,limit,{peerProofs=1}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
@@ -207,6 +211,6 @@ export function reviewedManagedEvidence(input,reviews){
    // Always include context/counter-evidence alongside the focused observations.
    const primary=local.slice(0,Math.ceil(limit*.75));
    const context=[...other.slice(0,limit-primary.length),...local.slice(primary.length)];
-   return reportInput([...primary,...context].slice(0,limit),section);
+   return reportInput([...primary,...context].slice(0,limit),section,peerProofs);
   }};
 }

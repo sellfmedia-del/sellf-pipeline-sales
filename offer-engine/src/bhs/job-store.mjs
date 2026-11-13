@@ -18,7 +18,7 @@ function jobRow(row){
  if(!row)return null;
  const brief=JSON.parse(row.brief_text);
  return {...row.spec,id:row.id,leadId:row.lead_id,budgetId:row.budget_id,briefHash:briefHash(snapshotBrief(brief)),queueBriefHash:row.brief_hash,
-  brief,phase:row.phase,state:row.state,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),diagnostic:row.diagnostic,cancelRequested:row.cancel_requested===true};
+  brief,phase:row.phase,state:row.state,leaseToken:row.lease_token,leaseUntil:Date.parse(row.lease_until),diagnostic:row.diagnostic,cancelRequested:row.cancel_requested===true,inventoryBatch:row.inventory_batch===true};
 }
 export function createBhsJobStore({store=runtimeStore(),jwt,workerSecret=process.env.BHS_WORKER_SECRET}={}){
  const browser=(op,args)=>store.call('bhs_job_'+op,{jwt,...args});
@@ -36,7 +36,7 @@ export function createBhsJobStore({store=runtimeStore(),jwt,workerSecret=process
   claim:async()=>jobRow(await worker('claim',{leaseToken:randomUUID()})),
   advance:(job,data)=>worker('advance',{jobId:job.id,leaseToken:job.leaseToken,...data}),
   pause:(job,data)=>worker('pause',{jobId:job.id,leaseToken:job.leaseToken,...data}),
-  getLedger:async job=>createLedger((op,data={})=>worker('budget',{jobId:job.id,leaseToken:job.leaseToken,data:{op,...data}}))
+  getLedger:async job=>createLedger((op,data={})=>worker('budget',{jobId:job.id,leaseToken:job.leaseToken,data:{op,...data}}),{reuseCompleted:true})
  };
 }
 export async function browserBhsJobStore(req,res,{store=runtimeStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){

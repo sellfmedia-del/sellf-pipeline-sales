@@ -5,6 +5,7 @@ import {snapshotBrief,briefHash} from './brief.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {managedPhaseBudget} from './managed-budget.mjs';
 import {queuedBhsBrief} from './job-store.mjs';
+import {inventoryStages} from './collection-first.mjs';
 
 // Transport-independent, one phase per leased invocation. The DB/queue adapter
 // must validate the lease and bind getLedger to this job's immutable budget.
@@ -20,6 +21,7 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
  // Persist-before-ack: a crash after the phase commits is recovered without
  // replaying any source/model call. A lost paid request is never refunded.
  try{
+  let nextPhase=phases[phases.indexOf(job.phase)+1];
   const step=await ledger.get(key);
   if(step?.state!=='complete'){
    if(step?.state==='reserved')throw new BudgetError('stage_abandoned','Önceki çalışanın aşama kaydı açık kaldı; ücretli iş tekrarlanmadı.');
@@ -29,9 +31,9 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
     ?await managedPhaseBudget({ledger,brief,phase:job.phase,existingBrandPlan:step})
     :{ledger,managedAudit:false};
    const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,managedBudgetVersion:phaseBudget.managedBudgetVersion,phaseLimitKurus:phaseBudget.phaseCeiling});
-   await runStage({phase:job.phase,brief,checkpointHash,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
+   const result=await runStage({phase:job.phase,brief,checkpointHash,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true});
+   if(result?.advanceSkippedInventory===true&&job.inventoryBatch&&inventoryStages.includes(job.phase))nextPhase='coverage_plan';
   }
-  const nextPhase=phases[phases.indexOf(job.phase)+1];
   await queue.advance(job,{nextPhase,checkpointKey:key});
   return {status:nextPhase==='complete'?'complete':'queued',nextPhase};
  }catch(error){
