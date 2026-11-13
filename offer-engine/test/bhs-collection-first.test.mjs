@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BudgetError,tariff,tariffReadiness} from '../src/budget/ledger.mjs';
-import {comparisonResearch,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,inventoryStages,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {comparisonResearch,peerCandidates,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,inventoryStages,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {createResearchFx,researchTariff} from '../src/bhs/research-tariff.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
@@ -107,6 +107,16 @@ test('target-market discovery keeps a multiword publisher name and a reviewed pr
   return {sources:[],unavailable:[]};
  },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'peynir',peerNames:[]});
  assert.deepEqual(result.peerHints.map(p=>p.name),['White Dairy','Green Farm']);
+});
+
+test('a public retailer catalogue cannot count as a direct product publisher',()=>{
+ const evidence=fixturePacket();
+ const publisher=evidence.entities.find(entity=>entity.role==='competitor');
+ const catalog={id:'candidate_store',role:'competitor',name:'Store',website:'https://store.example/snacks'};
+ const page={...evidence.sources[0],id:'ev50',url:catalog.website,finalUrl:catalog.website,title:'Organik yulaf barı ürünleri',
+  excerpts:[{text:'Organik yulaf barı ve bisküvi ürünleri. Şube seçimi yaparak ürünleri sepete ekleyebilirsiniz.'}]};
+ const context=sequentialContext(brief,{packet:{...evidence,entities:[publisher,catalog],sources:[...evidence.sources,page]},searches:[],peerDiscoveryVersion:'product-v2'});
+ assert.deepEqual(peerCandidates(context,[publisher,catalog],{facts:[]},'yulaf barı',true).map(({entity})=>entity.id),[publisher.id]);
 });
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{

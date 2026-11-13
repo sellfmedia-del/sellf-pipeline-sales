@@ -305,7 +305,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
     if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Bir müşteri deneyimini yalnız o deneyim olarak belirt ve tekrarlanma sıklığını ölçmeyi öner. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
-    if(swot&&focus.includes('threat'))request.instruction+=' Aynı müşteri ihtiyacına hizmet eden başka bir ürünün belgelenmiş kanal, dağıtım veya teklif koşulu da rekabet tehdidinin dayanağı olabilir. Ticari etkisini koşullu anlat.';
+    if(swot&&focus.includes('threat'))request.instruction+=' Aynı müşteri ihtiyacına hizmet eden başka bir ürünün belgelenmiş kanal, dağıtım veya teklif koşulu da rekabet tehdidinin dayanağı olabilir. Ticari etkisini koşullu anlat. Bir müşteri şikâyetini SWOT tehdidi yerine müşteri algısında değerlendir.';
     if(repair){
      request.instruction+=' İlk yazımdan kalan boşluk için tek, kısa, bağımsız bir bulgu üret. Eldeki kanıtı değerlendirmek için gerçekleşmiş performans rakamı şart değildir. Önceki öneriyi tekrarlamak yerine farklı dayanak veya farklı iş bağımlılığı kullan.';
      if(rejected.length){
@@ -353,7 +353,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue};
    if(signal.aborted)return {issue:'model_timeout'};
    try{
-    const generate=repair&&issues.has(section)&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
+    const generate=repair&&(issues.has(section)||rejected.some(row=>row.reason==='quantity_unit_unconfirmed'))&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
     const result=await generate('v8-managed-section:'+section,request,modelSchema,{
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
      compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
@@ -370,6 +370,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
      if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı|yok)\b/iu.test(f.observation)&&
       !f.proof.some(id=>researchHost(focused.sources[id]?.[0])===researchHost(brief.website)))return 'digital_evidence_missing';
+     if(section==='swot'&&['opportunity','threat'].includes(f.quadrant)&&f.proof.every(id=>
+      /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(focused.sources[id]?.[0]||'')))return 'external_swot_evidence_missing';
     };
     const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f)));
     const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};
@@ -444,6 +446,20 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const following=minimumFirst?0:(repairs.length-i-group.length)*reportSectionReserveKurus;
   const results=await Promise.all(group.map(task=>write(task,following)));
   group.forEach((task,j)=>retain(task.section,results[j]));
+ }
+ const swotDrafts=draftsBySection.get('swot');
+ if(input.evidenceByQuestion&&swotDrafts&&!savedSectionsOnly&&!signal.aborted){
+  const swot=project(swotDrafts,new Set(['swot']));
+  const missing=swot.bhsSections.find(section=>section.id==='swot').missingQuadrants.filter(quadrant=>
+   !input.existing.some(([section,,savedQuadrant])=>section==='swot'&&savedQuadrant===quadrant));
+  const rejections=swotDrafts.slice(1).flatMap(draft=>draft.rejected||[]).filter(row=>missing.includes(row.quadrant));
+  const focus=missing.filter(quadrant=>rejections.some(row=>row.quadrant===quadrant));
+  if(focus.length){
+   const prior=[...input.existing.filter(([section])=>section==='swot').map(([,statement,quadrant])=>[statement,quadrant||null,null]),
+    ...swot.findings.map(f=>[f.statement,f.swotQuadrant,null])];
+   const retained=await write({section:'swot',wanted:focus.length,focus,prior,repair:true,rejected:rejections},0);
+   retain('swot',retained);
+  }
  }
  const drafts=sections.flatMap(section=>draftsBySection.get(section));
  const report=project(drafts);

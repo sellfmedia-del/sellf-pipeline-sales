@@ -356,12 +356,17 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
  const format=preciseProduct?terms.at(-1):null;
  const containsFormat=text=>format&&(text.toLocaleLowerCase('tr').match(/[\p{L}]+/gu)||[]).some(word=>word===format||word===format+'i'||word===format+'lar'||word===format+'lari');
  const productPattern=/ürün|product|satın|shop|₺|kategori|category|fiyat|price|sepet|cart/i;
+ const multibrandRetail=/\b(?:hipermarket|hypermarket|supermarket|süpermarket|market zinciri|marketler zinciri|perakende zinciri|pazaryeri|marketplace)\b/iu;
+ const thirdPartyCatalog=/(?:şube|mağaza)\s+seç(?:in|iniz|imi)?\b|\b(?:teslimat bölgesi|select branch|select store|sold by|satıcı seç|diğer satıcılar)\b/iu;
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
+  const publisher=researchHost(candidate.website);
+  if(expandedPublishers&&context.input.sources.some(source=>researchHost(source.url)===publisher&&multibrandRetail.test(source.title)))continue;
   for(const source of context.input.sources){
    const candidateHost=researchHost(candidate.website),sourceHost=researchHost(source.url);
    const observedPublisher=candidate.id.startsWith('candidate_')&&sourceHost===candidateHost;
    if(source.metadataOnly||source.method==='search-snippet'||sourceHost===brandHost||!observedPublisher&&!publisherMatches(candidate.name,source.url,expandedPublishers))continue;
+   if(expandedPublishers&&thirdPartyCatalog.test(source.sections.slice(0,4).map(section=>section.text).join(' ')))continue;
    const cards=source.sections.flatMap(section=>section.proofIds.map(id=>context.known.get(id))).filter(card=>card&&!card.metadataOnly&&!['html-signals','search-snippet'].includes(card.method)).map(card=>{
     const quote=card.quote.toLocaleLowerCase('tr');
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))+Number(Boolean(containsFormat(quote)))*4};
