@@ -164,6 +164,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
   seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
  const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area).dimension,kind:row.kind,
+  ...(row.section==='competition'?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));
  const coverage=Object.fromEntries(methodologyAreas.map(a=>{
@@ -174,7 +175,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
   dimensions:dimensions.map(d=>({...d,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id)})),
   peers:accepted.has('competition')?list(data.peers).map(p=>({...p,sourceIds:decoded(p.sourceIds)})):[],
   benchmarks:list(data.benchmarks).map(b=>({...b,sourceIds:decoded(b.sourceIds)}))
- },context);
+ },context,{explicitComparisons:true});
  const rows=new Map(selected.map(row=>[row.id,row]));
  const linkedPeers=new Set(report.competitors.map(peer=>peer.id));
  report.findings=report.findings.map(f=>{
