@@ -31,6 +31,18 @@ const batchAnswer=(rows,candidates,exclude=new Set())=>({data:{
  candidates
 }});
 
+test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{
+ const {ledger,close}=await localBudget();t.after(close);
+ const key='audit:synthesis:unicode-replay';
+ const report={summary:'Atıştırmalık 😀',findings:[{statement:'Kesilmiş kaynak '+String.fromCharCode(0xd83d),note:'Sağlayıcı\0alıntısı'}]};
+ const saved=await ledger.once(key,{version:1},125,async()=>report);
+ assert.equal(saved.summary,report.summary);
+ assert.equal(saved.findings[0].statement,'Kesilmiş kaynak �');
+ assert.equal(saved.findings[0].note,'Sağlayıcı�alıntısı');
+ assert.deepEqual(await ledger.once(key,{version:1},125,()=>assert.fail('paid synthesis must not repeat')),saved);
+ assert.equal((await ledger.status()).chargedKurus,625);
+});
+
 test('research and synthesis reserve independently, including parallel calls and persistent policy',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const phase=await managedPhaseBudget({ledger,brief,phase:'brand_plan',enabled:true});
