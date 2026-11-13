@@ -15,7 +15,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {customerEvidence,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {customerEvidence,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -690,8 +690,13 @@ export async function retainedManagedProofs(brief,plan,previous){
 
 async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSectionsOnly=false}={}){
  const [args,closed]=await Promise.all([managedCollectionInputs(brief,plan,previous),previous('coverage_plan')]);
- const batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
+ let batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
  if(savedSectionsOnly&&!batchReviews)return undefined;
+ if(sectional&&!savedSectionsOnly&&providers.managedBudgetVersion===3&&providers.worker&&batchReviews){
+  const {input}=managedReportInput(args);
+  if(!reviewedManagedEvidence(input,batchReviews).coverage.complete)
+   batchReviews=await recoverPositionalEvidence(input,batchReviews,providers);
+ }
  const {report,completion,invalidObservations,evidenceCoverage,reportIssue,sectionIssues}=await synthesizeManagedReport({...args,providers,batchReviews,allowPartial:true,sectional,savedSectionsOnly});
  if(args.questionCoverage){
   const swot=report.bhsSections?.find(section=>section.id==='swot');

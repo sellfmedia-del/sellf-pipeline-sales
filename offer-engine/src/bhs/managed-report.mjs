@@ -226,7 +226,7 @@ const sectionInstructions={
  digital:'Hedefe etki eden dijital varlığı ve somut sayfa veya işlevi belirt. Yalnız araştırma sırasında veri toplanmadığını söylemek bulgu sayılmaz. HTML etiketi bir çalışırlık veya performans testi değildir.',
  swot:'İstenen her SWOT koluna kanıt varsa bir ayrı bulgu yaz. Boş kol için boş dizi ver. İç yetkinlikleri dış fırsat ve tehditlerden ayır. Dış fırsat veya tehdidin dayanağı hedef pazara ve bu ürünün sektörü, kanalı veya müşterisine uygulanmalı. Şirketin bir başarısı dış fırsat değildir. İlgisiz bir sektördeki örnek veya başka pazardaki büyüme hedefi dış pazar bulgusu değildir.',
  perception:'Markaya veya ürününe ait gerçek müşteri deneyimini ve örneklemin sınırını belirt. Kaynak tek bir yorum ise tüm müşterilere genelleme yapma. Veri açığı, boş yorum alanı, fiyat listesi, haber ve marka beyanı bir müşteri algısı bulgusu sayılmaz. Kanıtlanmış farklı deneyimler varsa ayrı değerlendir.',
- readiness:'Hedefe ulaşmak için somut gerekliliği, mevcut kanıtı ve varsa bağımlılığı belirt.'
+ readiness:'Hedefe ulaşmak için somut gerekliliği, mevcut kanıtı ve varsa bağımlılığı belirt. Her bulgu farklı bir iş bağımlılığına dayanmalı. Tek bir sayfadaki aynı durumun iki anlatımı iki bulgu sayılmaz.'
 };
 
 function projectSectionDrafts({drafts,input,reverse,context,accepted}){
@@ -241,7 +241,7 @@ function projectSectionDrafts({drafts,input,reverse,context,accepted}){
 }
 
 async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
- const accepted=new Set(sections),signal=AbortSignal.timeout(225000),evidenceCoverage=reviewed.coverage;
+ const accepted=new Set(sections),signal=AbortSignal.timeout(200000),evidenceCoverage=reviewed.coverage;
  const minimumFirst=input.plan.coveragePolicy===2;
  const draftsBySection=new Map(),issues=new Map();
  const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
@@ -286,7 +286,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
     if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
     if(input.evidenceByQuestion&&(swot||['readiness','perception'].includes(section)))request.proofsByQuestion=Object.fromEntries((swot?focus:[section]).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
-    if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
+    if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez. Bir kanalı şirketin tek kanalı olarak tanımlamak için bunu açıkça doğrulayan kaynak gerekir.';
     if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
    const name='managed-section-v3:'+section;
