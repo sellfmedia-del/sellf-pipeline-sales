@@ -37,6 +37,12 @@ test('publisher discovery keeps Claude-selected public results when brand names 
   return {sources:[],unavailable:[]};
  },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']});
  assert.deepEqual(selected.peerHints.map(p=>p.name),['Alpha','Beta']);
+ const partial=await comparisonResearch(brief,brand,null,{...pool,evidenceReviewer:async()=>{throw new BudgetError('provider_format','Synthetic upstream HTML.');}}, {},async(_brief,_plan,options)=>{
+  assert.deepEqual(options.prioritySources,[alpha,beta]);
+  return {sources:[],unavailable:[]};
+ },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']});
+ assert.equal(partial.peerHints.length,0);
+ assert.ok(partial.searches.length>0);
 });
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
