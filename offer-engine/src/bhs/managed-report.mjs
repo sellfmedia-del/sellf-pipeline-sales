@@ -285,9 +285,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const relevantDimension={competition:'competition',digital:'digital',perception:'perception'}[section];
     if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
     if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
-    if(input.evidenceByQuestion&&(swot||section==='readiness'))request.proofsByQuestion=Object.fromEntries((swot?focus:['readiness']).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
+    if(input.evidenceByQuestion&&(swot||['readiness','perception'].includes(section)))request.proofsByQuestion=Object.fromEntries((swot?focus:[section]).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
-   if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
+    if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
    const name='managed-section-v3:'+section;
    const previousCheckpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
@@ -311,7 +311,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(rejected.length){
       request.rejected=rejected;
       request.instruction+=' Rejected alanındaki eski metin doğrulanmış veri değildir. Kaynağa dön ve yalnız atıfla desteklenen kısmı yeniden yaz veya daha sağlam bir kanıt seç.';
-      if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed'].includes(reason)))request.instruction+=' Miktarı ve kıyas derecesini çıkar. Kaynakta doğrulanan ürün, faaliyet, kanal veya süreç koşulunu sayısız ve nitel biçimde yaz. Önceki miktarı hiçbir alanda tekrar etme.';
+      if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed'].includes(reason)))request.instruction+=' Gözlem, analiz, sınır ve toplantı sorusunu rakam, miktar, yıl veya üstünlük iddiası kullanmadan nitel yaz. Kaynaktaki olgu ile ticari yorum ayrı olsun. Önceki miktarı hiçbir alanda tekrar etme. Aksiyonun veya ölçümün yöntemini yazabilirsin.';
      }
     }
    }
@@ -368,7 +368,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const proofIds=f=>unique(f.proof.map(id=>reverse.get(id)).filter(Boolean));
     const findingIssue=f=>{
      if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
-     if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı)\b/iu.test(f.observation))return 'digital_evidence_missing';
+     if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı|yok)\b/iu.test(f.observation)&&
+      !f.proof.some(id=>researchHost(focused.sources[id]?.[0])===researchHost(brief.website)))return 'digital_evidence_missing';
     };
     const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f)));
     const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};

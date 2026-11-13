@@ -157,7 +157,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    }
   }catch(error){
    const issue=managedModelIssue(error,signal);
-   if(!recovery&&(error.paidResponseRetained||issue==='input_budget')&&ids.length>1&&!signal?.aborted){
+   if(!recovery&&(error.paidResponseRetained||['input_budget','provider_format','provider_error','provider_size','model_timeout'].includes(issue))&&ids.length>1&&!signal?.aborted){
     for(let i=0;i<part.rows.length;i+=24)await review(evidenceSubset(part,part.rows.slice(i,i+24)),true);
     return;
    }
@@ -235,7 +235,7 @@ export function reviewedManagedEvidence(input,reviews){
     const proofs=new Set(input.evidenceByQuestion?.[id]||[]);
     return ranked.filter(row=>proofs.has(row)||rows.get(row)?.[3].some(proof=>proofs.has(proof)&&covered.get(proof)!=='x'));
    };
-   const focused=section==='swot'?swotFocus.map(questionRows):section==='readiness'?[questionRows(section)]:[];
+   const focused=section==='swot'?swotFocus.map(questionRows):['readiness','perception'].includes(section)?[questionRows(section)]:[];
    const focusedRows=[...new Set([0,1,2,3].flatMap(index=>focused.map(group=>group[index])).filter(Boolean))].slice(0,Math.ceil(limit/2));
    if(targeted&&section==='swot'&&swotFocus.length){
     const internalIds=new Set(priorityRows);

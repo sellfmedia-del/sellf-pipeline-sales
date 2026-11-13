@@ -53,11 +53,11 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
    throw error;}
  }
  return {recoveryRound:manualRecoveryRound,preferredModel:defaultModel,configured:()=>Boolean(geminiKey&&tavilyKey&&ledger&&(!gateway||gatewayToken)),
-  async extract(urls){
+  async extract(urls,{query}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Tavily bağlantısı gerekli.');
    if(!Array.isArray(urls)||!urls.length||urls.length>5)throw new BudgetError('invalid_query','Kaynak okuma sınırı geçersiz.');
    const safe=await Promise.all(urls.map(async url=>(await validateUrl(url)).url.href));
-   const input={urls:[...new Set(safe)],extract_depth:'advanced',format:'markdown',query:'Company products pricing subscriptions checkout delivery returns customer reviews team growth annual financial results technology and social links',chunks_per_source:5,timeout:20,include_images:false,include_usage:true};
+   const input={urls:[...new Set(safe)],extract_depth:'advanced',format:'markdown',query:query||'Company products pricing subscriptions checkout delivery returns customer reviews team growth annual financial results technology and social links',chunks_per_source:5,timeout:20,include_images:false,include_usage:true};
    // Up to five advanced extractions: two credits. Reserve the complete block
    // even if this individual response reports zero incremental credits.
    return ledger.once('extract:'+hash(input),input,quoteSearch(),async()=>{

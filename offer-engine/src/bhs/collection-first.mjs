@@ -195,14 +195,11 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   hints.push({id:'candidate_'+hash(researchHost(url)).slice(0,20),role:'competitor',name,website:url,scope:'Ürün sayfası araştırma adayı.',audienceReason:'Kitle örtüşmesi denetlenecek.',scaleReason:'Ölçek doğrulanmadı.',geographyReason:'Hedef pazar denetlenecek.'});
  };
  async function discoverPublishers(){
-  const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
+  const format=product.replace(/\b(?:organik|organic|vegan|glutensiz|gluten[- ]free|çocuk|bebek|kids?|baby)\b/giu,'').replace(/\s+/g,' ').trim()||product;
   const target=market?.[1]||managedPlan?.market;
   const language=market?.[3]==='tr'||/Türkiye|Turkey/iu.test(target||'');
   const queries=[[format,target,language?'üretici markalar resmî ürün kataloğu':'manufacturer brands official product catalogue']];
-  if(providers.managedBudgetVersion===3){
-   const head=format.trim().split(/\s+/).slice(-2).join(' ');
-   queries.push([head,target,language?'marka resmî mağaza ürünler':'brand official shop products']);
-  }
+  if(providers.managedBudgetVersion===3)queries.push([format,target,language?'üreticileri markaları ürünleri':'product manufacturer brands']);
   const results=await Promise.all(queries.map(parts=>collectAttempt(()=>pool.search(parts.filter(Boolean).join(' '),{depth:'basic',maxResults:12,retainRaw:true}))));
   searches.unshift(...results);
   for(const result of results.flatMap(search=>search.results||[])){
@@ -279,7 +276,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
     if(providers.managedBudgetVersion===3){
      const [url,result]=source;
      const title=(result.title||'').split(/\s+[|–—-]\s+|\s*\|\s*/u);
-     const namedProductPage=title.some(part=>nameKey(part).startsWith(nameKey(row.name)))&&
+    const namedProductPage=title.some(part=>nameKey(part).startsWith(nameKey(row.name)))&&
       /\/[^?#]*(?:ürün|urun|product|catalog|kategori|category|collections|peynir|cheese)/iu.test(new URL(url).pathname)&&
       words.some(word=>nameKey([result.title,result.content,url].join(' ')).includes(nameKey(word)));
      if((!publisherCandidate(row.name,result)&&!namedProductPage)||hints.some(peer=>peerGroupKey(peer.name)===peerGroupKey(row.name)))continue;
@@ -579,7 +576,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const research=priority.filter(id=>missing.includes(id)).map(id=>[id,managedEvidenceQuery(brief,plan,id,market?.[3])]);
  if(feedbackPages.size<2&&plan.tasks.some(task=>task.section==='perception')){
   const name='"'+brief.brandName.replace(/["\n\r]/g,' ')+'"';
-  const terms=market?.[3]==='tr'?['müşteri şikayetleri ürün deneyimi','ürün satın alan müşteri yorumları değerlendirme puanı']:
+  const terms=market?.[3]==='tr'?['site:sikayetvar.com ürün şikayetleri deneyim','site:trendyol.com ürün kullanıcı yorumları değerlendirme']:
    ['customer complaints product experience','verified purchase product customer reviews'];
   research.unshift(...terms.map(term=>['perception',[name,plan.comparableProduct,term].filter(Boolean).join(' ').slice(0,380)]));
  }
@@ -594,15 +591,15 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   const ownUrl=url=>researchHost(url)===researchHost(brief.website);
   return [...urls.filter(url=>ownUrl(url)===needsBrand),...urls.filter(url=>ownUrl(url)!==needsBrand)].slice(0,2);
  }));
- const fresh=await readResearchPages(brief,brand.plan,targets,providers,collect);
- if(queryPool.extract){
-  const read=new Set(fresh.sources.filter(source=>!source.metadataOnly).flatMap(source=>[source.url,source.finalUrl]));
-  const missed=unique(searches.filter(({id})=>id==='perception').flatMap(({search})=>(search.results||[]).map(r=>researchUrl(r.url))))
-   .filter(url=>url&&targets.includes(url)&&!read.has(url)).slice(0,2);
-  if(missed.length){
-   const extraction=await collectAttempt(()=>queryPool.extract(missed));
-   if(extraction.pages?.length)fresh.sources=mergeExtractedEvidence(fresh,extraction).sources;
-  }
+ const reviewTargets=unique(searches.filter(({id})=>id==='perception').flatMap(({search})=>(search.results||[]).map(r=>researchUrl(r.url))))
+  .filter(url=>url&&targets.includes(url)).slice(0,4);
+ const [fresh,extraction]=await Promise.all([
+  readResearchPages(brief,brand.plan,targets,providers,collect),
+  reviewTargets.length&&queryPool.extract?collectAttempt(()=>queryPool.extract(reviewTargets,{query:brief.brandName+' özgün müşteri yorumları, satın alma deneyimi, ürün şikayetleri ve marka yanıtları'})):null
+ ]);
+ if(extraction?.pages?.length){
+  const extracts=mergeExtractedEvidence({sources:[],unavailable:[]},extraction);
+  fresh.sources=canonicalSources([...fresh.sources,...extracts.sources]);
  }
  const newContext=managedCollectionContext(brief,{...corpus.packet,sources:fresh.sources});
  const freshCandidates=questionCandidates(brief,newContext);
@@ -613,7 +610,16 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   evidence[id]=unique([...verified[id],...found,...evidence[id]]).slice(0,8);
  }
  for(const id of Object.keys(evidence))evidence[id]=unique([...verified[id],...evidence[id]]);
- const selected=Object.entries(evidence).flatMap(([area,ids])=>ids.slice(0,3).map(id=>{
+ const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)&&
+  customerEvidence([card.url,card.title,card.method,card.quote]));
+ const feedbackByPage=new Map();
+ for(const card of feedbackProofs){
+  const ids=feedbackByPage.get(card.url)||[];
+  if(ids.length<3&&!ids.includes(card.id))ids.push(card.id);
+  feedbackByPage.set(card.url,ids);
+ }
+ if(feedbackByPage.size)evidence.perception=[...feedbackByPage.values()].flat().slice(0,12);
+ const selected=Object.entries(evidence).filter(([area])=>area!=='perception').flatMap(([area,ids])=>ids.slice(0,3).map(id=>{
   const card=context.known.get(id)||newContext.known.get(id);
   return [area,id,card.url,card.quote.slice(0,520)];
  }));
