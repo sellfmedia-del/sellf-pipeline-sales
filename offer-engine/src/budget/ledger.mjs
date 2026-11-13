@@ -4,6 +4,17 @@ import {sessionFor} from '../proposal/preview-session.mjs';
 
 export const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export class BudgetError extends Error{constructor(code,message){super(message);this.code=code;}}
+
+function checkpointValue(value){
+ let changed=false;
+ const json=JSON.stringify(value,(_key,item)=>{
+  if(typeof item!=='string')return item;
+  const valid=item.toWellFormed().replaceAll('\0','\ufffd');
+  if(valid!==item)changed=true;
+  return valid;
+ });
+ return changed?JSON.parse(json):value;
+}
 // A tariff is valid only for its reviewed date range. Expired/unknown prices
 // fail closed. The conversion is a conservative envelope, not a quoted FX rate.
 export const tariff=Object.freeze({version:'sellf-bounded-2026-11-05-v2',expires:'2026-11-15T00:00:00Z',usdTry:60,overhead:1.2,normalTargetKurus:3000,capKurus:5000,infraKurus:500,
@@ -86,8 +97,12 @@ export function createLedger(call,{reuseCompleted=false}={}){
     if(reservation.step?.state==='complete'){if(reservation.step.value?.rejected)throw new BudgetError('provider_rejected','Bu istek sağlayıcı tarafından reddedilmiş; aynı istek tekrar başlatılmadı.');return reservation.step.value;}
     throw new BudgetError(reservation.step?.state==='uncertain'?'budget_uncertain':'budget_pending',reservation.step?.state==='uncertain'?'Önceki isteğin sonucu belirsiz; yeniden ücretli çağrı başlatılmadı.':'Bu aşama zaten çalışıyor. Aynı işlem yeniden başlatılmadı.');
    }
-   try{const value=await run(),actual=settle?settle(value):amount;
+   try{const output=await run(),actual=settle?settle(output):amount;
     if(!Number.isSafeInteger(actual)||actual<0||actual>amount)throw new BudgetError('provider_accounting','Doğrulanmış tüketim ayrılan üst tutarla eşleşmiyor.');
+    // A sliced or malformed provider string can contain an orphan surrogate
+    // or NUL. Postgres rejects either in jsonb, even in an otherwise valid
+    // report. Return the same transport-safe value that is durably committed.
+    const value=checkpointValue(output);
     remember(key,await call('complete',{step:key,hash:inputHash,token,value,amount:actual}));return value;}
    catch(error){
     if(amount>0&&error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
