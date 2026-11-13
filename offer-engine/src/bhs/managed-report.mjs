@@ -341,6 +341,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    };
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
    if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
+   if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
    const changedRequest=minimumFirst&&(competition||swot);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
@@ -399,7 +400,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    draftsBySection.set(section,[]);
    const prior=input.existing.filter(([id])=>id===section).map(([,statement,quadrant,peerId])=>[statement,quadrant||null,peerId||null]);
    const focus=section==='swot'?quadrants.filter(quadrant=>!prior.some(([,saved])=>saved===quadrant)):[];
-   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst?2:3;
+   const candidateCount=input.entities.filter(([,role])=>role==='competitor').length;
+   const alternativePeer=section==='competition'&&input.evidenceByQuestion&&candidateCount>2;
+   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst&&!alternativePeer?2:3;
    const result=await write({section,wanted,focus,prior,repair:false},following);
    if(savedSectionsOnly&&result.issue==='section_not_saved'){
     const legacy=await readLegacySection({section,brief,input,reviewed,providers});
