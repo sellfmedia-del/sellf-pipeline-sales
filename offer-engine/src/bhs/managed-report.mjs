@@ -6,7 +6,7 @@ import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
-import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -219,12 +219,13 @@ function sectionContext(brief,input,section,focused){
 
 const sectionFields=Object.fromEntries(Object.entries(rowSchema.properties).filter(([key])=>!['rank','section','quadrant','peerId'].includes(key)));
 const reportSectionReserveKurus=220;
-const retryableSections=new Set(['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved','token_count']);
+const retryableSections=new Set(['incomplete','invalid_report','model_output_invalid','budget_limit','input_budget','section_not_saved','token_count',
+ 'provider_error','provider_timeout','provider_format','provider_size','provider_rejected','quota','model_timeout']);
 const sectionInstructions={
  competition:'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Verilen rakip kimliğini kullan. Her rakip için tek bulgu ve peers dizisinde kendi yayıncısından ürün kanıtı ver.',
- digital:'Hedefe etki eden dijital varlığı ve somut sayfa veya işlevi belirt. HTML etiketi bir çalışırlık veya performans testi değildir.',
- swot:'İstenen her SWOT koluna kanıt varsa bir ayrı bulgu yaz. Boş kol için boş dizi ver. İç yetkinlikleri dış fırsat ve tehditlerden ayır.',
- perception:'Geri bildirim temasını ve örneklemin sınırını belirt. Kaynak tek bir yorum ise tüm müşterilere genelleme yapma.',
+ digital:'Hedefe etki eden dijital varlığı ve somut sayfa veya işlevi belirt. Yalnız araştırma sırasında veri toplanmadığını söylemek bulgu sayılmaz. HTML etiketi bir çalışırlık veya performans testi değildir.',
+ swot:'İstenen her SWOT koluna kanıt varsa bir ayrı bulgu yaz. Boş kol için boş dizi ver. İç yetkinlikleri dış fırsat ve tehditlerden ayır. Dış fırsat veya tehdidin dayanağı hedef pazara ve bu ürünün sektörü, kanalı veya müşterisine uygulanmalı. Şirketin bir başarısı dış fırsat değildir. İlgisiz bir sektördeki örnek veya başka pazardaki büyüme hedefi dış pazar bulgusu değildir.',
+ perception:'Markaya veya ürününe ait gerçek müşteri deneyimini ve örneklemin sınırını belirt. Kaynak tek bir yorum ise tüm müşterilere genelleme yapma. Veri açığı, boş yorum alanı, fiyat listesi, haber ve marka beyanı bir müşteri algısı bulgusu sayılmaz. Kanıtlanmış farklı deneyimler varsa ayrı değerlendir.',
  readiness:'Hedefe ulaşmak için somut gerekliliği, mevcut kanıtı ve varsa bağımlılığı belirt.'
 };
 
@@ -352,7 +353,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue};
    if(signal.aborted)return {issue:'model_timeout'};
    try{
-    const result=await providers.manager('v8-managed-section:'+section,request,modelSchema,{
+    const generate=repair&&issues.has(section)&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
+    const result=await generate('v8-managed-section:'+section,request,modelSchema,{
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
      compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
     });
@@ -363,15 +365,20 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const draft={section,model:result.model??null,usage:result.usage??null,findings,peers,sourceIds};
     const checked=project([draft],new Set([section]));
     const ids=new Set(checked.bhsSections.find(item=>item.id===section).findingIds);
-    const valid=findings.filter(f=>ids.has(managedFindingId(f,unique(f.proof.map(id=>reverse.get(id)).filter(Boolean)))));
+    const proofIds=f=>unique(f.proof.map(id=>reverse.get(id)).filter(Boolean));
+    const findingIssue=f=>{
+     if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
+     if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı)\b/iu.test(f.observation))return 'digital_evidence_missing';
+    };
+    const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f)));
     const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};
     if(focusedWriting){
      const issues=new Map(checked.transfer.issues.map(({path,reason})=>[path,reason]));
      retained.rejected=findings.filter(f=>!valid.includes(f)).map(f=>{
-      const proof=unique(f.proof.map(id=>reverse.get(id)).filter(Boolean));
+      const proof=proofIds(f);
       const quotes=proof.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)?.quote||'').join('\n');
       const reason=issues.get('competitors.'+f.peerId)||issues.get('findings.'+managedFindingId(f,proof));
-      return {quadrant:f.quadrant,observation:f.observation,reason:!supportedNumbers(f.observation,quotes)?'unsupported_quantity':reason||'comparison_or_duplicate'};
+      return {quadrant:f.quadrant,observation:f.observation,reason:findingIssue(f)||(!supportedNumbers(f.observation,quotes)?'unsupported_quantity':reason||'comparison_or_duplicate')};
      });
      retained.returned=findings.length;
     }
@@ -421,7 +428,6 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const missingQuadrants=coverage.missingQuadrants.filter(quadrant=>!saved.some(([,priorQuadrant])=>priorQuadrant===quadrant));
   const count=coverage.count+saved.length;
   if(count>=2&&!missingQuadrants.length||issue&&!retryableSections.has(issue))continue;
-  issues.delete(section);
   const prior=[...saved,...report.findings.map(f=>[f.statement,f.swotQuadrant||null,f.peerId||null])];
   const rejected=draftsBySection.get(section).flatMap(draft=>draft.rejected||[]);
   if(section==='swot'){

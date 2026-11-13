@@ -72,6 +72,32 @@ test('a candidate mentioned in a readiness finding does not relabel the audited 
  assert.equal(report.competitors.length,0);
 });
 
+test('a missing review source cannot count as customer feedback and a provider format error recovers within the section',async()=>{
+ const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
+ const complaint=context.cards.find(card=>/müşteri yorumları/.test(card.quote));
+ const product=context.cards.find(card=>/doğrudan tüketiciye satılır/.test(card.quote));
+ const args={brief,brand:{facts:[]},plan:{coveragePolicy:2},context,inventory:[{observations:[
+  {area:'perception_1',text:complaint.quote,sourceIds:[complaint.id]},
+  {area:'perception_1',text:product.quote,sourceIds:[product.id]}
+ ]}],coverageEvidence:{},sections:['perception'],sectional:true,allowPartial:true};
+ const {input}=managedReportInput(args);
+ const ids=[...input.observations.map(([id])=>id),...Object.keys(input.sources)];
+ const row=(statement,proof)=>({area:'perception_1',observation:statement,proof:[proof],kind:'observation',
+  analysis:'Teslimat deneyimi tekrar satın almayı etkileyebilir.',action:'Teslimat kayıtlarını yorumlarla karşılaştır.',
+  measurement:'Teslimat şikayeti oranını izle.',limitation:'Yorum örneklemi sınırlı.',question:''});
+ const providers={manager:async()=>{throw new BudgetError('provider_format','Upstream invalid response.');},
+  evidenceReviewer:async(_stage,request)=>{
+   const proof=quote=>Object.keys(request.sources).find(id=>request.sources[id][3]===quote);
+   return {data:{findings:[row(complaint.quote,proof(complaint.quote)),
+    row('Verilen kaynaklarda müşteri yorumu veya şikâyet bulunmuyor.',proof(product.quote))]}};
+  }};
+ const {report,reportIssue}=await synthesizeManagedReport({...args,providers,batchReviews:[{ids,verdicts:'p'.repeat(ids.length),candidates:ids}]});
+ assert.equal(reportIssue,'provider_format');
+ assert.equal(report.findings.length,1);
+ assert.equal(report.findings[0].statement,complaint.quote);
+ assert.equal(report.bhsSections.find(section=>section.id==='perception').complete,false);
+});
+
 test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const key='audit:synthesis:unicode-replay';
@@ -158,7 +184,7 @@ test('live-sized report responses finish five sections and repair only missing g
    }else{
     const section=Object.keys(managedSections).find(id=>request.system.includes('yalnız '+managedSections[id]+' bölümünü'));
     assert.ok(section);
-    const schema=request.output_config.format.schema.properties;
+    const schema=(request.output_config?.format?.schema||request.tools[0].input_schema).properties;
     const attempt=sectionWrites.filter(id=>id===section).length;
     sectionWrites.push(section);
     peak=Math.max(peak,++active);

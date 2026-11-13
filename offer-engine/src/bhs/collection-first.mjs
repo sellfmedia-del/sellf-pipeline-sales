@@ -15,7 +15,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {customerEvidence,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -104,6 +104,12 @@ function publisherCandidate(name,result){
  const publisher=nameKey([result.title,result.content].filter(Boolean).join(' '));
  const productPage=/ürün|urun|product|catalog|kategori|category|collections|shop|peynir|cheese|bar/iu.test(new URL(url).pathname);
  return brand.length>=4&&publisher.includes(brand)&&productPage&&(domain.includes(brand)||brand.includes(domain)&&domain.length>=4)?url:'';
+}
+function publisherName(result,url){
+ const domain=researchHost(url)?.split('.')[0];
+ const names=(result.title||'').split(/\s+[|–—-]\s+|\s*\|\s*/u).map(part=>part.trim());
+ return names.find(name=>name.length<=70&&publisherMatches(name,url,true))||
+  names.flatMap(name=>name.match(/[\p{L}\p{N}]{3,}/gu)||[]).find(name=>nameKey(name)===domain);
 }
 const sourcesFrom=async(previous,stages,key)=>(await Promise.all(stages.map(previous))).flatMap(s=>s[key]||[]);
 const canonicalSources=rows=>[...new Map(rows.map(s=>[s.finalUrl+' '+s.contentHash,s])).values()].map((s,i)=>({...s,id:'ev'+(i+1)}));
@@ -201,7 +207,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   searches.unshift(...results);
   for(const result of results.flatMap(search=>search.results||[])){
    const url=researchUrl(result.url);
-   const name=(result.title?.match(/[\p{L}\p{N}]{3,}/gu)||[]).find(word=>publisherMatches(word,url,true));
+   const name=publisherName(result,url);
    if(!name||seen.has(peerGroupKey(name))||!words.some(word=>nameKey((result.title||'')+' '+(result.content||'')).includes(nameKey(word))))continue;
    addHint(name,url);
   }
@@ -224,7 +230,9 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    urls=owned(search.results);
   }
   if((repair||managedPlan)&&!urls.length&&!search?.unavailable){
-   publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" '+(target||'')+' official products services website',{depth:'basic',maxResults:12,retainRaw:true}));
+   const turkish=market?.[3]==='tr'||/Türkiye|Turkey/iu.test(target||'');
+   const publisherQuery=turkish?'resmi marka ürünler':'official brand products';
+   publisherSearch=await collectAttempt(()=>pool.search('"'+name.replace(/["\n\r]/g,' ')+'" '+publisherQuery,{depth:'basic',maxResults:12,retainRaw:true}));
    urls=owned(publisherSearch.results);
   }
   const url=urls.find(url=>words.some(word=>new URL(url).pathname.split(/[^\p{L}]+/u).some(part=>nameKey(part)===nameKey(word))))||urls.find(url=>/ürün|urun|product|catalog|kategori|category|collections/i.test(new URL(url).pathname))||urls[0];
@@ -268,7 +276,14 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    for(const row of selection.data?.pages||[]){
     const match=row.resultId.match(/^u([1-9]\d?)$/),source=match&&observed[Number(match[1])-1];
     if(!source||!row.name.trim()||peerGroupKey(row.name)===peerGroupKey(brief.brandName)||repair?.names.some(name=>peerGroupKey(name)===peerGroupKey(row.name)))continue;
-    if(providers.managedBudgetVersion===3&&(!publisherCandidate(row.name,source[1])||hints.some(peer=>peerGroupKey(peer.name)===peerGroupKey(row.name))))continue;
+    if(providers.managedBudgetVersion===3){
+     const [url,result]=source;
+     const title=(result.title||'').split(/\s+[|–—-]\s+|\s*\|\s*/u);
+     const namedProductPage=title.some(part=>nameKey(part).startsWith(nameKey(row.name)))&&
+      /\/[^?#]*(?:ürün|urun|product|catalog|kategori|category|collections|peynir|cheese)/iu.test(new URL(url).pathname)&&
+      words.some(word=>nameKey([result.title,result.content,url].join(' ')).includes(nameKey(word)));
+     if((!publisherCandidate(row.name,result)&&!namedProductPage)||hints.some(peer=>peerGroupKey(peer.name)===peerGroupKey(row.name)))continue;
+    }
     addHint(row.name.trim(),source[0]);
    }
   }
@@ -558,21 +573,41 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const missing=Object.keys(verified).filter(key=>verified[key].length<(key==='readiness'?2:1));
  const priority=['readiness','weakness','threat','opportunity','strength'];
  const queryPool=providers.withCeiling(2900);
- const searches=await Promise.all(priority.filter(id=>missing.includes(id)).map(async id=>{
-  const query=managedEvidenceQuery(brief,plan,id,market?.[3]);
+ const brandName=nameKey(brief.brandName);
+ const feedbackPages=new Set(context.cards.filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title).includes(brandName)&&
+  customerEvidence([card.url,card.title,card.method,card.quote])).map(card=>card.url));
+ const research=priority.filter(id=>missing.includes(id)).map(id=>[id,managedEvidenceQuery(brief,plan,id,market?.[3])]);
+ if(feedbackPages.size<2&&plan.tasks.some(task=>task.section==='perception')){
+  const name='"'+brief.brandName.replace(/["\n\r]/g,' ')+'"';
+  const terms=market?.[3]==='tr'?['müşteri şikayetleri ürün deneyimi','ürün satın alan müşteri yorumları değerlendirme puanı']:
+   ['customer complaints product experience','verified purchase product customer reviews'];
+  research.unshift(...terms.map(term=>['perception',[name,plan.comparableProduct,term].filter(Boolean).join(' ').slice(0,380)]));
+ }
+ const searches=await Promise.all(research.map(async ([id,query])=>{
   return {id,search:await collectAttempt(()=>queryPool.search(query,{depth:'basic',maxResults:6,retainRaw:true}))};
  }));
  const archived=new Set(corpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly).map(source=>source.finalUrl));
  const targets=unique(searches.flatMap(({id,search})=>{
   const urls=unique((search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!archived.has(url)));
+  if(id==='perception')return urls.filter(url=>nameKey(url).includes(brandName)||/sikayetvar|trustpilot|review|yorum|şikayet/iu.test(url)).slice(0,2);
   const needsBrand=['strength','weakness','readiness'].includes(id);
   const ownUrl=url=>researchHost(url)===researchHost(brief.website);
   return [...urls.filter(url=>ownUrl(url)===needsBrand),...urls.filter(url=>ownUrl(url)!==needsBrand)].slice(0,2);
  }));
  const fresh=await readResearchPages(brief,brand.plan,targets,providers,collect);
+ if(queryPool.extract){
+  const read=new Set(fresh.sources.filter(source=>!source.metadataOnly).flatMap(source=>[source.url,source.finalUrl]));
+  const missed=unique(searches.filter(({id})=>id==='perception').flatMap(({search})=>(search.results||[]).map(r=>researchUrl(r.url))))
+   .filter(url=>url&&targets.includes(url)&&!read.has(url)).slice(0,2);
+  if(missed.length){
+   const extraction=await collectAttempt(()=>queryPool.extract(missed));
+   if(extraction.pages?.length)fresh.sources=mergeExtractedEvidence(fresh,extraction).sources;
+  }
+ }
  const newContext=managedCollectionContext(brief,{...corpus.packet,sources:fresh.sources});
  const freshCandidates=questionCandidates(brief,newContext);
  for(const {id,search} of searches){
+  if(id==='perception')continue;
   const hosts=new Set((search.results||[]).map(result=>researchHost(result.url)));
   const found=freshCandidates[id].filter(card=>hosts.has(researchHost(card.url))).map(card=>card.id);
   evidence[id]=unique([...verified[id],...found,...evidence[id]]).slice(0,8);
@@ -701,7 +736,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }
  if(scrapeIndex>=0){
   const brand=await previous('brand');
-  const market=markets.find(([pattern])=>pattern.test(managed?.market||brand.review?.marketContext?.description||brief.goals));
+  const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals||managed?.market));
   const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
   const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):scoped(managed?collectionBudgetKurus:1650);
   // Worker compute is already reserved inside the research account. Prioritize

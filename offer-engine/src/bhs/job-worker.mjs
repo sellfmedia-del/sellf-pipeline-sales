@@ -19,7 +19,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    // The paid drafting reserve may not fit. Keep the reviewed source handoff
    // available under the fixed gateway/template reserve, without a paid call.
    const manager=async()=>{throw new BudgetError('budget_limit','Kalan bütçe için incelenmiş kanıtlar kullanılacak.');};
-   return runStage({...options,providers:{...options.providers,manager}});
+   return runStage({...options,providers:{...options.providers,manager,evidenceReviewer:manager}});
   }
  }
  if(job.phase==='scope'){

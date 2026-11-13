@@ -93,6 +93,22 @@ test('publisher discovery keeps Claude-selected public results when brand names 
  assert.deepEqual(modern.peerHints.map(({name,website})=>[name,website]),[['Gamma Organic','https://www.gamma.example/products/bar']]);
 });
 
+test('target-market discovery keeps a multiword publisher name and a reviewed product page on its parent domain',async()=>{
+ const first={url:'https://whitedairy.example/urunler/peynir',title:'Peynir | White Dairy',content:'Türkiye için özel peynir ürünleri.'};
+ const second={url:'https://producer.example/urunler/peynir',title:'Green Farm Peynir',content:'Türkiye için özel peynir ürünleri.'};
+ const news={url:'https://news.example/urunler/peynir',title:'Haber: Green Farm Peynir',content:'Türkiye için özel peynir ürünleri.'};
+ const providers={managedBudgetVersion:3,search:async()=>({results:[first,second,news]}),evidenceReviewer:async(_stage,input)=>({data:{pages:[
+  {name:'Green Farm',resultId:input.results.find(row=>row[1]===second.url)[0]},
+  {name:'Green Farm',resultId:input.results.find(row=>row[1]===news.url)[0]}
+ ]}})};
+ const brand={plan:{...plan,entities:plan.entities.filter(e=>e.role==='brand')}};
+ const result=await comparisonResearch(brief,brand,null,providers,providers,async(_brief,_plan,options)=>{
+  assert.deepEqual(options.prioritySources.slice(0,2),[first.url,second.url]);
+  return {sources:[],unavailable:[]};
+ },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'peynir',peerNames:[]});
+ assert.deepEqual(result.peerHints.map(p=>p.name),['White Dairy','Green Farm']);
+});
+
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{
  const db=await localBudget(),seen=new Map();
  const brand={packet:fixturePacket(),plan,decision:'accepted',facts:[

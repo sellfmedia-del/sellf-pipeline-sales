@@ -7,6 +7,14 @@ const finalReserveKurus=520;
 const decisions='cdsprgux';
 export const managedReviewUsesHaiku=batches=>batches.length>4;
 const size=value=>Buffer.byteLength(JSON.stringify(value));
+const feedback=/müşteri(?:ler|si|nin)?\s+(?:yorum|değerlendirme|geri bildirim|şik[âa]yet)|tüketici\s+(?:yorum|şik[âa]yet)|şik[âa]yet(?:ler|ini)?\b|customer\s+(?:reviews?|feedback|complaints?)|(?:^|\s)(?:puan|rating)\s*[:\d]|(?:out of|üzerinden)\s*[\d.,]+|\b(?:reviewed|verified purchase)\b|\b(?:satın aldım|aldığım|beğendim|beğenmedim|tavsiye ederim|sipariş verdim)\b/iu;
+export const missingCustomerEvidence=text=>/\b(?:yorum|puan|şik[âa]yet|geri bildirim|değerlendirme|reviews?|ratings?|complaints?|feedback)[^.?!]{0,100}\b(?:yok(?:tur|luğu)?|bulunma(?:dı|dığı|maktadır)|bulunmuyor|görülmedi|tespit edilmedi|not (?:available|found)|unavailable)\b/iu.test(text);
+export function customerEvidence([url,,method,quote]=[]){
+ if(!quote||['html-signals','search-snippet'].includes(method)||missingCustomerEvidence(quote))return false;
+ const reviewPage=/sikayetvar\.com|trustpilot\.com|\/[^?#]*(?:yorum(?:lar)?|reviews?|şikayet|sikayet)(?:[/?#-]|$)/iu.test(url);
+ return feedback.test(quote)||reviewPage&&/puan|yorum|şik[âa]yet|review|complaint|müşteri|ürün/iu.test(quote)&&
+  !/^\s*(?:yorumlar|reviews?|müşteri yorumları|değerlendirmeler)\s*$/iu.test(quote);
+}
 
 export function planManagedEvidenceReview(input){
  const rows=input.observations.map(([id,area,text,proof])=>({id,area,text,proof}));
@@ -206,7 +214,7 @@ export function reviewedManagedEvidence(input,reviews){
  const marketEvidence=/pazar|market|talep|demand|regulat|mevzuat|hammadde|raw material|rekabet|competit|tüketici|consumer/iu;
  const digitalEvidence=/e.ticaret|e.commerce|sepete|basket|checkout|online mağaza|online store|site içi|site search|newsletter|bülten|instagram|linkedin|youtube|tiktok|meta pixel|analytics|sitemap|canonical|schema\.org/iu;
  const ranked=[...new Set([...candidates,...expected])].filter(id=>covered.has(id)&&covered.get(id)!=='x');
- return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
+ return {candidates,verdict:id=>covered.get(id),isCustomerEvidence:id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&customerEvidence(input.sources[id]),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
   sectionInput(section,limit,{peerProofs=1,excludedPeers,priorityProofs=[],targeted=false,swotFocus=[]}={}){
