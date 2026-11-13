@@ -100,7 +100,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
     const body=req.postDataJSON();actions.push(body.action);
     if(viewport.width===390&&body.action==='status'&&disconnected<3){disconnected++;return route.abort('failed');}
     const phases=['research','source_plan','synthesis','revision','semantic'];let response;
-    if(body.action==='start')response={phase:'research',ticket:'0'};
+    if(body.action==='start')response={phase:'research',ticket:'0',...(viewport.width===390&&viewport.currency==='USD'?{execution:'background'}:{})};
     else if(body.action==='advance')response={phase:phases[Number(body.ticket)+1],ticket:String(Number(body.ticket)+1)};
     else if(body.ticket==='4'){
      if(completionReads++===0)return route.fulfill({status:202,contentType:'application/json',body:JSON.stringify({phase:'complete',status:'in_progress',ticket:'4'})});
@@ -116,8 +116,9 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await page.goto('https://preview.vercel.app/');const frame=page;await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.evaluate(()=>JSON.stringify(db));
   await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-currency').selectOption(viewport.currency);await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
-  if(viewport.width===390){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
+  if(viewport.width===390&&viewport.currency==='TRY'){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(actions.filter(a=>a==='start').length,1);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  if(viewport.width===390&&viewport.currency==='USD'){assert.equal(disconnected,3);assert.equal(await frame.locator('.ob-resume').isVisible(),false);}
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.equal(priceActions.includes('status'),false);

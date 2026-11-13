@@ -290,7 +290,7 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
   }});
  const {report}=await synthesizeManagedReport({brief,brand:{facts:[],plan},plan:{},context,inventory,providers});
  assert.ok((await wire.ledger.status()).chargedKurus<2500);
- const synthesis={report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:sequentialVersion,supervision:{reviewMode:'managed-audit'}};
+ const synthesis={report,analysisPacket:context.packet,searchEvidence:[],methodologyVersion:sequentialVersion,supervision:{reviewMode:'managed-audit',researchPlan:{}}};
  const audit=directAuditResult(brief,synthesis);
  assert.deepEqual(audit.data.bhsSections.map(s=>[s.id,s.count,s.complete]),[
   ['competition',2,true],['digital',2,true],['swot',4,true],['perception',1,false],['readiness',2,true]
@@ -336,6 +336,13 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  assert.deepEqual(affected.data.gapCompletion.sections,[managedSections.perception]);
  assert.ok(affected.data.pricingProof);
  assert.equal(affected.data.result.data.findings.length,specs.length);
+ completed.state='paused';completed.phase='scope';
+ const paused=await request({action:'status',ticket:initial.data.ticket});
+ assert.equal(paused.code,200);
+ assert.equal(paused.data.result.data.findings.length,specs.length);
+ assert.equal(paused.data.result.data.researchContinuity.status,'partial');
+ assert.deepEqual(paused.data.gapCompletion.sections,[managedSections.perception]);
+ assert.ok(paused.data.pricingProof);
  assert.equal((await ledger.status()).chargedKurus,500);
 });
 

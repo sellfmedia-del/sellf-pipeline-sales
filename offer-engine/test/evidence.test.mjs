@@ -55,7 +55,7 @@ test('rendered public evidence waits for site scripts, follows visible country n
  try{
   const requested=[];
   const read=async url=>{requested.push(url);return {status:200,headers:{'content-type':'text/html; charset=utf-8'},body:Buffer.from(url.endsWith('/tr')?'<title>Brand Turkey</title><p>'+quote.repeat(3)+'</p>':'<p>Please select your country</p><button onclick="location.href=\'/tr\'">Türkiye</button><button>Global</button>')};};
-  const results=await renderEvidencePages([{url:brief.website,finalUrl:brief.website}],{read,browser,validate:async()=>{},deadline:Date.now()+18000});
+  const results=await renderEvidencePages([{url:brief.website,finalUrl:brief.website}],{read,browser,deadline:Date.now()+18000});
   assert.equal(results.length,1);assert.equal(results[0].finalUrl,'https://brand.example/tr');assert.ok(results[0].text.includes(quote));assert.ok(requested.includes('https://brand.example/tr'));
  }finally{await browser.close();}
 });
