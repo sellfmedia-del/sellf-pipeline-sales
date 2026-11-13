@@ -49,6 +49,19 @@ function providerFor(db,phase,transport,apify,options){
  return {...p,manager:(stage,input,schema,opts)=>p.manager(stage,{...input,qaStage:stage},schema,opts),worker:(stage,input,schema,opts)=>p.worker(stage,{...input,qaStage:stage},schema,opts)};
 }
 async function run(db,phase,transport){return runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,transport),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});}
+test('a malformed initial Claude reply keeps the managed brand research moving to verified sources',async t=>{
+ const db=await localBudget();t.after(db.close);
+ const original=modelTransport(),transport={...original,fetchImpl:(url,options)=>url.endsWith('/count_tokens')?Promise.resolve(new Response('upstream HTML',{status:502})):original.fetchImpl(url,options)};
+ const runPhase=(phase,input)=>runBoundedStage({phase,brief,ledger:db.ledger,providers:providerFor(db,phase,input,undefined,{managedAudit:true}),collect:fakeCollector(),researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+ const planned=await runPhase('brand_plan',transport);
+ assert.deepEqual(planned.toolIssues,['provider_format']);
+ assert.deepEqual(planned.managerPlan.queries,[]);
+ assert.ok(planned.packet.sources.length);
+ const sources=await runPhase('brand_sources',original);
+ assert.ok(sources.packet.sources.length);
+ assert.ok(original.events.some(event=>event.type==='search'));
+ assert.ok((await db.ledger.status()).chargedKurus<=3000);
+});
 test('six logical stages run in order through real PostgreSQL receipts and provider accounting',async()=>{
  const db=await localBudget(),t=modelTransport({mutate:(stage,data,input)=>{
   if(stage==='v8-competition-review')return {...data,decision:'limited',missing:['Markanın yerel liste fiyatı açıklanmadı.']};
