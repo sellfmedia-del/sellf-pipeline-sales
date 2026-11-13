@@ -2,7 +2,7 @@ import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
 import {gzip} from 'node:zlib';
 import {promisify} from 'node:util';
 import {briefHash,dimensions} from './brief.mjs';
-import {evidenceExcerpts,evidenceHash} from './evidence.mjs';
+import {evidenceExcerpts,evidenceHash,mergeExtractedEvidence} from './evidence.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 import {actorInput,observedActorTargets} from './apify-inputs.mjs';
@@ -171,6 +171,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   ...(repair?{previouslyVerified:repair.names,existingProduct:repair.product,additionalTask:'Aynı ürün veya doğrudan ikame ürün için belirtilenlerden farklı üreticileri bul. Mevcut ürün ifadesi genişse kaynaklı marka ürünlerinden tek bir somut format seç ve product alanında yaz. Hedef pazarda ürün sayfası bulunan bağımsız markaları öncele. Aynı kullanıma uygun benzer ürünü olan markalar, sertifika veya içerikleri farklı olsa da araştırma adayı olabilir.'}:{})
  },peerSearchSchema,{maxOutputTokens:512}));
  const searches=[],hints=[],seen=new Set([brief.brandName,...(repair?.names||[])].map(peerGroupKey)),product=plan.data?.product?.trim()||repair?.product;
+ let discoverySearch;
  const words=product?.toLocaleLowerCase('tr').match(/[\p{L}]{3,}/gu)||[];
  const addHint=(name,url)=>{
   const host=researchHost(url);
@@ -181,6 +182,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
   const format=product.replace(/\b(?:organik|organic|vegan)\b/giu,'').replace(/\s+/g,' ').trim()||product;
   const query=[format,managedPlan?.market||market?.[1],market?.[3]==='tr'?'üretici markalar resmî ürün kataloğu':'manufacturer brands official product catalogue'].filter(Boolean).join(' ');
   const found=await collectAttempt(()=>pool.search(query,{depth:'basic',maxResults:12,retainRaw:true}));
+  discoverySearch=found;
   searches.push(found);
   for(const result of found.results||[]){
    const url=researchUrl(result.url);
@@ -223,12 +225,22 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
  if(product&&(repair||managedPlan&&hints.length<2))await discoverPublishers();
  if(product&&managedPlan?.coveragePolicy===2&&hints.length<2){
   const findings=new Map();
-  const groups=[...searches,...priorSearches];
+  const groups=[discoverySearch,...searches,...priorSearches].filter(Boolean);
   for(let i=0;i<6;i++)for(const group of groups){
    const result=group.results?.[i],url=researchUrl(result?.url);
    if(url&&researchHost(url)!==researchHost(brief.website)&&!findings.has(url))findings.set(url,result);
   }
-  const observed=[...findings].slice(0,20);
+  const hostCounts=new Map();
+  const relevance=([url,result])=>{
+   const text=nameKey([result.title,result.content,url].filter(Boolean).join(' '));
+   const path=new URL(url).pathname;
+   return words.reduce((score,word)=>score+Number(text.includes(nameKey(word))),0)+Number(/ürün|urun|product|catalog|kategori|category|collections|shop/iu.test(path));
+  };
+  const observed=[...findings].sort((a,b)=>relevance(b)-relevance(a)).filter(([url])=>{
+   const host=researchHost(url),count=hostCounts.get(host)||0;
+   if(count>=2)return false;
+   hostCounts.set(host,count+1);return true;
+  }).slice(0,24);
   if(observed.length){
    const choosePublishers=pool.evidenceReviewer||pool.manager;
    const selection=await collectAttempt(()=>choosePublishers('v8-managed-peer-publishers',{
@@ -245,7 +257,15 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
  }
  const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
  const planForRead=managedPlan?.coveragePolicy===2?{...brand.plan,entities:[...brand.plan.entities,...hints.filter(peer=>!brand.plan.entities.some(entity=>researchHost(entity.website)===researchHost(peer.website)))].slice(0,8)}:brand.plan;
- const packet=await readResearchPages(brief,planForRead,targets.filter(url=>!archivedUrls.has(url)),providers,collect);
+ let packet=await readResearchPages(brief,planForRead,targets.filter(url=>!archivedUrls.has(url)),providers,collect);
+ if(managedPlan?.coveragePolicy===2&&pool.extract){
+  const read=new Set([...archivedUrls,...packet.sources.filter(s=>!s.metadataOnly).flatMap(s=>[s.url,s.finalUrl])]);
+  const missed=hints.map(peer=>peer.website).filter(url=>!read.has(url)).slice(0,4);
+  if(missed.length){
+   const extraction=await collectAttempt(()=>pool.extract(missed));
+   if(extraction.pages?.length)packet=mergeExtractedEvidence(packet,extraction);
+  }
+ }
  return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true,...(managedPlan?{unavailable:packet.unavailable}:{})};
 }
 
