@@ -6,6 +6,9 @@ import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
+import {managedPhaseBudget} from '../src/bhs/managed-budget.mjs';
+import {runMeteredBhsPhase} from '../src/bhs/job-worker.mjs';
+import {meteredBhsStage} from '../src/bhs/job-infrastructure.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {localBudget} from '../test/fixtures/local-budget.mjs';
 import {fetchQaCheckpoint} from './qa-checkpoint.mjs';
@@ -28,7 +31,9 @@ export async function runSequentialAcceptance(){
   if(payload.briefHash!==briefHash(brief)||payload.case!==caseName)throw Error('QA checkpoint belongs to another brief.');seed=payload.receipts;
  }
  const db=await localBudget({lead:'public-'+caseName+'-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
- await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
+ const managed=process.env.OFFER_BHS_QA_MANAGED==='1';
+ const started=Date.now();
+ if(!managed)await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
  // One build may complete the real sequential report. Individual provider
  // timeouts and the shared 50 TRY ledger still bind every operation; there is
  // no need to rebuild/retest merely because several valid reviews took 6 min.
@@ -36,15 +41,22 @@ export async function runSequentialAcceptance(){
  let phase='not_started',result;
  async function save(){
   const receipts=await db.receipts(),cost=await db.ledger.status(),payload={case:caseName,briefHash:briefHash(brief),phase,cost,receipts};
-  const data=brotliCompressSync(Buffer.from(JSON.stringify(payload))).toString('base64');
-  await writeFile(path.join(output,'bhs-sequential-checkpoint.json'),JSON.stringify({encoding:'br-base64',case:caseName,phase,cost,data}));
+  if(!managed){
+   const data=brotliCompressSync(Buffer.from(JSON.stringify(payload))).toString('base64');
+   await writeFile(path.join(output,'bhs-sequential-checkpoint.json'),JSON.stringify({encoding:'br-base64',case:caseName,phase,cost,data}));
+  }
   console.info(JSON.stringify({event:'bhs_v8_public_qa',phase,cost,completed:receipts.filter(r=>r.step_key.startsWith('audit:')&&r.state==='complete').length,paidReceipts:receipts.filter(r=>r.charge_kurus>0).length}));
  }
  try{
-  for(phase of sequentialPhases.slice(0,-2)){
+  for(phase of sequentialPhases.slice(0,managed?-1:-2)){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
-   const providers=createSequentialProviders({ledger:db.ledger,phase,infrastructureOffsetKurus:500});
-   await runBoundedStage({phase,brief,ledger:db.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5'});
+   const budget=managed?await managedPhaseBudget({ledger:db.ledger,brief,phase,enabled:true}):{ledger:db.ledger};
+   const providers=createSequentialProviders({ledger:budget.ledger,phase,infrastructureOffsetKurus:managed?400:500,
+    ...(managed?{collectionFirst:true,managedAudit:budget.managedAudit,managedBudgetVersion:budget.managedBudgetVersion,phaseLimitKurus:budget.phaseCeiling}:{})});
+   const options={phase,brief,ledger:budget.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5',phaseCeiling:budget.phaseCeiling};
+   if(managed)await runMeteredBhsPhase({id:'qa-'+caseName,phase,briefHash:briefHash(brief),researchVersion:'v8'},options,
+    {meter:params=>meteredBhsStage({...params,region:'iad1'})});
+   else await runBoundedStage(options);
    await save();
   }
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
@@ -54,13 +66,31 @@ export async function runSequentialAcceptance(){
  }finally{
   // The build allowance was reserved before the first paid stage; this is
   // an idempotent checkpoint and can never reset or add it a second time.
-  await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
+  if(!managed)await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
   result.cost=await db.ledger.status();
   const rows=await db.receipts();
   const stagesToReview=new Set(['brand_review','brand','sector_review','sector','sector_validation','competition_review','competition','swot_review','swot','coverage_plan']);
   result.stageReviews=rows.filter(r=>r.state==='complete'&&stagesToReview.has(r.value?.phase)).map(r=>({phase:r.value.phase,decision:r.value.understandingDecision||r.value.decision,review:r.value.review,facts:r.value.facts,swot:r.value.swot}));
   result.costBreakdown={verifiedProviderAllowanceKurus:rows.filter(r=>r.value?.accountedKurus===r.charge_kurus&&r.value?.model||r.value?.accountedKurus===r.charge_kurus&&r.value?.credits!==undefined).reduce((n,r)=>n+r.charge_kurus,0),uncertainCommitmentKurus:rows.filter(r=>['reserved','uncertain'].includes(r.state)).reduce((n,r)=>n+r.charge_kurus,0),actorCommitmentKurus:rows.filter(r=>r.step_key.startsWith('apify:')).reduce((n,r)=>n+r.charge_kurus,0),infrastructureAllowanceKurus:1000};
   result.modelDiagnostics=rows.filter(r=>r.value?.rejectedOutput).map(r=>({model:r.value.model,role:r.value.role,rejection:r.value.rejectedOutput,usage:r.value.usage,committedKurus:r.charge_kurus}));
+  if(managed){
+    const stage=(name)=>rows.find(row=>row.state==='complete'&&row.step_key.startsWith('audit:'+name+':')&&row.value?.phase===name)?.value||{};
+    const plan=stage('sector_sources').managedPlan;
+    const captures=['competition_draft','competition_review'].map(name=>{const value=stage(name);return {name,hints:value.peerHints?.length||0,pages:value.pages?.length||0,searches:value.searches?.length||0};});
+    const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length,returned:row.value.returned,rejected:row.value.rejected?.map(({quadrant,reason})=>[quadrant,reason])}));
+    console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts}));
+   const {audit}=result;
+   if(audit?.data){
+    const data=audit.data;
+    console.info(JSON.stringify({event:'bhs_v8_qa_content',case:caseName,peers:data.competitors?.map(({name,website})=>[name,website]),questionCoverage:data.supervision.questionCoverage}));
+    for(const f of data.findings||[])console.info(JSON.stringify({event:'bhs_v8_qa_finding',case:caseName,section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,source:data.sources.find(source=>source.id===f.sourceIds[0])?.url}));
+
+   }
+   result={case:caseName,status:result.status,phase,code:result.code,elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
+    reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete,missingQuadrants})=>({id,count,complete,missingQuadrants})),
+    evidenceCoverage:audit?.data.supervision.evidenceCoverage,scopeSaved:rows.some(row=>row.step_key.startsWith('audit:scope:')&&row.state==='complete'),
+    productionWrites:0};
+  }
   await save();await writeFile(path.join(output,'bhs-sequential-acceptance.json'),JSON.stringify(result));await db.close();
  }
  console.info(JSON.stringify({event:'bhs_v8_public_qa_finished',...Object.fromEntries(Object.entries(result).filter(([k])=>k!=='audit'))}));
