@@ -584,21 +584,25 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const priority=['readiness','weakness','threat','opportunity','strength'];
  const queryPool=providers.withCeiling(2900);
  const brandName=nameKey(brief.brandName);
- const feedbackPublishers=new Set(context.cards.filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title).includes(brandName)&&
-  customerEvidence([card.url,card.title,card.method,card.quote])).map(card=>researchHost(card.url)));
  const research=priority.filter(id=>missing.includes(id)).map(id=>[id,managedEvidenceQuery(brief,plan,id,market?.[3])]);
- if(feedbackPublishers.size<2&&plan.tasks.some(task=>task.section==='perception')){
+ if(plan.tasks.some(task=>task.section==='perception')){
   const name='"'+brief.brandName.replace(/["\n\r]/g,' ')+'"';
   const channels=market?.[3]==='tr'?[['şikayet ürün deneyimi',['sikayetvar.com']],['ürün kullanıcı yorumları değerlendirme',['trendyol.com','hepsiburada.com']]]:
    [['customer complaints product experience',[]],['verified purchase product customer reviews',[]]];
   research.unshift(...channels.map(([term,domains])=>['perception',[name,term,comparisonLabel(plan.comparableProduct||'')].filter(Boolean).join(' ').slice(0,380),domains]));
  }
- const searches=await Promise.all(research.map(async ([id,query,domains])=>{
+ const search=async ([id,query,domains])=>{
   return {id,search:await collectAttempt(()=>queryPool.search(query,{depth:'basic',maxResults:6,retainRaw:true,...(id==='perception'?{includeRawContent:true,domains}:{})}))};
- }));
+ };
+ const feedbackSearches=await Promise.all(research.filter(([id])=>id==='perception').map(search));
+ const otherSearches=await Promise.all(research.filter(([id])=>id!=='perception').map(search));
+ const searches=[...feedbackSearches,...otherSearches];
  const archived=new Set(corpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly).map(source=>source.finalUrl));
+ const archivedFeedback=new Set(context.cards.filter(card=>!card.metadataOnly&&
+  customerEvidence([card.url,card.title,card.method,card.quote])).map(card=>card.url));
  const targets=unique(searches.flatMap(({id,search})=>{
-  const urls=unique((search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!archived.has(url)));
+  const seen=id==='perception'?archivedFeedback:archived;
+  const urls=unique((search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!seen.has(url)));
   if(id==='perception')return urls.filter(url=>nameKey(url).includes(brandName)||/sikayetvar|trustpilot|review|yorum|şikayet/iu.test(url)).slice(0,2);
   const needsBrand=['strength','weakness','readiness'].includes(id);
   const ownUrl=url=>researchHost(url)===researchHost(brief.website);
@@ -610,7 +614,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   const url=researchUrl(result.url);
   if(!url||!reviewTargets.includes(url)||typeof result.raw_content!=='string')return [];
   const source=providerSource({url,title:result.title,text:result.raw_content.slice(0,24000),method:'extracted',asOf:corpus.packet.asOf,scope:'Tavily tarafından okunan kamuya açık yorum sayfası.'});
-  return source?[source]:[];
+  return source?.excerpts.some(({text})=>customerEvidence([url,source.title,source.method,text]))?[source]:[];
  }));
  const parsedUrls=new Set(parsedReviews.map(source=>source.finalUrl));
  const unreadReviews=reviewTargets.filter(url=>!parsedUrls.has(url));

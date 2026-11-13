@@ -72,6 +72,28 @@ test('a candidate mentioned in a readiness finding does not relabel the audited 
  assert.equal(report.competitors.length,0);
 });
 
+test('a survey percentage cannot be applied beyond its documented customer group',async()=>{
+ const evidence=packet(),source=evidence.sources[0];
+ const quote='Marka algısı araştırmasında, markayı en sık tercih eden annelerin yüzde 58’i organik sertifikayı tercih nedeni olarak gösterdi.';
+ source.excerpts.push({text:quote});
+ const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'});
+ const proof=context.cards.find(card=>card.quote.includes('yüzde 58'));
+ const args={brief,brand:{facts:[]},plan:{coveragePolicy:2},context,inventory:[],coverageEvidence:{threat:[proof.id]},sections:['swot'],sectional:true};
+ const {input}=managedReportInput(args),ids=Object.keys(input.sources);
+ const providers={manager:async(_stage,request,_schema,options)=>{
+  if(!request.proofsByQuestion.threat?.length)return {data:options.normalizeData({})};
+  const repair=request.rejected?.some(item=>item.reason==='survey_population_unconfirmed');
+  return {data:options.normalizeData({threat:[{
+   area:'operations_1',proof:request.proofsByQuestion.threat,kind:'observation',
+   observation:repair?quote:'Ebeveynlerin yüzde 58’i organik içeriklere daha yakından bakıyor.',
+   analysis:'Bu tercih ürün güveni için bir işaret olabilir.',action:'Ürün sayfasında sertifika bilgisini test et.',
+   measurement:'İçerik tıklamalarını ölç.',limitation:'Sonuç araştırma örneklemi ile sınırlı.'
+  }]})};
+ }};
+ const {report}=await synthesizeManagedReport({...args,providers,batchReviews:[{ids,verdicts:'s'.repeat(ids.length),candidates:ids}]});
+ assert.deepEqual(report.findings.map(f=>f.statement),[quote]);
+});
+
 test('a missing review source cannot count as customer feedback and a provider format error recovers within the section',async()=>{
  const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
  const complaint=context.cards.find(card=>/müşteri yorumları/.test(card.quote));
@@ -111,6 +133,22 @@ test('the managed evidence review can recover an entire batch when Claude is una
  const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers});
  assert.equal(review.verdicts,'cd');
  assert.deepEqual(review.candidates,['s2']);
+});
+
+test('a recovery verdict must cover exactly the evidence sent in order',async()=>{
+ const rows=[{id:'s3',proof:['s3']},{id:'s1',proof:['s1']}];
+ const sources={s3:['https://example.test/a','Ürün','html','Kamuya açık ürün bilgisi.'],s1:['https://example.test/b','Kanal','html','Kamuya açık kanal bilgisi.']};
+ const providers={worker:async(stage,request,schema,options)=>{
+  assert.equal(stage,'v8-managed-evidence-position:compact-recovery');
+  assert.equal(schema.properties.verdicts.maxLength,2);
+  assert.deepEqual(request.rows.map(([id])=>id),['s3','s1']);
+  assert.throws(()=>options.normalizeData({verdicts:'r',candidates:[]}),{code:'model_output_invalid'});
+  return {data:options.normalizeData({verdicts:'rc',candidates:['s3']})};
+ }};
+ const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers,preferWorker:true});
+ assert.deepEqual(review.ids,['s3','s1']);
+ assert.equal(review.verdicts,'rc');
+ assert.deepEqual(review.candidates,['s3']);
 });
 
 test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{

@@ -304,6 +304,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Mevcut ürün, kanal veya operasyon koşulunu nitel anlat. Mağaza, ülke, ürün, yıllık kapasite ve ciro miktarları bu bölüm için gerekmez. Hedefe ulaşmak için gereken pilotu veya ölçümü bir çıkarım olarak yaz. Başka bir iç veri bulunmaması kaynaklı çıkarımı engellemez.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
+    request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
     if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Bir müşteri deneyimini yalnız o deneyim olarak belirt ve tekrarlanma sıklığını ölçmeyi öner. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
     if(swot&&focus.includes('threat'))request.instruction+=' Aynı müşteri ihtiyacına hizmet eden başka bir ürünün belgelenmiş kanal, dağıtım veya teklif koşulu da rekabet tehdidinin dayanağı olabilir. Ticari etkisini koşullu anlat. Bir müşteri şikâyetini SWOT tehdidi yerine müşteri algısında değerlendir.';
     if(repair){
@@ -311,7 +312,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(rejected.length){
       request.rejected=rejected;
       request.instruction+=' Rejected alanındaki eski metin doğrulanmış veri değildir. Kaynağa dön ve yalnız atıfla desteklenen kısmı yeniden yaz veya daha sağlam bir kanıt seç.';
-      if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed'].includes(reason)))request.instruction+=' Gözlem, analiz, sınır ve toplantı sorusunu rakam, miktar, yıl veya üstünlük iddiası kullanmadan nitel yaz. Kaynaktaki olgu ile ticari yorum ayrı olsun. Önceki miktarı hiçbir alanda tekrar etme. Aksiyonun veya ölçümün yöntemini yazabilirsin.';
+     if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed','survey_population_unconfirmed'].includes(reason)))request.instruction+=' Gözlem, analiz, sınır ve toplantı sorusunu rakam, miktar, yıl veya üstünlük iddiası kullanmadan nitel yaz. Kaynaktaki olgu ile ticari yorum ayrı olsun. Önceki miktarı hiçbir alanda tekrar etme. Aksiyonun veya ölçümün yöntemini yazabilirsin.';
      }
     }
    }
@@ -376,6 +377,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const ids=new Set(checked.bhsSections.find(item=>item.id===section).findingIds);
     const proofIds=f=>unique(f.proof.map(id=>reverse.get(id)).filter(Boolean));
     const findingIssue=f=>{
+     const quotes=proofIds(f).flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)?.quote||'').join('\n');
+     if(!supportedSurveyScope(f.observation,quotes))return 'survey_population_unconfirmed';
      if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
      if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı|yok)\b/iu.test(f.observation)&&
       !f.proof.some(id=>researchHost(focused.sources[id]?.[0])===researchHost(brief.website)))return 'digital_evidence_missing';
@@ -493,6 +496,15 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  }
  return {report:result,completion:{model:drafts.find(d=>d.model)?.model||batchReviews.find(d=>d.model)?.model||null,usage:drafts.map(d=>d.usage).filter(Boolean)},
   evidenceCoverage,invalidObservations:reviewed.invalidObservations,reportIssue,sectionIssues};
+}
+
+function supportedSurveyScope(observation,quotes){
+ const restricted=/en sık tercih eden|en çok tercih eden|düzenli (?:tercih eden|satın alan|kullanan)|among (?:frequent|regular|loyal)|(?:frequent|regular|loyal) (?:users|customers|buyers)/iu;
+ const survey=/araştırma|anket|katılımcı|survey|respondent/iu;
+ const percentages=text=>[...text.matchAll(/(?:%\s*|yüzde\s+)(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*percent/giu)].map(match=>(match[1]||match[2]).replace(',','.'));
+ if(!survey.test(quotes)||restricted.test(observation))return true;
+ const restrictedRates=new Set(quotes.split(/[.!?\n](?!\d)/).filter(line=>restricted.test(line)).flatMap(percentages));
+ return percentages(observation).every(rate=>!restrictedRates.has(rate));
 }
 
 function reviewedEvidenceReport(input,reviewed,context,reverse){

@@ -154,7 +154,21 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
   const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
-  const runWorker=()=>providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
+  const runWorker=()=>{
+   if(!preferWorker)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
+   const packedSchema=obj({verdicts:{...str(ids.length),minLength:ids.length},candidates:modelSchema.properties.candidates});
+   const packedRequest={...request,instruction:positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
+    'verdicts tam '+ids.length+' karakterlik tek dizedir. Rows sırasındaki her satır için bir karar karakteri yaz. Boşluk veya ayraç kullanma.')};
+   const normalizePacked=value=>{
+    const verdicts=value?.verdicts;
+    if(typeof verdicts!=='string'||verdicts.length!==ids.length||[...verdicts].some(code=>!decisions.includes(code)))
+     throw new BudgetError('model_output_invalid','Sıralı kanıt kararları doğrulanamadı.');
+    return normalizeData({verdicts:Object.fromEntries(ids.map((id,i)=>[id,verdicts[i]])),candidates:value.candidates});
+   };
+   const maxOutputTokens=Math.max(550,ids.length*3+250);
+   return providers.worker(stage+':compact-recovery',packedRequest,packedSchema,{...options,maxOutputTokens,minimumOutputTokens:maxOutputTokens,
+    compactWorker:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
+  };
   try{
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
    let completion;

@@ -54,6 +54,37 @@ test('the evidence check searches only uncovered questions and passes original p
  assert.ok(result.questionEvidence.threat.includes(result.inventory[0].observations[0].sourceIds[0]));
 });
 
+test('customer review searches run before other gaps even when the archive mentions reviews',async()=>{
+ const data=fixturePacket(),brandName=brief.brandName,slug=brandName.toLowerCase().replaceAll(' ','-');
+ const url='https://www.sikayetvar.com/'+slug+'/teslimat';
+ const source=(url,title,text)=>({id:url,url,finalUrl:url,title,method:'html',excerpts:[{text}],contentHash:url,retrievedAt:data.asOf});
+ const brand={facts:[],packet:{...data,sources:[
+  source('https://one.example/'+slug,brandName,'Müşteri yorumları için genel bir rehber.'),
+  source('https://two.example/'+slug,brandName,'Müşteri yorumları kategori listesi.'),
+  source(url,brandName,'Sayfa menüsü ve genel kategori bağlantıları.')
+ ]},plan};
+ const managedPlan={market:'Türkiye',comparableProduct:'Organik bar',understanding:{requirements:[]},tasks:[{section:'perception'}],coveragePolicy:2};
+ const calls=[];
+ const providers={managedBudgetVersion:3,withCeiling:()=>providers,focusedIndexUnavailable:true,
+  evidenceReviewer:async()=>({data:{}}),
+  search:async(query,options)=>{
+   calls.push(options.domains?.[0]||'other');
+   return options.domains?.[0]==='sikayetvar.com'?{results:[{url,title:brandName}],rawResults:[{url,title:brandName,raw_content:'Sayfa menüsü ve genel kategori bağlantıları.'}]}:{results:[]};
+  },
+  extract:async urls=>{
+   assert.deepEqual(urls,[url]);
+   return {pages:[{url,title:brandName,text:'Müşteri şikayeti. Sipariş verdim, ancak paket teslim edilmedi. Teslimat tarihi sistemde görünmüyor.'}]};
+  }
+ };
+ const result=await runCollectionFirstStage({phase:inventoryStages[0],brief,providers,finish:value=>value,
+  previous:async phase=>phase==='brand'?brand:phase==='sector_sources'?{managedPlan,funding:{}}:{},
+  collect:async()=>({sources:[],unavailable:[]})
+ });
+ assert.deepEqual(calls.slice(0,2),['sikayetvar.com','trendyol.com']);
+ assert.ok(result.questionEvidence.perception.length);
+ assert.ok(result.questionSources.pages.some(page=>page.excerpts.some(({text})=>text.includes('paket teslim edilmedi'))));
+});
+
 test('publisher discovery keeps Claude-selected public results when brand names differ from parent-company domains',async()=>{
  const alpha='https://foodgroup.example/products/alpha',beta='https://brandhouse.example/products/beta';
  const results=[{url:alpha,title:'Our Alpha product',content:'Alpha oat snack bars sold in Türkiye.'},{url:beta,title:'Our Beta product',content:'Beta oat snack bars sold in Türkiye.'}];
