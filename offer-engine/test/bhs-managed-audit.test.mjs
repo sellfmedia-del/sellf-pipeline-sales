@@ -384,6 +384,10 @@ test('ranked actions, metrics, questions and proofs survive report and partial o
  assert.equal(paused.data.result.data.researchContinuity.status,'partial');
  assert.deepEqual(paused.data.gapCompletion.sections,[managedSections.perception]);
  assert.ok(paused.data.pricingProof);
+ completed.state='cancelled';
+ const cancelled=await request({action:'status',ticket:initial.data.ticket});
+ assert.deepEqual(cancelled.data.gapCompletion.sections,[managedSections.perception]);
+ assert.ok(cancelled.data.pricingProof);
  assert.equal((await ledger.status()).chargedKurus,500);
 });
 

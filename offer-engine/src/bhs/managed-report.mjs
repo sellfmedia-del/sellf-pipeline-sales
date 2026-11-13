@@ -272,6 +272,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(relevantDimension)request.areas=request.areas.filter(([id])=>areas.get(id)?.dimension===relevantDimension||usefulAreas.has(id));
     if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez.';
+   if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
    const name='managed-section-v3:'+section;
    const previousCheckpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};

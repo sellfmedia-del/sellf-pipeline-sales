@@ -43,6 +43,13 @@ test('publisher discovery keeps Claude-selected public results when brand names 
  },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']});
  assert.equal(partial.peerHints.length,0);
  assert.ok(partial.searches.length>0);
+ const recovered=await comparisonResearch(brief,brand,null,{...pool,extract:async urls=>{
+  assert.deepEqual(urls,[beta]);
+  return {pages:[{url:beta,text:'Beta officially sells oat snack bars in the Turkish market.'}]};
+ }},{},async()=>({sources:[],unavailable:[{url:beta,reason:'source_timeout'}]}),null,
+ {market:'Türkiye',coveragePolicy:2,comparableProduct:'yulaf barı',peerNames:['Alpha','Beta']},[],new Set([alpha]));
+ assert.equal(recovered.pages[0].finalUrl,beta);
+ assert.equal(recovered.pages[0].method,'extracted');
 });
 
 test('collection preserves raw records under 25 TRY and never calls Claude during collection',async()=>{

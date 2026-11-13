@@ -148,7 +148,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     backgroundJob=await queue.read(job);
     const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
     if((backgroundJob.queueBriefHash||backgroundJob.briefHash)!==checkpointHash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
-    if(action==='complete_gaps'&&!['complete','paused'].includes(backgroundJob.state))throw new BudgetError('completion_unavailable','Ek araştırma için incelenmiş bir BHS sonucu gerekli.');
+    if(action==='complete_gaps'&&!['complete','paused','cancelled'].includes(backgroundJob.state))throw new BudgetError('completion_unavailable','Ek araştırma için incelenmiş bir BHS sonucu gerekli.');
     if(['queued','running'].includes(backgroundJob.state)){
      handoffReason=backgroundHandoffReason(backgroundJob,now());
      if(!handoffReason)return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
@@ -160,7 +160,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
    const finishGaps=async(synthesis,audit)=>{
-    const canComplete=['complete','paused'].includes(backgroundJob?.state)&&synthesis?.supervision?.reviewMode==='managed-audit'
+    const canComplete=['complete','paused','cancelled'].includes(backgroundJob?.state)&&synthesis?.supervision?.reviewMode==='managed-audit'
      &&(backgroundJob.state==='complete'||synthesis.supervision.researchPlan)&&(productionOffers()||getGapLedger);
     if(!canComplete){
      if(action==='complete_gaps')throw new BudgetError('completion_unavailable','Ek araştırma için kaydedilmiş bir BHS sonucu gerekli.');

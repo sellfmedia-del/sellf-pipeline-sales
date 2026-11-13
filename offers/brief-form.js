@@ -282,7 +282,7 @@
         let action='start';
         for(;;){
           notice.textContent=current.pricingOptions.pricingMode==='monthly'?'Seçtiğin operasyonların aylık bedelleri maliyet tablosundan hesaplanıyor…':'Seçtiğin hizmetlerin segment maliyetlerinden iki alternatif ve ayrı proje bedelleri hesaplanıyor…';
-          const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...current.pricingOptions,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:startRequestId}:{} )});
+          const response=await window.PipelinePricingRequest({action,brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,...current.pricingOptions,...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
           if(response.ticket)current.ticket=response.ticket;
           if(current.stopped){if(current.ticket)window.PipelinePricingRequest({action:'cancel',brief:current.brief,audit:current.audit,pricingProof:current.pricingProof,ticket:current.ticket}).catch(()=>{});return;}
           if(response.phase==='complete'){draft.proposalProof=response.proposalProof;renderPricing(response.result);dialog.querySelector('.ob-proposal-controls').hidden=response.result.data.pricingMode==='monthly';dialog.querySelector('.ob-compose').hidden=response.result.data.quote?.status==='pending';dialog.querySelector('.ob-price').hidden=response.result.data.quote?.status!=='pending';task=null;return;}

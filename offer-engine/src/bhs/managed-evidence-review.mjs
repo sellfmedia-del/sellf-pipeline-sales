@@ -1,5 +1,6 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {arr,obj,str} from './sequential-contracts.mjs';
+import {researchHost} from './research-url.mjs';
 
 const batchBytes=48000;
 const finalReserveKurus=520;
@@ -201,6 +202,7 @@ export function reviewedManagedEvidence(input,reviews){
  const readinessEvidence=/teslimat|shipping|delivery|bayi|dealer|distribut|toptan|wholesale|depo|warehouse|ürün|product|satış|sales|kapasite|capacity|sertifika|certif|pazar|market|ihracat|export/iu;
  const reputationEvidence=/yorum|reviews?|şik[âa]yet|complaint|rating|müşteri geri bildirimi|customer feedback/iu;
  const marketEvidence=/pazar|market|talep|demand|regulat|mevzuat|hammadde|raw material|rekabet|competit|tüketici|consumer/iu;
+ const digitalEvidence=/e.ticaret|e.commerce|sepete|basket|checkout|online mağaza|online store|site içi|site search|newsletter|bülten|instagram|linkedin|youtube|tiktok|meta pixel|analytics|sitemap|canonical|schema\.org/iu;
  const ranked=[...new Set([...candidates,...expected])].filter(id=>covered.has(id)&&covered.get(id)!=='x');
  return {candidates,verdict:id=>covered.get(id),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
@@ -210,7 +212,7 @@ export function reviewedManagedEvidence(input,reviews){
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
     const evidence=[row?.[2],source?.[1],source?.[3]].filter(Boolean).join(' ');
-    if(section==='digital')return row?.[1]?.startsWith('digital_')||source?.[2]==='html-signals';
+    if(section==='digital')return row?.[1]?.startsWith('digital_')||source?.[2]==='html-signals'||targeted&&digitalEvidence.test(evidence);
     if(section==='competition')return row?.[1]?.startsWith('competition_');
     if(section==='perception')return row?.[1]?.startsWith('perception_')||reputationEvidence.test(targeted?evidence:source?.[1]||'');
     if(targeted&&section==='readiness')return /^(operations|funnel|financial)_/.test(row?.[1]||'')||readinessEvidence.test(evidence);
@@ -222,11 +224,22 @@ export function reviewedManagedEvidence(input,reviews){
    if(targeted&&section==='swot'&&swotFocus.length){
     const internalIds=new Set(priorityRows);
     const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));
+    const publisher=id=>{
+     const url=(input.sources[id]||input.sources[rows.get(id)?.[3]?.[0]])?.[0];
+     return url?researchHost(url):null;
+    };
+    const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
+    const publishers=new Set();
+    const independent=external.filter(id=>{
+     const host=publisher(id);
+     if(!host||brandHosts.has(host)||publishers.has(host))return false;
+     publishers.add(host);return true;
+    });
     const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
     const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
     const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
     const selected=[...new Set([...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
-     ...(wantsExternal?external.slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
+     ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
     return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
    }
    const local=[...new Set([...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
