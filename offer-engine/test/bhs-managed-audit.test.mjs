@@ -111,6 +111,7 @@ test('a missing review source cannot count as customer feedback and a provider f
   evidenceReviewer:async(_stage,request)=>{
    const proof=quote=>Object.keys(request.sources).find(id=>request.sources[id][3]===quote);
    return {data:{findings:[row(complaint.quote,proof(complaint.quote)),
+    row('Müşteri, teslimat deneyiminde aynı gecikmeyi bildirdi.',proof(complaint.quote)),
     row('Verilen kaynaklarda müşteri yorumu veya şikâyet bulunmuyor.',proof(product.quote))]}};
   }};
  const {report,reportIssue}=await synthesizeManagedReport({...args,providers,batchReviews:[{ids,verdicts:'p'.repeat(ids.length),candidates:ids}]});

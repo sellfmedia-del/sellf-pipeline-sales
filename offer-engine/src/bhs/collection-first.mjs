@@ -358,12 +358,18 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
  const format=preciseProduct?terms.at(-1):null;
  const containsFormat=text=>format&&(text.toLocaleLowerCase('tr').match(/[\p{L}]+/gu)||[]).some(word=>word===format||word===format+'i'||word===format+'lar'||word===format+'lari');
  const productPattern=/ürün|product|satın|shop|₺|kategori|category|fiyat|price|sepet|cart/i;
- const multibrandRetail=/\b(?:hipermarket|hypermarket|supermarket|süpermarket|market zinciri|marketler zinciri|perakende zinciri|pazaryeri|marketplace)\b/iu;
+ const multibrandRetail=/(?<!\p{L})(?:hipermarket|hypermarket|supermarket|süpermarket|market zinciri|marketler zinciri|perakende zinciri|pazaryeri|marketplace|ürün marketi)(?!\p{L})/iu;
  const thirdPartyCatalog=/(?:şube|mağaza)\s+seç(?:in|iniz|imi)?\b|\b(?:teslimat bölgesi|select branch|select store|sold by|satıcı seç|diğer satıcılar)\b/iu;
+ const businessCatalog=/(?<!\p{L})(?:kurumsal üyelik|business membership|wholesale account)(?!\p{L})/iu;
+ const brandNavigation=/(?<!\p{L})(?:markalar|brands)(?!\p{L})/iu;
  const scored=new Map();
  for(const candidate of entities.filter(e=>e.role==='competitor'&&nameKey(e.name)!==nameKey(context.input.brief.brandName))){
   const publisher=researchHost(candidate.website);
-  if(expandedPublishers&&context.input.sources.some(source=>researchHost(source.url)===publisher&&multibrandRetail.test(source.title)))continue;
+  if(expandedPublishers&&context.input.sources.some(source=>{
+   if(researchHost(source.url)!==publisher||source.metadataOnly||source.method==='search-snippet')return false;
+   const headings=source.sections.slice(0,8).map(section=>section.text).join('\n');
+   return multibrandRetail.test(source.title)||/doğal ve organik ürün marketi/iu.test(headings)||businessCatalog.test(headings)&&brandNavigation.test(headings);
+  }))continue;
   for(const source of context.input.sources){
    const candidateHost=researchHost(candidate.website),sourceHost=researchHost(source.url);
    const observedPublisher=candidate.id.startsWith('candidate_')&&sourceHost===candidateHost;

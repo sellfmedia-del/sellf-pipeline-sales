@@ -151,7 +151,7 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
 
 function projectManagedDraft({context,reverse,accepted,usedInput,data}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
- const selected=[],seenFindings=new Set(),seenPeers=new Set();
+ const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenCustomerQuotes=new Set();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
  for(const row of sorted){
   const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
@@ -160,6 +160,11 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
   if(row.section==='competition'){
    if(!row.peerId||seenPeers.has(row.peerId)||!context.input.entities.some(e=>e.role==='competitor'&&e.id===row.peerId))continue;
    seenPeers.add(row.peerId);
+  }
+  if(row.section==='perception'){
+   const keys=proofs.map(id=>context.known.get(id)).filter(Boolean).map(card=>(context.proofGroups.get(card.id)||[card.id]).join('\0'));
+   if(keys.length&&keys.every(id=>seenCustomerQuotes.has(id)))continue;
+   for(const id of keys)seenCustomerQuotes.add(id);
   }
   seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
