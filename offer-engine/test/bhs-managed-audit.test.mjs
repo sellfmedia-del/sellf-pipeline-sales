@@ -329,26 +329,23 @@ test('unused research budget cannot increase the synthesis or offer allowance',a
  assert.equal((await ledger.status()).chargedKurus,1800);
 });
 
-test('an incomplete result enables an explicit, once-only extra account',async t=>{
+test('an incomplete result can use only the remaining original BHS budget once',async t=>{
  const base=await localBudget({lead:'managed-base'});t.after(base.close);
- const child=await localBudget({lead:'managed-extra'});t.after(child.close);
- await base.ledger.once('test-base',{},4500,async()=>({}));
- let opened=0,modelCalls=0;
+ await base.ledger.once('test-base',{},3500,async()=>({}));
+ let modelCalls=0;
  const input={brief,synthesis:{supervision:{reviewMode:'managed-audit',researchPlan:{}},report:{findings:[]}},sections:['digital'],secret:'synthetic-test-secret',baseLedger:base.ledger,
-  getGapLedger:async()=>{opened++;return child.ledger;},previous:async()=>({}),
+  getGapLedger:async()=>assert.fail('a fresh gap must use the original ledger'),previous:async()=>({}),
   getProviders:({ledger})=>({manager:async()=>{
-   await ledger.once('test-gap-provider',{},2500,async()=>{modelCalls++;return {};});
+   await ledger.once('test-gap-provider',{},1000,async()=>{modelCalls++;return {};});
+   await assert.rejects(ledger.once('over',{},1,async()=>assert.fail('provider called above 50 TRY')),error=>error.code==='budget_limit');
    throw new BudgetError('model_temporarily_unavailable','Simulated provider failure.');
   }})};
  assert.equal(await resolveManagedGaps({...input,action:'status',allowance:false}),null);
- assert.deepEqual(await resolveManagedGaps({...input,action:'status'}),{available:true,sections:[managedSections.digital],capKurus:3000});
- assert.equal(opened,0);
- assert.equal((await resolveManagedGaps({...input,action:'complete_gaps'})).status,'uncertain');
+ assert.deepEqual(await resolveManagedGaps({...input,action:'status'}),{available:true,sections:[managedSections.digital],capKurus:1000});
+ assert.deepEqual(await resolveManagedGaps({...input,action:'complete_gaps'}),{available:false,chargedKurus:1000,capKurus:1000,status:'uncertain'});
  assert.equal((await resolveManagedGaps({...input,action:'complete_gaps'})).status,'uncertain');
  assert.equal(modelCalls,1);
- assert.equal((await child.ledger.status()).chargedKurus,3000);
- await assert.rejects(capBhsLedger(child.ledger,3000).once('over',{},1,async()=>assert.fail('extra provider called')),error=>error.code==='budget_limit');
- assert.equal((await base.ledger.status()).chargedKurus+(await child.ledger.status()).chargedKurus,8000);
+ assert.equal((await base.ledger.status()).chargedKurus,5000);
 });
 
 test('gap completion preserves prior findings and the new rival publisher citations',()=>{

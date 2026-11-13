@@ -1,5 +1,5 @@
 import {createHmac} from 'node:crypto';
-import {BudgetError} from '../budget/ledger.mjs';
+import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {briefHash} from './brief.mjs';
 import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
@@ -27,40 +27,47 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  const runId=gapRunId(base.id,brief,secret);
  const markerKey='audit:managed-gap-authorization:'+briefHash(brief);
  const authorization=await baseLedger.get(markerKey);
- if(!authorization&&action!=='complete_gaps')return sections.length?{available:true,sections:sections.map(id=>managedSections[id]),capKurus:gapCapKurus}:null;
- if(action==='complete_gaps'&&!authorization){
-  if(!sections.length)throw new BudgetError('completion_unavailable','Tamamlanacak BHS bölümü bulunamadı.');
-  await baseLedger.once(markerKey,{runId,sections},0,async()=>({runId,sections}));
+ const remaining=Math.max(0,Math.min(gapCapKurus,tariff.capKurus-base.chargedKurus));
+ if(!authorization){
+  if(action!=='complete_gaps')return sections.length&&remaining?{available:true,sections:sections.map(id=>managedSections[id]),capKurus:remaining}:null;
+  if(!sections.length||!remaining)return null;
+  await baseLedger.once(markerKey,{runId,sections},0,async()=>({runId,sections,sharedBudget:true,baseline:base.chargedKurus,allowance:remaining}));
  }
- const ledger=await getGapLedger(runId);
- // The authorized run gets its own ledger. The initial BHS keeps its original
- // physical 50 TRY account and every uncertain charge remains reserved.
- await ledger.begin();
- const scoped=capBhsLedger(ledger,gapCapKurus);
- let receipt=await ledger.get(receiptKey);
+ const authorized=(authorization||await baseLedger.get(markerKey))?.value;
+ if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
+ if(!authorized.sharedBudget){
+  // Preserve previously saved results from the retired separate-budget path.
+  const ledger=await getGapLedger(runId);
+  const receipt=await ledger.get(receiptKey);
+  if(!receipt)return null;
+  return {available:false,status:receipt.state,chargedKurus:(await ledger.status()).chargedKurus,capKurus:gapCapKurus,
+   ...(receipt.state==='complete'?{synthesis:{...synthesis,...receipt.value}}:{})};
+ }
+ const {baseline,allowance:gapAllowance}=authorized;
+ const ceiling=Math.min(tariff.capKurus,baseline+gapAllowance);
+ const key=receiptKey+':'+runId;
+ const scoped=capBhsLedger(baseLedger,ceiling);
+ let receipt=await baseLedger.get(key);
  if(!receipt&&action==='complete_gaps'){
-  const authorized=(await baseLedger.get(markerKey))?.value;
-  if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
   try{
-   await scoped.once(receiptKey,{runId},0,async()=>{
-    const result=await completeSections({brief,synthesis,sections:authorized.sections,ledger:scoped,getProviders,previous,collect});
+   await scoped.once(key,{runId},0,async()=>{
+    const result=await completeSections({brief,synthesis,sections:authorized.sections,ledger:scoped,getProviders,previous,collect,baseline,ceiling});
     return {report:result.report,analysisPacket:result.analysisPacket};
    });
   }catch(error){
-   // An interrupted response can be read later. No new paid retry is opened.
-   if(error.code!=='budget_pending'&&!(await ledger.get(receiptKey)))throw error;
+   if(error.code!=='budget_pending'&&!(await baseLedger.get(key)))throw error;
   }
-  receipt=await ledger.get(receiptKey);
+  receipt=await baseLedger.get(key);
  }
- const {chargedKurus}=await ledger.status();
- return {available:false,chargedKurus,capKurus:gapCapKurus,status:receipt?.state||'authorized',
+ const {chargedKurus}=await baseLedger.status();
+ return {available:false,chargedKurus:Math.max(0,chargedKurus-baseline),capKurus:gapAllowance,status:receipt?.state||'authorized',
    ...(receipt?.state==='complete'?{synthesis:{...synthesis,...receipt.value}}:{})};
 }
 
-async function completeSections({brief,synthesis,sections,ledger,getProviders,previous,collect}){
+async function completeSections({brief,synthesis,sections,ledger,getProviders,previous,collect,baseline,ceiling}){
  const deadline=AbortSignal.timeout(260000);
  const fetchImpl=(url,init={})=>fetch(url,{...init,signal:init.signal?AbortSignal.any([deadline,init.signal]):deadline});
- const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:gapCapKurus,managedAudit:true});
+ const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:3});
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
@@ -73,7 +80,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const queryKey=query=>query?.trim().toLocaleLowerCase('tr');
  const priorSearches=new Map(priorCorpus.searches.filter(search=>!search.unavailable).map(search=>[queryKey(search.query),search]));
  const tasks=[...new Map(planned.tasks.filter(t=>sections.includes(t.section)).map(task=>[queryKey(task.query),task])).values()];
- const pool=providers.withCeiling(1700);
+ const pool=providers.withCeiling(Math.min(ceiling,baseline+1700));
  const searches=[];
  for(let i=0;i<tasks.length;i+=3){
   const batch=await Promise.allSettled(tasks.slice(i,i+3).map(async task=>priorSearches.get(queryKey(task.query))||
