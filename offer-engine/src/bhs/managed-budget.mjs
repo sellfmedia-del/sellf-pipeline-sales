@@ -2,6 +2,7 @@ import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {briefHash} from './brief.mjs';
 
 export const researchCapKurus=3000;
+const evidenceReviewCapKurus=3300;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
 export const managedDiscoveryCeilingKurus=2500;
@@ -34,10 +35,14 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:3}));
  const managedBudgetVersion=[2,3].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
- if(!reportPhases.includes(phase))return {ledger:capBhsLedger(ledger,researchCapKurus),managedAudit:true,managedBudgetVersion,phaseCeiling:researchCapKurus};
+ const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
+ if(!reportPhases.includes(phase)){
+  const phaseCeiling=managedReviewPhases.includes(phase)?reviewCap:researchCapKurus;
+  return {ledger:capBhsLedger(ledger,phaseCeiling),managedAudit:true,managedBudgetVersion,phaseCeiling};
+ }
  const boundaryKey='audit:managed-synthesis-baseline:'+hash;
  const baseline=await ledger.once(boundaryKey,{hash},0,async()=>({chargedKurus:(await ledger.status()).chargedKurus}));
- if(!Number.isSafeInteger(baseline.chargedKurus)||baseline.chargedKurus>researchCapKurus)
+ if(!Number.isSafeInteger(baseline.chargedKurus)||baseline.chargedKurus>reviewCap)
   throw new BudgetError('budget_limit','BHS araştırma bütçesi doğrulanamadı.');
  const phaseCeiling=Math.min(tariff.capKurus,baseline.chargedKurus+synthesisCapKurus);
  return {ledger:capBhsLedger(ledger,phaseCeiling),managedAudit:true,managedBudgetVersion,phaseCeiling};

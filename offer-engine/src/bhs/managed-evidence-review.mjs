@@ -258,7 +258,10 @@ export function reviewedManagedEvidence(input,reviews){
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
     return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
    }
-   const local=[...new Set([...focusedRows,...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
+   const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
+   const ownDigital=section==='digital'&&targeted?ranked.filter(id=>supports(id)&&[id,...(rows.get(id)?.[3]||[])]
+    .some(proof=>brandHosts.has(researchHost(input.sources[proof]?.[0])))).slice(0,Math.ceil(limit/2)):[];
+   const local=[...new Set([...focusedRows,...ownDigital,...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
    const other=ranked.filter(id=>!localIds.has(id));
    // Always include context/counter-evidence alongside the focused observations.
    const primary=local.slice(0,Math.ceil(limit*.75));
