@@ -138,7 +138,7 @@ export function labelUnconfirmedComparison(f){
  return {...f,statement,reportExcerpt:statement,impact:f.impact.replace(' Sınır: ',' Sınır: Karşılaştırılan işletmenin doğrudan rakipliği doğrulanmadı. ')};
 }
 
-export function projectExpertReport(value,context){
+export function projectExpertReport(value,context,{explicitComparisons=false}={}){
  // Only immutable proof IDs from the compact contract are accepted here.
  // A model cannot bypass these semantic guards by returning a legacy report.
  const raw=value||{},cards=context.known,issues=[],sources=new Map();
@@ -183,7 +183,9 @@ export function projectExpertReport(value,context){
  // A rejected direct peer can still supply a factual comparison example,
  // but every derived section must preserve its unconfirmed relationship.
  const unconfirmed=entities.filter(e=>e.role==='competitor'&&!competitors.some(p=>p.id===e.id));
- for(const f of findings)if(unconfirmed.some(e=>fold([f.statement,f.impact,f.goalConnection].join(' ')).includes(fold(e.name))))Object.assign(f,labelUnconfirmedComparison(f));
+ const comparisonPeers=new Map(list(raw.findings).filter(f=>f?.comparisonPeerId).map(f=>[f.id,f.comparisonPeerId]));
+ for(const f of findings)if(unconfirmed.some(e=>explicitComparisons?comparisonPeers.get(f.id)===e.id:
+  fold([f.statement,f.impact,f.goalConnection].join(' ')).includes(fold(e.name))))Object.assign(f,labelUnconfirmedComparison(f));
  const hasBrand=f=>f.sourceIds.some(id=>researchHost(cards.get(id).url)===brandHost);
  const relevantIds=(ids,dimension)=>unique(list(ids).filter(id=>findingById.has(id)&&(!dimension||findingById.get(id).dimension===dimension)));
  const researchCoverage=methodologyAreas.map(a=>{

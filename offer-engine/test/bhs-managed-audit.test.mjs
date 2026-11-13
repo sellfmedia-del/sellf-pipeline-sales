@@ -57,6 +57,21 @@ test('focused SWOT repairs keep sourced uncertainties and pass a rejected claim 
  assert.ok(report.findings.every(row=>!row.statement.includes('500')&&row.recommendation.measurement));
 });
 
+test('a candidate mentioned in a readiness finding does not relabel the audited brand as a rival',async()=>{
+ const context=sequentialContext(brief,{packet:packet(),searches:[],peerDiscoveryVersion:'product-v2'});
+ const card=context.cards.find(card=>/teslimat süresi/.test(card.quote));
+ context.input.entities.push({id:'candidate_logistics',role:'competitor',name:'Teslimat',website:'https://logistics.example'});
+ const args={brief,brand:{facts:[]},plan:{understanding:{},tasks:[],coveragePolicy:2},context,inventory:[],coverageEvidence:{readiness:[card.id]},sections:['readiness'],sectional:true};
+ const {input}=managedReportInput(args),ids=Object.keys(input.sources);
+ const providers={manager:async(_stage,request,_schema,options)=>({data:options.normalizeData({findings:[{
+  area:'operations_1',proof:request.proofsByQuestion.readiness,kind:'inference',observation:card.quote,
+  analysis:'Teslimat süresinin sipariş kararına etkisi ölçülebilir.',action:'Kanal bazında kontrollü pilot uygula.',measurement:'Pilot sipariş oranını ölç.',limitation:'Ticari etki ölçülmedi.'
+ }]})})};
+ const {report}=await synthesizeManagedReport({...args,providers,batchReviews:[{ids,verdicts:'r'.repeat(ids.length),candidates:ids}]});
+ assert.equal(report.findings[0].statement,card.quote);
+ assert.equal(report.competitors.length,0);
+});
+
 test('a paid report checkpoint with clipped Unicode is persisted once and reused without another charge',async t=>{
  const {ledger,close}=await localBudget();t.after(close);
  const key='audit:synthesis:unicode-replay';

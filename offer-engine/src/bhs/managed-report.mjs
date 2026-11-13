@@ -164,6 +164,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
   seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
  const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area).dimension,kind:row.kind,
+  ...(row.section==='competition'?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));
  const coverage=Object.fromEntries(methodologyAreas.map(a=>{
@@ -174,7 +175,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
   dimensions:dimensions.map(d=>({...d,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id)})),
   peers:accepted.has('competition')?list(data.peers).map(p=>({...p,sourceIds:decoded(p.sourceIds)})):[],
   benchmarks:list(data.benchmarks).map(b=>({...b,sourceIds:decoded(b.sourceIds)}))
- },context);
+ },context,{explicitComparisons:true});
  const rows=new Map(selected.map(row=>[row.id,row]));
  const linkedPeers=new Set(report.competitors.map(peer=>peer.id));
  report.findings=report.findings.map(f=>{
@@ -340,6 +341,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    };
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
    if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
+   if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
    const changedRequest=minimumFirst&&(competition||swot);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
@@ -398,7 +400,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    draftsBySection.set(section,[]);
    const prior=input.existing.filter(([id])=>id===section).map(([,statement,quadrant,peerId])=>[statement,quadrant||null,peerId||null]);
    const focus=section==='swot'?quadrants.filter(quadrant=>!prior.some(([,saved])=>saved===quadrant)):[];
-   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst?2:3;
+   const candidateCount=input.entities.filter(([,role])=>role==='competitor').length;
+   const alternativePeer=section==='competition'&&input.evidenceByQuestion&&candidateCount>2;
+   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst&&!alternativePeer?2:3;
    const result=await write({section,wanted,focus,prior,repair:false},following);
    if(savedSectionsOnly&&result.issue==='section_not_saved'){
     const legacy=await readLegacySection({section,brief,input,reviewed,providers});
