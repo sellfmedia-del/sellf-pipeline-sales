@@ -71,12 +71,12 @@ export function mergeExtractedEvidence(packet,extraction={}){
  }
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
-export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000}={}){
+export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000,hardDeadline=false}={}){
  return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false,archivePages,allowEmpty=false}={}){
   if(!Number.isSafeInteger(maxSourceChars)||maxSourceChars<180000||maxSourceChars>360000)throw Error('Kanıt taşıma sınırı geçersiz.');
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
-  const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024});
+  const fetchPage=read||createPublicFetcher({deadline,maxRequests:240,maxBytes:64*1024*1024,hardDeadline});
   const seed=initialPacket&&initialPacket.briefHash===briefHash(brief)?structuredClone(initialPacket):null;
   const queue=[],seen=new Set((seed?.sources||[]).filter(s=>!s.metadataOnly).flatMap(s=>[researchUrl(s.url),researchUrl(s.finalUrl)]).filter(Boolean)),expandedHosts=new Set(),sources=seed?.sources||[],unavailable=seed?.unavailable||[],renderCandidates=[];
   const brandHost=host(brief.website),entityHosts=new Set(plan.entities.map(e=>host(e.website)).filter(Boolean));entityHosts.add(brandHost);
@@ -127,7 +127,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   const archive=({url,finalUrl,title,text,method,technicalSignals})=>{if(archivePages)archived.push({url,finalUrl,title,text,method,technicalSignals});};
   while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
    const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:capacity)-sources.length-renderCandidates.length));
-   const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
+   const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:['TimeoutError','AbortError'].includes(error.name)?'source_timeout':/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
    for(const result of results){
     if(!result.page){unavailable.push({url:result.url,reason:result.reason});continue;}
     const page=result.page;

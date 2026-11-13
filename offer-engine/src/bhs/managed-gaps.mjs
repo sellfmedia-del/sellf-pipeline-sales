@@ -20,7 +20,7 @@ function gapRunId(baseId,brief,secret){
  return id.slice(0,8)+'-'+id.slice(8,12)+'-4'+id.slice(13,16)+'-8'+id.slice(17,20)+'-'+id.slice(20);
 }
 
-export async function resolveManagedGaps({action,brief,synthesis,sections,secret,baseLedger,getGapLedger,getProviders,previous,allowance=true,collect=createEvidenceCollector({timeout:25000,allowPartialPlan:true})}){
+export async function resolveManagedGaps({action,brief,synthesis,sections,secret,baseLedger,getGapLedger,getProviders,previous,allowance=true,collect=createEvidenceCollector({timeout:25000,allowPartialPlan:true,hardDeadline:true})}){
  if(synthesis.supervision?.reviewMode!=='managed-audit'||!allowance)return null;
  const base=await baseLedger.status();
  if(!/^[a-f0-9-]{36}$/i.test(base.id||''))return null;

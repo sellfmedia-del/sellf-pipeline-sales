@@ -20,12 +20,20 @@ export async function resolveTarget(input, resolver = lookupPublicTarget) {
   return { url, address:addresses.find(a=>a.family===4)||addresses[0] };
 }
 
-export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, deadline=Date.now()+45000 }={}) {
+export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, deadline=Date.now()+45000, hardDeadline=false, resolve=resolveTarget }={}) {
   let count=0, total=0;
   const cache=new Map();
   return async function read(input, {headers:browserHeaders={}}={}) {
     if (++count > maxRequests || Date.now()>deadline) throw new Error('Site yükleme sınırına ulaşıldı.');
-    const target=await resolveTarget(input);
+    const signal=hardDeadline?AbortSignal.timeout(Math.max(1,Math.min(12000,deadline-Date.now()))):undefined;
+    let target;
+    if(signal){
+      const abort=Promise.withResolvers();
+      const stop=()=>abort.reject(signal.reason);
+      signal.addEventListener('abort',stop,{once:true});
+      try{target=await Promise.race([resolve(input),abort.promise]);}finally{signal.removeEventListener('abort',stop);}
+      signal.throwIfAborted();
+    }else target=await resolve(input);
     // Only state created inside this fresh, credential-free browser context is
     // forwarded. Country selection and Next router requests need these headers.
     const headers={};
@@ -37,6 +45,7 @@ export function createPublicFetcher({ maxRequests=100, maxBytes=45*1024*1024, de
       const request=transport.get(target.url, {
         headers:{'user-agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36','accept':'*/*',...headers,'accept-encoding':'identity'},
         lookup:(_hostname, options, callback)=>options.all ? callback(null,[target.address]) : callback(null,target.address.address,target.address.family),
+        signal,
         timeout:Math.max(1000,Math.min(12000,deadline-Date.now())),
         agent:false
       }, response=>{

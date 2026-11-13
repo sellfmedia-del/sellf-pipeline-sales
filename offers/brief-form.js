@@ -408,18 +408,35 @@
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
       if(!resume)showAuditCost({attemptChargedKurus:0});
       let action=initialAction||(resume?'status':'start');
+      let reconnects=0;
       try{
         for(;;){
           notice.textContent=action==='complete_gaps'?'Yalnız eksik BHS bölümleri araştırılıyor…':action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
-          const response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});
+          let response;
+          try{response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:crypto.randomUUID()}:{} )});}
+          catch(error){
+            if(error.code!=='audit_transport'||action!=='status'||!current.background||!current.ticket||reconnects>=2)throw error;
+            reconnects++;
+            notice.textContent='Arka plandaki araştırmanın durumu yeniden kontrol ediliyor…';
+            await new Promise(resolve=>setTimeout(resolve,10000));
+            if(current.stopped)return;
+            continue;
+          }
+          reconnects=0;
           if(response.ticket)current.ticket=response.ticket;
+          if(response.execution==='background')current.background=true;
           if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.cost){current.bounded=true;showAuditCost(response.cost);}
           if(response.phase==='complete'&&response.result){
             continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
             applyAuditResponse(current,response);task=null;return;
           }
-          if(response.phase==='complete'){action='status';continue;}
+          if(response.phase==='complete'){
+            action='status';
+            await new Promise(resolve=>setTimeout(resolve,10000));
+            if(current.stopped)return;
+            continue;
+          }
           if(response.nextAction==='advance'){action='advance';continue;}
           if(response.phase==='research_complete'){action='structure';continue;}
           if(response.continuationAvailable&&current.ticket)showAuditContinuation(current,true);
