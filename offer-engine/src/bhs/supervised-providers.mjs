@@ -159,6 +159,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const countBody=anthropicRole?options.managedBudgetVersion>=4?managerCountBody(body):
    Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
+  let countedByBytes=false;
   const countTokens=(input=countBody)=>json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',input,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);
   try{
    try{count=await countTokens();}
@@ -182,8 +183,16 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
     await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected',operation:'countTokens'}));
     return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
    }
-   if(error instanceof Error)error.providerOperation='countTokens';
-   throw error;
+   if(anthropicRole&&options.managedBudgetVersion>=4&&error.providerStatus===400&&!opts.signal?.aborted){
+    // Reserve a conservative bound when the free count endpoint rejects an
+    // otherwise valid text request. Encoding cannot use more than one token
+    // per byte of the serialized prompt, with the normal overhead added below.
+    count={input_tokens:Buffer.byteLength(JSON.stringify(countBody))};
+    countedByBytes=true;
+   }else{
+    if(error instanceof Error)error.providerOperation='countTokens';
+    throw error;
+   }
   }
   const tokens=anthropicRole?count.input_tokens:count.totalTokens;
   if(!integer(tokens,1))throw Object.assign(new BudgetError('token_count','BHS girdi maliyeti doğrulanamadı.'),{providerOperation:'countTokens'});
@@ -246,7 +255,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    if(!integer(inputTokens,1)||inputTokens>upper||!integer(outputTokens,1)||outputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS kullanımı ayrılan üst sınırla eşleşmiyor.');
    const rate=rateFor(role,inputTokens),accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
    let data,rejectedOutput;try{const fenced=plainJson&&typeof text==='string'?text.trim().match(/^```(?:json)?\s*([\s\S]+?)\s*```$/i):null;data=JSON.parse(fenced?fenced[1]:text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
-   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:pricing.version};
+   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),...(countedByBytes?{inputReservationBasis:'serialized-utf8-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:pricing.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
   catch(error){
    if(allowWorkerFallback&&receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){

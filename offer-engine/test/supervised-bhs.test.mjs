@@ -74,6 +74,23 @@ test('managed Claude token counting excludes generation controls and keeps the p
  assert.equal(generated[1].tools[0].strict,true);
  assert.equal(generated.length,2);
 });
+test('a rejected Claude count still reserves the complete UTF-8 envelope and settles actual usage once',async()=>{
+ const db=account(),calls=[];
+ const p=createSupervisedProviders({ledger:db.ledger,anthropicKey:'fake',geminiKey:'fake',receiptVersion:'v8',managedBudgetVersion:4,
+  base,now,researchFx:async()=>({usdTry:44}),fetchImpl:async(url,opts)=>{
+   const body=JSON.parse(opts.body);
+   calls.push(url);
+   if(url.endsWith('count_tokens'))return new Response(JSON.stringify({error:{message:'invalid request'}}),{status:400});
+   return roleAnswer(body,{ok:true});
+  }});
+ const request={instruction:'Denetle',facts:['İhracat için geçerli koşullar.']};
+ const options={plainJson:true,compactReview:true,maxOutputTokens:600};
+ const result=await p.manager('brand-review',request,schema,options);
+ assert.equal(result.inputReservationBasis,'serialized-utf8-upper-bound');
+ assert.ok(result.reservedKurus>result.accountedKurus);
+ assert.deepEqual(await p.manager('brand-review',request,schema,options),result);
+ assert.equal(calls.length,2);
+});
 test('manager and worker use distinct APIs, count inputs, settle actual usage and reuse receipts',async()=>{
  const db=account(),t=transport(),p=providers(db,t);
  const manager=await p.manager('plan',{instruction:'Plan',brief:{name:'Public'}},schema,{maxOutputTokens:512});
