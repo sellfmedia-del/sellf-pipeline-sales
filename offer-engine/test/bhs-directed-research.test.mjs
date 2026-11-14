@@ -129,8 +129,8 @@ test('compact evidence decisions retain the exact proof and row ordering',async(
  const result=await reviewPositionalEvidenceBatch({rows,sources},{focus:understanding,providers:{managedBudgetVersion:8,
   evidenceReviewer:async(_stage,request,schema,options)=>{
    assert.deepEqual(request.rows,[['s2'],['s1']]);
-   assert.equal(schema.properties.verdicts.type,'string');
-   return {data:options.normalizeData({verdicts:'cu',candidates:['s2']})};
+   assert.equal(schema.properties.verdicts.type,'object');
+   return {data:options.normalizeData({verdicts:{u:'s1',c:'s2'},candidates:['s2']})};
   }}});
  assert.deepEqual(result[0].ids,['s2','s1']);
  assert.equal(result[0].verdicts,'cu');
