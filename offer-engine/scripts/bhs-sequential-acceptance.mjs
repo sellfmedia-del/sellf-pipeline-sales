@@ -109,4 +109,47 @@ export async function runSequentialAcceptance(){
  console.info(JSON.stringify({event:'bhs_v8_public_qa_finished',...Object.fromEntries(Object.entries(result).filter(([k])=>k!=='audit'))}));
  return result;
 }
-if(allowed())await runSequentialAcceptance();
+async function probeClaudeConnection(){
+ const models=['claude-sonnet-5-5','claude-haiku-5-5'];
+ const versions=['2023-06-01','2026-10-21'];
+ const knownMessages={
+  credit_balance:/credit balance|insufficient credits|billing|payment|prepaid/i,
+  model_access:/model|capacity|entitlement/i,
+  request_version:/anthropic.version|api version|not (enabled|available)|deprecated/i,
+  parameter:/unknown|unsupported|invalid|expected|must|not permitted|required/i,
+  account:/account|organization|workspace|usage limit|spend limit/i,
+  policy:/region|country|compliance|policy|moderation|restriction|verification|verified/i,
+  request:/request|body|payload/i,
+  json:/json|parse|missing|format|schema/i,
+  credentials:/key|authentication|unauthorized|permission/i,
+  funding:/balance|tier|fund|plan|subscription/i
+ };
+ console.info(JSON.stringify({event:'bhs_claude_minimum_configuration',keyPresent:Boolean(process.env.ANTHROPIC_API_KEY)}));
+ if(!process.env.ANTHROPIC_API_KEY)return;
+ await Promise.all(versions.flatMap(version=>models.map(async model=>{
+  const body={model,messages:[{role:'user',content:'Reply OK.'}]};
+  const headers={'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':version};
+  for(const operation of ['count_tokens','messages']){
+   try{
+    const response=await fetch('https://api.anthropic.com/v1/messages'+(operation==='count_tokens'?'/count_tokens':''),{
+     method:'POST',headers,body:JSON.stringify(operation==='count_tokens'?body:{...body,max_tokens:32}),signal:AbortSignal.timeout(15000),redirect:'error'
+    });
+    const value=await response.json();
+    const message=[value?.error?.message,value?.message,value?.detail].filter(part=>typeof part==='string').join(' ');
+    const requestId=response.headers.get('request-id');
+    const type=value?.error?.type;
+    const category=Object.entries(knownMessages).filter(([,pattern])=>pattern.test(message)).map(([key])=>key);
+    // Report only known operational categories, never response text or request content.
+    console.info(JSON.stringify({event:'bhs_claude_minimum',model,version,operation,status:response.status,
+     type:/^[a-z_]{1,40}$/.test(type||'')?type:undefined,category,messageLength:message.length,
+     hasAnthropicRequestId:/^req_[A-Za-z0-9]{4,100}$/.test(requestId||''),responseTokens:response.ok?value?.usage?.output_tokens:undefined}));
+   }catch(error){
+    console.info(JSON.stringify({event:'bhs_claude_minimum',model,version,operation,transport:['TimeoutError','SyntaxError'].includes(error.name)?error.name:'fetch_error'}));
+   }
+  }
+ })));
+}
+if(allowed()){
+ if(process.env.OFFER_BHS_QA_CASE==='claude_probe')await probeClaudeConnection();
+ else await runSequentialAcceptance();
+}
