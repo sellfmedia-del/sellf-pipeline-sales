@@ -323,13 +323,16 @@ export function reviewedManagedEvidence(input,reviews){
     return reportInput(orderedSectionProofs(selected,input.sources,section,limit),section,peerProofs,excludedPeers);
    }
    if(targeted&&section==='swot'&&swotFocus.length){
-    const internalIds=new Set(priorityRows);
-    const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));
     const publisher=id=>{
      const url=(input.sources[id]||input.sources[rows.get(id)?.[3]?.[0]])?.[0];
      return url?researchHost(url):null;
     };
     const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
+    const peers=new Set(input.entities.filter(([,role])=>role==='competitor').map(([, , ,url])=>researchHost(url)));
+    const outside=id=>{const host=publisher(id);return host&&!brandHosts.has(host)&&!['sikayetvar.com','trustpilot.com','trendyol.com','hepsiburada.com'].includes(host);};
+    const external=ranked.filter(id=>outside(id)&&(supports(id)||swotFocus.includes('threat')&&peers.has(publisher(id))));
+    const competitorProofs=swotFocus.includes('threat')?input.entities.filter(([,role])=>role==='competitor')
+     .flatMap(([, , , ,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&!['html-signals','search-snippet'].includes(input.sources[id]?.[2])).slice(0,1)):[];
     const publishers=new Set();
     const independent=external.filter(id=>{
      const host=publisher(id);
@@ -339,7 +342,8 @@ export function reviewedManagedEvidence(input,reviews){
     const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
     const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
     const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
-    const selected=[...new Set([...focusedRows,...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
+    const onlyExternal=wantsExternal&&!wantsInternal;
+    const selected=[...new Set([...(onlyExternal?focusedRows.filter(outside):focusedRows),...competitorProofs,...(wantsInternal?priorityRows.slice(0,share):[]),
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
     return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
    }

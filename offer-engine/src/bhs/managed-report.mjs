@@ -342,6 +342,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Gözlem yalnız kaynakta açıkça yazan tek bir mevcut ürün, kanal veya operasyon koşulu olsun. Sayı ve ölçülmemiş performans iddiası kullanma. Hedefe ulaşmak için gereken pilotu veya ölçümü ayrı bir çıkarım olarak yaz. Aksiyon bir pilot veya karar adımı, ölçüm doğrulanabilir bir iş metriği olsun.';
    if(request.proofsByQuestion&&section==='readiness')request.instruction+=' Yalnız briefteki hedef pazara yönelik bulgular yaz. Başka bir ülke veya pazarın durumu, hedef bölgedeki hazırlığın kanıtı sayılmaz. Bir ürünün stok uyarısını veya yorum sayacını şirket geneline yayma. Kaynakta görülen işlevi ve sayfayı sınırla. Örneğin stok uyarısı görülüyorsa, gözlemde yalnız sayfadaki ifadeyi alıntıla ve stok durumunu pilot öncesinde doğrula.';
    if(request.proofsByQuestion&&section==='perception')request.instruction+=' Önce doğrudan satın alma, kullanım, teslimat veya destek deneyimi anlatan yorumları kullan. Harici puan ve yanıt oranını genel memnuniyet düzeyi sayma. Tekil yorumda “bir müşteri” de. İki yorum aynı sorunu anlatıyorsa bir bulguda birleştir. İkinci bulgu için farklı bir deneyim türü ya da ayrıca belgelenen marka çözümünü seç.';
+   if(providers.managedBudgetVersion>=6&&section==='perception')request.instruction+=' Yorum tarihini, puanını, süreyi veya örneklem adedini analiz, sınır veya soruda tekrarlama. Analiz ve sınırı nitel anlat. Yalnız kanıtın açıkça söylediği ölçülmüş tutarı observation alanına yaz.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
     request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
@@ -525,7 +526,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  }
  if(input.evidenceByQuestion&&!savedSectionsOnly&&!signal.aborted){
   const finalRepairs=[];
-  for(const section of ['competition','readiness']){
+  const rechecked=providers.managedBudgetVersion>=6?['competition','readiness','perception']:['competition','readiness'];
+  for(const section of rechecked){
    const drafts=draftsBySection.get(section);
    if(!drafts||!repairs.some(task=>task.section===section)||!drafts.some(draft=>draft.rejected?.length))continue;
    const report=project(drafts,new Set([section]));
