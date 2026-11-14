@@ -390,7 +390,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const generate=useReviewer&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
     const options={
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
-     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
+     compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{}),
+     ...(input.plan.managerDirected?{plainJson:true}:{})
     };
     const stage='v8-managed-section:'+section;
     let result;

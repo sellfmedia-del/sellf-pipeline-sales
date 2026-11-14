@@ -66,7 +66,7 @@ export async function runSequentialAcceptance(){
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:caseName,status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
  }catch(error){
-  result={case:caseName,status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints}:{}),...(error.validationDetail?{validationDetail:error.validationDetail}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
+  result={case:caseName,status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerOperation:error.providerOperation,providerReason:error.providerReason,parameterHints:error.parameterHints}:{}),...(error.validationDetail?{validationDetail:error.validationDetail}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
  }finally{
   // The build allowance was reserved before the first paid stage; this is
   // an idempotent checkpoint and can never reset or add it a second time.
@@ -95,7 +95,9 @@ export async function runSequentialAcceptance(){
     for(const f of data.findings||[])console.info(JSON.stringify({event:'bhs_v8_qa_finding',case:caseName,section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,source:data.sources.find(source=>source.id===f.sourceIds[0])?.url}));
 
    }
-   result={case:caseName,status:result.status,phase,code:result.code,elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
+   result={case:caseName,status:result.status,phase,code:result.code,providerStatus:result.providerStatus,providerOperation:result.providerOperation,
+    providerReason:result.providerReason,parameterHints:result.parameterHints,validationDetail:result.validationDetail,
+    elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
     reportIssue:audit?.data.supervision.reportIssue,sections:audit?.data.bhsSections?.map(({id,count,complete,missingQuadrants})=>({id,count,complete,missingQuadrants})),
     evidenceCoverage:audit?.data.supervision.evidenceCoverage,
     metricCoverage:audit?.data.supervision.metricCoverage?.map(({section,name,status})=>({section,name,status})),

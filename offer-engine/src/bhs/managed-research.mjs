@@ -37,7 +37,7 @@ export async function planManagedResearch({brief,brand,sector,providers,compactF
   sectorEvidence:(Array.isArray(sector)?sector:[sector]).flatMap(item=>(item?.results||[]).slice(0,directed?5:8).map(({url,title,content})=>[url,title,String(content||'').slice(0,350)])),
   sections:managedSections,availableActors
  },directed?managedPlanSchema:planSchema,{maxOutputTokens:compactFallback?2600:3600,minimumOutputTokens:compactFallback?1800:2400,compactReview:true,lowEffort:true,normalizeData,retryTokenCount:true,
-  ...(directed?{generationTimeoutMs:28000}:{}),
+  ...(directed?{generationTimeoutMs:28000,...(!compactFallback?{plainJson:true}:{})}:{}),
   ...(crossProvider?{compactWorker:true,generationTimeoutMs:35000}:{})});
  const plan=normalizeData(result.data);
  return {...plan,coveragePolicy:2,...(directed?{managerDirected:true,tasks:plan.tasks.map((task,index)=>({...task,id:'t'+(index+1)})),actors:plan.actors.filter(actor=>availableActors.includes(actor.id))}:{})};
