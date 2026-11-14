@@ -72,6 +72,23 @@ export function planPositionalEvidenceReview(input,reusedIds=new Set()){
  });
 }
 
+export function planDirectedEvidenceReview(input){
+ // Use the same review contract and proof IDs. Spread consecutive pages across
+ // batches so that the first successful reviews cover distinct sources.
+ const byPage=new Map();
+ for(const [id,[url]] of Object.entries(input.sources)){
+  if(!byPage.has(url))byPage.set(url,[]);
+  byPage.get(url).push(id);
+ }
+ const pageGroups=[...byPage.values()],order=[];
+ const remainder=new Map(pageGroups.map(ids=>[ids,0]));
+ while(remainder.size)for(const [ids,index] of remainder){
+  order.push(...ids.slice(index,index+8));
+  if(index+8>=ids.length)remainder.delete(ids);else remainder.set(ids,index+8);
+ }
+ return planPositionalEvidenceReview({...input,sources:Object.fromEntries(order.map(id=>[id,input.sources[id]]))});
+}
+
 export function prioritizeManagedProofs(input){
  const ids=[...new Set([
   ...input.entities.filter(([,role])=>role==='competitor').flatMap(([, , , ,proof])=>proof.slice(0,2)),
@@ -260,7 +277,7 @@ export function reviewedManagedEvidence(input,reviews){
    const observations=shortlist.filter(id=>rows.has(id)).map(id=>rows.get(id));
    const proofs=new Set([...observations.flatMap(row=>row[3]),...shortlist.filter(id=>Object.hasOwn(input.sources,id))]);
    const eligible=input.entities.filter(([id,role])=>(!section||section==='competition'||role==='brand')&&!excludedPeers?.has(id));
-   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&
+   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>(reviewedProofs.has(id)||input.plan?.directedResearch)&&covered.get(id)!=='x'&&
     (peerProofs===1||role!=='competitor'||!['html-signals','search-snippet'].includes(input.sources[id]?.[2])));
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
     .filter(([,role])=>role==='competitor')
@@ -290,7 +307,7 @@ export function reviewedManagedEvidence(input,reviews){
   sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[],externalOnly=false}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    if(input.plan?.directedResearch){
-    const prioritized=[...new Set([...exact,...candidates,...ranked])];
+    const prioritized=[...new Set([...exact,...candidates.slice(0,6),...ranked,...expected.filter(id=>!covered.has(id))])];
     return reportInput(prioritized.slice(0,limit),section,peerProofs,excludedPeers);
    }
    const supports=id=>{

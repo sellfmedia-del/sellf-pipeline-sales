@@ -9,6 +9,8 @@ import {planPositionalEvidenceReview} from '../src/bhs/managed-evidence-review.m
 import {resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
+import {runSequentialStage} from '../src/bhs/sequential-research.mjs';
+import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 
 const site='https://brand.example/';
 const profile='https://www.instagram.com/example/';
@@ -88,6 +90,37 @@ test('full source is archived and sent to the reviewer in batches including late
  assert.ok(batches.length>1);
  assert.ok(batches.some(batch=>Object.values(batch.sources).some(source=>source[3].includes('Lyon wholesale outlet'))));
  assert.equal(new Set(batches.flatMap(batch=>batch.rows.map(row=>row.id))).size,Object.keys(input.sources).length);
+});
+
+test('the director receives the initial brand read without running legacy model stages',async()=>{
+ const providers={collectionFirst:true,managedBudgetVersion:8,checkpoint:async(_name,_input,run)=>run(),manager:()=>assert.fail('legacy model call')};
+ const saved=new Map();
+ let reads=0;
+ for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand')+1)){
+  saved.set(phase,await runSequentialStage({phase,brief,providers,previous:async key=>saved.get(key),collect:async(_brief,_plan,options)=>{
+   reads++;
+   assert.deepEqual(options.prioritySources,[site]);
+   return brand.packet;
+  }}));
+ }
+ assert.equal(reads,1);
+ const plan=await planDirectedResearch({brief,brand:saved.get('brand'),providers:{manager:async(_stage,request)=>{
+  assert.match(request.sources[0][2],/sells packaged food/);
+  return {data:{understanding,market:'France',tasks:[task],peers:[],assets:[],questions:[],commands:[]}};
+ }}});
+ assert.equal(plan.understanding.business,'grocery');
+});
+
+test('searches selected for the same actor share an execution and preserve per-task results',async()=>{
+ const second={...task,id:'reputation',section:'perception'};
+ const engine='themineworks/google-search-scraper';
+ const result=await executeDirectedResearch({brief,brand,plan:{tasks:[task,second]},decision:{commands:[
+  command(engine,{query:'France own-brand organic snacks',limit:1}),command(engine,{taskId:second.id,query:'Example feedback France',limit:3})
+ ]},providers:{enrich:async request=>{
+  assert.deepEqual(request.queries,['France own-brand organic snacks','Example feedback France']);
+  return {actor:engine,status:'complete',searches:request.queries.map(query=>({query,results:[{url:rival},{url:site}]}))};
+ }}});
+ assert.deepEqual(result.searches.map(row=>[row.taskId,row.results.length]),[[task.id,1],[second.id,2]]);
 });
 
 test('the model writes its own source-linked analysis and gaps are retained without mandatory measurement text',async()=>{

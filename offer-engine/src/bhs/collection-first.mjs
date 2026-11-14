@@ -16,7 +16,7 @@ import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,manage
 import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -155,11 +155,12 @@ export async function collectionCorpus(previous,{searches:additionalSearches=[],
   sourcesFrom(previous,directed?directedRounds:scrapeStages,'peerHints')
  ]);
  const fullPages=directed?await expandDirectedSources([...additionalPages,...pages]):[...additionalPages,...pages];
+ const brandPages=directed?await expandDirectedSources(brand.packet.sources):brand.packet.sources;
  const asOf=brand.packet.asOf;
  const allSearches=[...searches,...additionalSearches];
  const searchSources=allSearches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:s.source==='apify-google'?'Google arama alıntısı':'Tavily arama alıntısı'}))).filter(Boolean);
  const actorSources=[...scrapes,...additionalScrapes].flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId},complete:directed}))).filter(Boolean);
- return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...new Map([...brand.packet.entities,...peerHints,...additionalPeers].map(e=>[e.id,e])).values()],sources:canonicalSources([...brand.packet.sources,...fullPages,...actorSources,...searchSources])}};
+ return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...new Map([...brand.packet.entities,...peerHints,...additionalPeers].map(e=>[e.id,e])).values()],sources:canonicalSources([...brandPages,...fullPages,...actorSources,...searchSources])}};
 }
 
 function queryFor(brief,topic,market){
@@ -1110,7 +1111,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    const brand=await previous('brand');
    const rounds=(await Promise.all(directedRounds.slice(0,roundIndex).map(previous))).filter(r=>r?.commandResults);
    if(rounds.at(-1)?.researchDone)return save({});
-   const pool=providers.withCeiling(2800);
+   const pool=providers.withCeiling(providers.managedBudgetVersion>=8?(first?2200:2650):2800);
    const decision=await planDirectedResearch({brief,brand,providers:pool,plan:first?undefined:managed,rounds});
    const plan=first?(decision.directedResearch?decision:{directedResearch:true,managerDirected:true,coveragePolicy:2,
     understanding:groundedManagedResearchPlan(brief,brand).understanding,market:'',tasks:[],assets:[],peers:[],questions:[]}):managed;
@@ -1238,7 +1239,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(managed&&reviewIndex>=0){
   const closed=await previous('coverage_plan'),reviews=[];
   const reviewBatches=closed.rebuildReviewBatches?
-   planPositionalEvidenceReview(prioritizeManagedProofs(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input)):closed.reviewBatches||[];
+   (providers.managedBudgetVersion>=8?planDirectedEvidenceReview:i=>planPositionalEvidenceReview(prioritizeManagedProofs(i)))(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input):closed.reviewBatches||[];
   const focus=managed.understanding||brief,signal=AbortSignal.timeout(sectional?170000:250000);
   if(sectional){
    const batches=shard(reviewBatches,reviewIndex,managedReviewPhases.length);

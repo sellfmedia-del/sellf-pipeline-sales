@@ -34,6 +34,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  }
  if(options.providers.managedBudgetVersion>=7){
   const freePhases=new Set(['coverage_plan','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft',...inventoryStages.filter(phase=>phase!=='competition')]);
+  if(options.providers.managedBudgetVersion>=8)for(const phase of sequentialPhases.slice(1,sequentialPhases.indexOf('brand')+1))freePhases.add(phase);
   if(freePhases.has(job.phase))return runStage(options);
   const cost=await options.ledger.status();
   if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus&&

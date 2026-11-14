@@ -106,6 +106,12 @@ export async function runSequentialAcceptance(){
     console.info(JSON.stringify({event:'bhs_v8_qa_evidence_diagnostics',case:caseName,reviewIssues,modelIssues:reviewReceipts.filter(row=>row.value?.rejectedOutput||row.state==='uncertain').map(row=>({stage:row.step_key.split(':').slice(3,-1).join(':'),state:row.state,issue:row.value.rejectedOutput||row.value.code,providerStatus:row.value.providerStatus})),publishedFeedbackProofs:stage('competition_correction_draft').questionEvidence?.perception?.length||0}));
     const captures=['competition_draft','competition_review'].map(name=>{const value=stage(name);return {name,hints:value.peerHints?.length||0,pages:value.pages?.length||0,searches:value.searches?.length||0};});
     const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length,returned:row.value.returned,rejected:row.value.rejected?.map(({quadrant,reason})=>[quadrant,reason])}));
+    const directedDrafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:directed-report-section:'))
+     .map(row=>({findings:row.value.findings?.length,areas:row.value.findings?.map(finding=>finding.area)}));
+    const reportReceipts=rows.filter(row=>row.step_key.startsWith('model:')&&row.step_key.includes('bhs-directed-report-'));
+    console.info(JSON.stringify({event:'bhs_directed_qa_report',case:caseName,directedDrafts,
+     models:reportReceipts.map(row=>({stage:row.step_key.split(':').at(-2),state:row.state,issue:row.value?.rejectedOutput||row.value?.code,usage:row.value?.usage})),
+     issues:result.audit?.data?.quality?.issues?.filter(issue=>issue.path.startsWith('findings.')||issue.path.startsWith('sources.')).map(issue=>issue.reason)}));
     const acquisition=stage('sector_review');
     const scrapes=['competition_draft','competition_review','competition_correction_sources'].flatMap(phase=>stage(phase).scrapes||[]);
     console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts,
