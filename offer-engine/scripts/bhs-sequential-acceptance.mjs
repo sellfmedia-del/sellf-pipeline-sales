@@ -118,6 +118,10 @@ export async function runSequentialAcceptance(){
     for(const f of data.findings||[])console.info(JSON.stringify({event:'bhs_v8_qa_finding',case:caseName,section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,source:data.sources.find(source=>source.id===f.sourceIds[0])?.url}));
 
    }
+   for(const row of rows.filter(row=>row.state==='complete'&&Array.isArray(row.value?.commandResults))){
+    console.info(JSON.stringify({event:'bhs_directed_qa_commands',case:caseName,phase:row.value.phase,peers:row.value.peers?.length,
+     commands:row.value.commandResults.map(({command,reason,urls})=>[command.taskId,command.tool,command.country,command.limit,reason,urls.length])}));
+   }
    const handoffs=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('model:bhs-v8:')&&row.step_key.includes(':v8-handoff:')&&!row.value.rejectedOutput&&!row.value.rejected)
     .map(row=>({stage:row.step_key.split(':').slice(5,-1).join(':'),model:row.value.model}));
    result={case:caseName,status:result.status,phase,code:result.code,providerStatus:result.providerStatus,providerOperation:result.providerOperation,

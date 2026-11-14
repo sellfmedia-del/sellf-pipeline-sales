@@ -98,10 +98,10 @@ test('the model writes its own source-linked analysis and gaps are retained with
  const result=await synthesizeManagedReport({brief,brand,plan,context,inventory:[],sections:['readiness'],
   batchReviews:[{ids,candidates:ids,verdicts:'r'.repeat(ids.length)}],
   providers:{manager:async(_stage,request)=>({data:{findings:[{
-   section:'readiness',area:'operations_1',rank:1,quadrant:'none',peerId:'',
-   observation:'Example sells packaged food through its online store.',proof:[Object.keys(request.sources)[0]],kind:'observation',
-   analysis:'French distribution may require a different fulfilment partner.',action:'Compare local delivery terms with a French distributor.',measurement:'',limitation:'',question:'Which shipments can be fulfilled locally?'
-  }],peers:[],questions:[]}})},allowPartial:true,sectional:true});
+   area:'operations_1',quadrant:'none',peerId:'',peerOverlap:'',
+   observation:'Example sells packaged food through its online store.',proof:[Object.keys(request.sources)[0]],
+   analysis:'French distribution may require a different fulfilment partner.',action:'Compare local delivery terms with a French distributor.',question:'Which shipments can be fulfilled locally?'
+  }],questions:[]}})},allowPartial:true,sectional:true});
  assert.equal(result.report.findings.length,1);
  assert.equal(result.report.findings[0].recommendation.measurement,'');
  assert.equal(result.report.bhsSections.find(section=>section.id==='readiness').count,1);
