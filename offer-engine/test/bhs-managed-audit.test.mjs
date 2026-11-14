@@ -125,15 +125,36 @@ test('the managed evidence review can recover an entire batch when Claude is una
  const rows=[{id:'s1',proof:['s1']},{id:'s2',proof:['s2']}];
  const sources={s1:['https://example.test/a','Ürün','html','Kamuya açık ürün bilgisi.'],s2:['https://example.test/b','Kanal','html','Kamuya açık kanal bilgisi.']};
  const providers={managedBudgetVersion:3,evidenceReviewer:async()=>{throw new BudgetError('provider_error','Upstream unavailable.');},
-  worker:async(stage,request,_schema,options)=>{
-   assert.equal(stage,'v8-managed-evidence-position:cross-provider');
+  worker:async(stage,request,schema,options)=>{
+   assert.equal(stage,'v8-managed-evidence-position:packed-fallback');
    assert.equal(options.compactWorker,true);
    assert.deepEqual(request.sources,sources);
-   return {data:{verdicts:{s1:'c',s2:'d'},candidates:['s2']}};
+   assert.equal(schema.properties.verdicts.maxLength,2);
+   assert.equal(options.responseSchema.properties.verdicts.type,'object');
+   return {data:options.normalizeData({verdicts:'cd',candidates:['s2']})};
   }};
  const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers});
  assert.equal(review.verdicts,'cd');
  assert.deepEqual(review.candidates,['s2']);
+});
+
+test('customer repair uses a different original experience and readiness uses distinct brand evidence',()=>{
+ const sources={
+  s1:['https://reviews.example/one','Acme Organic','html','Sipariş verdim ve paket teslim edilmedi.'],
+  s2:['https://another.example/same','Acme Organic','html','Sipariş verdim ve paket teslim edilmedi!'],
+  s3:['https://shop.example/review','Acme Organic','html','Satın aldım, ürünün tadını beğendim.'],
+  s4:['https://scores.example/brand','Acme Organic','html','Müşteri değerlendirme puanı: 70.'],
+  s5:['https://competitor.example/reviews','Organic Beta','html','Satın aldım ve çok beğendim.'],
+  s6:[brief.website+'distribution','Acme Organic','html','Dağıtım ortakları bölgelere göre listeleniyor.'],
+  s7:[brief.website+'delivery','Acme Organic','html','Sipariş teslimatı için kargo koşulları açıklanıyor.'],
+  s8:['https://scores.example/brand','Acme Organic','html','Markanın satış ve ihracat durumu haberlerde değerlendirildi.']
+ };
+ const ids=Object.keys(sources);
+ const input={brief,entities:[['brand','brand',brief.brandName,brief.website,[]]],observations:[],sources,evidenceByQuestion:{perception:['s4','s1','s2','s3'],readiness:['s8','s6','s7']}};
+ const reviewed=reviewedManagedEvidence(input,[{ids,verdicts:'ppppprrr',candidates:ids}]);
+ assert.deepEqual(Object.keys(reviewed.sectionInput('perception',3,{targeted:true}).sources),['s1','s3','s4']);
+ assert.deepEqual(Object.keys(reviewed.sectionInput('perception',3,{targeted:true,excludedProofs:new Set(['s1','s2'])}).sources),['s3','s4']);
+ assert.deepEqual(Object.keys(reviewed.sectionInput('readiness',3,{targeted:true}).sources),['s6','s7']);
 });
 
 test('a recovery verdict must cover exactly the evidence sent in order',async()=>{

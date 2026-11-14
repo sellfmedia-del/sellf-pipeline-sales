@@ -6,7 +6,7 @@ import {projectExpertReport} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
-import {canSwitchBhsProvider,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
  competition:'Rakip araştırması',digital:'Dijital varlıklar',
@@ -23,6 +23,11 @@ const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain'
  'provider_accounting','provider_rejected','token_count','fx_limit','fx_unavailable','not_configured','tariff_expired','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
 const managedFindingId=(row,proofs)=>'managed_'+hash({section:row.section,observation:row.observation,proofs}).slice(0,22);
+const distinctProofSections=new Set(['perception','readiness']);
+function quoteIdentity(context,id){
+ const group=context.proofGroups.get(id)||[id];
+ return customerQuoteKey(group.map(proof=>context.known.get(proof)?.quote).join(' '));
+}
 const rowSchema=obj({
  section:choice(sectionKeys),area:choice([...areas.keys()]),rank:{type:'integer',minimum:1,maximum:10},
  quadrant:choice(['none',...quadrants]),peerId:str(80),
@@ -151,7 +156,7 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
 
 function projectManagedDraft({context,reverse,accepted,usedInput,data}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
- const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenCustomerQuotes=new Set();
+ const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
  for(const row of sorted){
   const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
@@ -161,10 +166,12 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
    if(!row.peerId||seenPeers.has(row.peerId)||!context.input.entities.some(e=>e.role==='competitor'&&e.id===row.peerId))continue;
    seenPeers.add(row.peerId);
   }
-  if(row.section==='perception'){
-   const keys=proofs.map(id=>context.known.get(id)).filter(Boolean).map(card=>(context.proofGroups.get(card.id)||[card.id]).join('\0'));
-   if(keys.length&&keys.every(id=>seenCustomerQuotes.has(id)))continue;
-   for(const id of keys)seenCustomerQuotes.add(id);
+  if(distinctProofSections.has(row.section)){
+   const keys=proofs.map(id=>quoteIdentity(context,id)).filter(Boolean);
+   const previous=seenQuotes.get(row.section)||new Set();
+   if(keys.length&&keys.every(key=>previous.has(key)))continue;
+   for(const key of keys)previous.add(key);
+   seenQuotes.set(row.section,previous);
   }
   seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
@@ -251,7 +258,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  const draftsBySection=new Map(),issues=new Map();
  const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
 
- async function write({section,wanted,focus,prior,repair,rejected=[]},following){
+ async function write({section,wanted,focus,prior,repair,rejected=[],usedProofs=[]},following){
   const swot=section==='swot',competition=section==='competition';
   const combinedPeer=minimumFirst&&competition;
   const focusedWriting=Boolean(input.evidenceByQuestion);
@@ -280,7 +287,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   for(const sourceLimit of sourceLimits){
    const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
    const priorityProofs=minimumFirst&&(['readiness','swot'].includes(section)||focusedWriting&&competition)?input.brandProofs:[];
-   const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,priorityProofs,targeted:minimumFirst};
+   const avoidRepeatedProofs=focusedWriting&&distinctProofSections.has(section);
+   const usedQuotes=new Set(usedProofs.map(id=>quoteIdentity(context,id)).filter(Boolean));
+   const excludedProofs=new Set(avoidRepeatedProofs?[...reverse].filter(([,id])=>usedQuotes.has(quoteIdentity(context,id))).map(([alias])=>alias):[]);
+   const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,excludedProofs,priorityProofs,targeted:minimumFirst&&(!distinctProofSections.has(section)||focusedWriting)};
    const focused=reviewed.sectionInput(section,sourceLimit,{...sectionOptions,swotFocus:focus});
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
@@ -292,6 +302,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(section==='readiness'||swot)request.approvedFactProofs=priorityProofs?.filter(id=>Object.hasOwn(focused.sources,id))||[];
     if(input.evidenceByQuestion&&(swot||['readiness','perception'].includes(section)))request.proofsByQuestion=Object.fromEntries((swot?focus:[section]).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez. Bir kanalı şirketin tek kanalı olarak tanımlamak için bunu açıkça doğrulayan kaynak gerekir.';
+    if(avoidRepeatedProofs)request.instruction+=' Her bulgunun asıl kanıtı farklı bir kaynak kesiti olmalı. Aynı deneyimi, skoru veya iş koşulunu iki bulguya bölme.';
     if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
    const name='managed-section-v3:'+section;
@@ -306,7 +317,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    }
    if(minimumFirst&&swot)request.instruction+=' İstenen SWOT kolları: '+focus.join(', ')+'. Güçlü ve zayıf yönü markanın mevcut koşullarından, fırsat ve tehdidi hedef pazardaki dış koşullardan çıkar. Gözlem alanına somut kaynak bilgisini yaz. SWOT yorumunu analysis alanına yaz. Bir risk ancak olasıysa koşulunu ve görüşmede nasıl doğrulanacağını belirt.';
    if(request.proofsByQuestion)request.instruction+=' proofsByQuestion içindeki kimlikleri ilgili soru için önce değerlendir. Kanıtlanan mevcut durumu observation alanına, bunun hangi koşulda ticari etki yaratacağına ilişkin görüşünü analysis alanına yaz. Belirsiz iç performansı limitation veya question alanına koy.';
-   if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Mevcut ürün, kanal veya operasyon koşulunu nitel anlat. Mağaza, ülke, ürün, yıllık kapasite ve ciro miktarları bu bölüm için gerekmez. Hedefe ulaşmak için gereken pilotu veya ölçümü bir çıkarım olarak yaz. Başka bir iç veri bulunmaması kaynaklı çıkarımı engellemez.';
+   if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Gözlem yalnız kaynakta açıkça yazan tek bir mevcut ürün, kanal veya operasyon koşulu olsun. Sayı ve ölçülmemiş performans iddiası kullanma. Hedefe ulaşmak için gereken pilotu veya ölçümü ayrı bir çıkarım olarak yaz. Aksiyon bir pilot veya karar adımı, ölçüm doğrulanabilir bir iş metriği olsun.';
+   if(request.proofsByQuestion&&section==='perception')request.instruction+=' Önce doğrudan satın alma, kullanım, teslimat veya destek deneyimi anlatan yorumları kullan. Harici puan ve yanıt oranını genel memnuniyet düzeyi sayma. Farklı deneyimler varsa her satırda ayrı bir deneyim ve onun özgün kanıtını kullan.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
     request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
@@ -349,7 +361,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
    if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
    if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
-   const changedRequest=minimumFirst&&(competition||swot);
+   const changedRequest=minimumFirst&&(competition||swot||avoidRepeatedProofs);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
     const saved=await providers.readCheckpoint?.(name,checkpoint);
@@ -359,7 +371,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(denied?.requestHash===checkpoint.requestHash)return {issue:denied.issue};
    if(signal.aborted)return {issue:'model_timeout'};
    try{
-    const generate=repair&&(issues.has(section)||rejected.some(row=>row.reason==='quantity_unit_unconfirmed'))&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
+    const useReviewer=repair&&(avoidRepeatedProofs||issues.has(section)||rejected.some(row=>row.reason==='quantity_unit_unconfirmed'));
+    const generate=useReviewer&&providers.evidenceReviewer?providers.evidenceReviewer:providers.manager;
     const options={
      signal,generationTimeoutMs:42000,maxOutputTokens,minimumOutputTokens,
      compactReview:true,lowEffort:true,reserveForFollowingKurus:following,...(minimumFirst?{normalizeData,responseSchema,retryTokenCount:true}:{})
@@ -457,9 +470,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    }
   }else if(section==='competition'&&providers.managedBudgetVersion===3&&minimumFirst&&count===0){
    repairs.push({section,wanted:1,focus:[],prior,repair:true,rejected});
-  }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected});
+  }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected,usedProofs:report.findings.flatMap(f=>f.sourceIds)});
  }
- if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
+ if(minimumFirst&&input.evidenceByQuestion)repairs.sort((a,b)=>Number(distinctProofSections.has(b.section))-Number(distinctProofSections.has(a.section))||Number(b.section==='competition')-Number(a.section==='competition'));
+ else if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
  for(let i=0;i<repairs.length;i+=2){
   const group=repairs.slice(i,i+2);
   const following=minimumFirst?0:(repairs.length-i-group.length)*reportSectionReserveKurus;

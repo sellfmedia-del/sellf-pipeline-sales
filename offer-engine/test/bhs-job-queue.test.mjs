@@ -242,6 +242,9 @@ test('an unclaimed job or expired worker automatically opens pricing and retains
   clock=worker.leaseUntil+31000;
   await check('lease_expired');
   assert.equal((await f.queue.read(worker)).cancelRequested,true);
+  await f.db.query("update public.pipeline_bhs_jobs set state='queued',phase='sector_sources',cancel_requested=false,created_at=now()-interval '10 minutes 1 second',updated_at=now() where id=$1",[job.id]);
+  clock=Date.now();
+  await check('research_deadline');
  }finally{await f.close();if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 

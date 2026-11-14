@@ -15,7 +15,7 @@ import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {customerEvidence,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
@@ -55,6 +55,9 @@ const questionSignals={
  threat:/maliyet|hammadde|mevzuat|ithalat|rekabet|enflasyon|regulat|input cost|competition|supply|tariff/iu,
  readiness:/dağıtım|bayi|teslimat|ihracat|üretim|ürün|distribut|deliver|export|product|partner|retail/iu
 };
+const readinessSignals=[/satış noktaları|nerede satılır|bayi|distribüt|where to buy|stockists?|distribut|wholesale|retail partners/iu,
+ /teslimat|sipariş|iade|kargo|delivery|shipping|returns?|ordering|checkout/iu,
+ /üretim|ihracat|sertifika|kapasite|manufactur|export|certifi|capacity/iu];
 const findingSchema=obj({a:arr({type:'string',enum:[...areasByKey.keys()]},4),o:str(220),p:arr(str(80)),k:{type:'string',enum:['observation','inference']},h:str(150),l:str(140),w:{type:'string',enum:['none',...quadrants]}});
 const compactReportSchema=obj({
  findings:arr(findingSchema),
@@ -564,6 +567,15 @@ function questionCandidates(brief,context){
  return Object.fromEntries(Object.entries(questionSignals).map(([question,signal])=>{
   const own=['strength','weakness','readiness'].includes(question);
   const candidates=(question==='weakness'?[...primary,...customer]:own?primary:external).filter(card=>signal.test(card.quote));
+  if(question==='readiness'){
+   const anchors=readinessSignals.flatMap(pattern=>candidates.filter(card=>pattern.test(card.quote)&&card.quote.length>=70).slice(0,2));
+   const seen=new Set();
+   return [question,[...anchors,...candidates].filter(card=>{
+    const key=customerQuoteKey(card.quote);
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+   }).slice(0,8)];
+  }
   const seen=new Set();
   return [question,candidates.filter(card=>{
    const key=own?card.url:researchHost(card.url);
@@ -642,12 +654,18 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)&&
   customerEvidence([card.url,card.title,card.method,card.quote]));
  const feedbackByPage=new Map();
- for(const card of feedbackProofs){
+ const feedbackSeen=new Set();
+ for(const card of feedbackProofs.sort((a,b)=>Number(directCustomerExperience.test(b.quote))-Number(directCustomerExperience.test(a.quote)))){
+  const key=customerQuoteKey(card.quote);
+  if(feedbackSeen.has(key))continue;
   const ids=feedbackByPage.get(card.url)||[];
-  if(ids.length<3&&!ids.includes(card.id))ids.push(card.id);
+  if(ids.length<3){ids.push(card.id);feedbackSeen.add(key);}
   feedbackByPage.set(card.url,ids);
  }
- if(feedbackByPage.size)evidence.perception=[...feedbackByPage.values()].flat().slice(0,12);
+ if(feedbackByPage.size){
+  const pages=[...feedbackByPage.values()];
+  evidence.perception=[0,1,2].flatMap(index=>pages.flatMap(ids=>ids[index]?[ids[index]]:[])).slice(0,14);
+ }
  const selected=Object.entries(evidence).filter(([area])=>area!=='perception').flatMap(([area,ids])=>ids.slice(0,3).map(id=>{
   const card=context.known.get(id)||newContext.known.get(id);
   return [area,id,card.url,card.quote.slice(0,520)];

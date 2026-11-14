@@ -7,13 +7,33 @@ const finalReserveKurus=520;
 const decisions='cdsprgux';
 export const managedReviewUsesHaiku=batches=>batches.length>4;
 const size=value=>Buffer.byteLength(JSON.stringify(value));
+const uniqueProofs=values=>[...new Set(values)];
 const feedback=/müşteri(?:ler|si|nin)?\s+(?:yorum|değerlendirme|geri bildirim|şik[âa]yet)|tüketici\s+(?:yorum|şik[âa]yet)|şik[âa]yet(?:ler|ini)?\b|customer\s+(?:reviews?|feedback|complaints?)|(?:^|\s)(?:puan|rating)\s*[:\d]|(?:out of|üzerinden)\s*[\d.,]+|\b(?:reviewed|verified purchase)\b|\b(?:satın aldım|aldığım|beğendim|beğenmedim|tavsiye ederim|sipariş verdim)\b/iu;
+export const directCustomerExperience=/(?<!\p{L})(?:satın aldım|aldığım|aldık|aldım|beğendim|beğenmedim|tavsiye ederim|sipariş verdim|sipariş(?:im|imiz)|paket(?:im|imiz)|teslim edildi|teslim edilmedi|gönderildi|bought|ordered|received|verified purchase|my order|my purchase|i tried|we tried)(?!\p{L})/iu;
+export const customerQuoteKey=quote=>quote?.normalize('NFKC').toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]+/gu,' ').trim()||'';
 export const missingCustomerEvidence=text=>/\b(?:yorum|puan|şik[âa]yet|geri bildirim|değerlendirme|reviews?|ratings?|complaints?|feedback)[^.?!]{0,100}\b(?:yok(?:tur|luğu)?|bulunma(?:dı|dığı|maktadır)|bulunmuyor|görülmedi|tespit edilmedi|not (?:available|found)|unavailable)\b/iu.test(text);
 export function customerEvidence([url,,method,quote]=[]){
  if(!quote||['html-signals','search-snippet'].includes(method)||missingCustomerEvidence(quote))return false;
  const reviewPage=/sikayetvar\.com|trustpilot\.com|\/[^?#]*(?:yorum(?:lar)?|reviews?|şikayet|sikayet)(?:[/?#-]|$)/iu.test(url);
  return feedback.test(quote)||reviewPage&&/puan|yorum|şik[âa]yet|review|complaint|müşteri|ürün/iu.test(quote)&&
   !/^\s*(?:yorumlar|reviews?|müşteri yorumları|değerlendirmeler)\s*$/iu.test(quote);
+}
+
+function orderedSectionProofs(ids,sources,section,limit){
+ const seen=new Set(),groups=new Map();
+ for(const id of ids){
+  const [url,,,quote]=sources[id];
+  const key=customerQuoteKey(quote);
+  if(!key||seen.has(key))continue;
+  seen.add(key);
+  const publisher=section==='perception'?researchHost(url):url;
+  const group=groups.get(publisher)||[];
+  group.push(id);
+  groups.set(publisher,group);
+ }
+ const ordered=[];
+ for(let index=0;index<limit&&ordered.length<limit;index++)for(const group of groups.values())if(group[index])ordered.push(group[index]);
+ return ordered.slice(0,limit);
 }
 
 export function planManagedEvidenceReview(input){
@@ -155,7 +175,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   const runWorker=()=>{
-   if(!preferWorker)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
+   if(!preferWorker&&providers.managedBudgetVersion!==3)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
    const packedSchema=obj({verdicts:{...str(ids.length),minLength:ids.length},candidates:modelSchema.properties.candidates});
    const packedRequest={...request,instruction:positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
     'verdicts tam '+ids.length+' karakterlik tek dizedir. Rows sırasındaki her satır için bir karar karakteri yaz. Boşluk veya ayraç kullanma.')};
@@ -166,8 +186,8 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
     return normalizeData({verdicts:Object.fromEntries(ids.map((id,i)=>[id,verdicts[i]])),candidates:value.candidates});
    };
    const maxOutputTokens=Math.max(550,ids.length*3+250);
-   return providers.worker(stage+':compact-recovery',packedRequest,packedSchema,{...options,maxOutputTokens,minimumOutputTokens:maxOutputTokens,
-    compactWorker:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
+   return providers.worker(stage+(preferWorker?':compact-recovery':':packed-fallback'),packedRequest,packedSchema,{...options,maxOutputTokens,minimumOutputTokens:maxOutputTokens,
+    responseSchema,compactWorker:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
   };
   try{
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
@@ -264,7 +284,7 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),isCustomerEvidence:id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&customerEvidence(input.sources[id]),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1,excludedPeers,priorityProofs=[],targeted=false,swotFocus=[]}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[]}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
@@ -284,6 +304,21 @@ export function reviewedManagedEvidence(input,reviews){
    };
    const focused=section==='swot'?swotFocus.map(questionRows):['readiness','perception'].includes(section)?[questionRows(section)]:[];
    const focusedRows=[...new Set([0,1,2,3].flatMap(index=>focused.map(group=>group[index])).filter(Boolean))].slice(0,Math.ceil(limit/2));
+   if(targeted&&['perception','readiness'].includes(section)){
+    const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
+    const preferred=input.evidenceByQuestion?.[section]||[];
+    const usable=id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&!excludedProofs.has(id)&&Object.hasOwn(input.sources,id);
+    const proofIds=uniqueProofs([...preferred,...exact,...priorityRows,...ranked.filter(supports)].flatMap(id=>rows.get(id)?.[3]||[id])).filter(usable);
+    const brandKey=customerQuoteKey(input.brief.brandName).replaceAll(' ','');
+    const feedbackProofs=new Set(preferred);
+    const selected=section==='perception'?proofIds.filter(id=>{
+     const [url,title,method,quote]=input.sources[id];
+     const named=customerQuoteKey([url,title,quote].join(' ')).replaceAll(' ','').includes(brandKey);
+     return (feedbackProofs.has(id)||named||brandHosts.has(researchHost(url)))&&customerEvidence([url,title,method,quote]);
+    }).sort((a,b)=>Number(directCustomerExperience.test(input.sources[b][3]))-Number(directCustomerExperience.test(input.sources[a][3]))):
+     proofIds.filter(id=>brandHosts.has(researchHost(input.sources[id][0]))&&!['html-signals','search-snippet'].includes(input.sources[id][2]));
+    return reportInput(orderedSectionProofs(selected,input.sources,section,limit),section,peerProofs,excludedPeers);
+   }
    if(targeted&&section==='swot'&&swotFocus.length){
     const internalIds=new Set(priorityRows);
     const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));

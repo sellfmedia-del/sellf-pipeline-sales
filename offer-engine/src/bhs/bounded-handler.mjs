@@ -32,9 +32,11 @@ const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VER
 const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
+const backgroundDeadlineMs=10*60000;
+
 function backgroundHandoffReason(job,now){
  if(job.cancelRequested)return 'research_cancelled';
- if(now-job.createdAt>=20*60000)return 'research_deadline';
+ if(now-job.createdAt>=backgroundDeadlineMs)return 'research_deadline';
  if(job.state==='queued'&&now-job.updatedAt>=3*60000)return 'queue_stalled';
  if(job.state==='running'&&now-job.leaseUntil>=30000)return 'lease_expired';
  return null;
