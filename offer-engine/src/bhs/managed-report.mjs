@@ -186,9 +186,9 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
    try{
     const saved=await providers.readCheckpoint?.('directed-report-section',key);
     if(!saved&&savedSectionsOnly)return null;
-    const generate=async()=>(await (providers.evidenceReviewer||providers.manager)('bhs-directed-report-'+section,request,resultSchema,{
-     compactReview:true,lowEffort:true,maxOutputTokens:section==='swot'?2100:1700,
-     minimumOutputTokens:section==='swot'?1200:850,generationTimeoutMs:33000,reserveForFollowingKurus:remaining*100,signal,
+    const generate=async()=>(await providers.manager('bhs-directed-report-'+section,request,resultSchema,{
+     compactReview:true,lowEffort:true,maxOutputTokens:section==='swot'?1850:1300,
+     minimumOutputTokens:section==='swot'?1050:650,generationTimeoutMs:33000,reserveForFollowingKurus:remaining*65,signal,
      normalizeData:value=>{assertSchema(value,resultSchema);return value;}
     })).data;
     const data=saved||(providers.checkpoint?await providers.checkpoint('directed-report-section',key,generate):await generate());

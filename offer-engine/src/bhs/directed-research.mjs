@@ -76,9 +76,9 @@ export async function planDirectedResearch({brief,brand,providers,plan,rounds=[]
    observedUrls:[...known.urls].filter(Boolean),
    sources:sourceRows([...packet.sources.map(p=>({...p,excerpts:p.excerpts?.slice(0,1).map(e=>({...e,text:e.text.slice(0,450)}))})),...scrapes.flatMap(s=>s.pages||[]).map(p=>({...p,excerpts:[{text:p.text.slice(0,450)}]}))],[])
   }:{navigation:packet.sources.flatMap(p=>(p.technicalSignals?.navigation||[]).map(l=>[l.url,l.label]))})};
- const generate=providers.evidenceReviewer||providers.manager;
+ const generate=providers.manager;
  const result=await attempt(()=>generate(plan?'bhs-directed-next-'+round:'bhs-directed-plan',request,plan?nextSchema:initialSchema,{
-  maxOutputTokens:plan?2000:3100,minimumOutputTokens:plan?900:1500,compactReview:true,lowEffort:true,generationTimeoutMs:34000,
+  maxOutputTokens:plan?2000:3100,minimumOutputTokens:plan?950:1500,compactReview:true,lowEffort:true,generationTimeoutMs:34000,
   normalizeData:value=>{
    assertSchema(value,plan?nextSchema:initialSchema);
    return value;
