@@ -359,7 +359,13 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
  const preciseProduct=Boolean(peerProduct&&expandedPublishers);
  const terms=unique(product.toLocaleLowerCase('tr').match(preciseProduct?/[\p{L}]{3,}/gu:peerProduct?/[\p{L}]{4,}/gu:/[\p{L}]{5,}/gu)||[]).filter(word=>!brandName.includes(word));
  const format=preciseProduct?terms.at(-1):null;
- const containsFormat=text=>format&&(text.toLocaleLowerCase('tr').match(/[\p{L}]+/gu)||[]).some(word=>word===format||word===format+'i'||word===format+'lar'||word===format+'lari');
+ const normalizedFormat=nameKey(format||'').replace(/(?:leri|lari)$/u,'');
+ const comparableFormat=preciseProduct&&product.trim().split(/\s+/).length<=3&&normalizedFormat&&!/^(?:urun|hizmet|service|products?|format|gida|sektor|kategori)$/u.test(normalizedFormat);
+ const containsFormat=text=>normalizedFormat&&(text.match(/[\p{L}]+/gu)||[]).some(word=>{
+  const candidate=nameKey(word);
+  return ['', 'i','u','lar','ler','lari','leri'].some(suffix=>candidate===normalizedFormat+suffix||candidate===normalizedFormat.replace(/k$/u,'g')+suffix||
+   /[iu]$/u.test(normalizedFormat)&&candidate===normalizedFormat.slice(0,-1)+suffix);
+ });
  const productPattern=/ürün|product|satın|shop|₺|kategori|category|fiyat|price|sepet|cart/i;
  const multibrandRetail=/(?<!\p{L})(?:hipermarket|hypermarket|supermarket|süpermarket|market zinciri|marketler zinciri|perakende zinciri|pazaryeri|marketplace|ürün marketi)(?!\p{L})/iu;
  const thirdPartyCatalog=/(?:şube|mağaza)\s+seç(?:in|iniz|imi)?\b|\b(?:teslimat bölgesi|select branch|select store|sold by|satıcı seç|diğer satıcılar)\b/iu;
@@ -382,7 +388,7 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
     const quote=card.quote.toLocaleLowerCase('tr');
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))+Number(Boolean(containsFormat(quote)))*4};
    }).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
-   if(!cards.length)continue;
+   if(!cards.length||comparableFormat&&!cards.some(({card})=>containsFormat(card.quote)))continue;
    const key=peerProduct?peerGroupKey(candidate.name):nameKey(candidate.name),score=cards[0].score+Number(Boolean(containsFormat(new URL(source.url).pathname)))*6;
    if(scored.get(key)?.score>=score)continue;
    const entity={...candidate,website:source.url,scope:product,audienceReason:''};

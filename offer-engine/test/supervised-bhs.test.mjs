@@ -294,6 +294,15 @@ test('v8 evidence operators use low reasoning without consuming the caller visib
  }
 });
 
+test('packed evidence verdicts use minimal reasoning and retain a funded output allowance',async()=>{
+ const db=account(),t=transport();
+ await v8Providers(db,t).worker('packed-review',{},schema,{maxOutputTokens:750,compactWorker:true,compactVerdicts:true});
+ const {generationConfig}=t.calls.find(c=>c.url.endsWith(':generateContent')).body;
+ assert.equal(generationConfig.thinkingConfig.thinkingLevel,'MINIMAL');
+ assert.equal(generationConfig.maxOutputTokens,1134);
+ assert.ok((await db.ledger.status()).chargedKurus<5000);
+});
+
 test('implicit cached input is part of the prompt and is conservatively funded without an assumed discount',async()=>{
  const db=account(),t=transport({onGenerate:async()=>json({modelVersion:supervisedModels.worker,usageMetadata:{promptTokenCount:100,cachedContentTokenCount:80,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:150},candidates:[{finishReason:'STOP',content:{parts:[{text:'{"ok":true}'}]}}]})});
  const p=v8Providers(db,t),answer=await p.worker('cached-extract',{},schema,{maxOutputTokens:512});assert.equal(answer.data.ok,true);assert.equal(answer.billingBasis,'implicit-cache-undiscounted-upper-bound');

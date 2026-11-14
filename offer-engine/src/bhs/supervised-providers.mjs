@@ -67,11 +67,12 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const quote=(input,output)=>quoteSupervised(role,input,output,now(),pricing);
   quote(1,maxOutputTokens);
   const {instruction='',...context}=input;
+  const thinkingLevel=receiptVersion==='v8'&&opts.compactVerdicts?'MINIMAL':receiptVersion==='v8'?'LOW':'MINIMAL';
   const plainJson=receiptVersion==='v8'&&role==='manager'&&opts.plainJson===true;
   const system=instruction+'\n'+untrusted+(plainJson?'\nYalnız tek, tam ve geçerli JSON nesnesi ver. Önsöz, açıklama veya Markdown ekleme. Bu çıktı sözleşmesindeki zorunlu alanları aynen kullan:\n'+JSON.stringify(schema):(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':''));
   // Content reviews reason adaptively; only the short initial task omits
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
-  let rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel:receiptVersion==='v8'?'LOW':'MINIMAL'},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
+  let rawBody=anthropicRole?{model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],thinking:{type:receiptVersion==='v8'&&stage==='v8-brand-plan'?'between_tools':'adaptive'},output_config:{effort:receiptVersion==='v8'&&['v8-brand-plan','v8-final-report'].includes(stage)?'high':'medium',format:{type:'json_schema',schema:providerSchema(schema)}}}:{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:JSON.stringify(context)}]}],generationConfig:{candidateCount:1,maxOutputTokens,thinkingConfig:{thinkingLevel},responseMimeType:'application/json',responseJsonSchema:providerSchema(schema)}};
   if(plainJson)rawBody={...rawBody,output_config:{effort:'medium'}};
   if(compactReview)rawBody={...rawBody,thinking:{type:'between_tools'},...(opts.lowEffort?{output_config:{...rawBody.output_config,effort:'low'}}:{})};
   // Haiku 5.5 explicitly supports forced client tool output without an initial

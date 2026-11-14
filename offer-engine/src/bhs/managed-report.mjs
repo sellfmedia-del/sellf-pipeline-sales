@@ -318,7 +318,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(minimumFirst&&swot)request.instruction+=' İstenen SWOT kolları: '+focus.join(', ')+'. Güçlü ve zayıf yönü markanın mevcut koşullarından, fırsat ve tehdidi hedef pazardaki dış koşullardan çıkar. Gözlem alanına somut kaynak bilgisini yaz. SWOT yorumunu analysis alanına yaz. Bir risk ancak olasıysa koşulunu ve görüşmede nasıl doğrulanacağını belirt.';
    if(request.proofsByQuestion)request.instruction+=' proofsByQuestion içindeki kimlikleri ilgili soru için önce değerlendir. Kanıtlanan mevcut durumu observation alanına, bunun hangi koşulda ticari etki yaratacağına ilişkin görüşünü analysis alanına yaz. Belirsiz iç performansı limitation veya question alanına koy.';
    if(request.proofsByQuestion&&section==='readiness')request.instruction+=' İki farklı iş bağımlılığı ara: örneğin dağıtım erişimi ve kanalın sipariş/teslimat işleyişi. Gözlem yalnız kaynakta açıkça yazan tek bir mevcut ürün, kanal veya operasyon koşulu olsun. Sayı ve ölçülmemiş performans iddiası kullanma. Hedefe ulaşmak için gereken pilotu veya ölçümü ayrı bir çıkarım olarak yaz. Aksiyon bir pilot veya karar adımı, ölçüm doğrulanabilir bir iş metriği olsun.';
-   if(request.proofsByQuestion&&section==='perception')request.instruction+=' Önce doğrudan satın alma, kullanım, teslimat veya destek deneyimi anlatan yorumları kullan. Harici puan ve yanıt oranını genel memnuniyet düzeyi sayma. Farklı deneyimler varsa her satırda ayrı bir deneyim ve onun özgün kanıtını kullan.';
+   if(request.proofsByQuestion&&section==='readiness')request.instruction+=' Yalnız briefteki hedef pazara yönelik bulgular yaz. Başka bir ülke veya pazarın durumu, hedef bölgedeki hazırlığın kanıtı sayılmaz. Bir ürünün stok uyarısını veya yorum sayacını şirket geneline yayma. Kaynakta görülen işlevi ve sayfayı sınırla. Örneğin stok uyarısı görülüyorsa, gözlemde yalnız sayfadaki ifadeyi alıntıla ve stok durumunu pilot öncesinde doğrula.';
+   if(request.proofsByQuestion&&section==='perception')request.instruction+=' Önce doğrudan satın alma, kullanım, teslimat veya destek deneyimi anlatan yorumları kullan. Harici puan ve yanıt oranını genel memnuniyet düzeyi sayma. Tekil yorumda “bir müşteri” de. İki yorum aynı sorunu anlatıyorsa bir bulguda birleştir. İkinci bulgu için farklı bir deneyim türü ya da ayrıca belgelenen marka çözümünü seç.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
     request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
@@ -360,7 +361,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    };
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
    if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
-   if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
+   if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Gözlem, aynı kullanım ihtiyacına karşılık gelen rakip ürünü ve kaynakta görülen ürün veya kanal özelliğini birlikte göstermeli. Yalnız genel site işlevi veya başka kategorideki ürün yeterli değildir. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
    const changedRequest=minimumFirst&&(competition||swot||avoidRepeatedProofs);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
@@ -464,16 +465,16 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const prior=[...saved,...report.findings.map(f=>[f.statement,f.swotQuadrant||null,f.peerId||null])];
   const rejected=draftsBySection.get(section).flatMap(draft=>draft.rejected||[]);
   if(section==='swot'){
-   for(let i=0;i<missingQuadrants.length;i+=2){
-    const focus=missingQuadrants.slice(i,i+2);
+   const batchSize=input.evidenceByQuestion?1:2;
+   for(let i=0;i<missingQuadrants.length;i+=batchSize){
+    const focus=missingQuadrants.slice(i,i+batchSize);
     repairs.push({section,wanted:focus.length,focus,prior,repair:true,rejected:rejected.filter(row=>focus.includes(row.quadrant))});
    }
   }else if(section==='competition'&&providers.managedBudgetVersion===3&&minimumFirst&&count===0){
    repairs.push({section,wanted:1,focus:[],prior,repair:true,rejected});
   }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected,usedProofs:report.findings.flatMap(f=>f.sourceIds)});
  }
- if(minimumFirst&&input.evidenceByQuestion)repairs.sort((a,b)=>Number(distinctProofSections.has(b.section))-Number(distinctProofSections.has(a.section))||Number(b.section==='competition')-Number(a.section==='competition'));
- else if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
+ if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));
  for(let i=0;i<repairs.length;i+=2){
   const group=repairs.slice(i,i+2);
   const following=minimumFirst?0:(repairs.length-i-group.length)*reportSectionReserveKurus;

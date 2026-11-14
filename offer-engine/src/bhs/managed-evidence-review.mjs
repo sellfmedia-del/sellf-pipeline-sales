@@ -176,18 +176,18 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   const runWorker=()=>{
    if(!preferWorker&&providers.managedBudgetVersion!==3)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
-   const packedSchema=obj({verdicts:{...str(ids.length),minLength:ids.length},candidates:modelSchema.properties.candidates});
+   const packedSchema=obj({verdicts:{...str(ids.length),minLength:ids.length},candidates:arr(str(20),18)});
    const packedRequest={...request,instruction:positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
-    'verdicts tam '+ids.length+' karakterlik tek dizedir. Rows sırasındaki her satır için bir karar karakteri yaz. Boşluk veya ayraç kullanma.')};
+    'verdicts tam '+ids.length+' karakterlik tek dizedir. Rows sırasındaki her satır için bir karar karakteri yaz. Boşluk veya ayraç kullanma.')+' Candidates alanına en fazla 18 kimlik yaz. Kısa yanıtı tamamla.'};
    const normalizePacked=value=>{
     const verdicts=value?.verdicts;
     if(typeof verdicts!=='string'||verdicts.length!==ids.length||[...verdicts].some(code=>!decisions.includes(code)))
      throw new BudgetError('model_output_invalid','Sıralı kanıt kararları doğrulanamadı.');
     return normalizeData({verdicts:Object.fromEntries(ids.map((id,i)=>[id,verdicts[i]])),candidates:value.candidates});
    };
-   const maxOutputTokens=Math.max(550,ids.length*3+250);
+   const maxOutputTokens=Math.max(750,ids.length*10+320);
    return providers.worker(stage+(preferWorker?':compact-recovery':':packed-fallback'),packedRequest,packedSchema,{...options,maxOutputTokens,minimumOutputTokens:maxOutputTokens,
-    responseSchema,compactWorker:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
+    responseSchema,compactWorker:true,compactVerdicts:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
   };
   try{
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
@@ -228,10 +228,10 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
 export async function recoverPositionalEvidence(input,reviews,providers){
  const reviewed=new Set(reviews.flatMap(review=>review.ids.filter((_,i)=>decisions.includes(review.verdicts?.[i]||'?'))));
  const batches=planPositionalEvidenceReview(prioritizeManagedProofs(input),reviewed);
- const signal=AbortSignal.timeout(50000),result=[...reviews];
- for(let i=0;i<Math.min(batches.length,4)&&!signal.aborted;i+=2){
-  const group=await Promise.all(batches.slice(i,i+2).map(batch=>reviewPositionalEvidenceBatch(batch,{
-   focus:input.plan.understanding||input.brief,providers,signal,preferWorker:true,reserveForFollowingKurus:950
+ const signal=AbortSignal.timeout(35000),result=[...reviews];
+ for(let i=0;i<Math.min(batches.length,6)&&!signal.aborted;i+=3){
+  const group=await Promise.all(batches.slice(i,i+3).map(batch=>reviewPositionalEvidenceBatch(batch,{
+   focus:input.plan.understanding||input.brief,providers,signal,preferWorker:true,reserveForFollowingKurus:1200
   })));
   result.push(...group.flat());
  }
