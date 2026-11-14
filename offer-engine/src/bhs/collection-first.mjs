@@ -5,7 +5,7 @@ import {briefHash,dimensions} from './brief.mjs';
 import {evidenceExcerpts,evidenceHash,mergeExtractedEvidence} from './evidence.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
-import {actorInput,observedActorTargets} from './apify-inputs.mjs';
+import {actorInput,observedActorTargets,searchActors} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
@@ -169,7 +169,7 @@ async function actorRequest(context,providers,index,market,managedPlan){
   if(modes.has('instagram-comments')||[...known.official].some(url=>researchHost(url)==='instagram.com'))
    planned.unshift('apify/instagram-comment-scraper','apify/instagram-scraper');
  }
- const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>actor!=='apify/google-search-scraper');
+ const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor));
  const targets=[];
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const unavailable=managedPlan?shard(order.filter(id=>!available.includes(id)),index,scrapeStages.length).map(actor=>({actor,unavailable:true,reason:'actor_api_unavailable'})):[];
@@ -257,14 +257,20 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const dedicated=haveMarketplaces?feedbackQueries.filter(query=>!query.includes('site:trendyol.com')&&!query.includes('site:hepsiburada.com')):feedbackQueries;
  const assigned=plan.tasks.filter(task=>task.tools?.includes('google-search')&&task.section!=='perception');
  const queries=unique([...dedicated,...(missingCompetition?peers:[]),...missing.filter(task=>task.section!=='perception').map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
- const actor='apify/google-search-scraper';
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const feedbackTask=plan.tasks.find(task=>task.section==='perception');
  const [direct,discovery,feedbackSearch]=await Promise.all([
   needsFeedback?readResearchPages(brief,brand.plan,candidates,reserved,collect):{sources:[],unavailable:[]},
   queries.length&&reserved.enrich?collectAttempt(async()=>{
-   if(!(await reserved.availableActors?.()||[]).includes(actor))return {unavailable:true,reason:'actor_limit_unverified'};
-   return reserved.enrich({actor,url:brief.website,queries},{brief,packet:brand.packet,searches:prior,geo});
+   const available=await reserved.availableActors?.()||[];
+   const actor=searchActors.find(name=>available.includes(name));
+   if(!actor)return {unavailable:true,reason:'actor_limit_unverified'};
+   const context={brief,packet:brand.packet,searches:prior,geo};
+   if(actor!=='desearch/web-search')return {actor,...await collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries},context))};
+   const priority=unique([...peers.slice(0,2),...dedicated, ...queries]).slice(0,3);
+   const results=await Promise.all(priority.map(query=>collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries:[query]},context))));
+   const searches=results.flatMap(result=>result.searches||[]);
+   return {actor,searches,status:searches.length?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
   }):null,
   needsFeedback&&feedbackTask?.tools?.includes('tavily')&&pool?.search?Promise.all(feedbackQueries.slice(0,2).map(query=>
    searchManagedTask(pool,{id:feedbackTask.id,query}))):[]
@@ -274,7 +280,7 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const extra=needsFeedback&&countFeedbackProofs(brief,{sources:direct.sources})<2?feedbackTargets(brief,brand.packet,searches,market).filter(url=>!candidates.includes(url)&&!existing.includes(url)):[];
  const more=extra.length?await readResearchPages(brief,brand.plan,extra,reserved,collect):{sources:[],unavailable:[]};
  return {searches,pages:[...direct.sources,...more.sources],unavailable:[...direct.unavailable,...more.unavailable],
-  ...(discovery?{discovery:{actor,status:discovery.status||'unavailable',reason:discovery.reason||null,results:searches.reduce((n,item)=>n+(item.results?.length||0),0)}}:{})};
+  ...(discovery?{discovery:{actor:discovery.actor||null,status:discovery.status||'unavailable',reason:discovery.reason||null,results:(discovery.searches||[]).reduce((n,item)=>n+(item.results?.length||0),0)}}:{})};
 }
 
 export async function readResearchPages(brief,plan,targets,providers,collect){

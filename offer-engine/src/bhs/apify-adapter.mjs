@@ -1,6 +1,6 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {actorChargeLimit,eventOnlyPricing,inspectApifyPolicies,matchedActorTasks} from './apify-policy.mjs';
-import {actorIds,actorInput} from './apify-inputs.mjs';
+import {actorIds,actorInput,searchActors} from './apify-inputs.mjs';
 import {researchUrl,researchHost} from './research-url.mjs';
 import {evidenceExcerpts} from './evidence.mjs';
 
@@ -13,15 +13,19 @@ const productId=value=>researchHost(value)==='trendyol.com'?new URL(researchUrl(
 const fold=value=>String(value??'').toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
 const brandNames=value=>[fold(value),fold(String(value??'').replace(/\s+(?:organic|organik)$/iu,''))];
 const exactProduct=(value,url)=>Boolean(productId(url)&&productId(value)===productId(url));
-function searchResults(rows,target){
- const queries=new Map(target.input.queries.split('\n').map(query=>[query.toLowerCase(),query]));
+function searchResults(rows,target,actor){
+ const resultFor=r=>{
+  const url=researchUrl(r.url||r.link);
+  return url?[{url,title:String(r.title??'').slice(0,250),content:String(r.description??r.snippet??r.content??'').slice(0,1000)}]:[];
+ };
+ if(actor==='desearch/web-search')return [{query:target.input.query,results:rows.flatMap(resultFor),source:'apify-google'}];
+ const submitted=Array.isArray(target.input.queries)?target.input.queries:target.input.queries.split('\n');
+ const queries=new Map(submitted.map(query=>[query.toLowerCase(),query]));
  return rows.flatMap(row=>{
-  const query=queries.get(row.searchQuery?.term?.trim().toLowerCase());
-  if(!query||!Array.isArray(row.organicResults))return [];
-  return [{query,results:row.organicResults.slice(0,10).flatMap(r=>{
-   const url=researchUrl(r.url);
-   return url?[{url,title:String(r.title??'').slice(0,250),content:String(r.description??'').slice(0,1000)}]:[];
-  }),source:'apify-google'}];
+  const query=queries.get((row.searchQuery?.term||row.query)?.trim().toLowerCase());
+  const organic=row.organicResults||row.organic_results;
+  if(!query||!Array.isArray(organic))return [];
+  return [{query,results:organic.slice(0,10).flatMap(resultFor),source:'apify-google'}];
  });
 }
 function recordsForEvidence(actor,rows,target,context){
@@ -160,11 +164,11 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    if(run.status!=='SUCCEEDED'||!identifier(run.defaultDatasetId))return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_'+String(run.status).toLowerCase(),reservedKurus:start.reservedKurus};
    if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>start.capUsd+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
    const output=await ledger.once('apify:v8:dataset:'+start.runId,{runId:start.runId,maxItems:target.maxItems,maxBytes:1000000},datasetAllowanceKurus,async()=>{
-    const fields=request.actor==='apify/google-search-scraper'?'&fields=searchQuery,organicResults':'';
+    const fields=request.actor==='apify/google-search-scraper'?'&fields=searchQuery,organicResults':request.actor==='themineworks/google-search-scraper'?'&fields=query,organic_results':'';
     const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+fields,{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
     const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];
-    const discovery=request.actor==='apify/google-search-scraper'?searchResults(rows,target):undefined;
+    const discovery=searchActors.includes(request.actor)?searchResults(rows,target,request.actor):undefined;
     return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),...(retainDataset?{datasetRows:rows}:{}),...(discovery?{searches:discovery}:{}),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
    });
    const {datasetRows,...evidence}=output;

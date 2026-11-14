@@ -1,9 +1,9 @@
 import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {researchUrl} from './research-url.mjs';
-import {actorIds} from './apify-inputs.mjs';
+import {actorIds,searchActors} from './apify-inputs.mjs';
 
 export const approvedActors=Object.freeze([
- 'apify/google-search-scraper','apify/instagram-comment-scraper','compass/google-maps-reviews-scraper',
+ ...searchActors,'apify/instagram-comment-scraper','compass/google-maps-reviews-scraper',
  'harvestapi/linkedin-company-search','harvestapi/linkedin-post-search','curious_coder/linkedin-jobs-scraper',
  'apify/instagram-profile-scraper','apify/instagram-scraper','compass/crawler-google-places',
  'jmlp/meta-ad-library-scraper','logiover/website-seo-audit-crawler','apify/website-content-crawler',

@@ -5,6 +5,7 @@ import {researchUrl,researchHost} from './research-url.mjs';
 // here; model text, cookies, proxy credentials and unbounded options are rejected.
 export const actorIds=Object.freeze({
  'apify/google-search-scraper':'nFJndFXA5zjCTuudP','apify/instagram-comment-scraper':'SbK00X0JYCPblD2wp',
+ 'themineworks/google-search-scraper':'Rfu9Bmd2sLIpomMCk','desearch/web-search':'WMg2EXLzJGPVQ5Vfq',
  'compass/google-maps-reviews-scraper':'Xb8osYTtOjlsgI6k9',
  'harvestapi/linkedin-company-search':'taHaRcqil3scbchuI','harvestapi/linkedin-post-search':'buIWk2uOUzTmcLsuB',
  'curious_coder/linkedin-jobs-scraper':'hKByXkMQaC5Qt9UMN','apify/instagram-profile-scraper':'dSCLg0C3YEZ83HzYX',
@@ -13,6 +14,7 @@ export const actorIds=Object.freeze({
  'apify/website-content-crawler':'aYG0l9s7dbB7j3gbS','clockworks/tiktok-scraper':'GdWCkxBtKWOsKjdch',
  'fatihtahta/trendyol-scraper':'AoPP8ru9uKws5t80G','junglee/free-amazon-product-scraper':'XVDTQc4a7MDTqSTMJ','damilo/google-shopping-apify':'F1ITW3XNjGuy7ZzcM'
 });
+export const searchActors=['themineworks/google-search-scraper','apify/google-search-scraper','desearch/web-search'];
 export function observedActorTargets(context){
  const urls=new Set([researchUrl(context.brief.website)]),official=new Set(urls);
  for(const source of context.packet.sources||[]){
@@ -31,13 +33,18 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  const u=new URL(url),host=researchHost(url),parts=u.pathname.split('/').filter(Boolean);
  const locale=()=>{const g=context.geo;if(!g||request.countryCode!==g.countryCode||request.language!==g.language||!['TR','GB','US','DE','FR','IT','ES','NL'].includes(g.countryCode))throw new BudgetError('actor_locale_unverified','Aktör için doğrulanmış hedef ülke ve dil gerekli.');return g;};
  const bad=()=>{throw new BudgetError('actor_source_unverified','Aktör hedefi bu kaynağa uygun değil.');};
- if(actor==='apify/google-search-scraper'){
+ if(searchActors.includes(actor)){
   const queries=request.queries;
   if(url!==researchUrl(context.brief.website)||!Array.isArray(queries)||!queries.length||queries.length>8||
    queries.some(q=>typeof q!=='string'||!q.trim()||q.length>480||/[\r\n]/.test(q)||/^\s*(?:https?:|\/\/)/i.test(q)))return bad();
-  const geo=context.geo;
-  return {input:{queries:queries.map(q=>q.trim().split(/\s+/).slice(0,32).join(' ')).join('\n'),maxPagesPerQuery:1,
-   ...(geo&&/^(?:TR|GB|US|DE|FR|IT|ES|NL)$/.test(geo.countryCode)?{countryCode:geo.countryCode.toLowerCase()}:{}),
+  const geo=context.geo,terms=queries.map(q=>q.trim().split(/\s+/).slice(0,32).join(' '));
+  const country=geo&&/^(?:TR|GB|US|DE|FR|IT|ES|NL)$/.test(geo.countryCode)?{countryCode:geo.countryCode.toLowerCase()}:{};
+  if(actor==='themineworks/google-search-scraper')return {input:{queries:terms,...country,maxPagesPerQuery:1,resultsPerPage:8,outputFormat:'pages',resolveUrls:true},maxItems:queries.length+1,url};
+  if(actor==='desearch/web-search'){
+   if(terms.length!==1)return bad();
+   return {input:{query:terms[0],num:8,start:0},maxItems:8,url};
+  }
+  return {input:{queries:terms.join('\n'),maxPagesPerQuery:1,...country,
    aiOverview:false,aiModeSearch:false,geminiSearch:false,perplexitySearch:false,chatGptSearch:false,copilotSearch:false,
    maximumLeadsEnrichmentRecords:0,verifyLeadsEnrichmentEmails:false,websiteContentScraper:false,focusOnPaidAds:false,saveHtml:false,saveHtmlToKeyValueStore:false},maxItems:queries.length,url};
  }
