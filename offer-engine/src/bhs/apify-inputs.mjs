@@ -4,6 +4,8 @@ import {researchUrl,researchHost} from './research-url.mjs';
 // Schemas re-read from the connected Store on 2026-11-10. All inputs are built
 // here; model text, cookies, proxy credentials and unbounded options are rejected.
 export const actorIds=Object.freeze({
+ 'apify/google-search-scraper':'nFJndFXA5zjCTuudP','apify/instagram-comment-scraper':'SbK00X0JYCPblD2wp',
+ 'compass/google-maps-reviews-scraper':'Xb8osYTtOjlsgI6k9',
  'harvestapi/linkedin-company-search':'taHaRcqil3scbchuI','harvestapi/linkedin-post-search':'buIWk2uOUzTmcLsuB',
  'curious_coder/linkedin-jobs-scraper':'hKByXkMQaC5Qt9UMN','apify/instagram-profile-scraper':'dSCLg0C3YEZ83HzYX',
  'apify/instagram-scraper':'shu8hvrXbJbY3Eb9W','compass/crawler-google-places':'nwua9Gu5YrADL7ZDj',
@@ -18,6 +20,9 @@ export function observedActorTargets(context){
   for(const link of source.technicalSignals?.navigation||[]){const url=researchUrl(link.url);if(url){urls.add(url);if(researchHost(source.finalUrl)===researchHost(context.brief.website))official.add(url);}}
  }
  for(const s of context.searches||[])for(const r of s.results||[])urls.add(researchUrl(r.url));
+ for(const scrape of context.scrapes||[])if(scrape.actor==='apify/instagram-scraper'&&scrape.status==='complete'){
+  for(const page of scrape.pages||[]){urls.add(researchUrl(page.url));official.add(researchUrl(page.url));}
+ }
  return {urls,official};
 }
 export function actorInput(request,context,known=observedActorTargets(context)){
@@ -26,6 +31,25 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  const u=new URL(url),host=researchHost(url),parts=u.pathname.split('/').filter(Boolean);
  const locale=()=>{const g=context.geo;if(!g||request.countryCode!==g.countryCode||request.language!==g.language||!['TR','GB','US','DE','FR','IT','ES','NL'].includes(g.countryCode))throw new BudgetError('actor_locale_unverified','Aktör için doğrulanmış hedef ülke ve dil gerekli.');return g;};
  const bad=()=>{throw new BudgetError('actor_source_unverified','Aktör hedefi bu kaynağa uygun değil.');};
+ if(actor==='apify/google-search-scraper'){
+  const queries=request.queries;
+  if(url!==researchUrl(context.brief.website)||!Array.isArray(queries)||!queries.length||queries.length>8||
+   queries.some(q=>typeof q!=='string'||!q.trim()||q.length>480||/[\r\n]/.test(q)||/^\s*(?:https?:|\/\/)/i.test(q)))return bad();
+  const geo=context.geo;
+  return {input:{queries:queries.map(q=>q.trim().split(/\s+/).slice(0,32).join(' ')).join('\n'),maxPagesPerQuery:1,
+   ...(geo&&/^(?:TR|GB|US|DE|FR|IT|ES|NL)$/.test(geo.countryCode)?{countryCode:geo.countryCode.toLowerCase()}:{}),
+   aiOverview:false,aiModeSearch:false,geminiSearch:false,perplexitySearch:false,chatGptSearch:false,copilotSearch:false,
+   maximumLeadsEnrichmentRecords:0,verifyLeadsEnrichmentEmails:false,websiteContentScraper:false,focusOnPaidAds:false,saveHtml:false,saveHtmlToKeyValueStore:false},maxItems:queries.length,url};
+ }
+ if(actor==='apify/instagram-comment-scraper'){
+  const scoped=known.official.has(url);
+  if(!scoped||host!=='instagram.com'||!/^\/(?:[\w.]+\/)?(?:p|reel)\/[\w-]+\/?$/.test(u.pathname))return bad();
+  return {input:{directUrls:[url],resultsLimit:6,includeNestedComments:false},maxItems:6,url,official:true};
+ }
+ if(actor==='compass/google-maps-reviews-scraper'){
+  if(!known.official.has(url)||!(/^(?:maps\.)?google\.[a-z.]+$/.test(host)&&u.pathname.startsWith('/maps/place/')||host==='maps.app.goo.gl'))return bad();
+  return {input:{startUrls:[{url}],maxReviews:5,reviewsOrigin:'google',personalData:false},maxItems:5,url,official:true};
+ }
  if(actor==='apify/instagram-profile-scraper'||actor==='apify/instagram-scraper'){
   if(host!=='instagram.com'||parts.length!==1||!/^[\w.]+$/.test(parts[0])||['p','reel','explore','accounts','stories'].includes(parts[0]))return bad();
   return {input:actor.endsWith('profile-scraper')?{usernames:[parts[0]],includeAboutSection:false}:{directUrls:[url],resultsType:'posts',resultsLimit:6,addParentData:false},maxItems:actor.endsWith('profile-scraper')?1:6,url,official:known.official.has(url)};
@@ -52,6 +76,7 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  }
  if(actor==='fatihtahta/trendyol-scraper'){
   if(host!=='trendyol.com'||!/-p-\d+/.test(u.pathname))return bad();
+  if(request.customerReviews===true)return {input:{startUrls:[url],limit:1,enrich_data:false,getReviews:true,maxReviews:5,getQna:false,maxQna:0},maxItems:6,url};
   return {input:{startUrls:[url],limit:2,enrich_data:false,getReviews:false,maxReviews:0,getQna:false,maxQna:0},maxItems:2,url};
  }
  if(actor==='junglee/free-amazon-product-scraper'){

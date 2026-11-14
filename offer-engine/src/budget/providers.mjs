@@ -36,6 +36,12 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   try{
   const response=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json',...key},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout),redirect:'error'});
   trace?.response(response.status);
+  const tavily=url.startsWith('https://api.tavily.com/');
+  if(tavily&&[401,432,433,434].includes(response.status)){
+   const error=new BudgetError('provider_error','Tavily arama isteğini çalıştırmadan reddetti.');
+   error.providerStatus=response.status;error.providerOperation=url.endsWith('/search')?'search':'extract';error.definitelyNotBilled=true;
+   await response.body?.cancel().catch(()=>{});throw error;
+  }
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','Model yanıtı boyut sınırını aşıyor.');
   let value;try{value=JSON.parse(raw);}catch{if(!transientModelStatus(response.status))throw new BudgetError('provider_format','Servis yanıtı okunamadı.');value={};}
   if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','Araştırma servisi isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);

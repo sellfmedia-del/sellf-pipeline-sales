@@ -6,6 +6,7 @@ const evidenceReviewCapKurus=3300;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
 export const managedDiscoveryCeilingKurus=2500;
+export const managedGeneralSearchCeilingKurus=2050;
 export const managedInventoryCeilingKurus=2675;
 export const managedFocusedInventoryCeilingKurus=2850;
 export const managedReviewPhases=Object.freeze(['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft']);
@@ -32,8 +33,8 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:5}));
- const managedBudgetVersion=[2,3,4,5].includes(policy.version)?policy.version:1;
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:6}));
+ const managedBudgetVersion=[2,3,4,5,6].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
  const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
  if(!reportPhases.includes(phase)){

@@ -15,6 +15,7 @@ export const customerQuoteKey=quote=>quote?.normalize('NFKC').toLocaleLowerCase(
 export const missingCustomerEvidence=text=>/\b(?:yorum|puan|şik[âa]yet|geri bildirim|değerlendirme|reviews?|ratings?|complaints?|feedback)[^.?!]{0,100}\b(?:yok(?:tur|luğu)?|bulunma(?:dı|dığı|maktadır)|bulunmuyor|görülmedi|tespit edilmedi|not (?:available|found)|unavailable)\b/iu.test(text);
 export function customerEvidence([url,,method,quote]=[]){
  if(!quote||['html-signals','search-snippet'].includes(method)||missingCustomerEvidence(quote))return false;
+ if(method==='extracted'&&/^Apify structured public-source extraction\./.test(quote)&&/\b(?:review|comment):\s*\S/iu.test(quote))return true;
  const reviewPage=/sikayetvar\.com|trustpilot\.com|\/[^?#]*(?:yorum(?:lar)?|reviews?|şikayet|sikayet)(?:[/?#-]|$)/iu.test(url);
  return feedback.test(quote)||reviewPage&&/puan|yorum|şik[âa]yet|review|complaint|müşteri|ürün/iu.test(quote)&&
   !/^\s*(?:yorumlar|reviews?|müşteri yorumları|değerlendirmeler)\s*$/iu.test(quote);

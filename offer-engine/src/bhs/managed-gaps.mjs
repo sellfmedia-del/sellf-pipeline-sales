@@ -4,7 +4,7 @@ import {briefHash} from './brief.mjs';
 import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
 import {focusedResearchPlan} from './managed-research.mjs';
-import {collectionCorpus,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,retainedManagedProofs} from './collection-first.mjs';
+import {collectionCorpus,collectionMarket,collectPlannedCoverage,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,retainedManagedProofs} from './collection-first.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
@@ -71,7 +71,8 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:5});
+ const version=priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&f.recommendation?.measurement)
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  const missingMetrics=synthesis.supervision.metricCoverage?.filter(metric=>sections.includes(metric.section)&&!metric.proofIds.length)||[];
@@ -92,10 +93,16 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
    else if(!recoverable(result.reason))throw result.reason;
   }
  }
+ const market=collectionMarket(priorPlan.market,brief.goals);
  const knownUrls=new Set(priorCorpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly)
   .map(source=>researchUrl(source.finalUrl)));
- const urls=unique(searches.flatMap(s=>s.results.map(r=>researchUrl(r.url))).filter(url=>url&&!knownUrls.has(url)));
+ const supplemental=version===6&&sections.some(section=>['competition','perception'].includes(section))?await collectPlannedCoverage({brief,brand,
+  plan:{...priorPlan,tasks:tasks.map((task,i)=>({...task,id:'gap'+(i+1)})),peerNames:planned.peerNames},market,prior:searches,reserved:pool,collect,existing:[...knownUrls]}):{searches:[],pages:[]};
+ searches.push(...supplemental.searches);
+ const readUrls=new Set([...knownUrls,...supplemental.pages.map(source=>researchUrl(source.finalUrl))]);
+ const urls=unique(searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(url=>url&&!readUrls.has(url)));
  const fresh=await readResearchPages(brief,brand.plan,urls,pool,collect);
+ fresh.sources.unshift(...supplemental.pages.filter(source=>!knownUrls.has(researchUrl(source.finalUrl))));
  const names=unique(planned.peerNames).filter(name=>!original.competitors.some(peer=>peer.name.toLowerCase()===name.toLowerCase()));
  const collectedUrls=new Set([...knownUrls,...fresh.sources.map(source=>source.finalUrl)]);
  const peers=sections.includes('competition')

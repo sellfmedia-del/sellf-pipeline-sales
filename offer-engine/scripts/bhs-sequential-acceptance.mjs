@@ -37,14 +37,14 @@ export async function runSequentialAcceptance(){
  const db=await localBudget({lead:'public-'+caseName+'-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
  const managed=process.env.OFFER_BHS_QA_MANAGED==='1';
  const outage=process.env.OFFER_BHS_QA_OUTAGE;
- const outageFamilies={claude:'api.anthropic.com',gemini:'generativelanguage.googleapis.com'};
+ const outageFamilies={claude:'api.anthropic.com',gemini:'generativelanguage.googleapis.com',tavily:'api.tavily.com'};
  if(outage&&!Object.hasOwn(outageFamilies,outage))throw Error('Unknown QA outage.');
  let simulatedRejections=0;
  const qaFetch=outage?async(url,init)=>{
   if(new URL(url).hostname!==outageFamilies[outage])return fetch(url,init);
   simulatedRejections++;
   const error=outage==='claude'?{type:'invalid_request_error',message:'You have reached your specified API usage limits.'}:{message:'Service unavailable.'};
-  return new Response(JSON.stringify({error}),{status:outage==='claude'?400:503});
+  return new Response(JSON.stringify({error}),{status:outage==='claude'?400:outage==='tavily'?432:503});
  }:fetch;
  if(outage){
   const probe=await Promise.allSettled(['users/me','actor-tasks?limit=1'].map(async endpoint=>{
@@ -106,7 +106,11 @@ export async function runSequentialAcceptance(){
     console.info(JSON.stringify({event:'bhs_v8_qa_evidence_diagnostics',case:caseName,reviewIssues,modelIssues:reviewReceipts.filter(row=>row.value?.rejectedOutput||row.state==='uncertain').map(row=>({stage:row.step_key.split(':').slice(3,-1).join(':'),state:row.state,issue:row.value.rejectedOutput||row.value.code,providerStatus:row.value.providerStatus})),publishedFeedbackProofs:stage('competition_correction_draft').questionEvidence?.perception?.length||0}));
     const captures=['competition_draft','competition_review'].map(name=>{const value=stage(name);return {name,hints:value.peerHints?.length||0,pages:value.pages?.length||0,searches:value.searches?.length||0};});
     const drafts=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('audit:v8:checkpoint:managed-section-v3:')).map(row=>({section:row.value.section,kept:row.value.findings?.length,peers:row.value.peers?.length,returned:row.value.returned,rejected:row.value.rejected?.map(({quadrant,reason})=>[quadrant,reason])}));
-    console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts}));
+    const acquisition=stage('sector_review');
+    const scrapes=['competition_draft','competition_review','competition_correction_sources'].flatMap(phase=>stage(phase).scrapes||[]);
+    console.info(JSON.stringify({event:'bhs_v8_qa_diagnostics',case:caseName,plannedPeers:plan?.peerNames?.length,captures,drafts,
+     discovery:acquisition.discovery,reviewSources:acquisition.pages?.length,searchStatuses:acquisition.searches?.map(row=>row.providerStatus).filter(Boolean),
+     scrapes:scrapes.map(({actor,status,reason,pages})=>({actor,status,reason,pages:pages?.length}))}));
    const {audit}=result;
    if(audit?.data){
     const data=audit.data;
