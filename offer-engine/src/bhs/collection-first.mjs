@@ -1111,12 +1111,13 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    const brand=await previous('brand');
    const rounds=(await Promise.all(directedRounds.slice(0,roundIndex).map(previous))).filter(r=>r?.commandResults);
    if(rounds.at(-1)?.researchDone)return save({});
-   const pool=providers.withCeiling(providers.managedBudgetVersion>=8?(first?2200:2650):2800);
+   const pool=providers.withCeiling(providers.managedBudgetVersion>=8?2950:2800);
+   const acquisition=providers.managedBudgetVersion>=8?providers.withCeiling(first?1900:2175):pool;
    const decision=await planDirectedResearch({brief,brand,providers:pool,plan:first?undefined:managed,rounds});
    const plan=first?(decision.directedResearch?decision:{directedResearch:true,managerDirected:true,coveragePolicy:2,
     understanding:groundedManagedResearchPlan(brief,brand).understanding,market:'',tasks:[],assets:[],peers:[],questions:[]}):managed;
    const {commands,...storedPlan}=plan;
-   const result=await executeDirectedResearch({brief,brand,providers:pool,plan,decision,rounds,
+   const result=await executeDirectedResearch({brief,brand,providers:pool,acquisition,plan,decision,rounds,
     readPages:urls=>readResearchPages(brief,brand.plan,urls,pool,collect,{complete:true}),expandPages:expandDirectedSources});
    return save({funding,...(first?{managedPlan:storedPlan}:{}),...result,
     ...(!result.commandResults.length&&!decision.reason?{researchDone:true}:{}),...(decision.reason?{toolIssues:[decision.reason]}:{})});
