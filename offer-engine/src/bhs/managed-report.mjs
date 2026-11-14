@@ -323,6 +323,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
     request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
+    if(section==='digital'||section==='readiness'||swot)request.instruction+=' Statik HTMLde görülen çeviri anahtarını, sayacı, stok etiketini veya eksik izleme etiketini incelenen sayfayla sınırla. Canlı tarayıcıda doğrulanana kadar teknik arıza teşhisi koyma. Aksiyonun ilk adımı çalışırlık veya tetikleme testi olsun.';
     if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Bir müşteri deneyimini yalnız o deneyim olarak belirt ve tekrarlanma sıklığını ölçmeyi öner. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
     if(swot&&focus.includes('threat'))request.instruction+=' Aynı müşteri ihtiyacına hizmet eden başka bir ürünün belgelenmiş kanal, dağıtım veya teklif koşulu da rekabet tehdidinin dayanağı olabilir. Ticari etkisini koşullu anlat. Bir müşteri şikâyetini SWOT tehdidi yerine müşteri algısında değerlendir.';
     if(repair){
@@ -382,7 +383,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     let result;
     try{result=await generate(stage,request,modelSchema,options);}
     catch(error){
-     if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!canSwitchBhsProvider(error,signal))throw error;
+     const workerFitsDifferentRate=error.code==='budget_limit'&&!error.paidResponseRetained&&error.budgetDiagnostic?.role==='manager';
+     if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!(workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))throw error;
      const fallbackRequest={...request,instruction:request.instruction+' Verilen özgün kanıt kimliğini aynen kopyala. Bir sayıya ihtiyaç duyulmadığında ürün, kanal, davranış veya çalışma koşulunu nitel anlat.'};
      const fallbackSchema=combinedPeer&&peerIds.size?obj({findings:arr(obj({...modelSchema.properties.findings.items.properties,peerId:choice([...peerIds.keys()])}),wanted)}):modelSchema;
      result=await providers.worker(stage+':cross-provider',fallbackRequest,fallbackSchema,{...options,compactWorker:true,maxOutputTokens:maxOutputTokens+450});
@@ -488,6 +490,19 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const prior=competition.findings.map(f=>[f.statement,null,f.peerId||null]);
    retain('competition',await write({section:'competition',wanted:1,focus:[],prior,repair:true},0));
   }
+ }
+ if(input.evidenceByQuestion&&!savedSectionsOnly&&!signal.aborted){
+  const finalRepairs=[];
+  for(const section of ['competition','readiness']){
+   const drafts=draftsBySection.get(section);
+   if(!drafts||!repairs.some(task=>task.section===section)||!drafts.some(draft=>draft.rejected?.length))continue;
+   const report=project(drafts,new Set([section]));
+   const saved=input.existing.filter(([id])=>id===section);
+   if(report.findings.length+saved.length!==1)continue;
+   finalRepairs.push({section,wanted:1,focus:[],repair:true,prior:[...saved.map(([,statement,quadrant,peerId])=>[statement,quadrant||null,peerId||null]),
+    ...report.findings.map(f=>[f.statement,null,f.peerId||null])],usedProofs:report.findings.flatMap(f=>f.sourceIds),rejected:drafts.flatMap(draft=>draft.rejected||[])});
+  }
+  await Promise.all(finalRepairs.map(async task=>retain(task.section,await write(task,0))));
  }
  const swotDrafts=draftsBySection.get('swot');
  if(input.evidenceByQuestion&&swotDrafts&&!savedSectionsOnly&&!signal.aborted){

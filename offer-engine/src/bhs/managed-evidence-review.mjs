@@ -5,6 +5,7 @@ import {researchHost} from './research-url.mjs';
 const batchBytes=48000;
 const finalReserveKurus=520;
 const decisions='cdsprgux';
+const choiceDecision={type:'string',enum:[...decisions]};
 export const managedReviewUsesHaiku=batches=>batches.length>4;
 const size=value=>Buffer.byteLength(JSON.stringify(value));
 const uniqueProofs=values=>[...new Set(values)];
@@ -176,16 +177,16 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   const runWorker=()=>{
    if(!preferWorker&&providers.managedBudgetVersion!==3)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
-   const packedSchema=obj({verdicts:{...str(ids.length),minLength:ids.length},candidates:arr(str(20),18)});
+   const packedSchema=obj({verdicts:{...arr(choiceDecision,ids.length),minItems:ids.length},candidates:arr(str(20),18)});
    const packedRequest={...request,instruction:positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
-    'verdicts tam '+ids.length+' karakterlik tek dizedir. Rows sırasındaki her satır için bir karar karakteri yaz. Boşluk veya ayraç kullanma.')+' Candidates alanına en fazla 18 kimlik yaz. Kısa yanıtı tamamla.'};
+    'Verdicts tam '+ids.length+' elemanlı bir dizidir. Rows sırasındaki her satır için tek harfli bir karar yaz. Satır atlama, sırayı değiştirme.')+' Candidates alanına en fazla 18 kimlik yaz. Kısa yanıtı tamamla.'};
    const normalizePacked=value=>{
     const verdicts=value?.verdicts;
-    if(typeof verdicts!=='string'||verdicts.length!==ids.length||[...verdicts].some(code=>!decisions.includes(code)))
+    if(!Array.isArray(verdicts)||verdicts.length!==ids.length||verdicts.some(code=>typeof code!=='string'||code.length!==1||!decisions.includes(code)))
      throw new BudgetError('model_output_invalid','Sıralı kanıt kararları doğrulanamadı.');
     return normalizeData({verdicts:Object.fromEntries(ids.map((id,i)=>[id,verdicts[i]])),candidates:value.candidates});
    };
-   const maxOutputTokens=Math.max(750,ids.length*10+320);
+   const maxOutputTokens=Math.max(900,ids.length*12+390);
    return providers.worker(stage+(preferWorker?':compact-recovery':':packed-fallback'),packedRequest,packedSchema,{...options,maxOutputTokens,minimumOutputTokens:maxOutputTokens,
     responseSchema,compactWorker:true,compactVerdicts:true,normalizeData:normalizePacked,generationTimeoutMs:25000});
   };

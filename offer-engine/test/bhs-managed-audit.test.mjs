@@ -129,9 +129,9 @@ test('the managed evidence review can recover an entire batch when Claude is una
    assert.equal(stage,'v8-managed-evidence-position:packed-fallback');
    assert.equal(options.compactWorker,true);
    assert.deepEqual(request.sources,sources);
-   assert.equal(schema.properties.verdicts.maxLength,2);
+   assert.equal(schema.properties.verdicts.maxItems,2);
    assert.equal(options.responseSchema.properties.verdicts.type,'object');
-   return {data:options.normalizeData({verdicts:'cd',candidates:['s2']})};
+   return {data:options.normalizeData({verdicts:['c','d'],candidates:['s2']})};
   }};
  const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers});
  assert.equal(review.verdicts,'cd');
@@ -162,10 +162,10 @@ test('a recovery verdict must cover exactly the evidence sent in order',async()=
  const sources={s3:['https://example.test/a','Ürün','html','Kamuya açık ürün bilgisi.'],s1:['https://example.test/b','Kanal','html','Kamuya açık kanal bilgisi.']};
  const providers={worker:async(stage,request,schema,options)=>{
   assert.equal(stage,'v8-managed-evidence-position:compact-recovery');
-  assert.equal(schema.properties.verdicts.maxLength,2);
+  assert.equal(schema.properties.verdicts.maxItems,2);
   assert.deepEqual(request.rows.map(([id])=>id),['s3','s1']);
-  assert.throws(()=>options.normalizeData({verdicts:'r',candidates:[]}),{code:'model_output_invalid'});
-  return {data:options.normalizeData({verdicts:'rc',candidates:['s3']})};
+  assert.throws(()=>options.normalizeData({verdicts:['r'],candidates:[]}),{code:'model_output_invalid'});
+  return {data:options.normalizeData({verdicts:['r','c'],candidates:['s3']})};
  }};
  const [review]=await reviewPositionalEvidenceBatch({rows,sources},{providers,preferWorker:true});
  assert.deepEqual(review.ids,['s3','s1']);
