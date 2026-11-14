@@ -205,6 +205,26 @@ async function searchManagedTask(pool,task){
  return {...await collectAttempt(()=>pool.search(task.query,{depth:'basic',maxResults:12,retainRaw:true})),query:task.query,taskId:task.id};
 }
 
+async function searchPublicIndex(brief,packet,prior,geo,queries,providers){
+ if(!queries.length||!providers.enrich)return null;
+ const available=await providers.availableActors?.()||[];
+ const eligible=searchActors.filter(name=>available.includes(name));
+ if(!eligible.length)return {unavailable:true,reason:'actor_limit_unverified'};
+ const context={brief,packet,searches:prior,geo};
+ let attempt;
+ for(const actor of eligible){
+  const groups=actor==='desearch/web-search'?queries.slice(0,3).map(query=>[query]):[queries];
+  const results=await Promise.all(groups.map(group=>collectAttempt(()=>providers.enrich({actor,url:brief.website,queries:group},context))));
+  if(results.length===1)attempt={actor,...results[0]};
+  else{
+   const searches=results.flatMap(result=>result.searches||[]);
+   attempt={actor,searches,status:searches.some(search=>search.results?.length)?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
+  }
+  if(attempt.searches?.some(search=>search.results?.length)||attempt.reason==='budget_limit')return attempt;
+ }
+ return attempt;
+}
+
 function feedbackSource(brief,source){
  const url=source.finalUrl||source.url;
  const identity=nameKey(brief.brandName),short=nameKey(brandDomain(brief));
@@ -275,30 +295,15 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const feedbackTask=plan.tasks.find(task=>task.section==='perception');
  const [direct,discovery,feedbackSearch]=await Promise.all([
   needsFeedback?readResearchPages(brief,brand.plan,candidates,reserved,collect):{sources:[],unavailable:[]},
-  queries.length&&reserved.enrich?collectAttempt(async()=>{
-   const available=await reserved.availableActors?.()||[];
-   const eligible=searchActors.filter(name=>available.includes(name));
-   if(!eligible.length)return {unavailable:true,reason:'actor_limit_unverified'};
-   const context={brief,packet:brand.packet,searches:prior,geo};
-   let priorAttempt;
-   for(const actor of eligible){
-    if(actor!=='desearch/web-search'){
-     const result=await collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries},context));
-     priorAttempt={actor,...result};
-     if(result.searches?.some(search=>search.results?.length)||result.reason==='budget_limit')return priorAttempt;
-     continue;
-    }
-    const priority=unique([...peers.slice(0,2),...dedicated,...queries]).slice(0,3);
-    const results=await Promise.all(priority.map(query=>collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries:[query]},context))));
-    const searches=results.flatMap(result=>result.searches||[]);
-    priorAttempt={actor,searches,status:searches.some(search=>search.results?.length)?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
-   }
-   return priorAttempt;
-  }):null,
+  collectAttempt(()=>searchPublicIndex(brief,brand.packet,prior,geo,queries,reserved)),
   needsFeedback&&feedbackTask?.tools?.includes('tavily')&&pool?.search?Promise.all(feedbackQueries.slice(0,2).map(query=>
    searchManagedTask(pool,{id:feedbackTask.id,query}))):[]
  ]);
  const taskIds=new Map(plan.tasks.map(task=>[nameKey(task.query),task.id]));
+ if(marketQuery)taskIds.set(nameKey(marketQuery),plan.tasks.find(task=>task.section==='swot').id);
+ const comparisonTask=plan.tasks.find(task=>task.section==='competition');
+ for(const query of [...competitionQueries,...peers])if(comparisonTask?.id&&!taskIds.has(nameKey(query)))taskIds.set(nameKey(query),comparisonTask.id);
+ for(const query of feedbackQueries)if(feedbackTask?.id&&!taskIds.has(nameKey(query)))taskIds.set(nameKey(query),feedbackTask.id);
  const searches=[...feedbackSearch,...(discovery?.searches||[]).map(item=>({...item,...(taskIds.get(nameKey(item.query))?{taskId:taskIds.get(nameKey(item.query))}:{})}))];
  const extra=needsFeedback&&countFeedbackProofs(brief,{sources:direct.sources})<2?feedbackTargets(brief,brand.packet,searches,market).filter(url=>!candidates.includes(url)&&!existing.includes(url)):[];
  const marketTargets=searches.filter(search=>search.query===marketQuery).flatMap(search=>search.results||[]).map(result=>researchUrl(result.url))
@@ -420,6 +425,20 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    const candidate=overlap&&resemblesProduct&&publisherName(result,url);
    if(candidate&&!seen.has(peerGroupKey(candidate)))addHint(candidate,url);
    if(hints.length>=4)break;
+  }
+  if(hints.length<2&&names.length&&pool.enrich){
+   const locale=market||collectionMarket(managedPlan?.market,brief.goals);
+   const geo=locale?{countryCode:locale[2],language:locale[3]}:null;
+   const productName=comparisonLabel(product)||product;
+   const existing=new Set(priorSearches.filter(search=>search.results?.length).map(search=>nameKey(search.query||'')));
+   const queries=unique(names.slice(0,5).filter(name=>!seen.has(peerGroupKey(name))).map(name=>
+    ['"'+name.replace(/["\r\n]/g,' ').trim()+'"',productName,locale?.[3]==='tr'?'resmi ürünler':'official products'].join(' ')))
+    .filter(query=>!existing.has(nameKey(query)));
+   const extra=await collectAttempt(()=>searchPublicIndex(brief,brand.packet,priorSearches,geo,queries,pool));
+   if(extra?.searches?.length){
+    searches.push(...extra.searches);
+    priorSearches=[...priorSearches,...extra.searches];
+   }
   }
  }
  if(product&&providers.managedBudgetVersion>=3&&managedPlan?.coveragePolicy===2&&providers.managedBudgetVersion<6)await discoverPublishers();
@@ -767,9 +786,22 @@ async function reviewManagedMetrics({plan,corpus,context,providers,prior=[],sign
  const cards=new Map(),aliasesByProof=new Map();
  const searchUrls=id=>new Set(corpus.searches.filter(search=>search.taskId===id).flatMap(search=>(search.results||[]).map(result=>researchUrl(result.url))));
  const sourceUrls=new Map(context.input.sources.map(item=>[item.url,researchUrl(item.requestedUrl||item.url)]));
+ const routed=tasks.some(task=>task.tools?.length);
+ const brandHost=researchHost(context.input.brief.website);
+ const actorsByUrl=new Map((corpus.packet?.sources||[]).filter(source=>source.provenance?.actor).map(source=>[source.finalUrl||source.url,source.provenance.actor]));
+ const competitorHosts=new Set(context.input.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
+ const assignedEvidence=(section,card)=>{
+  const host=researchHost(card.url),actor=actorsByUrl.get(card.url);
+  if(section==='perception')return customerEvidence([card.url,card.title,card.method,card.quote])&&
+   (host===brandHost||actor||nameKey(card.url+' '+card.title+' '+card.quote).includes(nameKey(context.input.brief.brandName)));
+  if(section==='competition')return competitorHosts.has(host);
+  if(section==='readiness')return host===brandHost&&questionSignals.readiness.test(card.quote);
+  return section==='digital'&&(Boolean(actor&&plan.actors?.some(item=>item.id===actor))||host===brandHost&&card.method==='html-signals');
+ };
  const rows=metrics.map(metric=>{
   const urls=searchUrls(metric.taskId);
-  const relevant=context.cards.filter(card=>(urls.has(card.url)||urls.has(sourceUrls.get(card.url)))&&!card.metadataOnly&&card.method!=='search-snippet');
+  const relevant=context.cards.filter(card=>!card.metadataOnly&&card.method!=='search-snippet'&&
+   (urls.has(card.url)||urls.has(sourceUrls.get(card.url))||routed&&assignedEvidence(metric.section,card)));
   const candidates=new Map();
   for(const card of relevant){
    const inPage=candidates.get(card.url)||[];
@@ -907,7 +939,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const newContext=managedCollectionContext(brief,{...corpus.packet,sources:fresh.sources});
  if(targeted.length&&fresh.sources.length){
   const combined=managedCollectionContext(brief,{...corpus.packet,sources:canonicalSources([...corpus.packet.sources,...fresh.sources])});
-  metricCoverage=await reviewManagedMetrics({plan,corpus:{searches:[...corpus.searches,...searches.map(entry=>entry.search)]},context:combined,providers:queryPool,prior:metricCoverage,signal:AbortSignal.timeout(15000)});
+  metricCoverage=await reviewManagedMetrics({plan,corpus:{packet:combined.packet,searches:[...corpus.searches,...searches.map(entry=>entry.search)]},context:combined,providers:queryPool,prior:metricCoverage,signal:AbortSignal.timeout(15000)});
  }
  const freshCandidates=questionCandidates(brief,newContext);
  for(const entry of searches){

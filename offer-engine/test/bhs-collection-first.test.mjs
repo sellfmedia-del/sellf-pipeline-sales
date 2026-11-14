@@ -221,6 +221,28 @@ test('target-market discovery keeps a multiword publisher name and a reviewed pr
  assert.deepEqual(result.peerHints.map(p=>p.name),['White Dairy','Green Farm']);
 });
 
+test('when broad discovery has no publishers, competitor lookup uses a single named Google batch before Tavily',async()=>{
+ const publishers=['Beta','Gamma'];
+ const requests=[];
+ const providers={managedBudgetVersion:6,availableActors:async()=>['themineworks/google-search-scraper'],
+  search:async()=>{throw Object.assign(new BudgetError('provider_error','Test quota'),{providerStatus:433});},
+  enrich:async request=>{
+   requests.push(request);
+   return {status:'complete',searches:request.queries.map((query,index)=>({query,source:'apify-google',results:[{
+    url:'https://'+publishers[index].toLowerCase()+'.example/urunler/peynir',title:publishers[index]+' Peynir',content:'Peynir ürünleri.'
+   }]}))};
+  },evidenceReviewer:async()=>({data:{pages:[]}})
+ };
+ const brand={plan:{...plan,entities:plan.entities.filter(entity=>entity.role==='brand')},packet:packet()};
+ const result=await comparisonResearch(brief,brand,collectionMarket('Türkiye'),providers,providers,async(_brief,_plan,{prioritySources})=>{
+  assert.ok(publishers.every(name=>prioritySources.includes('https://'+name.toLowerCase()+'.example/urunler/peynir')));
+  return {sources:[],unavailable:[]};
+ },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'peynir',peerNames:publishers});
+ assert.equal(requests.length,1);
+ assert.deepEqual(requests[0].queries,publishers.map(name=>'"'+name+'" peynir resmi ürünler'));
+ assert.deepEqual(result.peerHints.map(peer=>peer.name),publishers);
+});
+
 test('a public retailer catalogue cannot count as a direct product publisher',()=>{
  const evidence=fixturePacket();
  const publisher=evidence.entities.find(entity=>entity.role==='competitor');

@@ -307,7 +307,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const metricProofs=input.metrics?.filter(metric=>metric.section===section).flatMap(metric=>metric.proofs)||[];
    const brandProofs=minimumFirst&&(['readiness','swot'].includes(section)||focusedWriting&&competition)?input.brandProofs:[];
    const priorityProofs=unique([...metricProofs,...(brandProofs||[])]);
-   const avoidRepeatedProofs=focusedWriting&&distinctProofSections.has(section);
+   const avoidRepeatedProofs=focusedWriting&&(distinctProofSections.has(section)||providers.managedBudgetVersion>=6&&section==='digital'&&repair);
    const usedQuotes=new Set(usedProofs.map(id=>quoteIdentity(context,id)).filter(Boolean));
    const excludedProofs=new Set(avoidRepeatedProofs?[...reverse].filter(([,id])=>usedQuotes.has(quoteIdentity(context,id))).map(([alias])=>alias):[]);
    const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,excludedProofs,priorityProofs,targeted:minimumFirst&&(!distinctProofSections.has(section)||focusedWriting)};
@@ -439,7 +439,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
       !f.proof.some(id=>researchHost(focused.sources[id]?.[0])===researchHost(brief.website)))return 'digital_evidence_missing';
      if(section==='swot'&&['opportunity','threat'].includes(f.quadrant)&&f.proof.every(id=>{
       const url=focused.sources[id]?.[0]||'';
-      return /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(url)||enforceAnalysis&&researchHost(url)===researchHost(brief.website);
+      return /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(url)||enforceAnalysis&&researchHost(url)===researchHost(brief.website)||
+       providers.managedBudgetVersion>=6&&['search-snippet','html-signals'].includes(focused.sources[id]?.[2]);
      }))return 'external_swot_evidence_missing';
     };
     const reasoningIssue=f=>analysisIssue(f,proofText(f),briefText);
@@ -531,10 +532,11 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  }
  if(input.evidenceByQuestion&&!savedSectionsOnly&&!signal.aborted){
   const finalRepairs=[];
-  const rechecked=providers.managedBudgetVersion>=6?['competition','readiness','perception']:['competition','readiness'];
+  const rechecked=providers.managedBudgetVersion>=6?['competition','digital','readiness','perception']:['competition','readiness'];
   for(const section of rechecked){
    const drafts=draftsBySection.get(section);
-   if(!drafts||!repairs.some(task=>task.section===section)||!drafts.some(draft=>draft.rejected?.length))continue;
+   if(!drafts||!repairs.some(task=>task.section===section)||!drafts.some(draft=>draft.rejected?.length)&&
+    !(providers.managedBudgetVersion>=6&&section==='digital'&&drafts.length>1))continue;
    const report=project(drafts,new Set([section]));
    const saved=input.existing.filter(([id])=>id===section);
    if(report.findings.length+saved.length!==1)continue;
