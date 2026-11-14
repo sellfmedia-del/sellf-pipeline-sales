@@ -347,7 +347,14 @@ export function reviewedManagedEvidence(input,reviews){
     const onlyExternal=externalOnly&&wantsExternal&&!wantsInternal;
     const selected=[...new Set([...(onlyExternal?focusedRows.filter(outside):focusedRows),...competitorProofs,...(wantsInternal?priorityRows.slice(0,share):externalOnly?[]:priorityRows.slice(0,1)),
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
-    return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
+    const result=reportInput((onlyExternal?selected.filter(outside):selected).slice(0,limit),section,peerProofs,excludedPeers);
+    if(onlyExternal){
+     result.sources=Object.fromEntries(Object.entries(result.sources).filter(([id])=>outside(id)));
+     const visible=id=>Object.hasOwn(result.sources,id);
+     result.observations=result.observations.filter(([, , ,proofs])=>proofs.every(visible));
+     result.entities=result.entities.map(([id,role,name,url,proofs])=>[id,role,name,url,proofs.filter(visible)]);
+    }
+    return result;
    }
    const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
    const ownDigital=section==='digital'&&targeted?ranked.filter(id=>supports(id)&&[id,...(rows.get(id)?.[3]||[])]

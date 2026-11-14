@@ -413,7 +413,7 @@ test('gap completion preserves prior findings and the new rival publisher citati
 });
 
 test('SWOT repairs receive reviewed market evidence when an external quadrant is missing',()=>{
- const input={observations:[],entities:[],sources:Object.fromEntries(Array.from({length:12},(_,i)=>['s'+i,[
+ const input={observations:[],entities:[['brand','brand','Brand','https://brand.example/',['s0']]],sources:Object.fromEntries(Array.from({length:12},(_,i)=>['s'+i,[
   'https://'+(i<6?'brand':'industry')+'.example/'+i,'Public source','html',i<6?'Brand product description.':'Market demand and competition data.'
  ]]))};
  const ids=Object.keys(input.sources);
@@ -421,6 +421,9 @@ test('SWOT repairs receive reviewed market evidence when an external quadrant is
  const scoped=reviewed.sectionInput('swot',6,{targeted:true,priorityProofs:ids.slice(0,6),swotFocus:['threat']});
  assert.equal(Object.keys(scoped.sources).filter(id=>ids.slice(6).includes(id)).length,4);
  assert.ok(Object.hasOwn(scoped.sources,'s0'));
+ const external=reviewed.sectionInput('swot',6,{targeted:true,externalOnly:true,priorityProofs:ids.slice(0,6),swotFocus:['opportunity']});
+ assert.deepEqual(Object.keys(external.sources),ids.slice(6));
+ assert.deepEqual(external.entities[0][4],[]);
 });
 
 test('an oversized market and five actors preserve the paid Claude plan and its six candidate names',async()=>{

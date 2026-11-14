@@ -276,7 +276,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  const briefText=[brief.goals,brief.needs,brief.meetingNotes].filter(Boolean).join('\n');
  const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
 
- async function write({section,wanted,focus,prior,repair,rejected=[],usedProofs=[]},following){
+ async function write({section,wanted,focus,prior,repair,rejected=[],usedProofs=[],otherObservations=[]},following){
   const swot=section==='swot',competition=section==='competition';
   const combinedPeer=minimumFirst&&competition;
   const focusedWriting=Boolean(input.evidenceByQuestion);
@@ -315,6 +315,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,focused),prior};
+   if(otherObservations.length){
+    request.usedInOtherSections=otherObservations;
+    request.instruction+=' Diğer bölümlerde kullanılmış gözlemler yerine farklı bir belgelenmiş durumu değerlendir.';
+   }
    if(minimumFirst){
     const usefulAreas=new Set(focused.observations.map(([,area])=>area));
     const relevantDimension={competition:'competition',digital:'digital',perception:'perception'}[section];
@@ -345,6 +349,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(providers.managedBudgetVersion>=6&&section==='perception')request.instruction+=' Yorum tarihini, puanını, süreyi veya örneklem adedini analiz, sınır veya soruda tekrarlama. Analiz ve sınırı nitel anlat. Yalnız kanıtın açıkça söylediği ölçülmüş tutarı observation alanına yaz.';
    if(focusedWriting){
     request.instruction+=' Kaynakta açıkça geçen ve kararı değiştiren miktarları gözlemde kullanabilirsin. Analiz, sınır ve toplantı sorusuna kanıtsız miktar, kıyas veya gerçekleşmiş sonuç ekleme. Test hedefi ve ölçüm yöntemi action ve measurement alanlarında kalmalı.';
+    if(providers.managedBudgetVersion>=6&&section==='readiness')request.instruction+=' Yalnız belgelenen farklı iş koşullarını değerlendir. Analiz, sınır ve toplantı sorusunda sayı ya da süre yazma. Öncelikle hedefe bağlı teklif kanalı, ürün seçimi, dağıtım veya servis gibi birbirinden ayrı koşulları değerlendir.';
     request.instruction+=' Anket oranında kimin, hangi soruya ne yanıt verdiğini koru. Marka müşterilerinin yanıtını pazar geneline taşıma. Tek bir yorumda tekil kişi kullan. Tarihli rakip verisini güncel durum diye yazma. Yalnız statik HTML veya metin okunduysa ekranda görünme, tıklama ve çalışırlık iddiası kurma.';
     if(section==='digital'||section==='readiness'||swot)request.instruction+=' Statik HTMLde görülen çeviri anahtarını, sayacı, stok etiketini veya eksik izleme etiketini incelenen sayfayla sınırla. Canlı tarayıcıda doğrulanana kadar teknik arıza teşhisi koyma. Aksiyonun ilk adımı çalışırlık veya tetikleme testi olsun.';
     if(swot&&focus.includes('weakness'))request.instruction+=' Zayıf yön için belgelenmiş mevcut bir süreç kuralını, kanal koşulunu veya müşterinin karşılaştığı somut sürtünmeyi incele. Bir koşulun hedefi hangi durumda zorlaştıracağı analitik görüş olabilir. Bir müşteri deneyimini yalnız o deneyim olarak belirt ve tekrarlanma sıklığını ölçmeyi öner. Sınırlı örnekten şirketin geneline veya hiç görülmeyen bir varlığın yokluğuna hükmetme.';
@@ -551,6 +556,21 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const retained=await write({section:'swot',wanted:focus.length,focus,prior,repair:true,rejected:rejections},0);
    retain('swot',retained);
   }
+ }
+ if(providers.managedBudgetVersion>=6&&!savedSectionsOnly&&!signal.aborted){
+  const combined=project(sections.flatMap(section=>draftsBySection.get(section)));
+  const losses=combined.bhsSections.filter(item=>accepted.has(item.id)&&!item.complete&&!issues.has(item.id)).map(item=>{
+   const drafts=draftsBySection.get(item.id);
+   return {item,local:project(drafts,new Set([item.id])).bhsSections.find(section=>section.id===item.id)};
+  }).filter(({item,local})=>local.complete&&item.count<local.count);
+  await Promise.all(losses.map(async ({item})=>{
+   const kept=combined.findings.filter(finding=>finding.bhsSection===item.id);
+   const otherObservations=combined.findings.filter(finding=>finding.bhsSection!==item.id).map(finding=>finding.statement);
+   const focus=item.id==='swot'?item.missingQuadrants:[];
+   const prior=kept.map(finding=>[finding.statement,finding.swotQuadrant||null,finding.peerId||null]);
+   retain(item.id,await write({section:item.id,wanted:focus.length||2-item.count,focus,prior,repair:true,
+    usedProofs:kept.flatMap(finding=>finding.sourceIds),otherObservations},0));
+  }));
  }
  const drafts=sections.flatMap(section=>draftsBySection.get(section));
  const report=project(drafts);
