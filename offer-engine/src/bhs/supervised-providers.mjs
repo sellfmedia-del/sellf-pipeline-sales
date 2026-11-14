@@ -37,7 +37,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(!response.ok){
    const message=[typeof value?.error==='string'?value.error:value?.error?.message,value?.message,value?.detail].filter(part=>typeof part==='string').join(' ');
    const claudeSpendLimit=options.managedBudgetVersion>=4&&url.startsWith('https://api.anthropic.com/')&&response.status===400
-    &&/\b(?:reached|exceeded|hit)\b.{0,85}\blimit\b|\blimit\b.{0,85}\b(?:reached|exceeded)\b/i.test(message)
+    &&/\b(?:reached|exceeded|hit)\b.{0,85}\blimits?\b|\blimits?\b.{0,85}\b(?:reached|exceeded)\b/i.test(message)
     &&/\b(?:specified (?:workspace )?api usage|monthly (?:api )?(?:usage|spend(?:ing)?)|spend(?:ing)?|(?:organization|workspace|account).{0,50}(?:budget|usage|quota))\b/i.test(message);
    const error=claudeSpendLimit
     ?new BudgetError('claude_spend_limit','Claude API hesabının harcama sınırına ulaşıldı.')
