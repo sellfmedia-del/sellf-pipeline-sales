@@ -90,6 +90,23 @@ test('a rejected Claude count still reserves the complete UTF-8 envelope and set
  assert.deepEqual(await p.manager('brand-review',request,schema,options),result);
  assert.equal(calls.length,2);
 });
+test('a confirmed Claude account limit stops generation or releases the rejected request reservation',async()=>{
+ for(const rejectedAt of ['count','generation']){
+  const db=account(),calls=[];
+  const p=createSupervisedProviders({ledger:db.ledger,anthropicKey:'fake',geminiKey:'fake',receiptVersion:'v8',managedBudgetVersion:4,
+   base,now,researchFx:async()=>({usdTry:44}),fetchImpl:async url=>{
+    const operation=url.endsWith('/count_tokens')?'count':'generation';
+    calls.push(operation);
+    if(operation!==rejectedAt)return json({input_tokens:100});
+    const message='You have reached your specified API usage limits. You will regain access on\n2026-12-01 at 00:00 UTC.';
+    return new Response(JSON.stringify({error:{type:'invalid_request_error',message}}),{status:400});
+   }});
+  await assert.rejects(p.manager('brand-review',{},schema,{compactReview:true,maxOutputTokens:600}),error=>
+   error.code==='claude_spend_limit'&&error.providerReason==='account_spend_limit');
+  assert.deepEqual(calls,rejectedAt==='count'?['count']:['count','generation']);
+  assert.equal((await db.ledger.status()).chargedKurus,500);
+ }
+});
 test('manager and worker use distinct APIs, count inputs, settle actual usage and reuse receipts',async()=>{
  const db=account(),t=transport(),p=providers(db,t);
  const manager=await p.manager('plan',{instruction:'Plan',brief:{name:'Public'}},schema,{maxOutputTokens:512});

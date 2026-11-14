@@ -36,9 +36,15 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   let value;try{value=JSON.parse(raw);}catch{throw Object.assign(new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.'),{providerStatus:response.status});}
   if(!response.ok){
    const message=[typeof value?.error==='string'?value.error:value?.error?.message,value?.message,value?.detail].filter(part=>typeof part==='string').join(' ');
-   const error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');
+   const claudeSpendLimit=options.managedBudgetVersion>=4&&url.startsWith('https://api.anthropic.com/')&&response.status===400
+    &&/\b(?:reached|exceeded|hit)\b.{0,85}\blimit\b|\blimit\b.{0,85}\b(?:reached|exceeded)\b/i.test(message)
+    &&/\b(?:specified (?:workspace )?api usage|monthly (?:api )?(?:usage|spend(?:ing)?)|spend(?:ing)?|(?:organization|workspace|account).{0,50}(?:budget|usage|quota))\b/i.test(message);
+   const error=claudeSpendLimit
+    ?new BudgetError('claude_spend_limit','Claude API hesabının harcama sınırına ulaşıldı.')
+    :new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');
    error.providerStatus=response.status;
-   error.providerReason=/credit balance|insufficient credits|payment required/i.test(message)?'billing_required':failureReason(message);
+   error.providerReason=claudeSpendLimit?'account_spend_limit':/credit balance|insufficient credits|payment required/i.test(message)?'billing_required':failureReason(message);
+   if(claudeSpendLimit)error.definitelyNotBilled=true;
    error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema','anthropic-version','output_config','messages','model'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));
    const type=value?.error?.type||value?.type;
    if(['invalid_request_error','authentication_error','permission_error','not_found_error','rate_limit_error','api_error','overloaded_error'].includes(type))error.providerErrorType=type;
@@ -179,6 +185,10 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    if(allowWorkerFallback&&receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){
     await ledger.once('routing:bhs-v8:worker-billing',{provider:'google',status:403,reason:'billing_required'},0,async()=>({provider:'claude',reason:'google_billing_rejected',operation:'countTokens'}));
     return generateRole('fallbackWorker','v8-worker-billing-fallback:'+stage,input,schema,opts);
+   }
+   if(error.code==='claude_spend_limit'){
+    error.providerOperation='countTokens';
+    throw error;
    }
    if(anthropicRole&&options.managedBudgetVersion>=4&&error.providerStatus===400&&!opts.signal?.aborted){
     // Reserve a conservative bound when the free count endpoint rejects an
