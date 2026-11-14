@@ -5,7 +5,7 @@ import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {managedCollectionContext,readResearchPages,expandDirectedSources} from '../src/bhs/collection-first.mjs';
 import {planDirectedResearch,executeDirectedResearch} from '../src/bhs/directed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from '../src/bhs/managed-report.mjs';
-import {planPositionalEvidenceReview} from '../src/bhs/managed-evidence-review.mjs';
+import {planPositionalEvidenceReview,reviewPositionalEvidenceBatch} from '../src/bhs/managed-evidence-review.mjs';
 import {resolveManagedGaps} from '../src/bhs/managed-gaps.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
@@ -121,6 +121,20 @@ test('searches selected for the same actor share an execution and preserve per-t
   return {actor:engine,status:'complete',searches:request.queries.map(query=>({query,results:[{url:rival},{url:site}]}))};
  }}});
  assert.deepEqual(result.searches.map(row=>[row.taskId,row.results.length]),[[task.id,1],[second.id,2]]);
+});
+
+test('compact evidence decisions retain the exact proof and row ordering',async()=>{
+ const rows=[{id:'s2',proof:['s2']},{id:'s1',proof:['s1']}];
+ const sources={s1:[site,'Brand','html','A source excerpt about a product range.'],s2:[rival,'Rival','html','The rival sells packaged food in France.']};
+ const result=await reviewPositionalEvidenceBatch({rows,sources},{focus:understanding,providers:{managedBudgetVersion:8,
+  evidenceReviewer:async(_stage,request,schema,options)=>{
+   assert.deepEqual(request.rows,[['s2'],['s1']]);
+   assert.equal(schema.properties.verdicts.type,'string');
+   return {data:options.normalizeData({verdicts:'cu',candidates:['s2']})};
+  }}});
+ assert.deepEqual(result[0].ids,['s2','s1']);
+ assert.equal(result[0].verdicts,'cu');
+ assert.deepEqual(result[0].candidates,['s2']);
 });
 
 test('the model writes its own source-linked analysis and gaps are retained without mandatory measurement text',async()=>{

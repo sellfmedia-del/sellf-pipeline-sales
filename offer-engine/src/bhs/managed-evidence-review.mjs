@@ -188,11 +188,21 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    })),
    candidates:[...new Set(Array.isArray(value?.candidates)?value.candidates:[])].filter(id=>ids.includes(id)).slice(0,36)
   });
-  const budget=Math.max(600,ids.length*12+220);
+  const packed=providers.managedBudgetVersion>=8&&!preferWorker;
+  const packedSchema=obj({verdicts:str(ids.length),candidates:arr(str(20),22)});
+  const budget=packed?Math.max(420,ids.length*4+210):Math.max(600,ids.length*12+220);
   const workerBudget=Math.max(750,ids.length*22+300);
   const method=recovery&&ids.length<=8?providers.manager:providers.evidenceReviewer||providers.manager;
-  const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
-  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
+  const request={instruction:packed?positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
+   'Verdicts tek metindir. Verilen '+ids.length+' satırın sırasında her satıra bir karar harfi yaz. Boşluk ve ayırıcı kullanma.')+' Tek sütunlu satırda bu kimliğin sources içindeki doğrudan alıntısını değerlendir.' :positionalInstruction,focus,
+   rows:part.rows.map(row=>packed&&!row.area&&!row.text&&row.proof.length===1&&row.proof[0]===row.id?[row.id]:[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
+  const unpack=value=>{
+   const verdicts=typeof value?.verdicts==='string'?value.verdicts.replace(/\s+/g,''):'';
+   if(verdicts.length!==ids.length)return normalizeData({});
+   return normalizeData({verdicts:Object.fromEntries(ids.map((id,i)=>[id,verdicts[i]])),candidates:value.candidates});
+  };
+  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,
+   normalizeData:packed?unpack:normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   const runWorker=()=>{
    if(!preferWorker&&providers.managedBudgetVersion!==3)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
@@ -213,13 +223,13 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
    let completion;
    try{
-    completion=await (preferWorker?runWorker():method(stage,request,modelSchema,options));
+    completion=await (preferWorker?runWorker():method(stage,request,packed?packedSchema:modelSchema,options));
    }catch(error){
     if(preferWorker||providers.modelHandoff||!canSwitchBhsProvider(error,signal))throw error;
     if(providers.worker&&providers.managedBudgetVersion===3){
      completion=await runWorker();
     }else if(method!==providers.manager&&(error.providerOperation==='countTokens'||providers.managedBudgetVersion>=4)){
-     completion=await providers.manager(stage,request,modelSchema,options);
+     completion=await providers.manager(stage,request,packed?packedSchema:modelSchema,options);
     }else throw error;
    }
    const data=normalizeData(completion.data),verdicts=ids.map(id=>data.verdicts[id]).join('');

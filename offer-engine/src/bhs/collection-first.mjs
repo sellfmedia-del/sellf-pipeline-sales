@@ -1112,7 +1112,9 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    const rounds=(await Promise.all(directedRounds.slice(0,roundIndex).map(previous))).filter(r=>r?.commandResults);
    if(rounds.at(-1)?.researchDone)return save({});
    const pool=providers.withCeiling(providers.managedBudgetVersion>=8?2950:2800);
-   const acquisition=providers.managedBudgetVersion>=8?providers.withCeiling(first?1900:2175):pool;
+   const hasCompetitionDiscovery=rounds.some(({commandResults})=>commandResults.some(({command,urls})=>urls.length&&
+    (command.tool==='tavily'||searchActors.includes(command.tool))&&managed?.tasks.some(task=>task.id===command.taskId&&task.section==='competition')));
+   const acquisition=providers.managedBudgetVersion>=8?providers.withCeiling(first?1900:hasCompetitionDiscovery?2250:2500):pool;
    const decision=await planDirectedResearch({brief,brand,providers:pool,plan:first?undefined:managed,rounds});
    const plan=first?(decision.directedResearch?decision:{directedResearch:true,managerDirected:true,coveragePolicy:2,
     understanding:groundedManagedResearchPlan(brief,brand).understanding,market:'',tasks:[],assets:[],peers:[],questions:[]}):managed;
