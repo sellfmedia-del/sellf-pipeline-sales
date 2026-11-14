@@ -1008,7 +1008,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
 async function managedCollectionInputs(brief,plan,previous){
  const focus=await previous(inventoryStages[0]);
  const [brand,{packet},inventory]=await Promise.all([previous('brand'),collectionCorpus(previous,focus?.questionSources),sourcesFrom(previous,inventoryStages,'inventory')]);
- const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet,{complete:plan.directedResearch}):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
+ const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet,{complete:plan.directedResearch}):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
  context.collectionFirst=true;
  if(plan.directedResearch){
   const rounds=await Promise.all(directedRounds.map(previous));
