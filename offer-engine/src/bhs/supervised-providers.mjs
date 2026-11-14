@@ -68,7 +68,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   quote(1,maxOutputTokens);
   const {instruction='',...context}=input;
   const thinkingLevel=receiptVersion==='v8'&&opts.compactVerdicts?'MINIMAL':receiptVersion==='v8'?'LOW':'MINIMAL';
-  const plainJson=receiptVersion==='v8'&&role==='manager'&&opts.plainJson===true;
+  const plainJson=receiptVersion==='v8'&&anthropicRole&&(opts.plainJson===true||options.managedBudgetVersion>=4);
   const system=instruction+'\n'+untrusted+(plainJson?'\nYalnız tek, tam ve geçerli JSON nesnesi ver. Önsöz, açıklama veya Markdown ekleme. Bu çıktı sözleşmesindeki zorunlu alanları aynen kullan:\n'+JSON.stringify(schema):(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':''));
   // Content reviews reason adaptively; only the short initial task omits
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
@@ -80,6 +80,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // thinking block. This tool only returns data; it executes no action. Sonnet
   // still independently reviews the original evidence and the final report.
   if(receiptVersion==='v8'&&role==='fallbackWorker')rawBody={model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],tools:[{name:'emit_bhs_stage',description:'Return the complete source-grounded stage result in exactly one call. This returns data only and executes no action.',input_schema:providerSchema(schema),strict:true}],tool_choice:{type:'tool',name:'emit_bhs_stage'},output_config:{effort:'medium'}};
+  if(plainJson&&options.managedBudgetVersion>=4)rawBody={model,max_tokens:maxOutputTokens,system,messages:rawBody.messages};
   // PostgreSQL jsonb reorders object keys. Canonicalise JSON context/schema
   // so a reconnect cannot turn identical research into another paid request.
   let body=rawBody;
@@ -152,10 +153,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(saved)throw new BudgetError(saved.state==='reserved'?'budget_pending':'budget_uncertain','Önceki BHS model isteğinin kaydı korunuyor; tekrar ücretli çağrı yapılmadı.');
   const snapshot=await fx();
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
-  const managerCountBody=({model,system,messages,tools,output_config})=>({
-   model,system:output_config?.format?system+'\n'+JSON.stringify(output_config.format):system,
-   messages,...(tools?{tools}:{})
-  });
+  const managerCountBody=({model,system,messages})=>({model,system,messages});
   const countBody=anthropicRole?options.managedBudgetVersion>=4?managerCountBody(body):
    Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
@@ -164,17 +162,10 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   try{
    try{count=await countTokens();}
    catch(error){
-    if(anthropicRole&&options.managedBudgetVersion>=4&&error.providerStatus===400&&countBody.tools&&!opts.signal?.aborted){
-     // Count the same prompt with the tool schema included as text. The final
-     // generation still uses the original tool and its full validation.
-     const {tools,...plain}=countBody;
-     count=await countTokens({...plain,system:plain.system+'\n'+JSON.stringify(tools)});
-    }else{
-     const retryable=transientStatus(error.providerStatus)||[429,504].includes(error.providerStatus)||error.code==='provider_format'||error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed';
-     if(!opts.retryTokenCount||!retryable||opts.signal?.aborted)throw error;
-     await delay(800);
-     count=await countTokens();
-    }
+    const retryable=transientStatus(error.providerStatus)||[429,504].includes(error.providerStatus)||error.code==='provider_format'||error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed';
+    if(!opts.retryTokenCount||!retryable||opts.signal?.aborted)throw error;
+    await delay(800);
+    count=await countTokens();
    }
   }
   catch(error){
@@ -225,7 +216,14 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   }
   opts.signal?.throwIfAborted();
   let result;try{result=await ledger.once(step,body,amount,async()=>{
-   const request=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},opts.generationTimeoutMs??(anthropicRole?240000:90000),opts.signal);
+   const request=async()=>{
+    try{return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},opts.generationTimeoutMs??(anthropicRole?240000:90000),opts.signal);}
+    catch(error){
+     if(options.managedBudgetVersion>=4&&error.providerStatus)
+      console.info(JSON.stringify({event:'bhs_provider_rejected',stage,role,status:error.providerStatus,reason:error.providerReason,hints:error.parameterHints}));
+     throw error;
+    }
+   };
    // Preserve the received content/usage before local accounting/proof checks.
    // This zero-cost subreceipt contains no request headers or credentials and
    // lets a reviewer inspect/revalidate a paid reply without buying it again.
