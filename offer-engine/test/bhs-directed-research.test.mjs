@@ -16,7 +16,7 @@ const rival='https://rival.example/produits/';
 const brief=snapshotBrief({brandName:'Example',website:site,segment:'corporate',goals:'Fransa pazarına giriş',needs:'Fransa dağıtım ve rakipleri',services:'Büyüme',meetingNotes:''});
 const task={id:'market',section:'competition',market:'France',platform:'French grocery',question:'Which comparable products are listed?',metrics:['retail price per unit','local distribution'],acceptance:'Product page for comparable food in French retail'};
 const understanding={business:'grocery',revenue:'retail',scale:'unknown',sector:'food',goals:'France',requirements:['distribution']};
-const blank={country:'FR',language:'fr',query:'',url:'',mode:'default',limit:4};
+const blank={country:'fr',language:'FR',query:'',url:'',mode:'default',limit:4};
 const command=(tool,properties)=>({...blank,taskId:'market',tool,...properties});
 const brand={facts:[],plan:{},packet:{entities:[{id:'brand',role:'brand',name:'Example',website:site}],asOf:'2026-11-14',sources:[{
  url:site,finalUrl:site,title:'Example',method:'html',excerpts:[{text:'Example sells packaged food through its online store.'}],
@@ -27,7 +27,7 @@ test('Claude scopes France search and precise scraper requests, then chooses a p
  const planData={understanding,market:'France',tasks:[task],peers:[],assets:[],questions:[],commands:[
   command('tavily',{query:'prix snacks France distribution'}),
   command('apify/instagram-scraper',{url:profile,mode:'posts',limit:12}),
-  command('gemini',{})
+  command('direct',{url:rival}),command('gemini',{})
  ]};
  let searchActive=false,scrapeActive=false;
  const providers={
@@ -37,7 +37,7 @@ test('Claude scopes France search and precise scraper requests, then chooses a p
    assert.equal(request.plan.tasks[0].metrics[0],'retail price per unit');
    assert.ok(request.history.some(row=>row[3]==='provider_error'));
    assert.ok(request.observedUrls.includes(rival));
-   return {data:options.normalizeData({commands:[command('direct',{url:rival})],peers:[{name:'Rival',url:rival,overlap:'French packaged food'}],assets:[],questions:[]})};
+   return {data:options.normalizeData({commands:[],peers:[{name:'Rival',url:rival,overlap:'French packaged food'}],assets:[],questions:[]})};
   },
   search:async(query,options)=>{
    assert.equal(query,planData.commands[0].query);
@@ -62,15 +62,15 @@ test('Claude scopes France search and precise scraper requests, then chooses a p
   }
  };
  const plan=await planDirectedResearch({brief,brand,providers});
- const first=await executeDirectedResearch({brief,brand,providers,plan,decision:plan,readPages:()=>assert.fail('read was not requested')});
- assert.equal(first.extractions.length,1);
- const decision=await planDirectedResearch({brief,brand,providers,plan,rounds:[first]});
- const result=await executeDirectedResearch({brief,brand,providers,plan,decision,rounds:[first],readPages:async urls=>{
+ const first=await executeDirectedResearch({brief,brand,providers,plan,decision:plan,readPages:async urls=>{
   assert.deepEqual(urls,[rival]);
   return {sources:[{url:rival,finalUrl:rival,title:'Rival',excerpts:[{text:'Rival sells packaged food in France.'}]}]};
  }});
+ assert.equal(first.extractions.length,1);
+ const decision=await planDirectedResearch({brief,brand,providers,plan,rounds:[first]});
+ const result=await executeDirectedResearch({brief,brand,providers,plan,decision,rounds:[first],readPages:()=>assert.fail('already read')});
  assert.equal(result.peerHints[0].website,rival);
- assert.equal(result.pages[0].taskId,task.id);
+ assert.equal(first.pages[0].taskId,task.id);
 });
 
 test('full source is archived and sent to the reviewer in batches including late evidence',async()=>{

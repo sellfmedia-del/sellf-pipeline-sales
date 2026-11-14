@@ -36,7 +36,8 @@ async function attempt(run){
  }
 }
 
-const geoFor = ({country,language}) => /^[A-Z]{2}$/.test(country)&&/^[a-z]{2}$/.test(language)?{countryCode:country,language}:undefined;
+const geoFor = ({country,language}) => /^[a-z]{2}$/i.test(country)&&/^[a-z]{2}$/i.test(language)
+ ?{countryCode:country.toUpperCase(),language:language.toLowerCase()}:undefined;
 const identity = command => hash([command.tool,command.query,command.url,command.limit,command.country,command.language,command.mode,
  ...(command.tool==='gemini'?[command.taskId]:[])]);
 const sourceRows = (pages,results) => [
@@ -58,7 +59,8 @@ export async function planDirectedResearch({brief,brand,providers,plan,rounds=[]
  const previous=[...priorRounds,...rounds];
  const {packet,searches,scrapes,known}=researchContext(brief,brand,previous);
  const available=await attempt(()=>providers.availableActors?.()||[]);
- const availableTools=['tavily','direct','gemini',...(Array.isArray(available)?available:[])];
+ const tavilyFailed=previous.flatMap(r=>r.commandResults||[]).filter(r=>r.command.tool==='tavily'&&r.reason==='provider_error'&&[432,433,429].includes(r.providerStatus)).length>=2;
+ const availableTools=[...(tavilyFailed?[]:['tavily']),'direct','gemini',...(Array.isArray(available)?available:[])];
  const round=rounds.length;
  const cost=await providers.costStatus?.();
  const request={instruction:planningInstruction+(sections.length<Object.keys(managedSections).length||existing.length?
@@ -69,7 +71,7 @@ export async function planDirectedResearch({brief,brand,providers,plan,rounds=[]
   ...(priorRounds.length?{earlierUrls:[...known.urls].filter(Boolean),earlierSearches:searches.map(s=>s.query)}:{}),
   ...(plan?{plan:{understanding:plan.understanding,market:plan.market,tasks:plan.tasks},assets,
    peers:rounds.at(-1)?.peers||plan.peers,
-   history:previous.flatMap(x=>(x.commandResults||[]).map(({command,reason,urls})=>[command.taskId,command.tool,command.url||command.query,reason,urls.length])),
+   history:previous.flatMap(x=>(x.commandResults||[]).map(({command,reason,providerStatus,urls})=>[command.taskId,command.tool,command.url||command.query,reason,urls.length,providerStatus])),
    priorObservations:previous.flatMap(x=>x.extractions||[]),
    navigation:packet.sources.flatMap(p=>(p.technicalSignals?.navigation||[]).map(l=>[l.url,l.label])),
    searchResults:searches.flatMap(s=>(s.results||[]).map(r=>[s.taskId,r.url,r.title,String(r.content||'').slice(0,235)])),
@@ -96,7 +98,7 @@ export async function executeDirectedResearch({brief,brand,providers,plan,decisi
  const {packet,searches,scrapes,known}=researchContext(brief,brand,[...priorRounds,...rounds]);
  const tasks=new Map(plan.tasks.map(task=>[task.id,task]));
  const previous=new Set([...priorRounds,...rounds].flatMap(round=>(round.commandResults||[])
-  .filter(row=>row.reason!=='source_required')
+  .filter(row=>!['source_required','source_unobserved','actor_source_unverified'].includes(row.reason))
   .map(row=>row.id)));
  const earlierSearches=new Set(priorRounds.flatMap(round=>(round.searches||[]).map(search=>search.query?.trim().toLocaleLowerCase('tr'))));
  const earlierActors=new Set(priorRounds.flatMap(round=>(round.scrapes||[]).filter(s=>s.status==='complete')
@@ -114,25 +116,27 @@ export async function executeDirectedResearch({brief,brand,providers,plan,decisi
   previous.add(id);
   batches.push({c,id});
  }
- const parallel=[...batches.filter(({c})=>c.tool!=='gemini'),...batches.filter(({c})=>c.tool==='gemini')];
- const acquisitionCount=parallel.filter(({c})=>c.tool!=='gemini').length;
- for(let i=0;i<parallel.length;){
-  const end=i<acquisitionCount?Math.min(i+4,acquisitionCount):i+4;
-  const outputs=await Promise.all(parallel.slice(i,end).map(async({c,id})=>{
+ const discovers=c=>c.tool==='tavily'||searchActors.includes(c.tool)||c.tool==='damilo/google-shopping-apify';
+ const acquire=batches.filter(({c})=>discovers(c)||c.tool!=='gemini'&&known.urls.has(researchUrl(c.url)));
+ const dependent=batches.filter(x=>!acquire.includes(x)&&x.c.tool!=='gemini');
+ const extract=batches.filter(({c})=>c.tool==='gemini');
+ for(const group of [acquire,dependent,extract])for(let i=0;i<group.length;i+=4){
+  const observed=observedActorTargets({brief,packet:{...packet,sources:[...packet.sources,...result.pages]},searches,scrapes:[...scrapes,...result.scrapes]});
+  const outputs=await Promise.all(group.slice(i,i+4).map(async({c,id})=>{
    const task=tasks.get(c.taskId),url=researchUrl(c.url);
    const geo=geoFor(c);
    const output=await attempt(async()=>{
     if(earlierSearches.has(c.query.trim().toLocaleLowerCase('tr'))&&(c.tool==='tavily'||searchActors.includes(c.tool)))return {reason:'search_already_used'};
     if(c.tool==='tavily')return c.query.trim()?{search:await providers.search(c.query,{depth:'basic',maxResults:c.limit,retainRaw:true,countryCode:geo?.countryCode,language:geo?.language})}:{reason:'query_required'};
     if(c.tool==='direct'){
-     if(!known.urls.has(url))return {reason:'source_unobserved'};
+     if(!observed.urls.has(url)&&(!url||researchHost(url)!==researchHost(brief.website)))return {reason:'source_unobserved'};
      if(examined.has(url))return {reason:'source_already_read'};
      const read=await readPages([url]);
      if(read.sources?.length)examined.add(url);
      return read.sources?.length?read:{reason:read.unavailable?.[0]?.reason||'source_unreadable'};
     }
     if(c.tool==='gemini'){
-     const taskSearches=[...searches,...result.searches].filter(s=>s.taskId===task.id);
+     const taskSearches=searches.filter(s=>s.taskId===task.id);
      const taskPages=[...priorRounds,...rounds].flatMap(r=>r.pages||[]).concat(result.pages).filter(p=>p.taskId===task.id);
      const requestedPages=[...scrapes,...result.scrapes].filter(s=>s.taskId===task.id).flatMap(s=>(s.pages||[]).map(p=>({...p,excerpts:[{text:p.text}]})));
      const rows=sourceRows([...await expandPages(taskPages),...requestedPages],taskSearches.flatMap(s=>s.results||[]));
@@ -146,17 +150,17 @@ export async function executeDirectedResearch({brief,brand,providers,plan,decisi
     const target=isSearch||c.tool==='damilo/google-shopping-apify'?researchUrl(brief.website):url;
     const request={actor:c.tool,url:target,...geo,maxResults:c.limit,mode:c.mode,...(c.query?{query:c.query}:{}),...(isSearch?{queries:[c.query]}:{})};
     if(earlierActors.has([c.tool,target,c.mode].join(' ')))return {reason:'actor_already_used'};
-    const scope={brief,packet,searches,scrapes,geo};
+    const scope={brief,packet:{...packet,sources:[...packet.sources,...result.pages]},searches,scrapes:[...scrapes,...result.scrapes],geo};
     const scrape=await providers.enrich(request,scope);
     return {scrape};
    });
    return {c,id,output};
   }));
-  i=end;
   for(const {c,id,output} of outputs){
    const search=[...(output.search?[output.search]:[]),...(output.scrape?.searches||[])];
    if(output.scrape?.discoveryUrls?.length)search.push({query:c.query,source:'apify-shopping',results:output.scrape.discoveryUrls.map(url=>({url,title:'',content:''}))});
    result.searches.push(...search.map(({rawResults,...s})=>({...s,taskId:c.taskId})));
+   if(search.length)searches.push(...search.map(s=>({...s,taskId:c.taskId})));
    result.pages.push(...(output.sources||[]).map(p=>({...p,taskId:c.taskId})));
    if(output.scrape)result.scrapes.push({...output.scrape,taskId:c.taskId,requestUrl:c.url,requestMode:c.mode});
    if(output.extraction)result.extractions.push(...output.extraction.map(row=>({...row,taskId:c.taskId})));

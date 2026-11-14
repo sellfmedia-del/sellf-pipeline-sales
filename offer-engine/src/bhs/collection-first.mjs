@@ -1118,7 +1118,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    const result=await executeDirectedResearch({brief,brand,providers:pool,plan,decision,rounds,
     readPages:urls=>readResearchPages(brief,brand.plan,urls,pool,collect,{complete:true}),expandPages:expandDirectedSources});
    return save({funding,...(first?{managedPlan:storedPlan}:{}),...result,
-    ...(!result.commandResults.length?{researchDone:true}:{}),...(decision.reason?{toolIssues:[decision.reason]}:{})});
+    ...(!result.commandResults.length&&!decision.reason?{researchDone:true}:{}),...(decision.reason?{toolIssues:[decision.reason]}:{})});
   }
   if(searchIndex>=0||readIndex>=0||scrapeIndex>=0||inventoryIndex>=0)return save({});
  }
