@@ -385,6 +385,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    if(combinedPeer)request.instruction=request.instruction.replace(sectionInstructions.competition,'Kendi ürün veya kanal kanıtı bulunan, aynı ihtiyaca hizmet eden kuruluşları karşılaştır. Her bulguda peerId değerini ve entities listesinde o rakibe bağlı en az bir proof değerini kullan. Gözlem rakibin kendi kanıtından gelsin. Overlap alanında markayla aynı ürünü, kullanım ihtiyacını veya hedef kanalı hangi kanıtla paylaştığını belirt. Yalnız gerçekten doğrudan ikame olabilecek adayları yaz.');
    if(focusedWriting&&combinedPeer)request.instruction+=' Hedef pazarda aynı ürün formatının belgelendiği bir rakibi değerlendirirken tüm portföyün, ölçeğin ya da sertifikaların eşit olması gerekmez. Kıyasın kapsamını ilgili ürün hattı ve kullanımla sınırla. Her peerId için entities içindeki proof kimliklerinden en az birini aynen kopyala. Başka marka hakkında yazan bir metni rakibin ürün kanıtı olarak kullanma. Rakibin güncel fiyatı bilinmese de belgelenen ürünle somut ürün ve kullanım kıyası yapılabilir.';
    if(focusedWriting&&combinedPeer)request.instruction+=' Rakibin ürün veya kanal örtüşmesini gözlem, analiz ve sınır alanlarında nitel anlat. Gözlem, aynı kullanım ihtiyacına karşılık gelen rakip ürünü ve kaynakta görülen ürün veya kanal özelliğini birlikte göstermeli. Yalnız genel site işlevi veya başka kategorideki ürün yeterli değildir. Pazar payı, liderlik, ihracat sayısı, fiyat ve yüzdeleri bu bölümde aktarma. Sayısal kıyas için ölçülecek metrik ve yöntem öner.';
+   if(providers.managedBudgetVersion>=6&&combinedPeer)request.instruction+=' Kaynak ve birim birebir doğrulanmadıkça kVA, kW, fiyat, model sayısı, yüzde ve benzeri değerleri aktarma. Kaynakta belirli ürün modeli geçse bile marka ile karşılaştırılabilir ürün ailesi ve belgelenen kullanım alanı gözlem için yeterlidir.';
    const changedRequest=minimumFirst&&(competition||swot||avoidRepeatedProofs);
    const checkpoint=changedRequest?{...previousCheckpoint,requestHash:hash(request)}:previousCheckpoint;
    if(changedRequest&&checkpoint.requestHash!==previousCheckpoint.requestHash){
@@ -504,7 +505,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     repairs.push({section,wanted:focus.length,focus,prior,repair:true,rejected:rejected.filter(row=>focus.includes(row.quadrant))});
    }
   }else if(section==='competition'&&providers.managedBudgetVersion>=3&&minimumFirst&&count===0){
-   repairs.push({section,wanted:1,focus:[],prior,repair:true,rejected});
+   repairs.push({section,wanted:providers.managedBudgetVersion>=6?2:1,focus:[],prior,repair:true,rejected});
   }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected,usedProofs:report.findings.flatMap(f=>f.sourceIds)});
  }
  if(minimumFirst)repairs.sort((a,b)=>Number(b.section==='competition')-Number(a.section==='competition'));

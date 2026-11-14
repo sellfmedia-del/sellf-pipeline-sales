@@ -235,8 +235,12 @@ function feedbackTargets(brief,packet,searches,market){
  }).slice(0,index===0?2:3));
  const official=known.filter(link=>researchHost(link.url)===own&&/yorumlar|reviews|testimonials|müşteri deneyim/iu.test(link.url+' '+link.label)).map(link=>link.url).slice(0,1);
  const slug=brief.brandName.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
- const direct=market?.[2]==='TR'&&slug.length>=3?'https://www.sikayetvar.com/'+slug:market?'https://www.trustpilot.com/review/'+own:'';
- return unique([...relevant.slice(0,4),...official,...(direct?[direct]:[])]);
+ const direct=market?.[2]==='TR'&&slug.length>=3?['https://www.sikayetvar.com/'+slug]:market?['https://www.trustpilot.com/review/'+own]:[];
+ const aliases=market?.[2]==='TR'&&!slug.includes('-')?packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
+  .map(source=>source.title?.split(/[|–—]/u)[0].trim().toLocaleLowerCase('tr').match(/^([\p{L}\d]+)\s+([\p{L}]{3,18})/u))
+  .filter(match=>match&&nameKey(match[1])===slug&&!/^(?:resmi|official|hakkında|about|ana|home)$/iu.test(match[2]))
+  .map(match=>'https://www.sikayetvar.com/'+slug+'-'+nameKey(match[2])):[];
+ return unique([...relevant.slice(0,4),...official,...aliases.slice(0,1),...direct]);
 }
 
 export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool,reserved,collect,existing=[]}){
@@ -244,33 +248,47 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const candidates=feedback?feedbackTargets(brief,brand.packet,prior,market).filter(url=>!existing.includes(url)):[];
  const needsFeedback=feedback&&countFeedbackProofs(brief,brand.packet)<2;
  const key=brief.brandName.replace(/["\r\n]/g,' ').trim();
- const product=comparisonLabel(plan.comparableProduct||'')||plan.comparableProduct;
+ const example=brand.facts?.find(fact=>fact.topic==='products')?.statement||'';
+ const product=comparisonLabel(plan.comparableProduct||example.slice(0,100))||plan.comparableProduct;
  const local=market?.[2]==='TR';
  const feedbackQueries=needsFeedback?(local?[
   `site:sikayetvar.com "${key}" şikayet`, `site:trendyol.com "${key}" ürün yorumları`,
   `site:hepsiburada.com "${key}" ürün değerlendirmeleri`
  ]:[`"${key}" customer reviews product experience`,`"${key}" customer complaints`]):[];
  const missing=plan.tasks.filter(task=>!prior.some(search=>search.taskId===task.id&&search.results?.length));
- const peers=plan.peerNames.slice(0,3).map(name=>`"${name}" ${product||''} ${market?.[1]||''} ${local?'ürünleri':'products'}`);
+ const peers=plan.peerNames.slice(0,3).map(name=>`"${name.replace(/["\r\n]/g,' ')}" ${product||''} ${market?.[1]||''} ${local?'ürünleri':'products'}`);
  const missingCompetition=missing.some(task=>task.section==='competition');
+ const competitionQueries=missingCompetition&&product?[
+  [product,market?.[1],local?'markaları üreticileri ürün kataloğu':'brands manufacturers official product catalog'].filter(Boolean).join(' '),
+  [product,market?.[1],local?'alternatif markalar üretici resmi site':'alternative brands manufacturers official product'].filter(Boolean).join(' ')
+ ]:[];
  const haveMarketplaces=candidates.some(url=>['trendyol.com','hepsiburada.com','amazon.com.tr'].includes(researchHost(url)));
  const dedicated=haveMarketplaces?feedbackQueries.filter(query=>!query.includes('site:trendyol.com')&&!query.includes('site:hepsiburada.com')):feedbackQueries;
  const assigned=plan.tasks.filter(task=>task.tools?.includes('google-search')&&task.section!=='perception');
- const queries=unique([...dedicated,...(missingCompetition?peers:[]),...missing.filter(task=>task.section!=='perception').map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
+ const queries=unique([...dedicated,...(missingCompetition?peers:[]),...competitionQueries,...missing.filter(task=>task.section!=='perception').map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const feedbackTask=plan.tasks.find(task=>task.section==='perception');
  const [direct,discovery,feedbackSearch]=await Promise.all([
   needsFeedback?readResearchPages(brief,brand.plan,candidates,reserved,collect):{sources:[],unavailable:[]},
   queries.length&&reserved.enrich?collectAttempt(async()=>{
    const available=await reserved.availableActors?.()||[];
-   const actor=searchActors.find(name=>available.includes(name));
-   if(!actor)return {unavailable:true,reason:'actor_limit_unverified'};
+   const eligible=searchActors.filter(name=>available.includes(name));
+   if(!eligible.length)return {unavailable:true,reason:'actor_limit_unverified'};
    const context={brief,packet:brand.packet,searches:prior,geo};
-   if(actor!=='desearch/web-search')return {actor,...await collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries},context))};
-   const priority=unique([...peers.slice(0,2),...dedicated, ...queries]).slice(0,3);
-   const results=await Promise.all(priority.map(query=>collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries:[query]},context))));
-   const searches=results.flatMap(result=>result.searches||[]);
-   return {actor,searches,status:searches.length?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
+   let priorAttempt;
+   for(const actor of eligible){
+    if(actor!=='desearch/web-search'){
+     const result=await collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries},context));
+     priorAttempt={actor,...result};
+     if(result.searches?.some(search=>search.results?.length)||result.reason==='budget_limit')return priorAttempt;
+     continue;
+    }
+    const priority=unique([...peers.slice(0,2),...dedicated,...queries]).slice(0,3);
+    const results=await Promise.all(priority.map(query=>collectAttempt(()=>reserved.enrich({actor,url:brief.website,queries:[query]},context))));
+    const searches=results.flatMap(result=>result.searches||[]);
+    priorAttempt={actor,searches,status:searches.some(search=>search.results?.length)?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
+   }
+   return priorAttempt;
   }):null,
   needsFeedback&&feedbackTask?.tools?.includes('tavily')&&pool?.search?Promise.all(feedbackQueries.slice(0,2).map(query=>
    searchManagedTask(pool,{id:feedbackTask.id,query}))):[]
@@ -362,6 +380,17 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
  }
  const names=product?(plan.data?.candidates||[]):[];
  const discoveryTarget=providers.managedBudgetVersion>=3?4:2;
+ if(providers.managedBudgetVersion>=6&&product){
+  for(const result of priorSearches.flatMap(search=>search.results||[])){
+   const url=researchUrl(result.url);
+   if(!url||/^(?:trendyol|hepsiburada|amazon|sikayetvar|google|instagram|linkedin|akakce|cimri)\./iu.test(researchHost(url)))continue;
+   const resemblesProduct=/ürün|urun|product|catalog|kategori|category|collections|shop|jeneratör|generator/iu.test(new URL(url).pathname);
+   const overlap=words.some(word=>nameKey([result.title,result.content,url].filter(Boolean).join(' ')).includes(nameKey(word)));
+   const candidate=overlap&&resemblesProduct&&publisherName(result,url);
+   if(candidate&&!seen.has(peerGroupKey(candidate)))addHint(candidate,url);
+   if(hints.length>=4)break;
+  }
+ }
  if(product&&providers.managedBudgetVersion>=3&&managedPlan?.coveragePolicy===2&&providers.managedBudgetVersion<6)await discoverPublishers();
  for(let i=0;i<names.length;i+=3){
   const results=await Promise.all(names.slice(i,i+3).map(findPublisher));
@@ -991,7 +1020,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const topics=shard(priority,searchIndex,searchStages.length);
   const searches=[...sector];
   for(let i=0;i<topics.length;i+=3){
-   searches.push(...await Promise.all(topics.slice(i,i+3).map(task=>task.id?searchManagedTask(pool,task):
+   searches.push(...await Promise.all(topics.slice(i,i+3).filter(task=>!assigned||!task.tools?.length||task.tools.includes('tavily')).map(task=>task.id?searchManagedTask(pool,task):
     collectAttempt(()=>pool.search(task.query||queryFor(brief,task.topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
   }
   if(searchIndex===searchStages.length-1&&assigned&&managedPlan){
@@ -1009,7 +1038,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }
  if(readIndex>=0){
   const brand=await previous('brand'),searches=await sourcesFrom(previous,searchStages,'searches');
-  const results=managed?.managerDirected?Array.from({length:12},(_,index)=>searches.map(search=>search.results?.[index]).filter(Boolean)).flat():searches.flatMap(search=>search.results||[]);
+  const assigned=providers.managedBudgetVersion>=6;
+  const results=managed?.managerDirected?Array.from({length:assigned?4:12},(_,index)=>searches.map(search=>search.results?.[index]).filter(Boolean)).flat():searches.flatMap(search=>search.results||[]);
   const urls=unique(results.map(result=>researchUrl(result.url)).filter(Boolean));
   const targets=shard(urls,readIndex,readStages.length);
   const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
@@ -1024,7 +1054,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   // publisher searches, while optional Actors use the lower collection limit.
   const peerPool=sectional&&managed?.coveragePolicy===2?providers.withCeiling(managedInventoryCeilingKurus):pool;
   let comparison={searches:[],pages:[]};
-  const archived=new Set([...brand.packet.sources,...pages].filter(page=>page.method!=='search-snippet'&&!page.metadataOnly).map(page=>page.finalUrl));
+ const archived=new Set([...brand.packet.sources,...pages].filter(page=>page.method!=='search-snippet'&&!page.metadataOnly).map(page=>page.finalUrl));
   const gatherActors=()=>actorRequest({brief,searches,scrapes:previousScrapes,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   let parallelScrapes;
   if(scrapeIndex===0){

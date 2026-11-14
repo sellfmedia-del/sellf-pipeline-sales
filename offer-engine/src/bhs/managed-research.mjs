@@ -31,13 +31,13 @@ export async function planManagedResearch({brief,brand,sector,providers,compactF
  const assigned=providers.managedBudgetVersion>=6;
  const normalizeData=data=>{
   const plan=normalizePlan(data,fallback,directed);
-  if(directed)plan.tasks=plan.tasks.map(task=>({...task,acceptance:task.acceptance||task.purpose,...(assigned?{tools:task.tools||[]}: {})}));
+  if(directed)plan.tasks=plan.tasks.map(task=>({...task,acceptance:task.acceptance||task.purpose,...(assigned?{tools:task.tools?.length?task.tools:['tavily','google-search','direct','gemini']}: {})}));
   return plan;
  };
  const generate=crossProvider?providers.worker:compactFallback?providers.evidenceReviewer:providers.manager;
  const stage=crossProvider?'v8-managed-research-plan-cross-provider':compactFallback?'v8-managed-research-plan-fallback':'v8-managed-research-plan';
  const result=await generate(stage,{instruction:instruction+(directed?' Önceliği görev ve metrics dizisindeki sıra belirler. Her görev için acceptance alanında hangi yayıncı, coğrafya ve özgün ölçüm veya belgeyle o görevin tamamlanmış sayılacağını yaz. Önce markanın mevcut pazarı ile briefteki hedef pazarı ayır. Sektör hacmi, gelir kanalları, rekabet ve müşteri davranışı bulunamadıysa bunları gereklilik veya araştırma sorusu olarak planla. Dijitalde resmî web, sosyal, pazaryeri ve reklam varlıklarının envanteri ve doğrulanacak işlevleri için görev ver.':''),
-  ...(assigned?{toolInstructions:'Her tasks kaydında tools ile birden fazla uygun aracı aynı kanıt sorusuna göre seç. tavily ve google-search kaynak bulur, direct kamuya açık asıl sayfayı okur, gemini metrikleri ve kanıtı çıkarır. trendyol-reviews Türkiye ürün yorumlarını, instagram-comments resmî gönderilerin deneyim yorumlarını, maps-reviews resmî şubenin değerlendirmelerini okur. Bunları sadece marka, pazar ve istenen kanıtla ilişkiliyse ekle. tools içine ilgisiz araç veya URL yazma.'}:{}),brief,
+  ...(assigned?{toolInstructions:'Her tasks kaydında tools ile birden fazla uygun aracı aynı kanıt sorusuna göre seç. tavily ve google-search kaynak bulur, direct kamuya açık asıl sayfayı okur, gemini metrikleri ve kanıtı çıkarır. trendyol-reviews Türkiye ürün yorumlarını, instagram-comments resmî gönderilerin deneyim yorumlarını, maps-reviews resmî şubenin değerlendirmelerini okur. Bunları sadece marka, pazar ve istenen kanıtla ilişkiliyse ekle. tools içine ilgisiz araç veya URL yazma. Rakip araştırması için karşılaştırılabilir ürün kategorisinden en az iki araştırma adayı peerNames içine koy. İsimler hipotezdir, doğrulanmadan rapora yazılmaz.'}:{}),brief,
   brandFacts:brand.facts,brandReview:providers.managedBudgetVersion>=2?{marketContext,fundamentals,missing}:brand.review,
   sectorEvidence:(Array.isArray(sector)?sector:[sector]).flatMap(item=>(item?.results||[]).slice(0,directed?5:8).map(({url,title,content})=>[url,title,String(content||'').slice(0,350)])),
   sections:managedSections,availableActors
