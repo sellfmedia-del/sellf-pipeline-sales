@@ -50,6 +50,90 @@ function transport({onGenerate,invalid=false}={}){
 }
 const base={configured:()=>true,generate:async()=>({legacyScope:true})};
 function providers(db,t){return createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl});}
+const handoffProviders=(db,fetchImpl)=>createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',
+ receiptVersion:'v8',managedBudgetVersion:5,base,now,researchFx:async()=>({usdTry:44}),fetchImpl});
+const geminiAnswer=(model,data)=>json({modelVersion:model,usageMetadata:{promptTokenCount:100,candidatesTokenCount:40,thoughtsTokenCount:10,totalTokenCount:150},
+ candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}]});
+const spendLimit=()=>new Response(JSON.stringify({error:{type:'invalid_request_error',message:'You have reached your specified API usage limits.'}}),{status:400});
+
+test('Claude spend rejection sends plan and final analysis to Gemini and reuses the selected model on reconnect',async()=>{
+ for(const failureAt of ['count','generation']){
+  const db=account(),calls=[];
+  const send=async(url,init)=>{
+   const body=JSON.parse(init.body),claude=url.includes('anthropic'),count=url.includes('count_tokens')||url.includes(':countTokens');
+   calls.push({claude,count});
+   if(claude)return failureAt==='count'||!count?spendLimit():json({input_tokens:100});
+   if(count)return json({totalTokens:100});
+   assert.match(url,/gemini-3\.8-flash:generateContent$/);
+   assert.deepEqual(JSON.parse(body.contents[0].parts[0].text),{evidence:['proof-1']});
+   assert.equal(body.generationConfig.responseJsonSchema.properties.ok.type,'boolean');
+   return geminiAnswer(supervisedModels.fallbackManager,{ok:true});
+  };
+  const input={instruction:'Evaluate the original evidence.',evidence:['proof-1']};
+  const options={compactReview:true,maxOutputTokens:700,minimumOutputTokens:600,validateData:data=>assert.equal(data.ok,true)};
+  const make=()=>handoffProviders(db,send);
+  const plan=await make().manager('brand-plan',input,schema,options);
+  const report=await make().manager('final-report',input,schema,options);
+  assert.deepEqual(plan.providerHandoff,{from:'claude',to:'gemini'});
+  assert.equal(report.model,supervisedModels.fallbackManager);
+  assert.equal(calls.filter(call=>call.claude).length,failureAt==='count'?1:2);
+  assert.equal([...db.rows.values()].filter(r=>r.value?.rejected).reduce((n,r)=>n+r.charge_kurus,0),0);
+  const before=calls.length;
+  assert.deepEqual(await make().manager('final-report',input,schema,options),report);
+  assert.deepEqual(await make().readManagerResult('final-report',input,schema,options),report);
+  assert.equal(calls.length,before);
+ }
+});
+
+test('Gemini timeout retains its reservation while Claude completes only the missing task and cannot retry on reload',async()=>{
+ const db=account(),calls=[];
+ const send=async(url,init)=>{
+  calls.push(url);
+  const body=JSON.parse(init.body);
+  if(url.includes(':countTokens'))return json({totalTokens:100});
+  if(url.includes(':generateContent'))throw new DOMException('Timed out','TimeoutError');
+  if(url.endsWith('/count_tokens'))return json({input_tokens:100});
+  assert.equal(body.model,supervisedModels.fallbackWorker);
+  assert.equal(body.tools[0].name,'emit_bhs_stage');
+  return roleAnswer(body,{ok:true});
+ };
+ const options={maxOutputTokens:600,compactWorker:true,reserveForFollowingKurus:500};
+ const invoke=()=>handoffProviders(db,send).worker('index',{sources:['proof-1']},schema,options);
+ const result=await invoke();
+ assert.deepEqual(result.providerHandoff,{from:'gemini',to:'claude'});
+ assert.ok([...db.rows.entries()].some(([key,row])=>key.startsWith('model:bhs-v8:worker:')&&row.state==='uncertain'&&row.charge_kurus>0));
+ const n=calls.length;
+ assert.deepEqual(await invoke(),result);
+ assert.equal(calls.length,n);
+ assert.ok((await db.ledger.status()).chargedKurus<=4500);
+});
+
+test('a timed-out Gemini job cannot buy a Claude replacement with money reserved for the report',async()=>{
+ const db=account(4478),calls=[];
+ const send=async(url)=>{
+  calls.push(url);
+  if(url.includes(':countTokens'))return json({totalTokens:100});
+  if(url.includes(':generateContent'))throw new DOMException('Timed out','TimeoutError');
+  if(url.endsWith('/count_tokens'))return json({input_tokens:100});
+  assert.fail('the alternate cannot spend the report reserve');
+ };
+ await assert.rejects(handoffProviders(db,send).worker('index',{},schema,{maxOutputTokens:600,compactWorker:true,reserveForFollowingKurus:500}),
+  error=>error.code==='budget_limit');
+ assert.ok((await db.ledger.status()).chargedKurus<=4500);
+ assert.equal(calls.filter(url=>url.includes(':generateContent')).length,1);
+});
+
+test('two unavailable model accounts return a recoverable stop without a third request',async()=>{
+ const db=account(),calls=[];
+ const providers=handoffProviders(db,async url=>{
+  calls.push(url);
+  if(url.includes('anthropic'))return spendLimit();
+  return new Response(JSON.stringify({error:{message:'Billing required.'}}),{status:403});
+ });
+ await assert.rejects(providers.manager('analysis',{},schema),error=>error.code==='provider_unavailable');
+ assert.equal(calls.length,2);
+ assert.equal((await db.ledger.status()).chargedKurus,500);
+});
 test('managed Claude retains structured transport without sending the output budget to token counting',async()=>{
  const db=account(),counted=[],generated=[];
  const p=createSupervisedProviders({ledger:db.ledger,anthropicKey:'fake',geminiKey:'fake',receiptVersion:'v8',managedBudgetVersion:4,

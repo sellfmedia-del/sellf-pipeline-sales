@@ -71,7 +71,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:priorPlan.managerDirected?4:3});
+ const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:5});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&f.recommendation?.measurement)
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  const missingMetrics=synthesis.supervision.metricCoverage?.filter(metric=>sections.includes(metric.section)&&!metric.proofIds.length)||[];

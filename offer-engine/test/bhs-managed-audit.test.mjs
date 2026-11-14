@@ -72,6 +72,34 @@ test('a candidate mentioned in a readiness finding does not relabel the audited 
  assert.equal(report.competitors.length,0);
 });
 
+test('the same grounded analysis contract rejects invented impact and repeated copy under either provider',async()=>{
+ for(const model of ['claude-sonnet-5-5','gemini-3.8-flash']){
+  const evidence=packet();
+  const context=sequentialContext(brief,{packet:evidence,searches:[],peerDiscoveryVersion:'product-v2'});
+  const card=context.cards.find(card=>/teslimat süresi/.test(card.quote));
+  const args={brief,brand:{facts:[]},plan:{coveragePolicy:2,managerDirected:true},context,inventory:[],
+   coverageEvidence:{readiness:[card.id]},sections:['readiness'],sectional:true};
+  const {input}=managedReportInput(args),ids=Object.keys(input.sources);
+  let calls=0;
+  const providers={managedBudgetVersion:5,modelHandoff:true,evidenceReviewer:write,manager:write};
+  async function write(_stage,request,_schema,options){
+   const repair=++calls>1;
+   const row={area:'operations_1',proof:request.proofsByQuestion.readiness,kind:'inference',observation:card.quote,
+    analysis:repair?'Teslimat vaadi satın alma öncesi belirsizliği azaltabilir.':'Teslimat vaadi siparişleri %99 artırır.',
+    action:'Teslimat vaadini ürün sayfasında kontrollü pilotla test et.',
+    measurement:'Pilot ve kontrol grubunun sepete geçiş oranını karşılaştır.',limitation:'Ticari etki ölçülmedi.',question:''};
+   assert.match(request.instruction,/alternatif açıklama/);
+   if(repair)assert.ok(request.rejected.some(item=>item.reason==='unsupported_analysis_quantity'));
+   return {model,data:options.normalizeData({findings:repair?[row]:[row,{...row,analysis:row.observation}]})};
+  }
+  const {report}=await synthesizeManagedReport({...args,providers,batchReviews:[{ids,verdicts:'r'.repeat(ids.length),candidates:ids}]});
+  assert.ok(calls>=2);
+  assert.equal(report.findings.length,1);
+  assert.match(report.findings[0].impact,/belirsizliği/);
+  assert.doesNotMatch(JSON.stringify(report.findings),/%99/);
+ }
+});
+
 test('a survey percentage cannot be applied beyond its documented customer group',async()=>{
  const evidence=packet(),source=evidence.sources[0];
  const quote='Marka algısı araştırmasında, markayı en sık tercih eden annelerin yüzde 58’i organik sertifikayı tercih nedeni olarak gösterdi.';
@@ -193,7 +221,7 @@ test('research and synthesis reserve independently, including parallel calls and
  assert.equal((await ledger.status()).chargedKurus,2500);
  const review=await managedPhaseBudget({ledger,brief,phase:managedReviewPhases[0],enabled:false});
  assert.equal(review.managedAudit,true);
- assert.equal(review.managedBudgetVersion,4);
+ assert.equal(review.managedBudgetVersion,5);
  assert.equal(review.phaseCeiling,3000);
  await assert.rejects(review.ledger.once('oversized-review',{},501,async()=>assert.fail('review cannot borrow report funds')),error=>error.code==='budget_limit');
  await review.ledger.once('claude-review',{},500,async()=>({}));

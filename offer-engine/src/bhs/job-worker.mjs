@@ -28,7 +28,8 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    // The existing deterministic scope fallback uses no provider and fits the
    // fixed gateway/template reserve. A finished BHS must not wait for a model.
    options.ledger.issues?.add('budget_limit');
-   return runStage({...options,providers:{...options.providers,generate:async()=>{throw new BudgetError('budget_limit','Kalan bütçe için mevcut sıfır maliyetli kapsam şablonu kullanılacak.');}}});
+   const noModel=async()=>{throw new BudgetError('budget_limit','Kalan bütçe için mevcut sıfır maliyetli kapsam şablonu kullanılacak.');};
+   return runStage({...options,providers:{...options.providers,generate:noModel,worker:noModel}});
   }
  }
  if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){

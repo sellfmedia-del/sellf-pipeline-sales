@@ -48,7 +48,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
   if(req.method==='GET'){
    const version=getResearchVersion(),supervised=['v7','v8'].includes(version),pricing=version==='v8'?researchTariff:tariff;
-   return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:version==='v8'&&isBackgroundEnabled()?'background':'browser',...(version==='v8'?{collectionFirst:collectionFirstEnabled()}:{}),costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:pricing.version,tariffReadiness:tariffReadiness(now(),pricing),qualityBenchmark:'not_requested',contentReview:false});
+   return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||version==='v8'||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:version==='v8'&&isBackgroundEnabled()?'background':'browser',...(version==='v8'?{collectionFirst:collectionFirstEnabled(),modelHandoff:'claude-gemini'}:{}),costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:pricing.version,tariffReadiness:tariffReadiness(now(),pricing),qualityBenchmark:'not_requested',contentReview:false});
   }
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
   const host=req.headers.host;if(!host||req.headers.origin!=='https://'+host)return res.status(403).json({error:'İstek kaynağı doğrulanamadı.'});
@@ -189,7 +189,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     let usable=synthesis?.state==='complete'?synthesis.value:undefined;
     if(!usable&&phase==='synthesis'&&managed&&policy.value?.version>=2){
      try{
-      usable=await recoverManagedSectionSynthesis(brief,previous,{readCheckpoint:async(name,input)=>{
+      usable=await recoverManagedSectionSynthesis(brief,previous,{managedBudgetVersion:policy.value.version,readCheckpoint:async(name,input)=>{
         const step=await ledger.get('audit:v8:checkpoint:'+name+':'+ledgerHash(input));
         return step?.state==='complete'?step.value:undefined;
       }});

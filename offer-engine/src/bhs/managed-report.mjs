@@ -20,10 +20,16 @@ const list=value=>Array.isArray(value)?value:[];
 const unique=value=>[...new Set(value)];
 const choice=values=>({type:'string',enum:values});
 const reportFailures=new Set(['budget_limit','budget_pending','budget_uncertain','provider_error','provider_timeout','provider_format','provider_size',
- 'provider_accounting','provider_rejected','token_count','fx_limit','fx_unavailable','not_configured','tariff_expired','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
+ 'provider_accounting','provider_rejected','provider_unavailable','claude_spend_limit','token_count','fx_limit','fx_unavailable','not_configured','tariff_expired','quota','invalid_report','incomplete','model_timeout','model_output_invalid']);
 const field=limit=>({...str(limit),minLength:1});
 const managedFindingId=(row,proofs)=>'managed_'+hash({section:row.section,observation:row.observation,proofs}).slice(0,22);
 const distinctProofSections=new Set(['perception','readiness']);
+const analysisStandard='Analiz, kaynakta görülen koşulun hangi mekanizmayla briefteki hedefe etki edebileceğini açıklasın. En güçlü alternatif açıklama kararı değiştirecekse sınırı belirt. Aksiyon yakın vadede uygulanabilir bir karar veya tek deney olsun. Başarı ölçümü ilgili metriği ve nereden, hangi karşılaştırmayla ölçüleceğini versin. Kaynaksız performans yüzdesi, ciro, kâr, benchmark veya kesin neden yazma. Bir olgu, hipotez ve öneriyi birbirine karıştırma.';
+function analysisIssue(row,quotes,briefText){
+ const fields=[row.observation,row.analysis,row.action,row.measurement].map(customerQuoteKey);
+ if(new Set(fields).size!==fields.length)return 'repeated_analysis';
+ if(![row.analysis,row.limitation,row.question].every(value=>supportedNumbers(value,quotes+'\n'+briefText)))return 'unsupported_analysis_quantity';
+}
 function quoteIdentity(context,id){
  const group=context.proofGroups.get(id)||[id];
  return customerQuoteKey(group.map(proof=>context.known.get(proof)?.quote).join(' '));
@@ -266,6 +272,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
  const accepted=new Set(sections),signal=AbortSignal.timeout(200000),evidenceCoverage=reviewed.coverage;
  const minimumFirst=input.plan.coveragePolicy===2;
  const draftsBySection=new Map(),issues=new Map();
+ const enforceAnalysis=providers.managedBudgetVersion>=5;
+ const briefText=[brief.goals,brief.needs,brief.meetingNotes].filter(Boolean).join('\n');
  const project=(drafts,acceptedSections=accepted)=>projectSectionDrafts({drafts,input,reverse,context,accepted:acceptedSections});
 
  async function write({section,wanted,focus,prior,repair,rejected=[],usedProofs=[]},following){
@@ -318,6 +326,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(input.plan.managerDirected)request.instruction+=' Önce doğrulanmış öncelikli metrikleri ve hedef pazarı incele. Açık metrikleri veya kaynaktaki belirsizliği kesin sonuç gibi yazma. Aksiyon mevcut kanıtın izin verdiği somut karar veya doğrulama adımı olsun. Bir gözlemi başka bir bölümde tekrar etmek yerine bağımsız ikinci bir bulgu seç. Statik HTML kaynaklı teknik işaret için ilk aksiyon canlı doğrulama olsun.';
     if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
+   if(enforceAnalysis)request.instruction+=' '+analysisStandard;
    const name='managed-section-v3:'+section;
    const previousCheckpoint={repair,wanted,focus,sourceLimit,requestHash:hash(request)};
    const cached=await providers.readCheckpoint?.(name,previousCheckpoint);
@@ -344,7 +353,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(rejected.length){
       request.rejected=rejected;
       request.instruction+=' Rejected alanındaki eski metin doğrulanmış veri değildir. Kaynağa dön ve yalnız atıfla desteklenen kısmı yeniden yaz veya daha sağlam bir kanıt seç.';
-     if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','quantity_unit_unconfirmed','survey_population_unconfirmed'].includes(reason)))request.instruction+=' Gözlem, analiz, sınır ve toplantı sorusunu rakam, miktar, yıl veya üstünlük iddiası kullanmadan nitel yaz. Kaynaktaki olgu ile ticari yorum ayrı olsun. Önceki miktarı hiçbir alanda tekrar etme. Aksiyonun veya ölçümün yöntemini yazabilirsin.';
+     if(rejected.some(({reason})=>['unsupported_finding','unsupported_quantity','unsupported_analysis_quantity','quantity_unit_unconfirmed','survey_population_unconfirmed'].includes(reason)))request.instruction+=' Gözlem, analiz, sınır ve toplantı sorusunu rakam, miktar, yıl veya üstünlük iddiası kullanmadan nitel yaz. Kaynaktaki olgu ile ticari yorum ayrı olsun. Önceki miktarı hiçbir alanda tekrar etme. Aksiyonun veya ölçümün yöntemini yazabilirsin.';
      }
     }
    }
@@ -397,7 +406,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     try{result=await generate(stage,request,modelSchema,options);}
     catch(error){
      const workerFitsDifferentRate=error.code==='budget_limit'&&!error.paidResponseRetained&&error.budgetDiagnostic?.role==='manager';
-    if(providers.managedBudgetVersion>=4&&generate===providers.manager&&providers.evidenceReviewer&&
+    if(providers.managedBudgetVersion===4&&generate===providers.manager&&providers.evidenceReviewer&&
      (workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))result=await providers.evidenceReviewer(stage+':claude-fallback',request,modelSchema,options);
     else{
     if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!(workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))throw error;
@@ -414,8 +423,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const checked=project([draft],new Set([section]));
     const ids=new Set(checked.bhsSections.find(item=>item.id===section).findingIds);
     const proofIds=f=>unique(f.proof.map(id=>reverse.get(id)).filter(Boolean));
+    const proofText=f=>proofIds(f).flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)?.quote||'').join('\n');
     const findingIssue=f=>{
-     const quotes=proofIds(f).flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)?.quote||'').join('\n');
+     const quotes=proofText(f);
      if(!supportedSurveyScope(f.observation,quotes))return 'survey_population_unconfirmed';
      if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
      if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı|yok)\b/iu.test(f.observation)&&
@@ -423,15 +433,16 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(section==='swot'&&['opportunity','threat'].includes(f.quadrant)&&f.proof.every(id=>
       /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(focused.sources[id]?.[0]||'')))return 'external_swot_evidence_missing';
     };
-    const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f)));
+    const reasoningIssue=f=>analysisIssue(f,proofText(f),briefText);
+    const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f))&&(!enforceAnalysis||!reasoningIssue(f)));
     const retained={...draft,findings:valid,peers:peers.filter(p=>checked.competitors.some(peer=>peer.id===p.entityId))};
     if(focusedWriting){
      const issues=new Map(checked.transfer.issues.map(({path,reason})=>[path,reason]));
      retained.rejected=findings.filter(f=>!valid.includes(f)).map(f=>{
       const proof=proofIds(f);
-      const quotes=proof.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)?.quote||'').join('\n');
+      const quotes=proofText(f);
       const reason=issues.get('competitors.'+f.peerId)||issues.get('findings.'+managedFindingId(f,proof));
-      return {quadrant:f.quadrant,observation:f.observation,reason:findingIssue(f)||(!supportedNumbers(f.observation,quotes)?'unsupported_quantity':reason||'comparison_or_duplicate')};
+      return {quadrant:f.quadrant,observation:f.observation,reason:findingIssue(f)||(enforceAnalysis&&reasoningIssue(f))||(!supportedNumbers(f.observation,quotes)?'unsupported_quantity':reason||'comparison_or_duplicate')};
      });
      retained.returned=findings.length;
     }

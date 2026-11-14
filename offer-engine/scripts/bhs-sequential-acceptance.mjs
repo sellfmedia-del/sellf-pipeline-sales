@@ -36,6 +36,24 @@ export async function runSequentialAcceptance(){
  }
  const db=await localBudget({lead:'public-'+caseName+'-v8',seed}),output=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');await mkdir(output,{recursive:true});
  const managed=process.env.OFFER_BHS_QA_MANAGED==='1';
+ const outage=process.env.OFFER_BHS_QA_OUTAGE;
+ const outageFamilies={claude:'api.anthropic.com',gemini:'generativelanguage.googleapis.com'};
+ if(outage&&!Object.hasOwn(outageFamilies,outage))throw Error('Unknown QA outage.');
+ let simulatedRejections=0;
+ const qaFetch=outage?async(url,init)=>{
+  if(new URL(url).hostname!==outageFamilies[outage])return fetch(url,init);
+  simulatedRejections++;
+  const error=outage==='claude'?{type:'invalid_request_error',message:'You have reached your specified API usage limits.'}:{message:'Service unavailable.'};
+  return new Response(JSON.stringify({error}),{status:outage==='claude'?400:503});
+ }:fetch;
+ if(outage){
+  const probe=await Promise.allSettled(['users/me','actor-tasks?limit=1'].map(async endpoint=>{
+   if(!process.env.APIFY_API_TOKEN)return {endpoint,status:'missing'};
+   const response=await fetch('https://api.apify.com/v2/'+endpoint,{headers:{Authorization:'Bearer '+process.env.APIFY_API_TOKEN},signal:AbortSignal.timeout(8000),redirect:'error'});
+   return {endpoint,status:response.status};
+  }));
+  console.info(JSON.stringify({event:'bhs_qa_apify_connection',checks:probe.map(check=>check.status==='fulfilled'?check.value:{status:'unavailable'})}));
+ }
  const started=Date.now();
  if(!managed)await db.ledger.once('qa:infrastructure-allowance',{case:caseName,scope:'One standard Preview build'},500,async()=>({reservedKurus:500}));
  // One build may complete the real sequential report. Individual provider
@@ -55,7 +73,7 @@ export async function runSequentialAcceptance(){
   for(phase of sequentialPhases.slice(0,managed?-1:-2)){
    if(Date.now()>=deadline)throw Object.assign(Error('QA build deadline reached; checkpoint retained.'),{code:'qa_deadline'});
    const budget=managed?await managedPhaseBudget({ledger:db.ledger,brief,phase,enabled:true}):{ledger:db.ledger};
-   const providers=createSequentialProviders({ledger:budget.ledger,phase,infrastructureOffsetKurus:managed?400:500,
+   const providers=createSequentialProviders({ledger:budget.ledger,phase,fetchImpl:qaFetch,infrastructureOffsetKurus:managed?400:500,
     ...(managed?{collectionFirst:true,managedAudit:budget.managedAudit,managedBudgetVersion:budget.managedBudgetVersion,phaseLimitKurus:budget.phaseCeiling}:{})});
    const options={phase,brief,ledger:budget.ledger,providers,researchVersion:'v8',researchModel:'claude-sonnet-5-5',phaseCeiling:budget.phaseCeiling};
    if(managed)await runMeteredBhsPhase({id:'qa-'+caseName,phase,briefHash:briefHash(brief),researchVersion:'v8'},options,
@@ -95,6 +113,8 @@ export async function runSequentialAcceptance(){
     for(const f of data.findings||[])console.info(JSON.stringify({event:'bhs_v8_qa_finding',case:caseName,section:f.bhsSection,quadrant:f.swotQuadrant,statement:f.statement,impact:f.impact,action:f.recommendation?.action,metric:f.recommendation?.measurement,source:data.sources.find(source=>source.id===f.sourceIds[0])?.url}));
 
    }
+   const handoffs=rows.filter(row=>row.state==='complete'&&row.step_key.startsWith('model:bhs-v8:')&&row.step_key.includes(':v8-handoff:')&&!row.value.rejectedOutput&&!row.value.rejected)
+    .map(row=>({stage:row.step_key.split(':').slice(5,-1).join(':'),model:row.value.model}));
    result={case:caseName,status:result.status,phase,code:result.code,providerStatus:result.providerStatus,providerOperation:result.providerOperation,
     providerReason:result.providerReason,parameterHints:result.parameterHints,validationDetail:result.validationDetail,
     elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
@@ -102,7 +122,7 @@ export async function runSequentialAcceptance(){
     evidenceCoverage:audit?.data.supervision.evidenceCoverage,
     metricCoverage:audit?.data.supervision.metricCoverage?.map(({section,name,status})=>({section,name,status})),
     researchCostKurus:rows.find(row=>row.step_key.startsWith('audit:managed-synthesis-baseline:'))?.value?.chargedKurus,scopeSaved:rows.some(row=>row.step_key.startsWith('audit:scope:')&&row.state==='complete'),
-    productionWrites:0};
+    ...(outage?{outage,simulatedRejections,handoffs}:{}),productionWrites:0};
   }
   await save();await writeFile(path.join(output,'bhs-sequential-acceptance.json'),JSON.stringify(result));await db.close();
  }

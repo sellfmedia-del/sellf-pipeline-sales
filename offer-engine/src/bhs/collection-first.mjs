@@ -82,7 +82,7 @@ const peerDecisionResponse=obj({...peerVerdictSchema.properties.decisions.items.
 const peerVerdictResponseSchema=obj({decisions:arr(peerDecisionResponse,6)});
 const peerSearchSchema=obj({product:str(100),candidates:arr(str(100),6)});
 const publisherSelectionSchema=obj({pages:arr(obj({name:str(90),resultId:str(12)}),6)});
-const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','input_budget','token_count','provider_rejected','provider_error','provider_format','provider_size','quota','provider_timeout','fx_unavailable','fx_limit','model_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
+const collectionErrors=new Set(['budget_limit','budget_uncertain','budget_pending','input_budget','token_count','provider_rejected','provider_error','provider_unavailable','claude_spend_limit','not_configured','provider_format','provider_size','quota','provider_timeout','fx_unavailable','fx_limit','model_timeout','incomplete','model_output_invalid','invalid_report','actor_source_unverified','actor_locale_unverified','actor_api_unavailable','actor_output_limit','actor_time_limit','actor_pricing_unverified','actor_limit_unverified']);
 
 async function collectAttempt(run){
  try{return await run();}
@@ -866,7 +866,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    directed&&pool.availableActors?pool.availableActors():undefined
   ]):[[],undefined];
   let planned=first&&managed?await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool,availableActors})):null;
-  if(planned?.unavailable&&providers.managedBudgetVersion>=3&&pool.evidenceReviewer){
+  if(planned?.unavailable&&!providers.modelHandoff&&providers.managedBudgetVersion>=3&&pool.evidenceReviewer){
    const fallback=await collectAttempt(()=>planManagedResearch({brief,brand,sector,providers:pool,compactFallback:true,availableActors}));
    if(!fallback.unavailable)planned=fallback;
    else if(!directed&&pool.worker&&['provider_format','model_output_invalid','provider_error','provider_timeout','token_count','quota'].includes(fallback.reason)){

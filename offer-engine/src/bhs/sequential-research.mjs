@@ -264,7 +264,7 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
  try{reviewed=await providers.manager('v8-'+phase+'-review',reviewInput,contract,reviewOptions);}
  catch(error){
   const retryable=error=>['provider_format','provider_error','provider_timeout','invalid_report','incomplete','model_output_invalid','token_count','quota'].includes(error.code)||error.name==='TimeoutError';
-  if(!compactBrand||!providers.evidenceReviewer||!retryable(error))throw error;
+  if(!compactBrand||providers.modelHandoff||!providers.evidenceReviewer||!retryable(error))throw error;
   try{reviewed=await providers.evidenceReviewer('v8-managed-brand-review-fallback',reviewInput,contract,reviewOptions);}
   catch(failure){
    if(!retryable(failure))throw failure;
@@ -356,7 +356,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const plan=brandPlan(brief),read=()=>collect(brief,plan,{identityOnly:true,sourceLimit:4});
   const packet=providers.checkpoint?await providers.checkpoint('identity-input',brief,read):await read();
   const task=await providers.manager('v8-brand-plan',{instruction:'BHS yöneticisisin. Markanın resmî sitesinden okunan kimliği incele. Gemini operatörüne markanın ne sattığını, iş modelini, hedef pazarını, ölçeğini ve bağlı şirketini kaynakla açıklatacak somut görev ver. instruction için 2–4 kısa cümle ve yaklaşık 600 karakter hedefle; genel güvenlik kurallarını tekrarlama. En fazla iki hedefli marka sorgusu seç. Bu ilk aşamada sektör/rekabet/SWOT analizi yaptırma. Brief hedeflerini doğrulanmış sonuç sayma.',...stageModelInput(sequentialContext(brief,{packet,searches:[]}),{sample:true}),...await actorPlanning(providers,brief,{packet,searches:[]})},taskSchema,{maxOutputTokens:2048,retryTokenCount:providers.managedAudit}).catch(error=>{
-   const recoverable=['provider_format','provider_error','model_output_invalid','incomplete','invalid_report','quota','token_count'].includes(error.code)||error.name==='TimeoutError';
+   const recoverable=['provider_format','provider_error','provider_unavailable','claude_spend_limit','not_configured','model_output_invalid','incomplete','invalid_report','quota','token_count'].includes(error.code)||error.name==='TimeoutError';
    if(!providers.managedAudit||!recoverable)throw error;
    // Only the discovery task is replaced. Claude still reviews every claimed
    // brand fact and the managed research plan before sector work proceeds.
