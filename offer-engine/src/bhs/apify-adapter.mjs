@@ -1,20 +1,66 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {actorChargeLimit,eventOnlyPricing,inspectApifyPolicies,matchedActorTasks} from './apify-policy.mjs';
-import {actorIds,actorInput} from './apify-inputs.mjs';
+import {actorIds,actorInput,searchActors} from './apify-inputs.mjs';
 import {researchUrl,researchHost} from './research-url.mjs';
 import {evidenceExcerpts} from './evidence.mjs';
+import {resolveTarget} from '../network.mjs';
 
 const terminal=new Set(['SUCCEEDED','FAILED','TIMED-OUT','ABORTED']);
 const identifier=s=>typeof s==='string'&&/^[a-zA-Z0-9]{10,30}$/.test(s);
 const scalar=v=>typeof v==='string'?v.slice(0,1800):typeof v==='number'&&Number.isFinite(v)?v:typeof v==='boolean'?v:undefined;
 const pick=(r,keys)=>Object.fromEntries(keys.flatMap(k=>scalar(r?.[k])===undefined?[]:[[k,scalar(r[k])]]));
 const sameUrl=(a,b)=>researchUrl(a)?.replace(/\/$/,'')===researchUrl(b)?.replace(/\/$/,'');
+const productId=value=>researchHost(value)==='trendyol.com'?new URL(researchUrl(value)).pathname.match(/-p-(\d+)(?:\/|$)/)?.[1]:null;
+const fold=value=>String(value??'').toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
+const brandNames=value=>[fold(value),fold(String(value??'').replace(/\s+(?:organic|organik)$/iu,''))];
+const exactProduct=(value,url)=>Boolean(productId(url)&&productId(value)===productId(url));
+function searchResults(rows,target,actor){
+ const resultFor=r=>{
+  const url=researchUrl(r.url||r.link);
+  return url?[{url,title:String(r.title??'').slice(0,250),content:String(r.description??r.snippet??r.content??'').slice(0,1000)}]:[];
+ };
+ if(actor==='desearch/web-search')return [{query:target.input.query,results:rows.flatMap(resultFor),source:'apify-google'}];
+ const submitted=Array.isArray(target.input.queries)?target.input.queries:target.input.queries.split('\n');
+ const queries=new Map(submitted.map(query=>[query.toLowerCase(),query]));
+ return rows.flatMap(row=>{
+  const query=queries.get((row.searchQuery?.term||row.query)?.trim().toLowerCase());
+  const organic=row.organicResults||row.organic_results;
+  if(!query||!Array.isArray(organic))return [];
+  return [{query,results:organic.slice(0,10).flatMap(resultFor),source:'apify-google'}];
+ });
+}
 function recordsForEvidence(actor,rows,target,context){
  const result=[];
+ const trendyolProduct=actor==='fatihtahta/trendyol-scraper'&&rows.find(r=>r&&r.type!=='review'&&exactProduct(r.url,target.url)&&
+  brandNames(context.brief.brandName).some(name=>name&&brandNames(r.brand?.name).includes(name)));
  for(const r of rows){
   if(!r||typeof r!=='object'||r.error)continue;
   let data,url=researchUrl(r.url||r.linkedinUrl||r.link||r.webVideoUrl);
-  if(actor==='apify/instagram-profile-scraper'){
+  if(actor==='apify/rag-web-browser'){
+   const finalUrl=researchUrl(r.metadata?.url||r.url);
+   const text=r.markdown;
+   if(!finalUrl||researchHost(finalUrl)!==researchHost(target.url)||r.crawl?.httpStatusCode!==200||typeof text!=='string'||text.length<160||/verify you are human|access denied|checking your browser|güvenlik doğrulaması/i.test(text.slice(0,1000)))continue;
+   result.push({url:finalUrl,title:scalar(r.metadata?.title),text:text.slice(0,35000)});
+   continue;
+  }else if(actor==='tamgadev/sikayetvar-scraper'){
+   const slug=new URL(target.url).pathname.split('/').filter(Boolean)[0];
+   const evidence=[r.brand,r.title,r.body].map(fold).join(' ');
+   if(researchHost(url)!=='sikayetvar.com'||new URL(url).pathname.split('/')[1]!==slug||
+    !brandNames(context.brief.brandName).some(name=>name&&evidence.includes(name))||typeof r.body!=='string'||r.body.trim().length<30)continue;
+   data={brand:context.brief.brandName,review:r.body.slice(0,900),topic:scalar(r.title),publishedAt:scalar(r.date),solved:scalar(r.isSolved)};
+  }else if(actor==='shahidirfan/trendyol-reviews-scraper'){
+   const canonical=researchUrl(r.productUrl||r.reviewPageUrl);
+   if(!exactProduct(canonical,target.url)||String(r.productId)!==productId(target.url)||typeof r.comment!=='string'||!r.comment.trim())continue;
+   data={brand:context.brief.brandName,review:r.comment.slice(0,900),rating:scalar(r.rating),publishedAt:scalar(r.createdAt),verifiedPurchase:scalar(r.isVerifiedPurchase)};url=target.url;
+  }else if(actor==='apify/instagram-comment-scraper'){
+   const post=value=>researchHost(value)==='instagram.com'?new URL(researchUrl(value)).pathname.match(/\/(?:p|reel)\/([\w-]+)/)?.[1]:null;
+   if(!target.official||!post(target.url)||post(r.postUrl)!==post(target.url)||!scalar(r.text))continue;
+   data={brand:context.brief.brandName,comment:r.text.slice(0,900),publishedAt:scalar(r.timestamp)};url=target.url;
+  }else if(actor==='compass/google-maps-reviews-scraper'){
+   const matches=brandNames(context.brief.brandName).some(name=>name&&fold(r.title).startsWith(name));
+   if(!target.official||!matches||context.geo?.countryCode&&r.countryCode!==context.geo.countryCode||!scalar(r.text))continue;
+   data={brand:context.brief.brandName,location:scalar(r.title),review:r.text.slice(0,900),rating:scalar(r.stars),publishedAt:scalar(r.publishedAtDate)};url=target.url;
+  }else if(actor==='apify/instagram-profile-scraper'){
    const expected=new URL(target.url).pathname.split('/').filter(Boolean)[0];
    if(String(r.username).toLowerCase()!==expected.toLowerCase()||!target.official&&researchHost(r.externalUrl)!==researchHost(context.brief.website))continue;
    data=pick(r,['username','fullName','biography','followersCount','postsCount','isBusinessAccount','verified']);url=target.url;
@@ -27,7 +73,7 @@ function recordsForEvidence(actor,rows,target,context){
    data={...pick(r,['name','description','industry','employeeCount','followerCount','website','foundedOn']),employeeCountRange:JSON.stringify(r.employeeCountRange||null)};url=target.url;
   }else if(actor==='harvestapi/linkedin-post-search'){
    if(!sameUrl(r.author?.linkedinUrl||r.author?.url,target.url)||!url||researchHost(url)!=='linkedin.com')continue;
-   data={...pick(r,['content']),publishedAt:scalar(r.postedAt?.date)||null};
+   data={...pick(r,['content','reactionsCount','commentsCount','likesCount']),publishedAt:scalar(r.postedAt?.date)||null};
   }else if(actor==='curious_coder/linkedin-jobs-scraper'){
    if(researchHost(r.companyWebsite)!==researchHost(context.brief.website)||!url||researchHost(url)!=='linkedin.com')continue;
    data=pick(r,['companyName','title','descriptionText','location','postedAt','employmentType','companyWebsite']);
@@ -45,8 +91,13 @@ function recordsForEvidence(actor,rows,target,context){
    if(String(r.authorMeta?.name).toLowerCase()!==name.toLowerCase()||!target.official||!url||researchHost(url)!=='tiktok.com')continue;
    data={...pick(r,['text','createTimeISO','diggCount','commentCount','playCount','shareCount']),followersCount:r.authorMeta.fans};
   }else if(actor==='fatihtahta/trendyol-scraper'){
-   if(!url||!sameUrl(url,target.url)||String(r.brand?.name).toLocaleLowerCase('tr')!==context.brief.brandName.toLocaleLowerCase('tr'))continue;
-   data={...pick(r,['title']),brand:r.brand.name,currentPrice:r.pricing?.current_price,averageRating:r.metrics?.rating?.average_rating,reviewCount:r.metrics?.rating?.comment_count,scrapedAt:r.source_context?.scraped_time};
+   if(!trendyolProduct||!exactProduct(url,target.url))continue;
+   if(r.type==='review'&&typeof r.comment==='string'&&r.comment.trim()){
+    data={brand:trendyolProduct.brand.name,product:trendyolProduct.title,review:r.comment.slice(0,900),rating:scalar(r.rating),publishedAt:scalar(r.created_at)};
+   }else if(r===trendyolProduct){
+    data={...pick(r,['title']),brand:r.brand.name,currentPrice:r.pricing?.current_price,rating:r.metrics?.rating?.average_rating,reviewCount:r.metrics?.rating?.comment_count,scrapedAt:r.source_context?.scraped_time};
+   }
+   url=target.url;
   }else if(actor==='junglee/free-amazon-product-scraper'){
    const asin=new URL(target.url).pathname.match(/(?:\/dp\/|\/gp\/product\/)([A-Z0-9]{10})/i)?.[1];
    if(!asin||r.asin!==asin||String(r.brand).toLowerCase()!==context.brief.brandName.toLowerCase()||context.geo&&r.loadedCountryCode!==context.geo.countryCode)continue;
@@ -59,11 +110,11 @@ function recordsForEvidence(actor,rows,target,context){
    continue;
   }
   const labels={followersCount:'followers',followerCount:'followers',employeeCount:'employees',reviewsCount:'reviews',reviewCount:'reviews',postsCount:'posts'};
-  if(data&&url&&Object.keys(data).length)result.push({url,text:'Apify structured public-source extraction. '+Object.entries(data).map(([k,v])=>(labels[k]||k)+': '+(typeof v==='object'?JSON.stringify(v):v)).join('\n').slice(0,9000)});
+  if(data&&url&&Object.keys(data).length)result.push({url,text:(data.review||data.comment?'':'Apify structured public-source extraction. ')+Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>(labels[k]||k)+': '+(typeof v==='object'?JSON.stringify(v):v)).join('\n').slice(0,9000)});
  }
  return result;
 }
-export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,validateUrl=resolveTarget,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
  let policies;const metadata=new Map();
  async function json(path,{body,maxBytes=1000000,deadline=Infinity}={}){
   const remaining=Math.min(12000,deadline-now());if(remaining<=0)throw new BudgetError('actor_time_limit','Apify aşamasının süre sınırına ulaşıldı.');
@@ -102,11 +153,14 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    const task=matchedActorTasks(actorId,await tasks())[0];
    if(!task&&!existing)return {actor:request.actor,status:'not_configured',reason:'actor_limit_unverified'};
    const start=existing?.value||await (async()=>{
+    if(request.actor==='apify/rag-web-browser')try{await validateUrl(target.url);}
+    catch{throw new BudgetError('actor_source_unverified','Tarayıcı hedefinin herkese açık olduğu doğrulanamadı.');}
     const info=await infoFor(actorId),pricing=pricingFor(info);
     const datasetAllowanceKurus=10;
     const status=await ledger.status();
     // Meet a verified minimum only inside the saved individual cap and total account.
-    const requestedUsd=Math.min(.4,Math.max(.04,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0));
+    const preferredUsd=['apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper'].includes(request.actor)?.018:.04;
+    const requestedUsd=Math.max(preferredUsd,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0);
     const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus,pricing});
     const query=new URLSearchParams({maxTotalChargeUsd:String(limit.maxTotalChargeUsd),maxItems:String(target.maxItems),timeout:'60',waitForFinish:'0'});
     const identity={actorId,input:target.input,capUsd:limit.maxTotalChargeUsd,maxItems:target.maxItems,timeout:60};
@@ -130,10 +184,18 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    if(run.status!=='SUCCEEDED'||!identifier(run.defaultDatasetId))return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_'+String(run.status).toLowerCase(),reservedKurus:start.reservedKurus};
    if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>start.capUsd+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
    const output=await ledger.once('apify:v8:dataset:'+start.runId,{runId:start.runId,maxItems:target.maxItems,maxBytes:1000000},datasetAllowanceKurus,async()=>{
-    const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems,{deadline});
+    const fields={
+     'apify/google-search-scraper':'searchQuery,organicResults','themineworks/google-search-scraper':'query,organic_results',
+     'apify/rag-web-browser':'metadata,crawl,markdown','tamgadev/sikayetvar-scraper':'url,brand,title,body,date,isSolved',
+     'shahidirfan/trendyol-reviews-scraper':'productUrl,reviewPageUrl,productId,comment,rating,createdAt,isVerifiedPurchase'
+    }[request.actor];
+    const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+(fields?'&fields='+fields:''),{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
-    const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];
-    return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),...(retainDataset?{datasetRows:rows}:{}),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
+    const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows
+     .filter(r=>request.query||String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr')))
+     .map(r=>researchUrl(r.link)).filter(Boolean).slice(0,request.maxResults??2):[];
+    const discovery=searchActors.includes(request.actor)?searchResults(rows,target,request.actor):undefined;
+    return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),...(retainDataset?{datasetRows:rows}:{}),...(discovery?{searches:discovery}:{}),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
    });
    const {datasetRows,...evidence}=output;
    return {...evidence,status:'complete',runReservedKurus:start.reservedKurus};

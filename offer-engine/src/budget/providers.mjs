@@ -36,6 +36,12 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
   try{
   const response=await fetchImpl(url,{method:'POST',headers:{'Content-Type':'application/json',...key},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout),redirect:'error'});
   trace?.response(response.status);
+  const tavily=url.startsWith('https://api.tavily.com/');
+  if(tavily&&[401,432,433,434].includes(response.status)){
+   const error=new BudgetError('provider_error','Tavily arama isteğini çalıştırmadan reddetti.');
+   error.providerStatus=response.status;error.providerOperation=url.endsWith('/search')?'search':'extract';error.definitelyNotBilled=true;
+   await response.body?.cancel().catch(()=>{});throw error;
+  }
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','Model yanıtı boyut sınırını aşıyor.');
   let value;try{value=JSON.parse(raw);}catch{if(!transientModelStatus(response.status))throw new BudgetError('provider_format','Servis yanıtı okunamadı.');value={};}
   if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','Araştırma servisi isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);
@@ -66,13 +72,16 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     return {pages:(result.results||[]).filter(r=>input.urls.includes(r.url)&&typeof r.raw_content==='string').map(r=>({url:r.url,text:r.raw_content.slice(0,20000)})),failed:(result.failed_results||[]).map(r=>({url:r.url,reason:'extract_unavailable'})).filter(r=>input.urls.includes(r.url)),fx:fxSnapshot,creditsUpper:2,accountedKurus:consumedSearch(2,fxSnapshot.usdTry)};
    },{settle:value=>value.accountedKurus,limitKurus:tariff.capKurus});
   },
-  async search(query,{depth='advanced',maxResults=6,retainRaw=false,includeRawContent=false,domains=[]}={}){
+  async search(query,{depth='advanced',maxResults=6,retainRaw=false,includeRawContent=false,domains=[],countryCode,language}={}){
    await checkCurrency();if(!tavilyKey)throw new BudgetError('not_configured','Teklif için Tavily bağlantısı gerekli.');
    if(typeof query!=='string'||query.length>500)throw new BudgetError('invalid_query','Araştırma sorgusu geçersiz.');
    if(!['basic','advanced'].includes(depth))throw new BudgetError('invalid_query','Arama derinliği geçersiz.');
    if(!Number.isSafeInteger(maxResults)||maxResults<1||maxResults>12)throw new BudgetError('invalid_query','Arama sonuç sınırı geçersiz.');
-   const input={query,search_depth:depth,max_results:maxResults,...(depth==='advanced'?{chunks_per_source:3}:{include_usage:true}),include_answer:false,include_raw_content:includeRawContent?'markdown':false,...(domains.length?{include_domains:domains}:{}),auto_parameters:false};
-   const identity=includeRawContent||domains.length?input:query;
+   // Tavily's country selector takes English country names.
+   const country=({TR:'turkey',GB:'united kingdom',US:'united states',DE:'germany',FR:'france',IT:'italy',ES:'spain',NL:'netherlands'})[countryCode];
+   const locale=typeof language==='string'&&/^[a-z]{2}$/.test(language)?language:undefined;
+   const input={query,...(country?{country}:{}),...(locale?{language:locale}:{}),search_depth:depth,max_results:maxResults,...(depth==='advanced'?{chunks_per_source:3}:{include_usage:true}),include_answer:false,include_raw_content:includeRawContent?'markdown':false,...(domains.length?{include_domains:domains}:{}),auto_parameters:false};
+   const identity=includeRawContent||domains.length||country||locale?input:query;
    return ledger.once('search:'+(depth==='basic'?'basic:':'')+(maxResults===6?'':'r'+maxResults+':')+hash(identity),input,quoteSearch(depth),async()=>{
     const result=await readJson('https://api.tavily.com/search',input,{Authorization:'Bearer '+tavilyKey},25000);
     if(depth==='basic'&&result.usage?.credits!==undefined&&(!Number.isFinite(result.usage.credits)||result.usage.credits<0||result.usage.credits>1))throw new BudgetError('provider_accounting','Arama tüketimi ayrılan sınırla eşleşmiyor.');

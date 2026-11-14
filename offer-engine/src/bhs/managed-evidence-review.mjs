@@ -15,6 +15,7 @@ export const customerQuoteKey=quote=>quote?.normalize('NFKC').toLocaleLowerCase(
 export const missingCustomerEvidence=text=>/\b(?:yorum|puan|şik[âa]yet|geri bildirim|değerlendirme|reviews?|ratings?|complaints?|feedback)[^.?!]{0,100}\b(?:yok(?:tur|luğu)?|bulunma(?:dı|dığı|maktadır)|bulunmuyor|görülmedi|tespit edilmedi|not (?:available|found)|unavailable)\b/iu.test(text);
 export function customerEvidence([url,,method,quote]=[]){
  if(!quote||['html-signals','search-snippet'].includes(method)||missingCustomerEvidence(quote))return false;
+ if(method==='extracted'&&/\b(?:review|comment):\s*\S/iu.test(quote)&&/\bbrand:\s*\S/iu.test(quote))return true;
  const reviewPage=/sikayetvar\.com|trustpilot\.com|\/[^?#]*(?:yorum(?:lar)?|reviews?|şikayet|sikayet)(?:[/?#-]|$)/iu.test(url);
  return feedback.test(quote)||reviewPage&&/puan|yorum|şik[âa]yet|review|complaint|müşteri|ürün/iu.test(quote)&&
   !/^\s*(?:yorumlar|reviews?|müşteri yorumları|değerlendirmeler)\s*$/iu.test(quote);
@@ -59,16 +60,33 @@ export function planManagedEvidenceReview(input){
  return batches;
 }
 
-export function planPositionalEvidenceReview(input,reusedIds=new Set()){
+export function planPositionalEvidenceReview(input,reusedIds=new Set(),batchRows=56){
  return planManagedEvidenceReview(input).flatMap(batch=>{
   const result=[];
   const pending=batch.rows.filter(row=>!reusedIds.has(row.id));
-  for(let i=0;i<pending.length;i+=56){
-   const rows=pending.slice(i,i+56);
+  for(let i=0;i<pending.length;i+=batchRows){
+   const rows=pending.slice(i,i+batchRows);
    result.push(evidenceSubset(batch,rows));
   }
   return result;
  });
+}
+
+export function planDirectedEvidenceReview(input){
+ // Use the same review contract and proof IDs. Spread consecutive pages across
+ // batches so that the first successful reviews cover distinct sources.
+ const byPage=new Map();
+ for(const [id,[url]] of Object.entries(input.sources)){
+  if(!byPage.has(url))byPage.set(url,[]);
+  byPage.get(url).push(id);
+ }
+ const pageGroups=[...byPage.values()],order=[];
+ const remainder=new Map(pageGroups.map(ids=>[ids,0]));
+ while(remainder.size)for(const [ids,index] of remainder){
+  order.push(...ids.slice(index,index+8));
+  if(index+8>=ids.length)remainder.delete(ids);else remainder.set(ids,index+8);
+ }
+ return planPositionalEvidenceReview({...input,sources:Object.fromEntries(order.map(id=>[id,input.sources[id]]))},new Set(),72);
 }
 
 export function prioritizeManagedProofs(input){
@@ -170,11 +188,25 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    })),
    candidates:[...new Set(Array.isArray(value?.candidates)?value.candidates:[])].filter(id=>ids.includes(id)).slice(0,36)
   });
-  const budget=Math.max(600,ids.length*12+220);
+  const packed=providers.managedBudgetVersion>=8&&!preferWorker;
+  const packedSchema=obj({verdicts:obj(Object.fromEntries([...decisions].map(code=>[code,str(ids.reduce((length,id)=>length+id.length+1,0))]))),candidates:arr(str(20),22)});
+  const budget=packed?Math.max(520,ids.length*5+230):Math.max(600,ids.length*12+220);
   const workerBudget=Math.max(750,ids.length*22+300);
   const method=recovery&&ids.length<=8?providers.manager:providers.evidenceReviewer||providers.manager;
-  const request={instruction:positionalInstruction,focus,rows:part.rows.map(row=>[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
-  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
+  const request={instruction:packed?positionalInstruction.replace('verdicts nesnesinde satırın ilk sütunundaki kimliğe bir karar ver.',
+   'Verdicts içindeki her harf alanına o kararı verdiğin satırların kimliklerini boşlukla ayırarak yaz. Her kimliği tam bir kez ekle. Bir harf için satır yoksa boş metin kullan.')+' Tek sütunlu satırda bu kimliğin sources içindeki doğrudan alıntısını değerlendir.' :positionalInstruction,focus,
+   rows:part.rows.map(row=>packed&&!row.area&&!row.text&&row.proof[0]===row.id?[row.id]:[row.id,row.area??null,row.text??null,row.proof]),sources:part.sources};
+  const unpack=value=>{
+   const verdicts={};
+   for(const decision of decisions){
+    const group=value?.verdicts?.[decision];
+    if(typeof group!=='string')continue;
+    for(const id of group.trim().split(/\s+/))if(ids.includes(id))verdicts[id]=verdicts[id]&&verdicts[id]!==decision?'u':decision;
+   }
+   return normalizeData({verdicts,candidates:value?.candidates});
+  };
+  const options={maxOutputTokens:budget,minimumOutputTokens:budget,compactReview:true,lowEffort:true,signal,reserveForFollowingKurus,
+   normalizeData:packed?unpack:normalizeData,responseSchema,retryTokenCount:true,generationTimeoutMs:35000};
   const stage=recovery?'v8-managed-evidence-recovery':'v8-managed-evidence-position';
   const runWorker=()=>{
    if(!preferWorker&&providers.managedBudgetVersion!==3)return providers.worker(stage+':cross-provider',request,modelSchema,{...options,maxOutputTokens:workerBudget,compactWorker:true,generationTimeoutMs:25000});
@@ -195,13 +227,13 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
    if(signal?.aborted)throw new BudgetError('model_timeout','BHS kanıt incelemesi ayrılan süreye ulaştı.');
    let completion;
    try{
-    completion=await (preferWorker?runWorker():method(stage,request,modelSchema,options));
+    completion=await (preferWorker?runWorker():method(stage,request,packed?packedSchema:modelSchema,options));
    }catch(error){
     if(preferWorker||providers.modelHandoff||!canSwitchBhsProvider(error,signal))throw error;
     if(providers.worker&&providers.managedBudgetVersion===3){
      completion=await runWorker();
     }else if(method!==providers.manager&&(error.providerOperation==='countTokens'||providers.managedBudgetVersion>=4)){
-     completion=await providers.manager(stage,request,modelSchema,options);
+     completion=await providers.manager(stage,request,packed?packedSchema:modelSchema,options);
     }else throw error;
    }
    const data=normalizeData(completion.data),verdicts=ids.map(id=>data.verdicts[id]).join('');
@@ -259,12 +291,12 @@ export function reviewedManagedEvidence(input,reviews){
    const observations=shortlist.filter(id=>rows.has(id)).map(id=>rows.get(id));
    const proofs=new Set([...observations.flatMap(row=>row[3]),...shortlist.filter(id=>Object.hasOwn(input.sources,id))]);
    const eligible=input.entities.filter(([id,role])=>(!section||section==='competition'||role==='brand')&&!excludedPeers?.has(id));
-   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&
+   const reviewedPeerProofs=([,role,,,proof])=>proof.filter(id=>(reviewedProofs.has(id)||input.plan?.directedResearch)&&covered.get(id)!=='x'&&
     (peerProofs===1||role!=='competitor'||!['html-signals','search-snippet'].includes(input.sources[id]?.[2])));
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
     .filter(([,role])=>role==='competitor')
     .filter(entity=>reviewedPeerProofs(entity).length)
-    .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,6)]:eligible;
+    .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,input.plan?.directedResearch?16:6)]:eligible;
    const entities=selected.map(entity=>{
     const [id,role,name,url]=entity;
     const preferred=peerProofs>1&&role==='competitor'&&input.evidenceByQuestion?entity[4].slice(0,2):[];
@@ -286,8 +318,12 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),isCustomerEvidence:id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&customerEvidence(input.sources[id]),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[]}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[],externalOnly=false}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
+   if(input.plan?.directedResearch){
+    const prioritized=[...new Set([...exact,...candidates.slice(0,6),...ranked,...expected.filter(id=>!covered.has(id))])];
+    return reportInput(prioritized.slice(0,limit),section,peerProofs,excludedPeers);
+   }
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
     const evidence=[row?.[2],source?.[1],source?.[3]].filter(Boolean).join(' ');
@@ -323,12 +359,21 @@ export function reviewedManagedEvidence(input,reviews){
    }
    if(targeted&&section==='swot'&&swotFocus.length){
     const internalIds=new Set(priorityRows);
-    const external=ranked.filter(id=>supports(id)&&!internalIds.has(id));
     const publisher=id=>{
      const url=(input.sources[id]||input.sources[rows.get(id)?.[3]?.[0]])?.[0];
      return url?researchHost(url):null;
     };
     const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
+    const peers=new Set(input.entities.filter(([,role])=>role==='competitor').map(([, , ,url])=>researchHost(url)));
+    const outside=id=>{
+     const host=publisher(id),proof=input.sources[id]||input.sources[rows.get(id)?.[3]?.[0]];
+     return host&&!brandHosts.has(host)&&!['sikayetvar.com','trustpilot.com','trendyol.com','hepsiburada.com'].includes(host)&&
+      !['search-snippet','html-signals'].includes(proof?.[2]);
+    };
+    const external=externalOnly?ranked.filter(id=>outside(id)&&(supports(id)||swotFocus.includes('threat')&&peers.has(publisher(id)))):
+     ranked.filter(id=>supports(id)&&!internalIds.has(id));
+    const competitorProofs=externalOnly&&swotFocus.includes('threat')?input.entities.filter(([,role])=>role==='competitor')
+     .flatMap(([, , , ,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&!['html-signals','search-snippet'].includes(input.sources[id]?.[2])).slice(0,1)):[];
     const publishers=new Set();
     const independent=external.filter(id=>{
      const host=publisher(id);
@@ -338,9 +383,17 @@ export function reviewedManagedEvidence(input,reviews){
     const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
     const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
     const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
-    const selected=[...new Set([...focusedRows,...(wantsInternal?priorityRows.slice(0,share):priorityRows.slice(0,1)),
+    const onlyExternal=externalOnly&&wantsExternal&&!wantsInternal;
+    const selected=[...new Set([...(onlyExternal?focusedRows.filter(outside):focusedRows),...competitorProofs,...(wantsInternal?priorityRows.slice(0,share):externalOnly?[]:priorityRows.slice(0,1)),
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
-    return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
+    const result=reportInput((onlyExternal?selected.filter(outside):selected).slice(0,limit),section,peerProofs,excludedPeers);
+    if(onlyExternal){
+     result.sources=Object.fromEntries(Object.entries(result.sources).filter(([id])=>outside(id)));
+     const visible=id=>Object.hasOwn(result.sources,id);
+     result.observations=result.observations.filter(([, , ,proofs])=>proofs.every(visible));
+     result.entities=result.entities.map(([id,role,name,url,proofs])=>[id,role,name,url,proofs.filter(visible)]);
+    }
+    return result;
    }
    const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
    const ownDigital=section==='digital'&&targeted?ranked.filter(id=>supports(id)&&[id,...(rows.get(id)?.[3]||[])]
@@ -348,8 +401,14 @@ export function reviewedManagedEvidence(input,reviews){
    const local=[...new Set([...focusedRows,...ownDigital,...exact.slice(0,Math.ceil(limit/3)),...priorityRows.slice(0,Math.ceil(limit/3)),...exact,...ranked.filter(supports)])],localIds=new Set(local);
    const other=ranked.filter(id=>!localIds.has(id));
    // Always include context/counter-evidence alongside the focused observations.
-   const primary=local.slice(0,Math.ceil(limit*.75));
-   const context=[...other.slice(0,limit-primary.length),...local.slice(primary.length)];
-   return reportInput([...primary,...context].slice(0,limit),section,peerProofs,excludedPeers);
+   const allowed=id=>!excludedProofs.has(id)&&!rows.get(id)?.[3].some(proof=>excludedProofs.has(proof));
+   const primary=local.filter(allowed).slice(0,Math.ceil(limit*.75));
+   const context=[...other.filter(allowed).slice(0,limit-primary.length),...local.filter(allowed).slice(primary.length)];
+   const result=reportInput([...primary,...context].slice(0,limit),section,peerProofs,excludedPeers);
+   if(excludedProofs.size){
+    result.sources=Object.fromEntries(Object.entries(result.sources).filter(([id])=>!excludedProofs.has(id)));
+    result.entities=result.entities.map(([id,role,name,url,proofs])=>[id,role,name,url,proofs.filter(proof=>!excludedProofs.has(proof))]);
+   }
+   return result;
   }};
 }

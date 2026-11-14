@@ -14,7 +14,7 @@ test('the authorized 20-cent default fills missing policies while lower individu
  const result=await inspectApifyPolicies({token:'synthetic',policyJson,fetchImpl:async()=>json({data:{items:[],total:0}})});
  assert.equal(result.complete,true);assert.equal(result.explicitPolicyCount,2);assert.equal(result.savedTaskCount,0);
  assert.equal(matchedActorTasks(actorIds[actor],result.tasks)[0].options.maxTotalChargeUsd,.003);
- assert.equal(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks)[0].options.maxTotalChargeUsd,.2);assert.equal(result.defaultPolicyCount,13);
+ assert.equal(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks)[0].options.maxTotalChargeUsd,.2);assert.equal(result.defaultPolicyCount,21);
  const lower={id:'lower-task',actId:actorIds[actor],options:{maxTotalChargeUsd:.001}};
  assert.equal(matchedActorTasks(actorIds[actor],[...result.tasks,lower])[0],lower);
  for(const invalid of ['invalid','{}',JSON.stringify([{actor,maxTotalChargeUsd:.41}]),JSON.stringify([{actor,maxTotalChargeUsd:'.01'}]),JSON.stringify([{actor,maxTotalChargeUsd:.01},{actor,maxTotalChargeUsd:.02}]),JSON.stringify([{actor:'unknown',maxTotalChargeUsd:.01}])])assert.throws(()=>explicitActorPolicies(invalid),e=>e.code==='actor_limit_unverified');
@@ -144,4 +144,25 @@ test('live nullable PPE usage flags mean event-only billing; explicit extras and
  for(const flag of [undefined,null,false])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),true);
  for(const flag of [true,'false',0])assert.equal(eventOnlyPricing({pricingModel:'PAY_PER_EVENT',isPPEPlatformUsagePaidByUser:flag}),false);
  assert.equal(eventOnlyPricing({pricingModel:'FREE'}),false);
+});
+
+test('Trendyol review tasks collect only matched product reviews and keep reviewer identities out of evidence',async()=>{
+ const trend='fatihtahta/trendyol-scraper',url='https://www.trendyol.com/acme-organic/bar-p-12345';
+ const db=account(),t=transport({cap:.02});
+ const a=adapter(db,t,{getTaskPolicies:async()=>[{...t.task,actId:actorIds[trend]}],fetchImpl:async(input,options)=>{
+  if(!input.includes('/datasets/'))return t.fetchImpl(input,options);
+  return json([{type:'product',url,brand:{name:brief.brandName},title:'Acme Organic bar'},
+   {type:'review',url,comment:'Tadı güzel, kahvaltıda severek tüketiyorum.',rating:5,reviewer:{name:'private-test-reviewer'}},
+   {type:'review',url:url.replace('12345','34567'),comment:'This review belongs to another product'}]);
+ }});
+ const request={actor:trend,url,customerReviews:true};
+ const scope={...context(),searches:[{results:[{url}]}]};
+ const output=await a.enrich(request,scope);
+ const start=t.calls.find(call=>call.url.includes('/runs?'));
+ assert.equal(new URL(start.url).searchParams.get('maxTotalChargeUsd'),'0.02');
+ assert.equal(start.body.getReviews,true);
+ assert.equal(start.body.maxReviews,5);
+ assert.equal(output.pages.length,2);
+ assert.ok(output.pages.some(page=>page.text.includes('kahvaltıda severek tüketiyorum')));
+ assert.doesNotMatch(JSON.stringify(output.pages),/another product|private-test-reviewer/);
 });

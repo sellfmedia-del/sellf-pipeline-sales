@@ -197,7 +197,7 @@
             paragraph(f.bhsRank+'. '+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,article);
             paragraph(f.impact,article);
             paragraph('Önerilen aksiyon: '+f.recommendation.action,article);
-            paragraph('Başarı ölçümü: '+f.recommendation.measurement,article);
+            if(f.recommendation.measurement)paragraph('Başarı ölçümü: '+f.recommendation.measurement,article);
             paragraph('Kaynak: '+f.sourceIds.join(', '),article);
           }
         }
@@ -380,7 +380,7 @@
       const gapCap=Number.isSafeInteger(gap.capKurus)?gap.capKurus:3000;
       if(gap.available&&current.ticket){
         gapAudit=current;gapBox.hidden=false;
-        gapBox.querySelector('p').textContent='Eksik bölümler: '+gap.sections.join(', ')+'. Bu bölümler için 50 TL toplam sınır içinde '+gapMoney(gapCap)+' TL’ye kadar araştırma yapabilirsin.';
+        gapBox.querySelector('p').textContent='Eksik bölümler: '+gap.sections.join(', ')+'. Yalnız bu bölümler için '+gapMoney(gapCap)+' TL’ye kadar ek araştırma yapabilirsin.';
       }else if(Number.isSafeInteger(gap.chargedKurus)){
         const state=gap.status==='complete'?'Ek araştırma tamamlandı.':gap.status==='reserved'?'Ek araştırma henüz sonuçlanmadı. Mevcut bulgular kullanılabilir.':'Ek araştırmadan mevcut rapora aktarılabilecek yeni sonuç alınmadı.';
         notice.textContent+=' '+state+' Bu adımın kullanım ve rezervi: '+gapMoney(gap.chargedKurus)+' / '+gapMoney(gapCap)+' TL.';

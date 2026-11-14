@@ -87,8 +87,8 @@ export function phaseExtractionSchema(phase){const s=structuredClone(extractionS
 
 // A proof remains the same after collection order, snippets or enrichment change.
 // Stable IDs are a v8 adapter; historical v6/v7 paragraph IDs remain untouched.
-export function sequentialContext(brief,evidence,{completeSources=evidence.peerDiscoveryVersion==='product-v2',includeTechnicalSignals=false}={}){
- const c=expertContext(brief,evidence,{allParagraphs:true,includeTechnicalSignals,paragraphBudget:completeSources?420000:60000}),mapping=new Map(c.cards.map(p=>[p.id,'p_'+hash({url:p.url,quote:p.quote}).slice(0,24)]));
+export function sequentialContext(brief,evidence,{completeSources=evidence.peerDiscoveryVersion==='product-v2',includeTechnicalSignals=false,completeEvidence=false}={}){
+ const c=expertContext(brief,evidence,{allParagraphs:true,includeTechnicalSignals,completeEvidence,paragraphBudget:completeSources?420000:60000}),mapping=new Map(c.cards.map(p=>[p.id,'p_'+hash({url:p.url,quote:p.quote}).slice(0,24)]));
  c.completeSources=completeSources;
  const byProof=new Map();
  for(const card of c.cards){

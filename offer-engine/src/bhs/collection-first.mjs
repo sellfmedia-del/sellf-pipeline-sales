@@ -1,11 +1,11 @@
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
-import {gzip} from 'node:zlib';
+import {gzip,gunzip} from 'node:zlib';
 import {promisify} from 'node:util';
 import {briefHash,dimensions} from './brief.mjs';
 import {evidenceExcerpts,evidenceHash,mergeExtractedEvidence} from './evidence.mjs';
 import {projectExpertReport} from './expert-report.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
-import {actorInput,observedActorTargets} from './apify-inputs.mjs';
+import {actorInput,observedActorTargets,searchActors} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
@@ -13,12 +13,14 @@ import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
+import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
-import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
-import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
+import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
+import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
+const decompressPage=promisify(gunzip);
 const archiveConcurrency=4;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
 const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
@@ -36,6 +38,7 @@ export function planCollectionFunding({chargedKurus,capKurus},infrastructureKuru
 }
 const searchStages=['sector_sources','sector_draft','sector_review'];
 const readStages=['sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources'];
+const directedRounds=['sector_sources','sector_draft','sector_review','competition_review','competition_correction_sources','competition'];
 const scrapeStages=['competition_draft','competition_review','competition_correction_sources'];
 export const inventoryStages=Object.freeze(['competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot']);
 export const inventoryOutputTokens=4096;
@@ -43,6 +46,7 @@ export const focusedInventoryOutputTokens=1200;
 const quadrants=['strength','weakness','opportunity','threat'];
 const areasByKey=new Map(methodologyAreas.map(area=>[area.key,area]));
 const markets=[[/Türkiye|Turkey/iu,'Türkiye','TR','tr'],[/United Kingdom|Birleşik Krallık|\bUK\b/iu,'United Kingdom','GB','en'],[/United States|Amerika Birleşik Devletleri|\bUSA\b/iu,'United States','US','en'],[/Germany|Almanya/iu,'Germany','DE','de'],[/France|Fransa/iu,'France','FR','fr']];
+export const collectionMarket=(...contexts)=>contexts.map(text=>markets.find(([pattern])=>pattern.test(text||''))).find(Boolean);
 const schema=obj({
  observations:arr(obj({area:str(80),text:str(350),sourceIds:arr(str(80))})),
  organizations:arr(obj({name:str(120),sourceId:str(80)}))
@@ -89,7 +93,7 @@ async function collectAttempt(run){
  catch(error){
   if(['TimeoutError','AbortError'].includes(error.name)||error instanceof TypeError&&error.message==='fetch failed')return {unavailable:true,reason:'provider_timeout'};
   if(!collectionErrors.has(error.code))throw error;
-  return {unavailable:true,reason:error.code};
+  return {unavailable:true,reason:error.code,...(Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{})};
  }
 }
 
@@ -97,6 +101,7 @@ const shard=(rows,index,count)=>rows.filter((_,i)=>i%count===index);
 const unique=items=>[...new Set(items)];
 const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
 const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
+const brandDomain=brief=>researchHost(brief.website).split('.')[0];
 function publisherMatches(name,url,expanded=false){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
  return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida',brand+'snacks',brand+'organic',brand+'organik',brand.repeat(2),brand.repeat(3)]:[])].includes(domain);
@@ -129,24 +134,33 @@ function canonicalSources(rows){
  return [...sources.values()].map((source,index)=>({...source,id:'ev'+(index+1)}));
 }
 
-function providerSource({url,title,text,method,asOf,scope,provenance}){
+function providerSource({url,title,text,method,asOf,scope,provenance,complete=false}){
  if(!url||typeof text!=='string'||text.trim().length<24)return null;
- return {url,finalUrl:url,title:title||url,method,retrievedAt:asOf,scope,provenance,contentHash:hash(text),excerpts:evidenceExcerpts(text,{maxChunks:40})};
+ return {url,finalUrl:url,title:title||url,method,retrievedAt:asOf,scope,provenance,contentHash:hash(text),excerpts:evidenceExcerpts(text,{maxChunks:complete?Infinity:40})};
 }
 
-export async function collectionCorpus(previous,{searches:additionalSearches=[],pages:additionalPages=[]}={}){
+export async function expandDirectedSources(pages){
+ return Promise.all(pages.map(async({fullText,...source})=>fullText?
+  {...source,excerpts:evidenceExcerpts((await decompressPage(Buffer.from(fullText,'base64'))).toString('utf8'),{maxChunks:Infinity})}:source));
+}
+
+export async function collectionCorpus(previous,{searches:additionalSearches=[],pages:additionalPages=[],scrapes:additionalScrapes=[],peerHints:additionalPeers=[]}={}){
  const brand=await previous('brand');
- const [searches,pages,scrapes]=await Promise.all([
-  sourcesFrom(previous,[...searchStages,...scrapeStages],'searches'),
-  sourcesFrom(previous,[...readStages,...scrapeStages],'pages'),
-  sourcesFrom(previous,scrapeStages,'scrapes')
+ const first=await previous(searchStages[0]).catch(error=>{if(error.code!=='stage_pending')throw error;});
+ const directed=first?.managedPlan?.directedResearch;
+ const [searches,pages,scrapes,peerHints]=await Promise.all([
+  sourcesFrom(previous,directed?directedRounds:[...searchStages,...scrapeStages],'searches'),
+  sourcesFrom(previous,directed?directedRounds:[...searchStages,...readStages,...scrapeStages],'pages'),
+  sourcesFrom(previous,directed?directedRounds:scrapeStages,'scrapes'),
+  sourcesFrom(previous,directed?directedRounds:scrapeStages,'peerHints')
  ]);
- const peerHints=await sourcesFrom(previous,scrapeStages,'peerHints');
+ const fullPages=directed?await expandDirectedSources([...additionalPages,...pages]):[...additionalPages,...pages];
+ const brandPages=directed?await expandDirectedSources(brand.packet.sources):brand.packet.sources;
  const asOf=brand.packet.asOf;
  const allSearches=[...searches,...additionalSearches];
- const searchSources=allSearches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:'Tavily arama alıntısı'}))).filter(Boolean);
- const actorSources=scrapes.flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId}}))).filter(Boolean);
- return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...brand.packet.entities,...peerHints],sources:canonicalSources([...brand.packet.sources,...additionalPages,...pages,...actorSources,...searchSources])}};
+ const searchSources=allSearches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:s.source==='apify-google'?'Google arama alıntısı':'Tavily arama alıntısı'}))).filter(Boolean);
+ const actorSources=[...scrapes,...additionalScrapes].flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId},complete:directed}))).filter(Boolean);
+ return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...new Map([...brand.packet.entities,...peerHints,...additionalPeers].map(e=>[e.id,e])).values()],sources:canonicalSources([...brandPages,...fullPages,...actorSources,...searchSources])}};
 }
 
 function queryFor(brief,topic,market){
@@ -157,19 +171,41 @@ function queryFor(brief,topic,market){
 async function actorRequest(context,providers,index,market,managedPlan){
  const available=await providers.availableActors?.()||[];
  const known=observedActorTargets(context);
- const order=managedPlan?[...new Set(managedPlan.actors.map(a=>a.id))]:managedActors;
+ const directed=providers.managedBudgetVersion>=6;
+ const modes=new Set((managedPlan?.tasks||[]).filter(task=>task.section==='perception').flatMap(task=>task.tools||[]));
+ const planned=(managedPlan?.actors||[]).map(a=>a.id);
+ const needsFeedback=directed&&managedPlan?.tasks.some(task=>task.section==='perception')&&countFeedbackProofs(context.brief,context.packet)<2;
+ if(needsFeedback){
+  if(modes.has('trendyol-reviews')||market?.[2]==='TR')planned.unshift('fatihtahta/trendyol-scraper');
+  if(modes.has('maps-reviews')||[...known.official].some(url=>researchHost(url)==='maps.app.goo.gl'||/\/maps\/place\//.test(url||'')))
+   planned.unshift('compass/google-maps-reviews-scraper');
+  if(modes.has('instagram-comments')||[...known.official].some(url=>researchHost(url)==='instagram.com'))
+   planned.unshift('apify/instagram-comment-scraper','apify/instagram-scraper');
+ }
+ const focusedReaders=new Set(['apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper']);
+ const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor)&&!focusedReaders.has(actor));
  const targets=[];
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const unavailable=managedPlan?shard(order.filter(id=>!available.includes(id)),index,scrapeStages.length).map(actor=>({actor,unavailable:true,reason:'actor_api_unavailable'})):[];
  for(const actor of order.filter(name=>available.includes(name))){
-  const target=[...known.urls].find(url=>{
-   try{actorInput({actor,url,...geo},{...context,geo},known);return true;}
+  if(directed&&index===0&&actor==='apify/instagram-comment-scraper'&&![...known.official].some(url=>researchHost(url)==='instagram.com'&&/\/(?:p|reel)\//.test(url)))continue;
+  const review=actor==='fatihtahta/trendyol-scraper'&&needsFeedback;
+  const candidates=review?[...known.urls].filter(url=>nameKey(url||'').includes(nameKey(context.brief.brandName).replace(/(?:organic|organik)$/u,''))):[...known.urls];
+  const target=candidates.find(url=>{
+   try{actorInput({actor,url,...geo,customerReviews:review},{...context,geo},known);return true;}
    catch(error){if(['actor_source_unverified','actor_locale_unverified'].includes(error.code))return false;throw error;}
   });
-  if(target)targets.push({actor,url:target,purpose:managedPlan?.actors.find(a=>a.id===actor)?.purpose||'Marka ve hedef pazar için kamuya açık kaynak.',...geo});
+  if(target&&!context.scrapes?.some(scrape=>scrape.actor===actor&&scrape.status==='complete'))targets.push({actor,url:target,purpose:managedPlan?.actors.find(a=>a.id===actor)?.purpose||'Marka ve hedef pazar için kamuya açık kaynak.',...geo,...(review?{customerReviews:true}:{})});
  }
  if(managedPlan?.managerDirected){
-  const results=await Promise.all(shard(targets,index,scrapeStages.length).map(async request=>({actor:request.actor,...await collectAttempt(()=>providers.enrich(request,{...context,geo}))})));
+  const comments='apify/instagram-comment-scraper';
+  const feedbackActors=new Set(['fatihtahta/trendyol-scraper','compass/google-maps-reviews-scraper','apify/instagram-scraper']);
+  const current=directed?[
+   ...(index===0?targets.filter(item=>needsFeedback&&feedbackActors.has(item.actor)):[]),
+   ...shard(targets.filter(item=>item.actor!==comments&&!(needsFeedback&&feedbackActors.has(item.actor))),index,scrapeStages.length).slice(0,2),
+   ...(index<2&&needsFeedback?targets.filter(item=>item.actor===comments):[])
+  ]:shard(targets,index,scrapeStages.length);
+  const results=await Promise.all(current.map(async request=>({actor:request.actor,...await collectAttempt(()=>providers.enrich(request,{...context,geo}))})));
   return [...results,...unavailable];
  }
  const scrapes=[];
@@ -181,14 +217,148 @@ async function searchManagedTask(pool,task){
  return {...await collectAttempt(()=>pool.search(task.query,{depth:'basic',maxResults:12,retainRaw:true})),query:task.query,taskId:task.id};
 }
 
-export async function readResearchPages(brief,plan,targets,providers,collect){
+async function searchPublicIndex(brief,packet,prior,geo,queries,providers){
+ if(!queries.length||!providers.enrich)return null;
+ const available=await providers.availableActors?.()||[];
+ const eligible=searchActors.filter(name=>available.includes(name));
+ if(!eligible.length)return {unavailable:true,reason:'actor_limit_unverified'};
+ const context={brief,packet,searches:prior,geo};
+ let attempt;
+ for(const actor of eligible){
+  const groups=actor==='desearch/web-search'?queries.slice(0,3).map(query=>[query]):[queries];
+  const results=await Promise.all(groups.map(group=>collectAttempt(()=>providers.enrich({actor,url:brief.website,queries:group},context))));
+  if(results.length===1)attempt={actor,...results[0]};
+  else{
+   const searches=results.flatMap(result=>result.searches||[]);
+   attempt={actor,searches,status:searches.some(search=>search.results?.length)?'complete':'unavailable',reason:results.find(result=>result.reason)?.reason};
+  }
+  if(attempt.searches?.some(search=>search.results?.length)||attempt.reason==='budget_limit')return attempt;
+ }
+ return attempt;
+}
+
+function feedbackSource(brief,source){
+ const url=source.finalUrl||source.url;
+ const identity=nameKey(brief.brandName),short=nameKey(brandDomain(brief));
+ const page=[url,source.title].filter(Boolean).join(' ');
+ return !source.metadataOnly&&source.excerpts.some(({text})=>{
+  const matched=nameKey(page+' '+text);
+  return identity.length>=3&&(matched.includes(identity)||short.length>=4&&matched.includes(short))&&
+   customerEvidence([url,source.title,source.method,text])&&(directCustomerExperience.test(text)||Boolean(source.provenance?.actor));
+ });
+}
+
+function countFeedbackProofs(brief,packet){
+ return new Set(packet.sources.filter(source=>feedbackSource(brief,source)).flatMap(source=>source.excerpts
+  .filter(({text})=>directCustomerExperience.test(text)||source.provenance?.actor&&customerEvidence([source.finalUrl,source.title,source.method,text]))
+  .map(({text})=>customerQuoteKey(text)))).size;
+}
+
+function feedbackTargets(brief,packet,searches,market){
+ const own=researchHost(brief.website),identity=nameKey(brief.brandName),short=nameKey(brandDomain(brief));
+ const matches=value=>{const key=nameKey(value);return key.includes(identity)||short.length>=4&&key.includes(short);};
+ const turkish=market?.[2]==='TR'||own.endsWith('.tr');
+ const complaintHost=turkish?'sikayetvar.com':'trustpilot.com';
+ const known=packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
+  .flatMap(source=>source.technicalSignals?.navigation||[]);
+ const all=[...known.map(link=>({url:link.url,title:link.label,official:true})),...searches.flatMap(item=>item.results||[])];
+ const platforms=[new Set([complaintHost]),new Set(turkish?['trendyol.com','hepsiburada.com','amazon.com.tr']:['amazon.com','amazon.co.uk','amazon.fr','amazon.de','amazon.it','amazon.es'])];
+ const relevant=platforms.flatMap((hosts,index)=>all.flatMap(result=>{
+  const url=researchUrl(result.url);if(!url||!hosts.has(researchHost(url))||!result.official&&!matches(url+' '+(result.title||'')))return [];
+  if(index===1&&!/-(?:p-\d+|pm-[\w-]+)|\/dp\//i.test(new URL(url).pathname))return [];
+  return [url];
+ }).slice(0,index===0?2:3));
+ const official=known.filter(link=>researchHost(link.url)===own&&/yorumlar|reviews|testimonials|müşteri deneyim/iu.test(link.url+' '+link.label)).map(link=>link.url).slice(0,1);
+ const slug=brief.brandName.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ const direct=turkish&&slug.length>=3?['https://www.sikayetvar.com/'+slug]:market?['https://www.trustpilot.com/review/'+own]:[];
+ const aliases=turkish&&!slug.includes('-')?packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
+  .map(source=>source.title?.split(/[|–—]/u)[0].trim().toLocaleLowerCase('tr').match(/^([\p{L}\d]+)\s+([\p{L}]{3,18})/u))
+  .filter(match=>match&&nameKey(match[1])===slug&&!/^(?:resmi|official|hakkında|about|ana|home)$/iu.test(match[2]))
+  .map(match=>'https://www.sikayetvar.com/'+slug+'-'+nameKey(match[2])):[];
+ return unique([...relevant.slice(0,4),...official,...aliases.slice(0,1),...direct]);
+}
+
+export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool,reserved,collect,existing=[]}){
+ const feedback=plan.tasks.some(task=>task.section==='perception');
+ const candidates=feedback?feedbackTargets(brief,brand.packet,prior,market).filter(url=>!existing.includes(url)):[];
+ const needsFeedback=feedback&&countFeedbackProofs(brief,brand.packet)<2;
+ const key=brief.brandName.replace(/["\r\n]/g,' ').trim();
+ const example=brand.facts?.find(fact=>fact.topic==='products')?.statement||'';
+ const product=comparisonLabel(plan.comparableProduct||example.slice(0,100))||plan.comparableProduct;
+ const local=market?.[2]==='TR'||researchHost(brief.website).endsWith('.tr');
+ const feedbackQueries=needsFeedback?(local?[
+  `site:sikayetvar.com "${key}" şikayet`, `site:trendyol.com "${key}" ürün yorumları`,
+  `site:hepsiburada.com "${key}" ürün değerlendirmeleri`
+ ]:[`"${key}" customer reviews product experience`,`"${key}" customer complaints`]):[];
+ const missing=plan.tasks.filter(task=>!prior.some(search=>search.taskId===task.id&&search.results?.length));
+ const peers=plan.peerNames.slice(0,3).map(name=>`"${name.replace(/["\r\n]/g,' ')}" ${product||''} ${market?.[1]||''} ${local?'ürünleri':'products'}`);
+ const missingCompetition=plan.tasks.some(task=>task.section==='competition')&&plan.peerNames.length<2||missing.some(task=>task.section==='competition');
+ const competitionQueries=missingCompetition&&product?[
+  [product,market?.[1],local?'markaları üreticileri ürün kataloğu':'brands manufacturers official product catalog'].filter(Boolean).join(' '),
+  [product,market?.[1],local?'alternatif markalar üretici resmi site':'alternative brands manufacturers official product'].filter(Boolean).join(' ')
+ ]:[];
+ const haveMarketplaces=candidates.some(url=>['trendyol.com','hepsiburada.com','amazon.com.tr'].includes(researchHost(url)));
+ const dedicated=haveMarketplaces?feedbackQueries.filter(query=>!query.includes('site:trendyol.com')&&!query.includes('site:hepsiburada.com')):feedbackQueries;
+ const assigned=plan.tasks.filter(task=>task.tools?.includes('google-search')&&task.section!=='perception');
+ const assignedCompetition=missing.filter(task=>task.section==='competition').map(task=>task.query);
+ const marketQuery=plan.tasks.some(task=>task.section==='swot')&&product?[product,market?.[1],local?'tüketici talebi satış kanalı pazar raporu':'consumer demand distribution market report'].filter(Boolean).join(' '):'';
+ const queries=unique([...dedicated.slice(0,2),...competitionQueries,...(marketQuery?[marketQuery]:[]),...(missingCompetition?peers.slice(0,2):[]),...assignedCompetition,...dedicated.slice(2),...peers.slice(2),...missing.filter(task=>!['perception','competition'].includes(task.section)).map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
+ const geo=market?{countryCode:market[2],language:market[3]}:null;
+ const feedbackTask=plan.tasks.find(task=>task.section==='perception');
+ const [direct,discovery,feedbackSearch]=await Promise.all([
+  needsFeedback?readResearchPages(brief,brand.plan,candidates,reserved,collect):{sources:[],unavailable:[]},
+  collectAttempt(()=>searchPublicIndex(brief,brand.packet,prior,geo,queries,reserved)),
+  needsFeedback&&feedbackTask?.tools?.includes('tavily')&&pool?.search?Promise.all(feedbackQueries.slice(0,2).map(query=>
+   searchManagedTask(pool,{id:feedbackTask.id,query}))):[]
+ ]);
+ const taskIds=new Map(plan.tasks.map(task=>[nameKey(task.query),task.id]));
+ if(marketQuery)taskIds.set(nameKey(marketQuery),plan.tasks.find(task=>task.section==='swot').id);
+ const comparisonTask=plan.tasks.find(task=>task.section==='competition');
+ for(const query of [...competitionQueries,...peers])if(comparisonTask?.id&&!taskIds.has(nameKey(query)))taskIds.set(nameKey(query),comparisonTask.id);
+ for(const query of feedbackQueries)if(feedbackTask?.id&&!taskIds.has(nameKey(query)))taskIds.set(nameKey(query),feedbackTask.id);
+ const searches=[...feedbackSearch,...(discovery?.searches||[]).map(item=>({...item,...(taskIds.get(nameKey(item.query))?{taskId:taskIds.get(nameKey(item.query))}:{})}))];
+ const extra=needsFeedback&&countFeedbackProofs(brief,{sources:direct.sources})<2?feedbackTargets(brief,brand.packet,searches,market).filter(url=>!candidates.includes(url)&&!existing.includes(url)):[];
+ const marketTargets=searches.filter(search=>search.query===marketQuery).flatMap(search=>search.results||[]).map(result=>researchUrl(result.url))
+  .filter(url=>url&&researchHost(url)!==researchHost(brief.website)&&!candidates.includes(url)&&!existing.includes(url)).slice(0,3);
+ const readTargets=unique([...extra,...marketTargets]);
+ const more=readTargets.length?await readResearchPages(brief,brand.plan,readTargets,reserved,collect):{sources:[],unavailable:[]};
+ const pages=[...direct.sources,...more.sources];
+ if(needsFeedback&&countFeedbackProofs(brief,{sources:pages})<2){
+  const tried=new Set(pages.filter(source=>feedbackSource(brief,source)).map(source=>source.finalUrl));
+  const urls=unique([...candidates,...extra]).filter(url=>!tried.has(url));
+  const complaint=urls.filter(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url))).sort((a,b)=>new URL(b).pathname.split('/').filter(Boolean).length-new URL(a).pathname.split('/').filter(Boolean).length)[0];
+  const product=urls.find(url=>researchHost(url)==='trendyol.com')||urls.find(url=>!['sikayetvar.com','trustpilot.com'].includes(researchHost(url)));
+  const readers=await reserved.availableActors?.()||[];
+  const specialized={ 'sikayetvar.com':'tamgadev/sikayetvar-scraper','trendyol.com':'shahidirfan/trendyol-reviews-scraper' };
+  const results=await Promise.all([complaint,product].filter(Boolean).map(async url=>{
+   const actor=specialized[researchHost(url)];
+   const sources=actor&&readers.includes(actor)?await readPublisherFallback(brief,brand.packet,searches,[url],reserved,actor):[];
+   return sources.length?sources:readPublisherFallback(brief,brand.packet,searches,[url],reserved);
+  }));
+  pages.push(...results.flat());
+ }
+ return {searches,pages,unavailable:[...direct.unavailable,...more.unavailable],
+  ...(discovery?{discovery:{actor:discovery.actor||null,status:discovery.status||'unavailable',reason:discovery.reason||null,results:(discovery.searches||[]).reduce((n,item)=>n+(item.results?.length||0),0)}}:{})};
+}
+
+async function readPublisherFallback(brief,packet,searches,targets,pool,actor='apify/rag-web-browser'){
+ if(!targets.length||!pool.enrich||!(await pool.availableActors?.()||[]).includes(actor))return [];
+ const observed=[...searches,{results:targets.map(url=>({url}))}];
+ const results=await Promise.all(targets.map(url=>collectAttempt(()=>pool.enrich({actor,url},{brief,packet,searches:observed}))));
+ return results.flatMap(result=>(result.pages||[]).map(page=>providerSource({url:page.url,title:page.title,text:page.text,method:'extracted',asOf:packet.asOf,
+  scope:actor==='apify/rag-web-browser'?'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.':'Kamuya açık platformdaki özgün müşteri deneyimi.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
+}
+
+export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false}={}){
  if(!targets.length)return {sources:[],unavailable:[]};
- return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
+ const full=new Map();
+ const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
   const entries=new Map();
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
    const key=hash(input);
    if(!entries.has(key))entries.set(key,{input,page});
+   if(complete)full.set(input.url+' '+input.method,page.text);
   }
   const pending=entries.values();
   const workers=Array.from({length:Math.min(archiveConcurrency,entries.size)},async()=>{
@@ -202,6 +372,12 @@ export async function readResearchPages(brief,plan,targets,providers,collect){
   const failed=(await Promise.allSettled(workers)).find(result=>result.status==='rejected');
   if(failed)throw failed.reason;
  }});
+ if(!complete)return packet;
+ const sources=await Promise.all(packet.sources.map(async source=>{
+  const text=full.get(source.finalUrl+' '+source.method);
+  return text&&!source.metadataOnly?{...source,fullText:(await compressPage(text)).toString('base64')}:source;
+ }));
+ return {...packet,sources};
 }
 
 export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan,priorSearches=[],archivedUrls=new Set()){
@@ -260,7 +436,32 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
  }
  const names=product?(plan.data?.candidates||[]):[];
  const discoveryTarget=providers.managedBudgetVersion>=3?4:2;
- if(product&&providers.managedBudgetVersion>=3&&managedPlan?.coveragePolicy===2)await discoverPublishers();
+ if(providers.managedBudgetVersion>=6&&product){
+  for(const result of priorSearches.flatMap(search=>search.results||[])){
+   const url=researchUrl(result.url);
+   if(!url||/^(?:trendyol|hepsiburada|amazon|sikayetvar|google|instagram|linkedin|akakce|cimri)\./iu.test(researchHost(url)))continue;
+   const resemblesProduct=/ürün|urun|product|catalog|kategori|category|collections|shop|jeneratör|generator/iu.test(new URL(url).pathname);
+   const overlap=words.some(word=>nameKey([result.title,result.content,url].filter(Boolean).join(' ')).includes(nameKey(word)));
+   const candidate=overlap&&resemblesProduct&&publisherName(result,url);
+   if(candidate&&!seen.has(peerGroupKey(candidate)))addHint(candidate,url);
+   if(hints.length>=4)break;
+  }
+  if(hints.length<2&&names.length&&pool.enrich){
+   const locale=market||collectionMarket(managedPlan?.market,brief.goals);
+   const geo=locale?{countryCode:locale[2],language:locale[3]}:null;
+   const productName=comparisonLabel(product)||product;
+   const existing=new Set(priorSearches.filter(search=>search.results?.length).map(search=>nameKey(search.query||'')));
+   const queries=unique(names.slice(0,5).filter(name=>!seen.has(peerGroupKey(name))).map(name=>
+    ['"'+name.replace(/["\r\n]/g,' ').trim()+'"',productName,locale?.[3]==='tr'?'resmi ürünler':'official products'].join(' ')))
+    .filter(query=>!existing.has(nameKey(query)));
+   const extra=await collectAttempt(()=>searchPublicIndex(brief,brand.packet,priorSearches,geo,queries,pool));
+   if(extra?.searches?.length){
+    searches.push(...extra.searches);
+    priorSearches=[...priorSearches,...extra.searches];
+   }
+  }
+ }
+ if(product&&providers.managedBudgetVersion>=3&&managedPlan?.coveragePolicy===2&&providers.managedBudgetVersion<6)await discoverPublishers();
  for(let i=0;i<names.length;i+=3){
   const results=await Promise.all(names.slice(i,i+3).map(findPublisher));
   for(const result of results.filter(Boolean)){
@@ -268,6 +469,7 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    addHint(result.name,result.url);
   }
  }
+ if(product&&providers.managedBudgetVersion>=6&&hints.length<2&&managedPlan?.coveragePolicy===2)await discoverPublishers();
  if(product&&!(providers.managedBudgetVersion>=3)&&(repair||managedPlan&&hints.length<discoveryTarget))await discoverPublishers();
  if(product&&managedPlan?.coveragePolicy===2&&hints.length<discoveryTarget){
   const findings=new Map();
@@ -315,7 +517,9 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    }
   }
  }
- const targets=unique([...hints.map(peer=>peer.website),...searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean)]);
+ const observedUrls=searches.flatMap(s=>(s.results||[]).map(r=>researchUrl(r.url))).filter(Boolean);
+ const targets=unique([...hints.map(peer=>peer.website),...(providers.managedBudgetVersion>=6?hints.map(peer=>new URL(peer.website).origin+'/'):[]),
+  ...(providers.managedBudgetVersion>=6?observedUrls.slice(0,4):observedUrls)]);
  const planForRead=managedPlan?.coveragePolicy===2?{...brand.plan,entities:[...brand.plan.entities,...hints.filter(peer=>!brand.plan.entities.some(entity=>researchHost(entity.website)===researchHost(peer.website)))].slice(0,8)}:brand.plan;
  let packet=await readResearchPages(brief,planForRead,targets.filter(url=>!archivedUrls.has(url)),providers,collect);
  if(managedPlan?.coveragePolicy===2&&pool.extract){
@@ -325,6 +529,12 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    const extraction=await collectAttempt(()=>pool.extract(missed));
    if(extraction.pages?.length)packet=mergeExtractedEvidence(packet,extraction);
   }
+ }
+ if(providers.managedBudgetVersion>=6&&hints.length){
+  const readable=new Set([...archivedUrls,...packet.sources.filter(source=>!source.metadataOnly).map(source=>source.finalUrl)]);
+  const unresolved=hints.filter(peer=>!readable.has(peer.website)).slice(0,2).map(peer=>peer.website);
+  const recovered=await readPublisherFallback(brief,brand.packet,[...searches,...priorSearches],unresolved,pool);
+  packet.sources.push(...recovered);
  }
  return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true,...(managedPlan?{unavailable:packet.unavailable}:{})};
 }
@@ -357,7 +567,7 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-export function managedCollectionContext(brief,packet){
+export function managedCollectionContext(brief,packet,{complete=false}={}){
  const peerHosts=new Set(packet.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
  const brandHost=researchHost(brief.website);
  const primary=[],other=[];
@@ -366,12 +576,12 @@ export function managedCollectionContext(brief,packet){
   const isPrimary=host===brandHost||peerHosts.has(host);
   (isPrimary&&!source.metadataOnly&&source.method!=='search-snippet'?primary:other).push(source);
  }
- const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
  context.collectionFirst=true;
  return context;
 }
 
-export function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false,limit=6){
+export function peerCandidates(context,entities,brand,peerProduct,expandedPublishers=false,limit=6,{allowRelatedProducts=false}={}){
  const product=peerProduct||brand.facts.find(f=>f.topic==='products')?.statement||'';
  const brandName=context.input.brief.brandName.toLocaleLowerCase('tr');
  const brandHost=researchHost(context.input.brief.website);
@@ -380,8 +590,11 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
  const format=preciseProduct?terms.at(-1):null;
  const normalizedFormat=nameKey(format||'').replace(/(?:leri|lari)$/u,'');
  const comparableFormat=preciseProduct&&product.trim().split(/\s+/).length<=3&&normalizedFormat&&!/^(?:urun|hizmet|service|products?|format|gida|sektor|kategori)$/u.test(normalizedFormat);
+ const categoryAliases=[/^(?:biskuvi|kurabiye|cookie|biscuit)/u,/^(?:jenerator|generator|genset)/u,/^(?:atistirmalik|snack)/u];
+ const alias=allowRelatedProducts?categoryAliases.find(pattern=>pattern.test(normalizedFormat)):null;
  const containsFormat=text=>normalizedFormat&&(text.match(/[\p{L}]+/gu)||[]).some(word=>{
   const candidate=nameKey(word);
+  if(alias?.test(candidate))return true;
   return ['', 'i','u','lar','ler','lari','leri'].some(suffix=>candidate===normalizedFormat+suffix||candidate===normalizedFormat.replace(/k$/u,'g')+suffix||
    /[iu]$/u.test(normalizedFormat)&&candidate===normalizedFormat.slice(0,-1)+suffix);
  });
@@ -407,7 +620,8 @@ export function peerCandidates(context,entities,brand,peerProduct,expandedPublis
     const quote=card.quote.toLocaleLowerCase('tr');
     return {card,score:terms.reduce((n,term)=>n+Number(quote.includes(term)),0)*2+Number(productPattern.test(quote))+Number(Boolean(containsFormat(quote)))*4};
    }).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
-   if(!cards.length||comparableFormat&&!cards.some(({card})=>containsFormat(card.quote)))continue;
+   if(!cards.length||comparableFormat&&!cards.some(({card})=>containsFormat(card.quote))&&
+    !(allowRelatedProducts&&cards.some(({card})=>containsFormat(card.title+' '+new URL(card.url).pathname))))continue;
    const key=peerProduct?peerGroupKey(candidate.name):nameKey(candidate.name),score=cards[0].score+Number(Boolean(containsFormat(new URL(source.url).pathname)))*6;
    if(scored.get(key)?.score>=score)continue;
    const entity={...candidate,website:source.url,scope:product,audienceReason:''};
@@ -592,9 +806,22 @@ async function reviewManagedMetrics({plan,corpus,context,providers,prior=[],sign
  const cards=new Map(),aliasesByProof=new Map();
  const searchUrls=id=>new Set(corpus.searches.filter(search=>search.taskId===id).flatMap(search=>(search.results||[]).map(result=>researchUrl(result.url))));
  const sourceUrls=new Map(context.input.sources.map(item=>[item.url,researchUrl(item.requestedUrl||item.url)]));
+ const routed=tasks.some(task=>task.tools?.length);
+ const brandHost=researchHost(context.input.brief.website);
+ const actorsByUrl=new Map((corpus.packet?.sources||[]).filter(source=>source.provenance?.actor).map(source=>[source.finalUrl||source.url,source.provenance.actor]));
+ const competitorHosts=new Set(context.input.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
+ const assignedEvidence=(section,card)=>{
+  const host=researchHost(card.url),actor=actorsByUrl.get(card.url);
+  if(section==='perception')return customerEvidence([card.url,card.title,card.method,card.quote])&&
+   (host===brandHost||actor||nameKey(card.url+' '+card.title+' '+card.quote).includes(nameKey(context.input.brief.brandName)));
+  if(section==='competition')return competitorHosts.has(host);
+  if(section==='readiness')return host===brandHost&&questionSignals.readiness.test(card.quote);
+  return section==='digital'&&(Boolean(actor&&plan.actors?.some(item=>item.id===actor))||host===brandHost&&card.method==='html-signals');
+ };
  const rows=metrics.map(metric=>{
   const urls=searchUrls(metric.taskId);
-  const relevant=context.cards.filter(card=>(urls.has(card.url)||urls.has(sourceUrls.get(card.url)))&&!card.metadataOnly&&card.method!=='search-snippet');
+  const relevant=context.cards.filter(card=>!card.metadataOnly&&card.method!=='search-snippet'&&
+   (urls.has(card.url)||urls.has(sourceUrls.get(card.url))||routed&&assignedEvidence(metric.section,card)));
   const candidates=new Map();
   for(const card of relevant){
    const inPage=candidates.get(card.url)||[];
@@ -678,7 +905,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const queryPool=providers.withCeiling(2900);
  const brandName=nameKey(brief.brandName);
  const research=priority.filter(id=>missing.includes(id)&&(!plan.managerDirected||verified[id].length<(id==='readiness'?2:1))).map(id=>[id,managedEvidenceQuery(brief,plan,id,market?.[3])]);
- if(plan.tasks.some(task=>task.section==='perception')){
+ if(plan.tasks.some(task=>task.section==='perception')&&(providers.managedBudgetVersion<6||countFeedbackProofs(brief,corpus.packet)<2)){
   const name='"'+brief.brandName.replace(/["\n\r]/g,' ')+'"';
   const channels=market?.[3]==='tr'?[['şikayet ürün deneyimi',['sikayetvar.com']],['ürün kullanıcı yorumları değerlendirme',['trendyol.com','hepsiburada.com']]]:
    [['customer complaints product experience',[]],['verified purchase product customer reviews',[]]];
@@ -696,7 +923,9 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
    targeted.push([metric.section,metric.query,undefined,metric.taskId]);
   }
  }
- const searches=plan.managerDirected?await Promise.all([...targeted,...research.filter(([id])=>!targeted.some(([section])=>section===id))].map(search)):
+ const included=providers.managedBudgetVersion>=6?[...research.filter(([id])=>id==='perception'),...targeted,...research.filter(([id])=>id!=='perception'&&!targeted.some(([section])=>section===id))]:
+  [...targeted,...research.filter(([id])=>!targeted.some(([section])=>section===id))];
+ const searches=plan.managerDirected?await Promise.all(included.map(search)):
   [...await Promise.all(research.filter(([id])=>id==='perception').map(search)),...await Promise.all(research.filter(([id])=>id!=='perception').map(search))];
  const questionFor=({id,search})=>search.taskId&&id!=='readiness'?null:id;
  const archived=new Set(corpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly).map(source=>source.finalUrl));
@@ -730,7 +959,7 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  const newContext=managedCollectionContext(brief,{...corpus.packet,sources:fresh.sources});
  if(targeted.length&&fresh.sources.length){
   const combined=managedCollectionContext(brief,{...corpus.packet,sources:canonicalSources([...corpus.packet.sources,...fresh.sources])});
-  metricCoverage=await reviewManagedMetrics({plan,corpus:{searches:[...corpus.searches,...searches.map(entry=>entry.search)]},context:combined,providers:queryPool,prior:metricCoverage,signal:AbortSignal.timeout(15000)});
+  metricCoverage=await reviewManagedMetrics({plan,corpus:{packet:combined.packet,searches:[...corpus.searches,...searches.map(entry=>entry.search)]},context:combined,providers:queryPool,prior:metricCoverage,signal:AbortSignal.timeout(15000)});
  }
  const freshCandidates=questionCandidates(brief,newContext);
  for(const entry of searches){
@@ -741,7 +970,9 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   evidence[id]=unique([...verified[id],...found,...evidence[id]]).slice(0,8);
  }
  for(const id of Object.keys(evidence))evidence[id]=unique([...verified[id],...evidence[id]]);
- const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)&&
+ const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&
+  (nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)||providers.managedBudgetVersion>=6&&
+   nameKey(brandDomain(brief)).length>=4&&nameKey(card.url+' '+card.title).includes(nameKey(brandDomain(brief))))&&
   customerEvidence([card.url,card.title,card.method,card.quote]));
  const feedbackByPage=new Map();
  const feedbackSeen=new Set();
@@ -772,16 +1003,22 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  }
  return {inventory,questionEvidence:evidence,questionSources:{searches:searches.map(({search})=>search),pages:fresh.sources},
   ...(metricCoverage?{metricCoverage}:{}),
-  questionCoverage:{missingBeforeSearch:missing,searches:searches.map(({id,search})=>({id,results:search.results?.length||0,issue:search.reason||null})),...(check.unavailable?{reviewIssue:check.reason}:{}),...(indexIssue?{indexIssue}:{})}};
+  questionCoverage:{missingBeforeSearch:missing,searches:searches.map(({id,search})=>({id,results:search.results?.length||0,issue:search.reason||null,...(search.providerStatus?{providerStatus:search.providerStatus}:{})})),...(check.unavailable?{reviewIssue:check.reason}:{}),...(indexIssue?{indexIssue}:{})}};
 }
 
 async function managedCollectionInputs(brief,plan,previous){
  const focus=await previous(inventoryStages[0]);
  const [brand,{packet},inventory]=await Promise.all([previous('brand'),collectionCorpus(previous,focus?.questionSources),sourcesFrom(previous,inventoryStages,'inventory')]);
- const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet,{complete:plan.directedResearch}):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
  context.collectionFirst=true;
+ if(plan.directedResearch){
+  const rounds=await Promise.all(directedRounds.map(previous));
+  const latest=rounds.filter(r=>r?.commandResults).at(-1);
+  const latestPlan={...plan,assets:latest?.assets||plan.assets,questions:[...new Set(rounds.flatMap(r=>r?.questions||[]))]};
+  return {brief,brand,context,plan:latestPlan,inventory:[]};
+ }
  const discovered=comparisonEntities(context,inventory);
- const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16);
+ const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16,{allowRelatedProducts:plan.tasks?.some(task=>task.tools)});
  context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
  context.peerProofs=new Map(candidates.map(({entity,cards})=>[entity.id,cards.map(card=>card.id)]));
  return {brief,brand,plan,context,inventory,coverageEvidence:focus?.questionEvidence,questionCoverage:focus?.questionCoverage,metricCoverage:focus?.metricCoverage};
@@ -809,7 +1046,7 @@ export async function retainedManagedProofs(brief,plan,previous){
 
 async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSectionsOnly=false}={}){
  const [args,closed]=await Promise.all([managedCollectionInputs(brief,plan,previous),previous('coverage_plan')]);
- let batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
+ let batchReviews=closed.reviewBatches||closed.rebuildReviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
  if(savedSectionsOnly&&!batchReviews)return undefined;
  if(sectional&&!savedSectionsOnly&&providers.managedBudgetVersion===3&&providers.worker&&batchReviews){
   const {input}=managedReportInput(args);
@@ -823,13 +1060,24 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
   const missing=[...(swot?.missingQuadrants||[]),...(readiness&&!readiness.complete?['readiness']:[])];
   report.meetingQuestions=[...new Map([...report.meetingQuestions,...missing.map(id=>({dimension:'operations',question:managedEvidenceQuestions[id],findingIds:[]}))].map(q=>[q.question,q])).values()];
  }
+ if(plan.directedResearch){
+  report.meetingQuestions=[...new Map([...report.meetingQuestions,...(args.plan.questions||[]).map(question=>({dimension:'operations',question,findingIds:[]}))].map(q=>[q.question,q])).values()];
+ }
  if(args.metricCoverage){
   const missing=args.metricCoverage.filter(metric=>!metric.proofIds.length);
   const questions=missing.filter(metric=>metric.question).map(metric=>({dimension:'operations',question:metric.question,findingIds:[]}));
   report.meetingQuestions=[...new Map([...report.meetingQuestions,...questions].map(q=>[q.question,q])).values()];
  }
  const {packet}=args.context,urls=new Set(report.sources.map(source=>source.url));
- const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
+ const keptSourceIds=new Set(report.sources.map(source=>source.id));
+ const usedQuotes=new Map();
+ if(plan.directedResearch)for(const source of report.sources){
+  const quotes=usedQuotes.get(source.url)||[];
+  quotes.push(source.quote);usedQuotes.set(source.url,quotes);
+ }
+ const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)).map(source=>plan.directedResearch?
+  {...source,excerpts:source.excerpts.filter(excerpt=>usedQuotes.get(source.finalUrl)?.some(quote=>excerpt.text.includes(quote)||excerpt.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').includes(quote)))}:source),
+  citationCards:packet.citationCards.filter(source=>plan.directedResearch?keptSourceIds.has(source.id)||usedQuotes.get(source.url)?.includes(source.quote):urls.has(source.url))};
  return {report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,...(reportIssue?{toolIssues:[reportIssue]}:{}),
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:plan,
    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage,...(args.questionCoverage?{questionCoverage:args.questionCoverage}:{}),
@@ -857,10 +1105,32 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }):(await previous(searchStages[0])).funding;
  const save=data=>finish({collectionFirst:true,...data});
  const scoped=amount=>providers.withCeiling(Math.min(funding.capKurus,funding.startKurus+amount));
+ if(providers.managedBudgetVersion>=7&&(first||managed?.directedResearch)){
+  const roundIndex=directedRounds.indexOf(phase);
+  if(roundIndex>=0){
+   const brand=await previous('brand');
+   const rounds=(await Promise.all(directedRounds.slice(0,roundIndex).map(previous))).filter(r=>r?.commandResults);
+   if(rounds.at(-1)?.researchDone)return save({});
+   const pool=providers.withCeiling(providers.managedBudgetVersion>=8?2950:2800);
+   const hasCompetitionDiscovery=rounds.some(({commandResults})=>commandResults.some(({command,urls})=>urls.length&&
+    (command.tool==='tavily'||searchActors.includes(command.tool))&&managed?.tasks.some(task=>task.id===command.taskId&&task.section==='competition')));
+   const acquisition=providers.managedBudgetVersion>=8?providers.withCeiling(first?1900:hasCompetitionDiscovery?2250:2500):pool;
+   const decision=await planDirectedResearch({brief,brand,providers:pool,plan:first?undefined:managed,rounds});
+   const plan=first?(decision.directedResearch?decision:{directedResearch:true,managerDirected:true,coveragePolicy:2,
+    understanding:groundedManagedResearchPlan(brief,brand).understanding,market:'',tasks:[],assets:[],peers:[],questions:[]}):managed;
+   const {commands,...storedPlan}=plan;
+   const result=await executeDirectedResearch({brief,brand,providers:pool,acquisition,plan,decision,rounds,
+    readPages:urls=>readResearchPages(brief,brand.plan,urls,pool,collect,{complete:true}),expandPages:expandDirectedSources});
+   return save({funding,...(first?{managedPlan:storedPlan}:{}),...result,
+    ...(!result.commandResults.length&&!decision.reason?{researchDone:true}:{}),...(decision.reason?{toolIssues:[decision.reason]}:{})});
+  }
+  if(searchIndex>=0||readIndex>=0||scrapeIndex>=0||inventoryIndex>=0)return save({});
+ }
  if(searchIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
-  const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):managed?scoped(collectionBudgetKurus):scoped(900);
+  const assigned=providers.managedBudgetVersion>=6;
+  const pool=sectional?providers.withCeiling(assigned&&!first?managedGeneralSearchCeilingKurus:managedDiscoveryCeilingKurus):managed?scoped(collectionBudgetKurus):scoped(900);
   const directed=providers.managedBudgetVersion>=4;
   const sectorTerms=[brand.facts.find(f=>f.topic==='products')?.statement||brief.brandName,brand.review?.marketContext?.description||brief.goals];
   const [sector,availableActors]=first&&managed?await Promise.all([
@@ -877,12 +1147,21 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
     if(!independent.unavailable)planned=independent;
    }
   }
-  const managedPlan=planned?.unavailable?{...groundedManagedResearchPlan(brief,brand),coveragePolicy:2}:planned||managed||null;
-  const topics=shard(managedPlan?.tasks||methodologyAreas,searchIndex,searchStages.length);
+  let managedPlan=planned?.unavailable?{...groundedManagedResearchPlan(brief,brand),coveragePolicy:2}:planned||managed||null;
+  if(assigned&&planned?.unavailable)managedPlan={...managedPlan,managerDirected:true,tasks:managedPlan.tasks.map((task,i)=>({...task,id:'t'+(i+1),tools:['tavily','google-search','direct','gemini']}))};
+  const order=managedPlan?.tasks||methodologyAreas;
+  const priority=assigned?[...order].sort((a,b)=>Number(['competition','perception'].includes(b.section))-Number(['competition','perception'].includes(a.section))):order;
+  const topics=shard(priority,searchIndex,searchStages.length);
   const searches=[...sector];
   for(let i=0;i<topics.length;i+=3){
-   searches.push(...await Promise.all(topics.slice(i,i+3).map(task=>task.id?searchManagedTask(pool,task):
+   searches.push(...await Promise.all(topics.slice(i,i+3).filter(task=>!assigned||!task.tools?.length||task.tools.includes('tavily')).map(task=>task.id?searchManagedTask(pool,task):
     collectAttempt(()=>pool.search(task.query||queryFor(brief,task.topic,market),{depth:'basic',maxResults:12,retainRaw:true})))));
+  }
+  if(searchIndex===searchStages.length-1&&assigned&&managedPlan){
+   const prior=[...await sourcesFrom(previous,searchStages.slice(0,searchIndex),'searches'),...searches];
+   const reserved=providers.withCeiling(managedDiscoveryCeilingKurus);
+   const coverage=await collectPlannedCoverage({brief,brand,plan:managedPlan,market:collectionMarket(managedPlan.market)||market,prior,pool,reserved,collect});
+   return save({funding,...coverage,searches:[...searches,...coverage.searches]});
   }
   if(searchIndex===searchStages.length-1&&sectional&&managedPlan?.coveragePolicy===2){
    const extra=managedCoverageSearches(brief,managedPlan);
@@ -893,7 +1172,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }
  if(readIndex>=0){
   const brand=await previous('brand'),searches=await sourcesFrom(previous,searchStages,'searches');
-  const results=managed?.managerDirected?Array.from({length:12},(_,index)=>searches.map(search=>search.results?.[index]).filter(Boolean)).flat():searches.flatMap(search=>search.results||[]);
+  const assigned=providers.managedBudgetVersion>=6;
+  const results=managed?.managerDirected?Array.from({length:assigned?4:12},(_,index)=>searches.map(search=>search.results?.[index]).filter(Boolean)).flat():searches.flatMap(search=>search.results||[]);
   const urls=unique(results.map(result=>researchUrl(result.url)).filter(Boolean));
   const targets=shard(urls,readIndex,readStages.length);
   const packet=await readResearchPages(brief,brand.plan,targets,providers,collect);
@@ -902,14 +1182,14 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  if(scrapeIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(managed?.market||brand.review?.marketContext?.description||brief.goals));
-  const [searches,pages]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,readStages,'pages')]);
+  const [searches,pages,previousScrapes]=await Promise.all([sourcesFrom(previous,searchStages,'searches'),sourcesFrom(previous,[...searchStages,...readStages],'pages'),sourcesFrom(previous,scrapeStages.slice(0,scrapeIndex),'scrapes')]);
   const pool=sectional?providers.withCeiling(managedDiscoveryCeilingKurus):scoped(managed?collectionBudgetKurus:1650);
   // Worker compute is already reserved inside the research account. Prioritize
   // publisher searches, while optional Actors use the lower collection limit.
   const peerPool=sectional&&managed?.coveragePolicy===2?providers.withCeiling(managedInventoryCeilingKurus):pool;
   let comparison={searches:[],pages:[]};
-  const archived=new Set([...brand.packet.sources,...pages].filter(page=>page.method!=='search-snippet'&&!page.metadataOnly).map(page=>page.finalUrl));
-  const gatherActors=()=>actorRequest({brief,searches,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
+ const archived=new Set([...brand.packet.sources,...pages].filter(page=>page.method!=='search-snippet'&&!page.metadataOnly).map(page=>page.finalUrl));
+  const gatherActors=()=>actorRequest({brief,searches,scrapes:previousScrapes,packet:{...brand.packet,sources:[...brand.packet.sources,...pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   let parallelScrapes;
   if(scrapeIndex===0){
    const gatherPeers=()=>comparisonResearch(brief,brand,market,peerPool,providers,collect,null,managed||null,sectional?searches:[],managed?.coveragePolicy===2?archived:undefined);
@@ -927,7 +1207,7 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
    }
   }
   // V2 has separate envelopes for acquisition, Gemini indexing and Claude review.
-  const scrapes=parallelScrapes??await actorRequest({brief,searches:[...searches,...comparison.searches],packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
+  const scrapes=parallelScrapes??await actorRequest({brief,searches:[...searches,...comparison.searches],scrapes:previousScrapes,packet:{...brand.packet,sources:[...brand.packet.sources,...pages,...comparison.pages]}},sectional?pool:scoped(collectionBudgetKurus),scrapeIndex,market,managed||null);
   return save({...comparison,scrapes});
  }
  if(inventoryIndex>=0){
@@ -953,13 +1233,16 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const committedKurus=Math.max(0,cost.chargedKurus-(managed?0:providers.infrastructureOffsetKurus||0)-funding.startKurus);
   if(committedKurus>(funding.researchLimitKurus??collectionBudgetKurus))throw new BudgetError('provider_accounting','Araştırma harcaması ayrılan bütçeyi aştı.');
   const planReview=sectional?planPositionalEvidenceReview:planManagedEvidenceReview;
-  const input=managed?managedReportInput(await managedCollectionInputs(brief,managed,previous)).input:null;
+  const input=managed&&!managed.directedResearch?managedReportInput(await managedCollectionInputs(brief,managed,previous)).input:null;
   const reviewBatches=input?planReview(providers.managedBudgetVersion>=3?prioritizeManagedProofs(input):input):null;
+  if(managed?.directedResearch)return save({collectionClosed:true,researchAccount:{...funding,committedKurus},rebuildReviewBatches:true});
   return save({collectionClosed:true,researchAccount:{...funding,committedKurus},...(reviewBatches!==null?{reviewBatches}:{})});
  }
  const reviewIndex=managedReviewPhases.indexOf(phase);
  if(managed&&reviewIndex>=0){
-  const {reviewBatches=[]}=await previous('coverage_plan'),reviews=[];
+  const closed=await previous('coverage_plan'),reviews=[];
+  const reviewBatches=closed.rebuildReviewBatches?
+   (providers.managedBudgetVersion>=8?planDirectedEvidenceReview:i=>planPositionalEvidenceReview(prioritizeManagedProofs(i)))(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input):closed.reviewBatches||[];
   const focus=managed.understanding||brief,signal=AbortSignal.timeout(sectional?170000:250000);
   if(sectional){
    const batches=shard(reviewBatches,reviewIndex,managedReviewPhases.length);
