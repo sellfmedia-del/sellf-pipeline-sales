@@ -3,6 +3,7 @@ import {actorChargeLimit,eventOnlyPricing,inspectApifyPolicies,matchedActorTasks
 import {actorIds,actorInput,searchActors} from './apify-inputs.mjs';
 import {researchUrl,researchHost} from './research-url.mjs';
 import {evidenceExcerpts} from './evidence.mjs';
+import {resolveTarget} from '../network.mjs';
 
 const terminal=new Set(['SUCCEEDED','FAILED','TIMED-OUT','ABORTED']);
 const identifier=s=>typeof s==='string'&&/^[a-zA-Z0-9]{10,30}$/.test(s);
@@ -35,7 +36,13 @@ function recordsForEvidence(actor,rows,target,context){
  for(const r of rows){
   if(!r||typeof r!=='object'||r.error)continue;
   let data,url=researchUrl(r.url||r.linkedinUrl||r.link||r.webVideoUrl);
-  if(actor==='apify/instagram-comment-scraper'){
+  if(actor==='apify/rag-web-browser'){
+   const finalUrl=researchUrl(r.metadata?.url||r.url);
+   const text=r.markdown;
+   if(!finalUrl||researchHost(finalUrl)!==researchHost(target.url)||r.crawl?.httpStatusCode!==200||typeof text!=='string'||text.length<160||/verify you are human|access denied|checking your browser|güvenlik doğrulaması/i.test(text.slice(0,1000)))continue;
+   result.push({url:finalUrl,title:scalar(r.metadata?.title),text:text.slice(0,35000)});
+   continue;
+  }else if(actor==='apify/instagram-comment-scraper'){
    const post=value=>researchHost(value)==='instagram.com'?new URL(researchUrl(value)).pathname.match(/\/(?:p|reel)\/([\w-]+)/)?.[1]:null;
    if(!target.official||!post(target.url)||post(r.postUrl)!==post(target.url)||!scalar(r.text))continue;
    data={brand:context.brief.brandName,comment:r.text.slice(0,900),publishedAt:scalar(r.timestamp)};url=target.url;
@@ -97,7 +104,7 @@ function recordsForEvidence(actor,rows,target,context){
  }
  return result;
 }
-export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,validateUrl=resolveTarget,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
  let policies;const metadata=new Map();
  async function json(path,{body,maxBytes=1000000,deadline=Infinity}={}){
   const remaining=Math.min(12000,deadline-now());if(remaining<=0)throw new BudgetError('actor_time_limit','Apify aşamasının süre sınırına ulaşıldı.');
@@ -136,11 +143,14 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    const task=matchedActorTasks(actorId,await tasks())[0];
    if(!task&&!existing)return {actor:request.actor,status:'not_configured',reason:'actor_limit_unverified'};
    const start=existing?.value||await (async()=>{
+    if(request.actor==='apify/rag-web-browser')try{await validateUrl(target.url);}
+    catch{throw new BudgetError('actor_source_unverified','Tarayıcı hedefinin herkese açık olduğu doğrulanamadı.');}
     const info=await infoFor(actorId),pricing=pricingFor(info);
     const datasetAllowanceKurus=10;
     const status=await ledger.status();
     // Meet a verified minimum only inside the saved individual cap and total account.
-    const requestedUsd=Math.max(.04,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0);
+    const preferredUsd=request.actor==='apify/rag-web-browser'?.012:.04;
+    const requestedUsd=Math.max(preferredUsd,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0);
     const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus,pricing});
     const query=new URLSearchParams({maxTotalChargeUsd:String(limit.maxTotalChargeUsd),maxItems:String(target.maxItems),timeout:'60',waitForFinish:'0'});
     const identity={actorId,input:target.input,capUsd:limit.maxTotalChargeUsd,maxItems:target.maxItems,timeout:60};
@@ -164,7 +174,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    if(run.status!=='SUCCEEDED'||!identifier(run.defaultDatasetId))return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_'+String(run.status).toLowerCase(),reservedKurus:start.reservedKurus};
    if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>start.capUsd+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
    const output=await ledger.once('apify:v8:dataset:'+start.runId,{runId:start.runId,maxItems:target.maxItems,maxBytes:1000000},datasetAllowanceKurus,async()=>{
-    const fields=request.actor==='apify/google-search-scraper'?'&fields=searchQuery,organicResults':request.actor==='themineworks/google-search-scraper'?'&fields=query,organic_results':'';
+    const fields=request.actor==='apify/google-search-scraper'?'&fields=searchQuery,organicResults':request.actor==='themineworks/google-search-scraper'?'&fields=query,organic_results':request.actor==='apify/rag-web-browser'?'&fields=metadata.url,metadata.title,crawl.httpStatusCode,markdown':'';
     const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+fields,{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
     const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];

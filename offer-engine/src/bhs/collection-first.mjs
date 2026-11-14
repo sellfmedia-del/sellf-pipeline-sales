@@ -169,7 +169,7 @@ async function actorRequest(context,providers,index,market,managedPlan){
   if(modes.has('instagram-comments')||[...known.official].some(url=>researchHost(url)==='instagram.com'))
    planned.unshift('apify/instagram-comment-scraper','apify/instagram-scraper');
  }
- const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor));
+ const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor)&&actor!=='apify/rag-web-browser');
  const targets=[];
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const unavailable=managedPlan?shard(order.filter(id=>!available.includes(id)),index,scrapeStages.length).map(actor=>({actor,unavailable:true,reason:'actor_api_unavailable'})):[];
@@ -297,8 +297,24 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const searches=[...feedbackSearch,...(discovery?.searches||[]).map(item=>({...item,...(taskIds.get(nameKey(item.query))?{taskId:taskIds.get(nameKey(item.query))}:{})}))];
  const extra=needsFeedback&&countFeedbackProofs(brief,{sources:direct.sources})<2?feedbackTargets(brief,brand.packet,searches,market).filter(url=>!candidates.includes(url)&&!existing.includes(url)):[];
  const more=extra.length?await readResearchPages(brief,brand.plan,extra,reserved,collect):{sources:[],unavailable:[]};
- return {searches,pages:[...direct.sources,...more.sources],unavailable:[...direct.unavailable,...more.unavailable],
+ const pages=[...direct.sources,...more.sources];
+ if(needsFeedback&&countFeedbackProofs(brief,{sources:pages})<2){
+  const tried=new Set(pages.filter(source=>feedbackSource(brief,source)).map(source=>source.finalUrl));
+  const urls=unique([...candidates,...extra]).filter(url=>!tried.has(url));
+  const targets=[urls.find(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url))),urls.find(url=>!['sikayetvar.com','trustpilot.com'].includes(researchHost(url)))].filter(Boolean);
+  pages.push(...await readPublisherFallback(brief,brand.packet,searches,targets,reserved));
+ }
+ return {searches,pages,unavailable:[...direct.unavailable,...more.unavailable],
   ...(discovery?{discovery:{actor:discovery.actor||null,status:discovery.status||'unavailable',reason:discovery.reason||null,results:(discovery.searches||[]).reduce((n,item)=>n+(item.results?.length||0),0)}}:{})};
+}
+
+async function readPublisherFallback(brief,packet,searches,targets,pool){
+ const actor='apify/rag-web-browser';
+ if(!targets.length||!pool.enrich||!(await pool.availableActors?.()||[]).includes(actor))return [];
+ const observed=[...searches,{results:targets.map(url=>({url}))}];
+ const results=await Promise.all(targets.map(url=>collectAttempt(()=>pool.enrich({actor,url},{brief,packet,searches:observed}))));
+ return results.flatMap(result=>(result.pages||[]).map(page=>providerSource({url:page.url,title:page.title,text:page.text,method:'extracted',asOf:packet.asOf,
+  scope:'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
 }
 
 export async function readResearchPages(brief,plan,targets,providers,collect){
@@ -458,6 +474,12 @@ export async function comparisonResearch(brief,brand,market,pool,providers,colle
    const extraction=await collectAttempt(()=>pool.extract(missed));
    if(extraction.pages?.length)packet=mergeExtractedEvidence(packet,extraction);
   }
+ }
+ if(providers.managedBudgetVersion>=6&&hints.length){
+  const readable=new Set([...archivedUrls,...packet.sources.filter(source=>!source.metadataOnly).map(source=>source.finalUrl)]);
+  const unresolved=hints.filter(peer=>!readable.has(peer.website)).slice(0,2).map(peer=>peer.website);
+  const recovered=await readPublisherFallback(brief,brand.packet,[...searches,...priorSearches],unresolved,pool);
+  packet.sources.push(...recovered);
  }
  return {searches,pages:packet.sources,peerHints:hints,peerProduct:product||'',expandedPeerPublishers:true,...(managedPlan?{unavailable:packet.unavailable}:{})};
 }

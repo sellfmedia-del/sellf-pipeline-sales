@@ -270,7 +270,7 @@ test('readiness is preview-only and probes catalogues without paid endpoints or 
  const calls=[],env={VERCEL_ENV:'preview',ANTHROPIC_API_KEY:'private-a',GEMINI_API_KEY:'private-g',APIFY_API_TOKEN:'private-p'};
  const fetchImpl=async url=>{calls.push(url);return json(url.endsWith('/users/me')?{data:{username:'synthetic-owner',email:'private-email@example.invalid'}}:url.includes('actor-tasks')?{data:{items:[],total:0}}:{});};
  const h=createSupervisedReadiness({env,fetchImpl}),res=response();await h({method:'GET'},res);
- assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.defaultPolicyCount,18);assert.equal(res.data.apify.accountUsername,'synthetic-owner');
+ assert.equal(res.code,200);assert.equal(res.data.manager.authenticated,true);assert.equal(res.data.paidCalls,0);assert.equal(res.data.apify.defaultPolicyCount,19);assert.equal(res.data.apify.accountUsername,'synthetic-owner');
  assert.ok(calls.every(u=>!u.includes('/runs')&&!u.includes('/messages')&&!u.includes(':generateContent')));assert.ok(!JSON.stringify(res.data).includes('private-'));
  const prod=response();await createSupervisedReadiness({env:{VERCEL_ENV:'production'},fetchImpl})({method:'GET'},prod);assert.equal(prod.code,404);
 });
@@ -398,11 +398,11 @@ test('saved scraper caps are read from matching Task details without exposing in
   calls.push({url,method:options.method||'GET'});
   return json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,options:{maxTotalChargeUsd:.03},input:{privateSession:'must-not-leak'}}});
  }});
- assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,19);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
+ assert.equal(result.savedTaskCount,1);assert.equal(result.taskPolicies,20);assert.equal(result.tasks[0].options.maxTotalChargeUsd,.03);
  assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==='GET'&&!c.url.includes('/runs')));
  assert.ok(!JSON.stringify(result).includes('privateSession'));
  const invalid=await inspectApifyPolicies({token:'private-policy',fetchImpl:async url=>json(url.includes('?')?{data:{items:[task],total:1}}:{data:{...task,actId:'anotherActor',options:{maxTotalChargeUsd:.03}}})});
- assert.equal(invalid.taskPolicies,18);assert.equal(invalid.complete,false);
+ assert.equal(invalid.taskPolicies,19);assert.equal(invalid.complete,false);
 });
 
 test('a long internal review explanation preserves the verdict and original wording within the existing generation budget',async()=>{

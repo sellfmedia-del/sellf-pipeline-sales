@@ -14,7 +14,7 @@ test('the authorized 20-cent default fills missing policies while lower individu
  const result=await inspectApifyPolicies({token:'synthetic',policyJson,fetchImpl:async()=>json({data:{items:[],total:0}})});
  assert.equal(result.complete,true);assert.equal(result.explicitPolicyCount,2);assert.equal(result.savedTaskCount,0);
  assert.equal(matchedActorTasks(actorIds[actor],result.tasks)[0].options.maxTotalChargeUsd,.003);
- assert.equal(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks)[0].options.maxTotalChargeUsd,.2);assert.equal(result.defaultPolicyCount,18);
+ assert.equal(matchedActorTasks(actorIds['clockworks/tiktok-scraper'],result.tasks)[0].options.maxTotalChargeUsd,.2);assert.equal(result.defaultPolicyCount,19);
  const lower={id:'lower-task',actId:actorIds[actor],options:{maxTotalChargeUsd:.001}};
  assert.equal(matchedActorTasks(actorIds[actor],[...result.tasks,lower])[0],lower);
  for(const invalid of ['invalid','{}',JSON.stringify([{actor,maxTotalChargeUsd:.41}]),JSON.stringify([{actor,maxTotalChargeUsd:'.01'}]),JSON.stringify([{actor,maxTotalChargeUsd:.01},{actor,maxTotalChargeUsd:.02}]),JSON.stringify([{actor:'unknown',maxTotalChargeUsd:.01}])])assert.throws(()=>explicitActorPolicies(invalid),e=>e.code==='actor_limit_unverified');

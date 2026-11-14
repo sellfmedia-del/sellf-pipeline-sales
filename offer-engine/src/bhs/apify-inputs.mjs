@@ -1,11 +1,13 @@
 import {BudgetError} from '../budget/ledger.mjs';
 import {researchUrl,researchHost} from './research-url.mjs';
+import {isIP} from 'node:net';
 
 // Schemas re-read from the connected Store on 2026-11-10. All inputs are built
 // here; model text, cookies, proxy credentials and unbounded options are rejected.
 export const actorIds=Object.freeze({
  'apify/google-search-scraper':'nFJndFXA5zjCTuudP','apify/instagram-comment-scraper':'SbK00X0JYCPblD2wp',
  'themineworks/google-search-scraper':'Rfu9Bmd2sLIpomMCk','desearch/web-search':'WMg2EXLzJGPVQ5Vfq',
+ 'apify/rag-web-browser':'3ox4R101TgZz67sLr',
  'compass/google-maps-reviews-scraper':'Xb8osYTtOjlsgI6k9',
  'harvestapi/linkedin-company-search':'taHaRcqil3scbchuI','harvestapi/linkedin-post-search':'buIWk2uOUzTmcLsuB',
  'curious_coder/linkedin-jobs-scraper':'hKByXkMQaC5Qt9UMN','apify/instagram-profile-scraper':'dSCLg0C3YEZ83HzYX',
@@ -33,6 +35,10 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  const u=new URL(url),host=researchHost(url),parts=u.pathname.split('/').filter(Boolean);
  const locale=()=>{const g=context.geo;if(!g||request.countryCode!==g.countryCode||request.language!==g.language||!['TR','GB','US','DE','FR','IT','ES','NL'].includes(g.countryCode))throw new BudgetError('actor_locale_unverified','Aktör için doğrulanmış hedef ülke ve dil gerekli.');return g;};
  const bad=()=>{throw new BudgetError('actor_source_unverified','Aktör hedefi bu kaynağa uygun değil.');};
+ if(actor==='apify/rag-web-browser'){
+  if(isIP(host.replace(/^\[|\]$/g,''))||!/[.](?:[a-z]{2,}|xn--[a-z0-9-]+)$/i.test(host)||/\.(?:local|internal|test|invalid|localhost)$/i.test(host))return bad();
+  return {input:{query:url,maxResults:1,outputFormats:['markdown'],scrapingTool:'browser-playwright',requestTimeoutSecs:22,maxRequestRetries:0,dynamicContentWaitSecs:4,desiredConcurrency:1},maxItems:1,url};
+ }
  if(searchActors.includes(actor)){
   const queries=request.queries;
   if(url!==researchUrl(context.brief.website)||!Array.isArray(queries)||!queries.length||queries.length>8||
