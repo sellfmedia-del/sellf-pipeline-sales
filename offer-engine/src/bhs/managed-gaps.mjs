@@ -114,7 +114,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
    const result=await executeDirectedResearch({brief,brand,providers:pool,plan,decision:next,rounds,priorRounds,
     readPages:urls=>readResearchPages(brief,brand.plan,urls,pool,collect,{complete:true}),expandPages:expandDirectedSources});
    rounds.push(result);
-   if(!result.commandResults.length)break;
+   if(!result.commandResults.length&&!next.reason)break;
   }
   if(!plan)return {report:original,analysisPacket:synthesis.analysisPacket};
   const freshSources=rounds.flatMap(r=>r.pages||[]);
@@ -122,7 +122,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   const searches=rounds.flatMap(r=>r.searches||[]);
   const freshCorpus=await collectionCorpus(previous,{pages:freshSources,searches,scrapes,peerHints:rounds.flatMap(r=>r.peerHints||[])});
   const context=managedCollectionContext(brief,freshCorpus.packet,{complete:true});
-  const freshUrls=new Set([...freshSources.map(s=>s.finalUrl),...scrapes.flatMap(s=>(s.pages||[]).map(p=>p.url))]);
+  const freshUrls=new Set([...freshSources.map(s=>s.finalUrl),...scrapes.flatMap(s=>(s.pages||[]).map(p=>p.url)),...searches.flatMap(s=>(s.results||[]).map(r=>r.url))]);
   const topics={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
   const retainedProofs=new Map([...reviewedProofs].filter(([,verdict])=>sections.some(section=>topics[section]===verdict)));
   const {commands,...finalPlan}=plan;

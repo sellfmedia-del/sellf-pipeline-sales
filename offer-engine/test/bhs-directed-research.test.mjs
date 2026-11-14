@@ -141,6 +141,26 @@ test('the model writes its own source-linked analysis and gaps are retained with
  assert.equal(result.report.bhsSections.find(section=>section.id==='readiness').complete,false);
 });
 
+test('report writing repairs only gaps with existing evidence',async()=>{
+ const delivery={url:site+'delivery',finalUrl:site+'delivery',title:'Delivery',method:'html',excerpts:[{text:'Retail orders are currently fulfilled from Istanbul to domestic addresses.'}]};
+ const context=managedCollectionContext(brief,{...brand.packet,sources:[...brand.packet.sources,delivery]},{complete:true});
+ const plan={directedResearch:true,coveragePolicy:2,tasks:[task],understanding,market:'France',assets:[],questions:[]};
+ const {input}=managedReportInput({brief,brand,plan,context,inventory:[]});
+ const ids=Object.keys(input.sources),calls=[];
+ const result=await synthesizeManagedReport({brief,brand,plan,context,inventory:[],sections:['readiness'],
+  batchReviews:[{ids,candidates:ids,verdicts:'r'.repeat(ids.length)}],providers:{managedBudgetVersion:8,manager:async(stage,request)=>{
+   calls.push(stage);
+   const repair=stage.endsWith('-repair');
+   if(repair){assert.equal(request.wanted,1);assert.equal(request.existing.length,1);}
+   return {data:{findings:[{area:'operations_1',quadrant:'none',peerId:'',peerOverlap:'',
+    observation:repair?'Retail orders are currently fulfilled from Istanbul to domestic addresses.':'Example sells packaged food through its online store.',proof:[Object.entries(request.sources).find(([,source])=>source[0]===(repair?delivery.url:site))[0]],
+    analysis:repair?'Cross-border fulfilment may require another carrier.':'An online channel can support initial demand testing.',
+    action:repair?'Compare local delivery terms with a French distributor.':'Run a French product page pilot.',question:''}],questions:[]}};
+  }},allowPartial:true,sectional:true});
+ assert.deepEqual(calls,['bhs-directed-report-readiness','bhs-directed-report-readiness-repair']);
+ assert.equal(result.report.bhsSections.find(section=>section.id==='readiness').complete,true);
+});
+
 test('status does not open the additional account and consent reserves no more than 30 TRY',async t=>{
  const original=await localBudget({lead:'directed-base'}),extra=await localBudget({lead:'directed-gap'});
  t.after(original.close);t.after(extra.close);

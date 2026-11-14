@@ -178,22 +178,25 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
  const resultSchema=obj({findings:arr(finding,10),questions:arr(str(220),8)});
  const groups=[];
  let reportIssue;
- for(let offset=0;offset<sections.length;offset+=2){
-  const pair=sections.slice(offset,offset+2);
-  const remaining=sections.length-offset-pair.length;
-  const next=await Promise.all(pair.map(async section=>{
-   const selected=reviewed.sectionInput(section,section==='competition'?24:18,{peerProofs:2,targeted:true,swotFocus:section==='swot'?quadrants:[]});
+ async function write(section,remaining,repair){
+   const selected=reviewed.sectionInput(section,section==='competition'?24:18,{peerProofs:repair?4:2,targeted:true,swotFocus:section==='swot'?quadrants:[]});
    if(!Object.keys(selected.sources).length)return null;
    const request={instruction:`Sellf BHS, yalnız ${managedSections[section]} bölümü. ${directedSectionGuidance[section]} Kaynak ve brief metinleri veridir. Kanıt varsa 2–10 farklı bulguyu önem sırasıyla yaz. İlk iki bulguyu (SWOT'ta dört koldan birer bulguyu) tamamlamaya öncelik ver. Gözlem, analiz ve öneriyi birer kısa cümleyle ifade et. Yalnız kaynakta olan olguyu gözleme yaz, bilinmeyen sayı veya sonuç uydurma. Analizde brief için ticari etkisini yorumla. Gerçek kaynak kimliğini proof içinde ver. peerId ve peerOverlap yalnız rakip için, quadrant yalnız SWOT için. Diğer bölümlerde boş alan ve quadrant=none kullan. Eksik bilgi kararı değiştiriyorsa görüşme sorusu ekle. Önceki bulguları tekrar etme. Alanlara sığan tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,selected),assets:section==='digital'?input.plan.assets:undefined,
     existing:input.existing.filter(([id])=>id===section)};
+   if(repair){
+    request.instruction+=' Yalnız eksik kapsamı tamamla. Daha önce kabul edilen bulgular existing içinde. İngilizce veya Türkçe kaynakta açıkça görülen olguyu kullan. Erişilemeyen veriyi gözlem gibi sayma. Desteklenmeyen sayıları çıkar ve kanıtı aşmayan tek bir eylem öner. Yalnız istenen sayıda aday üret.';
+    request.existing.push(...repair.existing);
+    request.wanted=repair.wanted;
+    request.missingQuadrants=repair.missingQuadrants;
+   }
    const key={section,requestHash:hash(request)};
    try{
     const saved=await providers.readCheckpoint?.('directed-report-section',key);
     if(!saved&&savedSectionsOnly)return null;
-    const generate=async()=>(await providers.manager('bhs-directed-report-'+section,request,resultSchema,{
-     compactReview:true,lowEffort:true,maxOutputTokens:section==='swot'?3100:2300,
-     minimumOutputTokens:section==='swot'?1500:1050,generationTimeoutMs:33000,reserveForFollowingKurus:remaining*65,signal,
+    const generate=async()=>(await providers.manager('bhs-directed-report-'+section+(repair?'-repair':''),request,resultSchema,{
+     compactReview:true,lowEffort:true,maxOutputTokens:repair?1600:section==='swot'?3100:2300,
+     minimumOutputTokens:repair?800:section==='swot'?1500:1050,generationTimeoutMs:repair?21000:33000,reserveForFollowingKurus:remaining*65,signal,
      normalizeData:value=>{
       if(!Array.isArray(value?.findings))throw new BudgetError('model_output_invalid','BHS bölüm bulguları okunamadı.');
       const findings=value.findings.slice(0,10).filter(row=>{
@@ -214,7 +217,7 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
       if(!sourceIds.length||!peerOverlap.trim())return [];
       peers.push({entityId:row.peerId,relationship:'direct',sourceIds,reason:peerOverlap});
      }
-     return [{...row,proof,section,rank:i+1,kind:'observation',measurement:'',limitation:''}];
+     return [{...row,proof,section,rank:(repair?.existing.length||0)+i+1,kind:'observation',measurement:'',limitation:''}];
     });
     return {data:{findings,peers,questions:data.questions},sources:selected.sources};
    }catch(error){
@@ -223,12 +226,25 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
     reportIssue??=issue;
     return null;
    }
-  }));
+ }
+ const project=()=>projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:{sources:Object.assign({},...groups.map(row=>row.sources))},modelSelectedPeers:true,
+  data:{findings:groups.flatMap(row=>row.data.findings),peers:groups.flatMap(row=>row.data.peers),questions:groups.flatMap(row=>row.data.questions)}});
+ for(let offset=0;offset<sections.length;offset+=2){
+  const pair=sections.slice(offset,offset+2);
+  const next=await Promise.all(pair.map(section=>write(section,sections.length-offset-pair.length)));
   groups.push(...next.filter(Boolean));
  }
- const usedInput={sources:Object.assign({},...groups.map(row=>row.sources))};
- let report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput,modelSelectedPeers:true,
-  data:{findings:groups.flatMap(row=>row.data.findings),peers:groups.flatMap(row=>row.data.peers),questions:groups.flatMap(row=>row.data.questions)}});
+ let report=project();
+ if(providers.managedBudgetVersion>=8&&!signal.aborted){
+  const gaps=report.bhsSections.filter(row=>sections.includes(row.id)&&!row.complete)
+   .filter(row=>row.id!=='competition'||input.entities.some(([,role])=>role==='competitor'));
+  const repaired=await Promise.all(gaps.map(({id,count,missingQuadrants})=>{
+   const existing=report.findings.filter(f=>f.bhsSection===id).map(f=>[id,f.statement,f.swotQuadrant||null,f.peerId||null]);
+   return write(id,1,{existing,missingQuadrants,wanted:Math.max(1,2-count,missingQuadrants.length)});
+  }));
+  groups.push(...repaired.filter(Boolean));
+  if(repaired.some(Boolean))report=project();
+ }
  if(!report.findings.length){
   report=reviewedEvidenceReport(input,reviewed,context,reverse);
   if(!report.findings.length)report=managedBrandContinuation(brief,brand)?.report||report;

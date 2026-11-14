@@ -60,12 +60,12 @@ export function planManagedEvidenceReview(input){
  return batches;
 }
 
-export function planPositionalEvidenceReview(input,reusedIds=new Set()){
+export function planPositionalEvidenceReview(input,reusedIds=new Set(),batchRows=56){
  return planManagedEvidenceReview(input).flatMap(batch=>{
   const result=[];
   const pending=batch.rows.filter(row=>!reusedIds.has(row.id));
-  for(let i=0;i<pending.length;i+=56){
-   const rows=pending.slice(i,i+56);
+  for(let i=0;i<pending.length;i+=batchRows){
+   const rows=pending.slice(i,i+batchRows);
    result.push(evidenceSubset(batch,rows));
   }
   return result;
@@ -86,7 +86,7 @@ export function planDirectedEvidenceReview(input){
   order.push(...ids.slice(index,index+8));
   if(index+8>=ids.length)remainder.delete(ids);else remainder.set(ids,index+8);
  }
- return planPositionalEvidenceReview({...input,sources:Object.fromEntries(order.map(id=>[id,input.sources[id]]))});
+ return planPositionalEvidenceReview({...input,sources:Object.fromEntries(order.map(id=>[id,input.sources[id]]))},new Set(),88);
 }
 
 export function prioritizeManagedProofs(input){
