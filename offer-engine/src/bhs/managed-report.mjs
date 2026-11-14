@@ -311,7 +311,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const usedQuotes=new Set(usedProofs.map(id=>quoteIdentity(context,id)).filter(Boolean));
    const excludedProofs=new Set(avoidRepeatedProofs?[...reverse].filter(([,id])=>usedQuotes.has(quoteIdentity(context,id))).map(([alias])=>alias):[]);
    const sectionOptions={peerProofs:2,excludedPeers:minimumFirst?excludedPeers:undefined,excludedProofs,priorityProofs,targeted:minimumFirst&&(!distinctProofSections.has(section)||focusedWriting)};
-   const focused=reviewed.sectionInput(section,sourceLimit,{...sectionOptions,swotFocus:focus});
+   const focused=reviewed.sectionInput(section,sourceLimit,{...sectionOptions,swotFocus:focus,externalOnly:providers.managedBudgetVersion>=6});
    if(!Object.keys(focused.sources).length||minimumFirst&&competition&&!focused.entities.some(([,role])=>role==='competitor'))return {noEvidence:true};
    const request={instruction:`Sellf BHS için yalnız ${managedSections[section]} bölümünü yaz. ${sectionInstructions[section]} Öncelik sırasına göre en fazla ${count} yeni bulgu ver. Kaynak yeterliyse istenen kapsamı tamamla. Kanıt yoksa bulgu icat etme. Her bulguya en çok iki kanıt kimliği bağla. Gözlem, hedefe etkisi, uygulanabilir aksiyon, başarı ölçümü ve kanıt sınırını ayrı kısa cümlelerle yaz. Kanıtın desteklemediği sayısal sonuç veya kesin teşhis yazma. Analiz ve aksiyonu 180, gözlemi 160, ölçüm ve sınırı 100 karakter civarında tut. Kararı değiştirecek bilgi eksikse görüşme sorusu ekle, aksi durumda boş bırak. Alan kodlarını areas listesinden seç. Daha önce doğrulanan bulguları tekrar etme. Tam JSON ile bitir.`,
     ...sectionContext(brief,input,section,focused),prior};

@@ -287,7 +287,7 @@ export function reviewedManagedEvidence(input,reviews){
  return {candidates,verdict:id=>covered.get(id),isCustomerEvidence:id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&customerEvidence(input.sources[id]),invalidObservations,coverage:{observations:rows.size,reviewed:[...rows.keys()].filter(id=>covered.has(id)).length,
   evidenceRows:expected.length,reviewedEvidenceRows,complete:reviewedEvidenceRows===expected.length},
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
-  sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[]}={}){
+  sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[],externalOnly=false}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
@@ -323,6 +323,7 @@ export function reviewedManagedEvidence(input,reviews){
     return reportInput(orderedSectionProofs(selected,input.sources,section,limit),section,peerProofs,excludedPeers);
    }
    if(targeted&&section==='swot'&&swotFocus.length){
+    const internalIds=new Set(priorityRows);
     const publisher=id=>{
      const url=(input.sources[id]||input.sources[rows.get(id)?.[3]?.[0]])?.[0];
      return url?researchHost(url):null;
@@ -330,8 +331,9 @@ export function reviewedManagedEvidence(input,reviews){
     const brandHosts=new Set(input.entities.filter(([,role])=>role==='brand').map(([, , ,url])=>researchHost(url)));
     const peers=new Set(input.entities.filter(([,role])=>role==='competitor').map(([, , ,url])=>researchHost(url)));
     const outside=id=>{const host=publisher(id);return host&&!brandHosts.has(host)&&!['sikayetvar.com','trustpilot.com','trendyol.com','hepsiburada.com'].includes(host);};
-    const external=ranked.filter(id=>outside(id)&&(supports(id)||swotFocus.includes('threat')&&peers.has(publisher(id))));
-    const competitorProofs=swotFocus.includes('threat')?input.entities.filter(([,role])=>role==='competitor')
+    const external=externalOnly?ranked.filter(id=>outside(id)&&(supports(id)||swotFocus.includes('threat')&&peers.has(publisher(id)))):
+     ranked.filter(id=>supports(id)&&!internalIds.has(id));
+    const competitorProofs=externalOnly&&swotFocus.includes('threat')?input.entities.filter(([,role])=>role==='competitor')
      .flatMap(([, , , ,proof])=>proof.filter(id=>reviewedProofs.has(id)&&covered.get(id)!=='x'&&!['html-signals','search-snippet'].includes(input.sources[id]?.[2])).slice(0,1)):[];
     const publishers=new Set();
     const independent=external.filter(id=>{
@@ -342,8 +344,8 @@ export function reviewedManagedEvidence(input,reviews){
     const wantsInternal=swotFocus.some(id=>['strength','weakness'].includes(id));
     const wantsExternal=swotFocus.some(id=>['opportunity','threat'].includes(id));
     const share=wantsInternal&&wantsExternal?Math.ceil(limit/3):Math.ceil(limit*2/3);
-    const onlyExternal=wantsExternal&&!wantsInternal;
-    const selected=[...new Set([...(onlyExternal?focusedRows.filter(outside):focusedRows),...competitorProofs,...(wantsInternal?priorityRows.slice(0,share):[]),
+    const onlyExternal=externalOnly&&wantsExternal&&!wantsInternal;
+    const selected=[...new Set([...(onlyExternal?focusedRows.filter(outside):focusedRows),...competitorProofs,...(wantsInternal?priorityRows.slice(0,share):externalOnly?[]:priorityRows.slice(0,1)),
      ...(wantsExternal?[...new Set([...independent,...external])].slice(0,share):external.slice(0,1)),...exact,...priorityRows,...external,...ranked])];
     return reportInput(selected.slice(0,limit),section,peerProofs,excludedPeers);
    }
