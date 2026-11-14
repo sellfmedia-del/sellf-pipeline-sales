@@ -98,6 +98,7 @@ const shard=(rows,index,count)=>rows.filter((_,i)=>i%count===index);
 const unique=items=>[...new Set(items)];
 const nameKey=text=>text.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]/g,'');
 const peerGroupKey=name=>nameKey(name.replace(/^(?:atelier|maison)\s+/iu,''));
+const brandDomain=brief=>researchHost(brief.website).split('.')[0];
 function publisherMatches(name,url,expanded=false){
  const brand=nameKey(name),domain=researchHost(url)?.split('.')[0];
  return brand.length>2&&[brand,brand+'store',brand+'shop','maison'+brand,...(expanded?[brand+'food',brand+'foods',brand+'gida',brand+'snacks',brand+'organic',brand+'organik',brand.repeat(2),brand.repeat(3)]:[])].includes(domain);
@@ -206,12 +207,12 @@ async function searchManagedTask(pool,task){
 
 function feedbackSource(brief,source){
  const url=source.finalUrl||source.url;
- const identity=nameKey(brief.brandName),short=identity.replace(/(?:organic|organik)$/u,'');
+ const identity=nameKey(brief.brandName),short=nameKey(brandDomain(brief));
  const page=[url,source.title].filter(Boolean).join(' ');
  return !source.metadataOnly&&source.excerpts.some(({text})=>{
   const matched=nameKey(page+' '+text);
   return identity.length>=3&&(matched.includes(identity)||short.length>=4&&matched.includes(short))&&
-   customerEvidence([url,source.title,source.method,text]);
+   customerEvidence([url,source.title,source.method,text])&&(directCustomerExperience.test(text)||Boolean(source.provenance?.actor));
  });
 }
 
@@ -222,13 +223,14 @@ function countFeedbackProofs(brief,packet){
 }
 
 function feedbackTargets(brief,packet,searches,market){
- const own=researchHost(brief.website),identity=nameKey(brief.brandName),short=identity.replace(/(?:organic|organik)$/u,'');
+ const own=researchHost(brief.website),identity=nameKey(brief.brandName),short=nameKey(brandDomain(brief));
  const matches=value=>{const key=nameKey(value);return key.includes(identity)||short.length>=4&&key.includes(short);};
- const complaintHost=market?.[2]==='TR'?'sikayetvar.com':'trustpilot.com';
+ const turkish=market?.[2]==='TR'||own.endsWith('.tr');
+ const complaintHost=turkish?'sikayetvar.com':'trustpilot.com';
  const known=packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
   .flatMap(source=>source.technicalSignals?.navigation||[]);
  const all=[...known.map(link=>({url:link.url,title:link.label,official:true})),...searches.flatMap(item=>item.results||[])];
- const platforms=[new Set([complaintHost]),new Set(market?.[2]==='TR'?['trendyol.com','hepsiburada.com','amazon.com.tr']:['amazon.com','amazon.co.uk','amazon.fr','amazon.de','amazon.it','amazon.es'])];
+ const platforms=[new Set([complaintHost]),new Set(turkish?['trendyol.com','hepsiburada.com','amazon.com.tr']:['amazon.com','amazon.co.uk','amazon.fr','amazon.de','amazon.it','amazon.es'])];
  const relevant=platforms.flatMap((hosts,index)=>all.flatMap(result=>{
   const url=researchUrl(result.url);if(!url||!hosts.has(researchHost(url))||!result.official&&!matches(url+' '+(result.title||'')))return [];
   if(index===1&&!/-(?:p-\d+|pm-[\w-]+)|\/dp\//i.test(new URL(url).pathname))return [];
@@ -236,8 +238,8 @@ function feedbackTargets(brief,packet,searches,market){
  }).slice(0,index===0?2:3));
  const official=known.filter(link=>researchHost(link.url)===own&&/yorumlar|reviews|testimonials|müşteri deneyim/iu.test(link.url+' '+link.label)).map(link=>link.url).slice(0,1);
  const slug=brief.brandName.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
- const direct=market?.[2]==='TR'&&slug.length>=3?['https://www.sikayetvar.com/'+slug]:market?['https://www.trustpilot.com/review/'+own]:[];
- const aliases=market?.[2]==='TR'&&!slug.includes('-')?packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
+ const direct=turkish&&slug.length>=3?['https://www.sikayetvar.com/'+slug]:market?['https://www.trustpilot.com/review/'+own]:[];
+ const aliases=turkish&&!slug.includes('-')?packet.sources.filter(source=>researchHost(source.finalUrl||source.url)===own)
   .map(source=>source.title?.split(/[|–—]/u)[0].trim().toLocaleLowerCase('tr').match(/^([\p{L}\d]+)\s+([\p{L}]{3,18})/u))
   .filter(match=>match&&nameKey(match[1])===slug&&!/^(?:resmi|official|hakkında|about|ana|home)$/iu.test(match[2]))
   .map(match=>'https://www.sikayetvar.com/'+slug+'-'+nameKey(match[2])):[];
@@ -251,14 +253,14 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const key=brief.brandName.replace(/["\r\n]/g,' ').trim();
  const example=brand.facts?.find(fact=>fact.topic==='products')?.statement||'';
  const product=comparisonLabel(plan.comparableProduct||example.slice(0,100))||plan.comparableProduct;
- const local=market?.[2]==='TR';
+ const local=market?.[2]==='TR'||researchHost(brief.website).endsWith('.tr');
  const feedbackQueries=needsFeedback?(local?[
   `site:sikayetvar.com "${key}" şikayet`, `site:trendyol.com "${key}" ürün yorumları`,
   `site:hepsiburada.com "${key}" ürün değerlendirmeleri`
  ]:[`"${key}" customer reviews product experience`,`"${key}" customer complaints`]):[];
  const missing=plan.tasks.filter(task=>!prior.some(search=>search.taskId===task.id&&search.results?.length));
  const peers=plan.peerNames.slice(0,3).map(name=>`"${name.replace(/["\r\n]/g,' ')}" ${product||''} ${market?.[1]||''} ${local?'ürünleri':'products'}`);
- const missingCompetition=missing.some(task=>task.section==='competition');
+ const missingCompetition=plan.tasks.some(task=>task.section==='competition')&&plan.peerNames.length<2||missing.some(task=>task.section==='competition');
  const competitionQueries=missingCompetition&&product?[
   [product,market?.[1],local?'markaları üreticileri ürün kataloğu':'brands manufacturers official product catalog'].filter(Boolean).join(' '),
   [product,market?.[1],local?'alternatif markalar üretici resmi site':'alternative brands manufacturers official product'].filter(Boolean).join(' ')
@@ -266,7 +268,8 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  const haveMarketplaces=candidates.some(url=>['trendyol.com','hepsiburada.com','amazon.com.tr'].includes(researchHost(url)));
  const dedicated=haveMarketplaces?feedbackQueries.filter(query=>!query.includes('site:trendyol.com')&&!query.includes('site:hepsiburada.com')):feedbackQueries;
  const assigned=plan.tasks.filter(task=>task.tools?.includes('google-search')&&task.section!=='perception');
- const queries=unique([...dedicated,...(missingCompetition?peers:[]),...competitionQueries,...missing.filter(task=>task.section!=='perception').map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
+ const assignedCompetition=missing.filter(task=>task.section==='competition').map(task=>task.query);
+ const queries=unique([...dedicated.slice(0,2),...competitionQueries,...(missingCompetition?peers:[]),...assignedCompetition,...dedicated.slice(2),...missing.filter(task=>!['perception','competition'].includes(task.section)).map(task=>task.query),...assigned.map(task=>task.query)]).slice(0,8);
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const feedbackTask=plan.tasks.find(task=>task.section==='perception');
  const [direct,discovery,feedbackSearch]=await Promise.all([
@@ -302,7 +305,7 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  if(needsFeedback&&countFeedbackProofs(brief,{sources:pages})<2){
   const tried=new Set(pages.filter(source=>feedbackSource(brief,source)).map(source=>source.finalUrl));
   const urls=unique([...candidates,...extra]).filter(url=>!tried.has(url));
-  const complaint=urls.find(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url)));
+  const complaint=urls.filter(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url))).sort((a,b)=>new URL(b).pathname.split('/').filter(Boolean).length-new URL(a).pathname.split('/').filter(Boolean).length)[0];
   const product=urls.find(url=>researchHost(url)==='trendyol.com')||urls.find(url=>!['sikayetvar.com','trustpilot.com'].includes(researchHost(url)));
   const readers=await reserved.availableActors?.()||[];
   const specialized={ 'sikayetvar.com':'tamgadev/sikayetvar-scraper','trendyol.com':'shahidirfan/trendyol-reviews-scraper' };
@@ -906,7 +909,9 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   evidence[id]=unique([...verified[id],...found,...evidence[id]]).slice(0,8);
  }
  for(const id of Object.keys(evidence))evidence[id]=unique([...verified[id],...evidence[id]]);
- const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)&&
+ const feedbackProofs=[...newContext.cards,...context.cards].filter(card=>!card.metadataOnly&&
+  (nameKey(card.url+' '+card.title+' '+card.quote).includes(brandName)||providers.managedBudgetVersion>=6&&
+   nameKey(brandDomain(brief)).length>=4&&nameKey(card.url+' '+card.title).includes(nameKey(brandDomain(brief))))&&
   customerEvidence([card.url,card.title,card.method,card.quote]));
  const feedbackByPage=new Map();
  const feedbackSeen=new Set();
