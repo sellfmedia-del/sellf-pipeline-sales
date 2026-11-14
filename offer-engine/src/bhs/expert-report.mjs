@@ -35,16 +35,16 @@ const terms={financial:/revenue|funding|investment|ciro|yatirim|price|fiyat|grow
 
 // Paragraph-sized context is selected once; model only returns immutable IDs.
 // The complete original packet stays in the ledger, never in a public bundle.
-export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true,paragraphBudget=60000}={}){
+export function expertContext(brief,evidence,{allParagraphs=false,includeTechnicalSignals=true,paragraphBudget=60000,completeEvidence=false}={}){
  const cards=[],sources=[],proofGroups=new Map();let used=0;
  for(const s of evidence.packet.sources||[]){
   const excerpts=list(s.excerpts).map(e=>e.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1'));
   const candidates=excerpts.flatMap(t=>t.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])/u).flatMap(p=>p.length>1000?Array.from({length:Math.ceil(p.length/800)},(_,i)=>p.slice(i*800,i*800+900)):[p])).map(t=>t.trim()).filter(t=>t.length>=24);
   const picked=[],seen=new Set();
-  for(const pattern of Object.values(terms)){const p=candidates.find(t=>pattern.test(fold(t))&&!seen.has(t));if(p){picked.push(p);seen.add(p);}}
-  for(const p of candidates)if(picked.length<(allParagraphs?24:7)&&!seen.has(p)){picked.push(p);seen.add(p);}
+  if(!completeEvidence)for(const pattern of Object.values(terms)){const p=candidates.find(t=>pattern.test(fold(t))&&!seen.has(t));if(p){picked.push(p);seen.add(p);}}
+  for(const p of candidates)if(picked.length<(completeEvidence?Infinity:allParagraphs?24:7)&&!seen.has(p)){picked.push(p);seen.add(p);}
   const sections=[];
-  for(const paragraph of picked){if(used+paragraph.length>paragraphBudget)continue;used+=paragraph.length;
+  for(const paragraph of picked){if(!completeEvidence&&used+paragraph.length>paragraphBudget)continue;used+=paragraph.length;
    const proofIds=[];for(const quote of citationChunks(paragraph)){const id='e'+(cards.length+1);cards.push({id,url:s.finalUrl||s.url,title:s.title,quote,method:s.method,...(s.metadataOnly?{metadataOnly:true}:{}),scope:s.metadataOnly?'Yalnız yayıncının başlık/açıklama meta verisi; sayfa işlevi veya performans kanıtı değildir.':'Okunmuş sayfanın konuya ilişkin kesiti; tam site veya çalışırlık testi değildir.'});proofIds.push(id);}
    for(const id of proofIds)proofGroups.set(id,proofIds);
    sections.push({text:paragraph,proofIds});
@@ -138,7 +138,7 @@ export function labelUnconfirmedComparison(f){
  return {...f,statement,reportExcerpt:statement,impact:f.impact.replace(' Sınır: ',' Sınır: Karşılaştırılan işletmenin doğrudan rakipliği doğrulanmadı. ')};
 }
 
-export function projectExpertReport(value,context,{explicitComparisons=false}={}){
+export function projectExpertReport(value,context,{explicitComparisons=false,modelSelectedPeers=false}={}){
  // Only immutable proof IDs from the compact contract are accepted here.
  // A model cannot bypass these semantic guards by returning a legacy report.
  const raw=value||{},cards=context.known,issues=[],sources=new Map();
@@ -173,12 +173,12 @@ export function projectExpertReport(value,context,{explicitComparisons=false}={}
   // already read from that same publisher instead of losing a valid peer or
   // trusting an unrelated same-name business. No new request or model call.
   const productCards=[...cards.values()].filter(c=>readProduct(c)&&(expectedCategories.length?expectedCategories.some(p=>p.test(fold(c.quote))):category.some(w=>fold(c.quote).includes(w))));
-  sourceIds=unique([...sourceIds,...refs(productCards.slice(0,3).map(c=>c.id))]);
+  if(!modelSelectedPeers)sourceIds=unique([...sourceIds,...refs(productCards.slice(0,3).map(c=>c.id))]);
   const evidence=fold(sourceIds.map(id=>cards.get(id).quote).join(' '));
-  if(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
+  if(!modelSelectedPeers&&(expectedCategories.length?!expectedCategories.some(p=>p.test(evidence)):category.length&&!category.some(w=>evidence.includes(w)))){issues.push({path:'competitors.'+e.id,reason:'entity_product_unconfirmed'});continue;}
   // Bind the displayed peer URL to its verified final host (www redirects are
   // common). The legacy source gate still requires an exact source hostname.
-  competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds),scaleReason:'Ölçek eşitliği bu araştırmada doğrulanmadı; karşılaştırma ürün ve müşteri ihtiyacı temelindedir.',audienceReason:typeof p.reason==='string'&&p.reason.trim()&&supportedNumbers(p.reason,evidence)?'Kaynaklı ürün/kitle kıyası: '+p.reason:'Ürün ve hedef kitle örtüşmesinin kapsamı görüşmede doğrulanacak.',geographyReason:'Coğrafi kapsam incelenen kaynaklarla sınırlıdır; hedef pazardaki erişim ayrıca doğrulanmalıdır.'});
+  competitors.push({...e,website:new URL(cards.get(sourceIds[0]).url).origin,sourceIds:use(sourceIds),scaleReason:modelSelectedPeers?'':'Ölçek eşitliği bu araştırmada doğrulanmadı; karşılaştırma ürün ve müşteri ihtiyacı temelindedir.',audienceReason:typeof p.reason==='string'&&p.reason.trim()&&supportedNumbers(p.reason,evidence)?'Kaynaklı ürün/kitle kıyası: '+p.reason:'Ürün ve hedef kitle örtüşmesinin kapsamı görüşmede doğrulanacak.',geographyReason:'Coğrafi kapsam incelenen kaynaklarla sınırlıdır; hedef pazardaki erişim ayrıca doğrulanmalıdır.'});
  }
  // A rejected direct peer can still supply a factual comparison example,
  // but every derived section must preserve its unconfirmed relationship.

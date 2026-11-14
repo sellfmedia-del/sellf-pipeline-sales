@@ -73,7 +73,7 @@ function recordsForEvidence(actor,rows,target,context){
    data={...pick(r,['name','description','industry','employeeCount','followerCount','website','foundedOn']),employeeCountRange:JSON.stringify(r.employeeCountRange||null)};url=target.url;
   }else if(actor==='harvestapi/linkedin-post-search'){
    if(!sameUrl(r.author?.linkedinUrl||r.author?.url,target.url)||!url||researchHost(url)!=='linkedin.com')continue;
-   data={...pick(r,['content']),publishedAt:scalar(r.postedAt?.date)||null};
+   data={...pick(r,['content','reactionsCount','commentsCount','likesCount']),publishedAt:scalar(r.postedAt?.date)||null};
   }else if(actor==='curious_coder/linkedin-jobs-scraper'){
    if(researchHost(r.companyWebsite)!==researchHost(context.brief.website)||!url||researchHost(url)!=='linkedin.com')continue;
    data=pick(r,['companyName','title','descriptionText','location','postedAt','employmentType','companyWebsite']);
@@ -191,7 +191,9 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     }[request.actor];
     const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+(fields?'&fields='+fields:''),{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
-    const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];
+    const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows
+     .filter(r=>request.query||String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr')))
+     .map(r=>researchUrl(r.link)).filter(Boolean).slice(0,request.maxResults??2):[];
     const discovery=searchActors.includes(request.actor)?searchResults(rows,target,request.actor):undefined;
     return {runId:start.runId,actor:request.actor,pages:recordsForEvidence(request.actor,rows,target,context),...(retainDataset?{datasetRows:rows}:{}),...(discovery?{searches:discovery}:{}),discoveryUrls,retrievedAt:new Date(now()).toISOString(),datasetDigest:hash(rows),accounting:'storage_read_allowance',reservedKurus:datasetAllowanceKurus};
    });

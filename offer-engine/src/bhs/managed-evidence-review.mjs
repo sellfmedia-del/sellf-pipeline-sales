@@ -265,7 +265,7 @@ export function reviewedManagedEvidence(input,reviews){
    const selected=section==='competition'?[...eligible.filter(([,role])=>role==='brand'),...eligible
     .filter(([,role])=>role==='competitor')
     .filter(entity=>reviewedPeerProofs(entity).length)
-    .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,6)]:eligible;
+    .sort((a,b)=>Number(reviewedPeerProofs(b).some(id=>proofs.has(id)))-Number(reviewedPeerProofs(a).some(id=>proofs.has(id)))).slice(0,input.plan?.directedResearch?16:6)]:eligible;
    const entities=selected.map(entity=>{
     const [id,role,name,url]=entity;
     const preferred=peerProofs>1&&role==='competitor'&&input.evidenceByQuestion?entity[4].slice(0,2):[];
@@ -289,6 +289,10 @@ export function reviewedManagedEvidence(input,reviews){
   reportInput:(limit=candidates.length)=>reportInput(candidates.slice(0,limit)),
   sectionInput(section,limit,{peerProofs=1,excludedPeers,excludedProofs=new Set(),priorityProofs=[],targeted=false,swotFocus=[],externalOnly=false}={}){
    const exact=ranked.filter(id=>covered.get(id)===categories[section]);
+   if(input.plan?.directedResearch){
+    const prioritized=[...new Set([...exact,...candidates,...ranked])];
+    return reportInput(prioritized.slice(0,limit),section,peerProofs,excludedPeers);
+   }
    const supports=id=>{
     const row=rows.get(id),source=input.sources[id];
     const evidence=[row?.[2],source?.[1],source?.[3]].filter(Boolean).join(' ');

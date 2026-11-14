@@ -1,5 +1,5 @@
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
-import {gzip} from 'node:zlib';
+import {gzip,gunzip} from 'node:zlib';
 import {promisify} from 'node:util';
 import {briefHash,dimensions} from './brief.mjs';
 import {evidenceExcerpts,evidenceHash,mergeExtractedEvidence} from './evidence.mjs';
@@ -13,12 +13,14 @@ import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
+import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
 import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const collectionBudgetKurus=2500;
 const compressPage=promisify(gzip);
+const decompressPage=promisify(gunzip);
 const archiveConcurrency=4;
 const finalCalls={peers:{input:8000,output:600},report:{input:33500,output:4900},repair:{input:10000,output:1550}};
 const quoteFinalCalls=now=>Object.fromEntries(Object.entries(finalCalls).map(([name,call])=>[name,reserveStageQuote(quoteSupervised('manager',call.input,call.output,now,researchTariff))]));
@@ -36,6 +38,7 @@ export function planCollectionFunding({chargedKurus,capKurus},infrastructureKuru
 }
 const searchStages=['sector_sources','sector_draft','sector_review'];
 const readStages=['sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources'];
+const directedRounds=['sector_sources','sector_draft','sector_review','competition_review','competition_correction_sources','competition'];
 const scrapeStages=['competition_draft','competition_review','competition_correction_sources'];
 export const inventoryStages=Object.freeze(['competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot']);
 export const inventoryOutputTokens=4096;
@@ -131,24 +134,32 @@ function canonicalSources(rows){
  return [...sources.values()].map((source,index)=>({...source,id:'ev'+(index+1)}));
 }
 
-function providerSource({url,title,text,method,asOf,scope,provenance}){
+function providerSource({url,title,text,method,asOf,scope,provenance,complete=false}){
  if(!url||typeof text!=='string'||text.trim().length<24)return null;
- return {url,finalUrl:url,title:title||url,method,retrievedAt:asOf,scope,provenance,contentHash:hash(text),excerpts:evidenceExcerpts(text,{maxChunks:40})};
+ return {url,finalUrl:url,title:title||url,method,retrievedAt:asOf,scope,provenance,contentHash:hash(text),excerpts:evidenceExcerpts(text,{maxChunks:complete?Infinity:40})};
 }
 
-export async function collectionCorpus(previous,{searches:additionalSearches=[],pages:additionalPages=[]}={}){
+export async function expandDirectedSources(pages){
+ return Promise.all(pages.map(async({fullText,...source})=>fullText?
+  {...source,excerpts:evidenceExcerpts((await decompressPage(Buffer.from(fullText,'base64'))).toString('utf8'),{maxChunks:Infinity})}:source));
+}
+
+export async function collectionCorpus(previous,{searches:additionalSearches=[],pages:additionalPages=[],scrapes:additionalScrapes=[],peerHints:additionalPeers=[]}={}){
  const brand=await previous('brand');
- const [searches,pages,scrapes]=await Promise.all([
-  sourcesFrom(previous,[...searchStages,...scrapeStages],'searches'),
-  sourcesFrom(previous,[...searchStages,...readStages,...scrapeStages],'pages'),
-  sourcesFrom(previous,scrapeStages,'scrapes')
+ const first=await previous(searchStages[0]).catch(error=>{if(error.code!=='stage_pending')throw error;});
+ const directed=first?.managedPlan?.directedResearch;
+ const [searches,pages,scrapes,peerHints]=await Promise.all([
+  sourcesFrom(previous,directed?directedRounds:[...searchStages,...scrapeStages],'searches'),
+  sourcesFrom(previous,directed?directedRounds:[...searchStages,...readStages,...scrapeStages],'pages'),
+  sourcesFrom(previous,directed?directedRounds:scrapeStages,'scrapes'),
+  sourcesFrom(previous,directed?directedRounds:scrapeStages,'peerHints')
  ]);
- const peerHints=await sourcesFrom(previous,scrapeStages,'peerHints');
+ const fullPages=directed?await expandDirectedSources([...additionalPages,...pages]):[...additionalPages,...pages];
  const asOf=brand.packet.asOf;
  const allSearches=[...searches,...additionalSearches];
  const searchSources=allSearches.flatMap(s=>(s.results||[]).map(r=>providerSource({url:researchUrl(r.url),title:r.title,text:r.content,method:'search-snippet',asOf,scope:s.source==='apify-google'?'Google arama alıntısı':'Tavily arama alıntısı'}))).filter(Boolean);
- const actorSources=scrapes.flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId}}))).filter(Boolean);
- return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...brand.packet.entities,...peerHints],sources:canonicalSources([...brand.packet.sources,...additionalPages,...pages,...actorSources,...searchSources])}};
+ const actorSources=[...scrapes,...additionalScrapes].flatMap(s=>(s.pages||[]).map(r=>providerSource({url:researchUrl(r.url),title:s.actor,text:r.text,method:'extracted',asOf,scope:'Apify structured sample; only the captured item.',provenance:{actor:s.actor,runId:s.runId},complete:directed}))).filter(Boolean);
+ return {searches:allSearches,scrapes,packet:{...brand.packet,entities:[...new Map([...brand.packet.entities,...peerHints,...additionalPeers].map(e=>[e.id,e])).values()],sources:canonicalSources([...brand.packet.sources,...fullPages,...actorSources,...searchSources])}};
 }
 
 function queryFor(brief,topic,market){
@@ -337,14 +348,16 @@ async function readPublisherFallback(brief,packet,searches,targets,pool,actor='a
   scope:actor==='apify/rag-web-browser'?'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.':'Kamuya açık platformdaki özgün müşteri deneyimi.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
 }
 
-export async function readResearchPages(brief,plan,targets,providers,collect){
+export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false}={}){
  if(!targets.length)return {sources:[],unavailable:[]};
- return collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
+ const full=new Map();
+ const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
   const entries=new Map();
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
    const key=hash(input);
    if(!entries.has(key))entries.set(key,{input,page});
+   if(complete)full.set(input.url+' '+input.method,page.text);
   }
   const pending=entries.values();
   const workers=Array.from({length:Math.min(archiveConcurrency,entries.size)},async()=>{
@@ -358,6 +371,12 @@ export async function readResearchPages(brief,plan,targets,providers,collect){
   const failed=(await Promise.allSettled(workers)).find(result=>result.status==='rejected');
   if(failed)throw failed.reason;
  }});
+ if(!complete)return packet;
+ const sources=await Promise.all(packet.sources.map(async source=>{
+  const text=full.get(source.finalUrl+' '+source.method);
+  return text&&!source.metadataOnly?{...source,fullText:(await compressPage(text)).toString('base64')}:source;
+ }));
+ return {...packet,sources};
 }
 
 export async function comparisonResearch(brief,brand,market,pool,providers,collect,repair,managedPlan,priorSearches=[],archivedUrls=new Set()){
@@ -547,7 +566,7 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-export function managedCollectionContext(brief,packet){
+export function managedCollectionContext(brief,packet,{complete=false}={}){
  const peerHosts=new Set(packet.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
  const brandHost=researchHost(brief.website);
  const primary=[],other=[];
@@ -556,7 +575,7 @@ export function managedCollectionContext(brief,packet){
   const isPrimary=host===brandHost||peerHosts.has(host);
   (isPrimary&&!source.metadataOnly&&source.method!=='search-snippet'?primary:other).push(source);
  }
- const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
  context.collectionFirst=true;
  return context;
 }
@@ -989,8 +1008,14 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
 async function managedCollectionInputs(brief,plan,previous){
  const focus=await previous(inventoryStages[0]);
  const [brand,{packet},inventory]=await Promise.all([previous('brand'),collectionCorpus(previous,focus?.questionSources),sourcesFrom(previous,inventoryStages,'inventory')]);
- const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true});
+ const context=plan.coveragePolicy===2?managedCollectionContext(brief,packet,{complete:plan.directedResearch}):sequentialContext(brief,{packet,searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
  context.collectionFirst=true;
+ if(plan.directedResearch){
+  const rounds=await Promise.all(directedRounds.map(previous));
+  const latest=rounds.filter(r=>r?.commandResults).at(-1);
+  const latestPlan={...plan,assets:latest?.assets||plan.assets,questions:[...new Set(rounds.flatMap(r=>r?.questions||[]))]};
+  return {brief,brand,context,plan:latestPlan,inventory:[]};
+ }
  const discovered=comparisonEntities(context,inventory);
  const candidates=peerCandidates(context,discovered,brand,plan.comparableProduct,true,16,{allowRelatedProducts:plan.tasks?.some(task=>task.tools)});
  context.input.entities=[...discovered.filter(e=>e.role==='brand'),...candidates.map(c=>c.entity)];
@@ -1020,7 +1045,7 @@ export async function retainedManagedProofs(brief,plan,previous){
 
 async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSectionsOnly=false}={}){
  const [args,closed]=await Promise.all([managedCollectionInputs(brief,plan,previous),previous('coverage_plan')]);
- let batchReviews=closed.reviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
+ let batchReviews=closed.reviewBatches||closed.rebuildReviewBatches?await sourcesFrom(previous,managedReviewPhases,'reviews'):undefined;
  if(savedSectionsOnly&&!batchReviews)return undefined;
  if(sectional&&!savedSectionsOnly&&providers.managedBudgetVersion===3&&providers.worker&&batchReviews){
   const {input}=managedReportInput(args);
@@ -1034,13 +1059,24 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
   const missing=[...(swot?.missingQuadrants||[]),...(readiness&&!readiness.complete?['readiness']:[])];
   report.meetingQuestions=[...new Map([...report.meetingQuestions,...missing.map(id=>({dimension:'operations',question:managedEvidenceQuestions[id],findingIds:[]}))].map(q=>[q.question,q])).values()];
  }
+ if(plan.directedResearch){
+  report.meetingQuestions=[...new Map([...report.meetingQuestions,...(args.plan.questions||[]).map(question=>({dimension:'operations',question,findingIds:[]}))].map(q=>[q.question,q])).values()];
+ }
  if(args.metricCoverage){
   const missing=args.metricCoverage.filter(metric=>!metric.proofIds.length);
   const questions=missing.filter(metric=>metric.question).map(metric=>({dimension:'operations',question:metric.question,findingIds:[]}));
   report.meetingQuestions=[...new Map([...report.meetingQuestions,...questions].map(q=>[q.question,q])).values()];
  }
  const {packet}=args.context,urls=new Set(report.sources.map(source=>source.url));
- const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)),citationCards:packet.citationCards.filter(source=>urls.has(source.url))};
+ const keptSourceIds=new Set(report.sources.map(source=>source.id));
+ const usedQuotes=new Map();
+ if(plan.directedResearch)for(const source of report.sources){
+  const quotes=usedQuotes.get(source.url)||[];
+  quotes.push(source.quote);usedQuotes.set(source.url,quotes);
+ }
+ const analysisPacket={...packet,sources:packet.sources.filter(source=>urls.has(source.finalUrl)).map(source=>plan.directedResearch?
+  {...source,excerpts:source.excerpts.filter(excerpt=>usedQuotes.get(source.finalUrl)?.some(quote=>excerpt.text.includes(quote)||excerpt.text.replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').includes(quote)))}:source),
+  citationCards:packet.citationCards.filter(source=>plan.directedResearch?keptSourceIds.has(source.id)||usedQuotes.get(source.url)?.includes(source.quote):urls.has(source.url))};
  return {report,analysisPacket,searchEvidence:[],model:completion.model,usage:completion.usage,...(reportIssue?{toolIssues:[reportIssue]}:{}),
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:plan,
    researchAccount:closed.researchAccount,invalidObservations,evidenceCoverage,...(args.questionCoverage?{questionCoverage:args.questionCoverage}:{}),
@@ -1068,6 +1104,24 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  }):(await previous(searchStages[0])).funding;
  const save=data=>finish({collectionFirst:true,...data});
  const scoped=amount=>providers.withCeiling(Math.min(funding.capKurus,funding.startKurus+amount));
+ if(providers.managedBudgetVersion>=7&&(first||managed?.directedResearch)){
+  const roundIndex=directedRounds.indexOf(phase);
+  if(roundIndex>=0){
+   const brand=await previous('brand');
+   const rounds=(await Promise.all(directedRounds.slice(0,roundIndex).map(previous))).filter(r=>r?.commandResults);
+   if(rounds.at(-1)?.researchDone)return save({});
+   const pool=providers.withCeiling(2800);
+   const decision=await planDirectedResearch({brief,brand,providers:pool,plan:first?undefined:managed,rounds});
+   const plan=first?(decision.directedResearch?decision:{directedResearch:true,managerDirected:true,coveragePolicy:2,
+    understanding:groundedManagedResearchPlan(brief,brand).understanding,market:'',tasks:[],assets:[],peers:[],questions:[]}):managed;
+   const {commands,...storedPlan}=plan;
+   const result=await executeDirectedResearch({brief,brand,providers:pool,plan,decision,rounds,
+    readPages:urls=>readResearchPages(brief,brand.plan,urls,pool,collect,{complete:true}),expandPages:expandDirectedSources});
+   return save({funding,...(first?{managedPlan:storedPlan}:{}),...result,
+    ...(!result.commandResults.length?{researchDone:true}:{}),...(decision.reason?{toolIssues:[decision.reason]}:{})});
+  }
+  if(searchIndex>=0||readIndex>=0||scrapeIndex>=0||inventoryIndex>=0)return save({});
+ }
  if(searchIndex>=0){
   const brand=await previous('brand');
   const market=markets.find(([pattern])=>pattern.test(brand.review?.marketContext?.description||brief.goals));
@@ -1175,13 +1229,16 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
   const committedKurus=Math.max(0,cost.chargedKurus-(managed?0:providers.infrastructureOffsetKurus||0)-funding.startKurus);
   if(committedKurus>(funding.researchLimitKurus??collectionBudgetKurus))throw new BudgetError('provider_accounting','Araştırma harcaması ayrılan bütçeyi aştı.');
   const planReview=sectional?planPositionalEvidenceReview:planManagedEvidenceReview;
-  const input=managed?managedReportInput(await managedCollectionInputs(brief,managed,previous)).input:null;
+  const input=managed&&!managed.directedResearch?managedReportInput(await managedCollectionInputs(brief,managed,previous)).input:null;
   const reviewBatches=input?planReview(providers.managedBudgetVersion>=3?prioritizeManagedProofs(input):input):null;
+  if(managed?.directedResearch)return save({collectionClosed:true,researchAccount:{...funding,committedKurus},rebuildReviewBatches:true});
   return save({collectionClosed:true,researchAccount:{...funding,committedKurus},...(reviewBatches!==null?{reviewBatches}:{})});
  }
  const reviewIndex=managedReviewPhases.indexOf(phase);
  if(managed&&reviewIndex>=0){
-  const {reviewBatches=[]}=await previous('coverage_plan'),reviews=[];
+  const closed=await previous('coverage_plan'),reviews=[];
+  const reviewBatches=closed.rebuildReviewBatches?
+   planPositionalEvidenceReview(prioritizeManagedProofs(managedReportInput(await managedCollectionInputs(brief,managed,previous)).input)):closed.reviewBatches||[];
   const focus=managed.understanding||brief,signal=AbortSignal.timeout(sectional?170000:250000);
   if(sectional){
    const batches=shard(reviewBatches,reviewIndex,managedReviewPhases.length);

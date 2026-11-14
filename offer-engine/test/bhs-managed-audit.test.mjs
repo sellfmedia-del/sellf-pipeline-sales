@@ -221,7 +221,7 @@ test('research and synthesis reserve independently, including parallel calls and
  assert.equal((await ledger.status()).chargedKurus,2500);
  const review=await managedPhaseBudget({ledger,brief,phase:managedReviewPhases[0],enabled:false});
  assert.equal(review.managedAudit,true);
- assert.equal(review.managedBudgetVersion,6);
+ assert.equal(review.managedBudgetVersion,7);
  assert.equal(review.phaseCeiling,3000);
  await assert.rejects(review.ledger.once('oversized-review',{},501,async()=>assert.fail('review cannot borrow report funds')),error=>error.code==='budget_limit');
  await review.ledger.once('claude-review',{},500,async()=>({}));

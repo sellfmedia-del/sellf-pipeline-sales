@@ -378,10 +378,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
  if(phase==='brand'||phase==='brand_review'){
-  if(phase==='brand'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);
+  if(phase==='brand'&&!prior.repairNeeded)return finish({...prior},providers.managedBudgetVersion>=7?'accepted':prior.understandingDecision);
   const check=await reviewFacts('brand',brief,prior,prior.workerData,providers,{extra:prior.repairNeeded?{repairRound:1}:{}});
   const {workerData,...saved}=prior;
-  return finish({...saved,facts:check.facts,review:check.review,unknowns:workerData.unknowns,declaredGoals:brief.goals,understandingDecision:check.review.decision},phase==='brand_review'?'accepted':check.review.decision);
+  return finish({...saved,facts:check.facts,review:check.review,unknowns:workerData.unknowns,declaredGoals:brief.goals,understandingDecision:check.review.decision},phase==='brand_review'||providers.managedBudgetVersion>=7?'accepted':check.review.decision);
  }
  if(phase==='sector_sources'){
   const queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} industry business model customer segments`,`${prior.facts.filter(f=>['products','business_model','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,300)} industry sales channels customer behavior official market report`];

@@ -32,7 +32,18 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    return runStage({...options,providers:{...options.providers,generate:noModel,worker:noModel}});
   }
  }
- if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
+ if(options.providers.managedBudgetVersion>=7){
+  const freePhases=new Set(['coverage_plan','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft',...inventoryStages.filter(phase=>phase!=='competition')]);
+  if(freePhases.has(job.phase))return runStage(options);
+  const cost=await options.ledger.status();
+  if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus&&
+   sequentialPhases.indexOf(job.phase)>sequentialPhases.indexOf('brand')){
+   const noProvider=async()=>{throw new BudgetError('budget_limit','BHS araştırma bütçesi doldu.');};
+   return runStage({...options,providers:{...options.providers,manager:noProvider,evidenceReviewer:noProvider,worker:noProvider,
+    withCeiling:()=>({manager:noProvider,evidenceReviewer:noProvider,worker:noProvider})}});
+  }
+ }
+ if(options.providers.managedBudgetVersion<7&&options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
   const {chargedKurus}=await options.ledger.status();
   const remaining=options.phaseCeiling-chargedKurus;
   if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion>=3&&inventoryStages.includes(job.phase)){
