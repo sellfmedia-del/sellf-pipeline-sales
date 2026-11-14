@@ -169,7 +169,8 @@ async function actorRequest(context,providers,index,market,managedPlan){
   if(modes.has('instagram-comments')||[...known.official].some(url=>researchHost(url)==='instagram.com'))
    planned.unshift('apify/instagram-comment-scraper','apify/instagram-scraper');
  }
- const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor)&&actor!=='apify/rag-web-browser');
+ const focusedReaders=new Set(['apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper']);
+ const order=[...new Set(managedPlan?planned:managedActors)].filter(actor=>!searchActors.includes(actor)&&!focusedReaders.has(actor));
  const targets=[];
  const geo=market?{countryCode:market[2],language:market[3]}:null;
  const unavailable=managedPlan?shard(order.filter(id=>!available.includes(id)),index,scrapeStages.length).map(actor=>({actor,unavailable:true,reason:'actor_api_unavailable'})):[];
@@ -301,20 +302,27 @@ export async function collectPlannedCoverage({brief,brand,plan,market,prior,pool
  if(needsFeedback&&countFeedbackProofs(brief,{sources:pages})<2){
   const tried=new Set(pages.filter(source=>feedbackSource(brief,source)).map(source=>source.finalUrl));
   const urls=unique([...candidates,...extra]).filter(url=>!tried.has(url));
-  const targets=[urls.find(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url))),urls.find(url=>!['sikayetvar.com','trustpilot.com'].includes(researchHost(url)))].filter(Boolean);
-  pages.push(...await readPublisherFallback(brief,brand.packet,searches,targets,reserved));
+  const complaint=urls.find(url=>['sikayetvar.com','trustpilot.com'].includes(researchHost(url)));
+  const product=urls.find(url=>researchHost(url)==='trendyol.com')||urls.find(url=>!['sikayetvar.com','trustpilot.com'].includes(researchHost(url)));
+  const readers=await reserved.availableActors?.()||[];
+  const specialized={ 'sikayetvar.com':'tamgadev/sikayetvar-scraper','trendyol.com':'shahidirfan/trendyol-reviews-scraper' };
+  const results=await Promise.all([complaint,product].filter(Boolean).map(async url=>{
+   const actor=specialized[researchHost(url)];
+   const sources=actor&&readers.includes(actor)?await readPublisherFallback(brief,brand.packet,searches,[url],reserved,actor):[];
+   return sources.length?sources:readPublisherFallback(brief,brand.packet,searches,[url],reserved);
+  }));
+  pages.push(...results.flat());
  }
  return {searches,pages,unavailable:[...direct.unavailable,...more.unavailable],
   ...(discovery?{discovery:{actor:discovery.actor||null,status:discovery.status||'unavailable',reason:discovery.reason||null,results:(discovery.searches||[]).reduce((n,item)=>n+(item.results?.length||0),0)}}:{})};
 }
 
-async function readPublisherFallback(brief,packet,searches,targets,pool){
- const actor='apify/rag-web-browser';
+async function readPublisherFallback(brief,packet,searches,targets,pool,actor='apify/rag-web-browser'){
  if(!targets.length||!pool.enrich||!(await pool.availableActors?.()||[]).includes(actor))return [];
  const observed=[...searches,{results:targets.map(url=>({url}))}];
  const results=await Promise.all(targets.map(url=>collectAttempt(()=>pool.enrich({actor,url},{brief,packet,searches:observed}))));
  return results.flatMap(result=>(result.pages||[]).map(page=>providerSource({url:page.url,title:page.title,text:page.text,method:'extracted',asOf:packet.asOf,
-  scope:'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
+  scope:actor==='apify/rag-web-browser'?'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.':'Kamuya açık platformdaki özgün müşteri deneyimi.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
 }
 
 export async function readResearchPages(brief,plan,targets,providers,collect){

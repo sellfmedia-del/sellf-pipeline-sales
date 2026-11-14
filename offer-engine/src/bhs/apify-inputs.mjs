@@ -8,6 +8,7 @@ export const actorIds=Object.freeze({
  'apify/google-search-scraper':'nFJndFXA5zjCTuudP','apify/instagram-comment-scraper':'SbK00X0JYCPblD2wp',
  'themineworks/google-search-scraper':'Rfu9Bmd2sLIpomMCk','desearch/web-search':'WMg2EXLzJGPVQ5Vfq',
  'apify/rag-web-browser':'3ox4R101TgZz67sLr',
+ 'tamgadev/sikayetvar-scraper':'RfNLBQU0JUXqBiPmF','shahidirfan/trendyol-reviews-scraper':'OGPwnfIwxF1lIOYRn',
  'compass/google-maps-reviews-scraper':'Xb8osYTtOjlsgI6k9',
  'harvestapi/linkedin-company-search':'taHaRcqil3scbchuI','harvestapi/linkedin-post-search':'buIWk2uOUzTmcLsuB',
  'curious_coder/linkedin-jobs-scraper':'hKByXkMQaC5Qt9UMN','apify/instagram-profile-scraper':'dSCLg0C3YEZ83HzYX',
@@ -38,6 +39,15 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  if(actor==='apify/rag-web-browser'){
   if(isIP(host.replace(/^\[|\]$/g,''))||!/[.](?:[a-z]{2,}|xn--[a-z0-9-]+)$/i.test(host)||/\.(?:local|internal|test|invalid|localhost)$/i.test(host))return bad();
   return {input:{query:url,maxResults:1,outputFormats:['markdown'],scrapingTool:'browser-playwright',requestTimeoutSecs:22,maxRequestRetries:0,dynamicContentWaitSecs:4,desiredConcurrency:1},maxItems:1,url};
+ }
+ if(actor==='tamgadev/sikayetvar-scraper'){
+  if(host!=='sikayetvar.com'||!parts[0]||!/^[\w-]+$/.test(parts[0]))return bad();
+  return {input:{brands:[parts[0]],maxComplaints:5,maxPagesPerBrand:1,scrapeDetails:true},maxItems:5,url};
+ }
+ if(actor==='shahidirfan/trendyol-reviews-scraper'){
+  const productId=u.pathname.match(/-p-(\d+)(?:\/|$)/)?.[1];
+  if(host!=='trendyol.com'||!productId)return bad();
+  return {input:{startUrls:[url],productId,results_wanted:5,max_pages:1,sortBy:'Rate'},maxItems:5,url};
  }
  if(searchActors.includes(actor)){
   const queries=request.queries;

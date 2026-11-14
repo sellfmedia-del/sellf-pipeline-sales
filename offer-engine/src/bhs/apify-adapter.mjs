@@ -42,6 +42,16 @@ function recordsForEvidence(actor,rows,target,context){
    if(!finalUrl||researchHost(finalUrl)!==researchHost(target.url)||r.crawl?.httpStatusCode!==200||typeof text!=='string'||text.length<160||/verify you are human|access denied|checking your browser|güvenlik doğrulaması/i.test(text.slice(0,1000)))continue;
    result.push({url:finalUrl,title:scalar(r.metadata?.title),text:text.slice(0,35000)});
    continue;
+  }else if(actor==='tamgadev/sikayetvar-scraper'){
+   const slug=new URL(target.url).pathname.split('/').filter(Boolean)[0];
+   const evidence=[r.brand,r.title,r.body].map(fold).join(' ');
+   if(researchHost(url)!=='sikayetvar.com'||new URL(url).pathname.split('/')[1]!==slug||
+    !brandNames(context.brief.brandName).some(name=>name&&evidence.includes(name))||typeof r.body!=='string'||r.body.trim().length<30)continue;
+   data={brand:context.brief.brandName,review:r.body.slice(0,900),topic:scalar(r.title),publishedAt:scalar(r.date),solved:scalar(r.isSolved)};
+  }else if(actor==='shahidirfan/trendyol-reviews-scraper'){
+   const canonical=researchUrl(r.productUrl||r.reviewPageUrl);
+   if(!exactProduct(canonical,target.url)||String(r.productId)!==productId(target.url)||typeof r.comment!=='string'||!r.comment.trim())continue;
+   data={brand:context.brief.brandName,review:r.comment.slice(0,900),rating:scalar(r.rating),publishedAt:scalar(r.createdAt),verifiedPurchase:scalar(r.isVerifiedPurchase)};url=target.url;
   }else if(actor==='apify/instagram-comment-scraper'){
    const post=value=>researchHost(value)==='instagram.com'?new URL(researchUrl(value)).pathname.match(/\/(?:p|reel)\/([\w-]+)/)?.[1]:null;
    if(!target.official||!post(target.url)||post(r.postUrl)!==post(target.url)||!scalar(r.text))continue;
@@ -100,7 +110,7 @@ function recordsForEvidence(actor,rows,target,context){
    continue;
   }
   const labels={followersCount:'followers',followerCount:'followers',employeeCount:'employees',reviewsCount:'reviews',reviewCount:'reviews',postsCount:'posts'};
-  if(data&&url&&Object.keys(data).length)result.push({url,text:'Apify structured public-source extraction. '+Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>(labels[k]||k)+': '+(typeof v==='object'?JSON.stringify(v):v)).join('\n').slice(0,9000)});
+  if(data&&url&&Object.keys(data).length)result.push({url,text:(data.review||data.comment?'':'Apify structured public-source extraction. ')+Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>(labels[k]||k)+': '+(typeof v==='object'?JSON.stringify(v):v)).join('\n').slice(0,9000)});
  }
  return result;
 }
@@ -149,7 +159,7 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     const datasetAllowanceKurus=10;
     const status=await ledger.status();
     // Meet a verified minimum only inside the saved individual cap and total account.
-    const preferredUsd=request.actor==='apify/rag-web-browser'?.012:.04;
+    const preferredUsd=['apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper'].includes(request.actor)?.018:.04;
     const requestedUsd=Math.max(preferredUsd,Number.isFinite(pricing?.minimalMaxTotalChargeUsd)?pricing.minimalMaxTotalChargeUsd:0);
     const limit=actorChargeLimit({actor:request.actor,actorId,task,requestedUsd,remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus,pricing});
     const query=new URLSearchParams({maxTotalChargeUsd:String(limit.maxTotalChargeUsd),maxItems:String(target.maxItems),timeout:'60',waitForFinish:'0'});
@@ -174,8 +184,12 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    if(run.status!=='SUCCEEDED'||!identifier(run.defaultDatasetId))return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_'+String(run.status).toLowerCase(),reservedKurus:start.reservedKurus};
    if(Number.isFinite(run.usageTotalUsd)&&run.usageTotalUsd>start.capUsd+1e-8)throw new BudgetError('actor_accounting','Apify tüketimi doğrulanmış çalışma sınırıyla eşleşmiyor.');
    const output=await ledger.once('apify:v8:dataset:'+start.runId,{runId:start.runId,maxItems:target.maxItems,maxBytes:1000000},datasetAllowanceKurus,async()=>{
-    const fields=request.actor==='apify/google-search-scraper'?'&fields=searchQuery,organicResults':request.actor==='themineworks/google-search-scraper'?'&fields=query,organic_results':request.actor==='apify/rag-web-browser'?'&fields=metadata.url,metadata.title,crawl.httpStatusCode,markdown':'';
-    const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+fields,{deadline});
+    const fields={
+     'apify/google-search-scraper':'searchQuery,organicResults','themineworks/google-search-scraper':'query,organic_results',
+     'apify/rag-web-browser':'metadata,crawl,markdown','tamgadev/sikayetvar-scraper':'url,brand,title,body,date,isSolved',
+     'shahidirfan/trendyol-reviews-scraper':'productUrl,reviewPageUrl,productId,comment,rating,createdAt,isVerifiedPurchase'
+    }[request.actor];
+    const rows=await json('datasets/'+run.defaultDatasetId+'/items?clean=true&limit='+target.maxItems+(fields?'&fields='+fields:''),{deadline});
     if(!Array.isArray(rows)||rows.length>target.maxItems)throw new BudgetError('actor_output_limit','Apify kayıt sayısı sınırı aşıyor.');
     const discoveryUrls=request.actor==='damilo/google-shopping-apify'?rows.filter(r=>String(r.title).toLocaleLowerCase('tr').includes(context.brief.brandName.toLocaleLowerCase('tr'))).map(r=>researchUrl(r.link)).filter(Boolean).slice(0,2):[];
     const discovery=searchActors.includes(request.actor)?searchResults(rows,target,request.actor):undefined;

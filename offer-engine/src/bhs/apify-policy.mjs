@@ -3,7 +3,8 @@ import {researchUrl} from './research-url.mjs';
 import {actorIds,searchActors} from './apify-inputs.mjs';
 
 export const approvedActors=Object.freeze([
- ...searchActors,'apify/rag-web-browser','apify/instagram-comment-scraper','compass/google-maps-reviews-scraper',
+ ...searchActors,'apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper',
+ 'apify/instagram-comment-scraper','compass/google-maps-reviews-scraper',
  'harvestapi/linkedin-company-search','harvestapi/linkedin-post-search','curious_coder/linkedin-jobs-scraper',
  'apify/instagram-profile-scraper','apify/instagram-scraper','compass/crawler-google-places',
  'jmlp/meta-ad-library-scraper','logiover/website-seo-audit-crawler','apify/website-content-crawler',
