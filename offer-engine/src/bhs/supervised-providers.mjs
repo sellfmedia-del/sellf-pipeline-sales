@@ -152,16 +152,28 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(saved)throw new BudgetError(saved.state==='reserved'?'budget_pending':'budget_uncertain','Önceki BHS model isteğinin kaydı korunuyor; tekrar ücretli çağrı yapılmadı.');
   const snapshot=await fx();
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
-  const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
+  const managerCountBody=({model,system,messages,tools,output_config})=>({
+   model,system:output_config?.format?system+'\n'+JSON.stringify(output_config.format):system,
+   messages,...(tools?{tools}:{})
+  });
+  const countBody=anthropicRole?options.managedBudgetVersion>=4?managerCountBody(body):
+   Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
-  const countTokens=()=>json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',countBody,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);
+  const countTokens=(input=countBody)=>json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',input,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);
   try{
    try{count=await countTokens();}
    catch(error){
-    const retryable=transientStatus(error.providerStatus)||[429,504].includes(error.providerStatus)||error.code==='provider_format'||error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed';
-    if(!opts.retryTokenCount||!retryable||opts.signal?.aborted)throw error;
-    await delay(800);
-    count=await countTokens();
+    if(anthropicRole&&options.managedBudgetVersion>=4&&error.providerStatus===400&&countBody.tools&&!opts.signal?.aborted){
+     // Count the same prompt with the tool schema included as text. The final
+     // generation still uses the original tool and its full validation.
+     const {tools,...plain}=countBody;
+     count=await countTokens({...plain,system:plain.system+'\n'+JSON.stringify(tools)});
+    }else{
+     const retryable=transientStatus(error.providerStatus)||[429,504].includes(error.providerStatus)||error.code==='provider_format'||error.name==='TimeoutError'||error instanceof TypeError&&error.message==='fetch failed';
+     if(!opts.retryTokenCount||!retryable||opts.signal?.aborted)throw error;
+     await delay(800);
+     count=await countTokens();
+    }
    }
   }
   catch(error){
