@@ -59,7 +59,7 @@ Zorunlu bölümlerin her birine kanıt varsa önem sırasıyla 2–10 farklı bu
 Her satırda gözlem, gerçek kanıt kimliği, neden önemli olduğu ve hangi mekanizmayla hedefi etkilediğine dair kendi analizini yaz. Action bir iş, test veya proje önermeli: neye müdahale edilecek, hangi çıktı üretilecek ve gerekiyorsa hangi koşul doğrulanacak? Measurement önerinin hangi metrik ve yöntemle değerlendirileceğini söyler. Maliyet, getiri, erişim, oran veya altyapı durumu uydurma. Kanıt yetersizken kesin teşhis koyma. Kararı değiştirecek veri eksikse question alanına toplantıda sorulacak somut soruyu yaz. Yeterli kanıt yoksa daha az bulgu çıkar; rakip, ölçüm veya öneri doldurmak için olgu icat etme.
 Her bulgu tek bir bölüme aittir. Area mevcut metodoloji anahtarlarından biri. SWOT kolu yalnız SWOT için kullanılır. Peer ve benchmark kaynak kimlikleri sadece sources anahtarlarından seçilir. JSON sözleşmesine uy.`;
 
-export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls,retainedProofs,coverageEvidence}){
+export function managedReportInput({brief,brand,plan,context,inventory,sections=sectionKeys,existing=[],evidenceUrls,retainedProofs,coverageEvidence,metricCoverage}){
  const aliases=new Map();
  const sources={};
  const observed=[];
@@ -102,22 +102,24 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
   }
  }
  const evidenceByQuestion=coverageEvidence&&Object.fromEntries(Object.entries(coverageEvidence).map(([question,ids])=>[question,unique(ids.map(addSource).filter(Boolean))]));
+ const metrics=metricCoverage?.filter(metric=>sections.includes(metric.section)).map(({id,section,name,status,proofIds})=>
+  ({id,section,name,status,proofs:proofIds.map(addSource).filter(Boolean)}));
  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
   sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),...(evidenceByQuestion?{evidenceByQuestion}:{}),
-  existing,entities,observations:observed,sources,...(brandProofs.length?{brandProofs}:{})};
+  existing,entities,observations:observed,sources,...(brandProofs.length?{brandProofs}:{}),...(metrics?{metrics}:{})};
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,coverageEvidence,allowPartial=false,sectional=false,savedSectionsOnly=false}){
- const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs,coverageEvidence});
+export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,coverageEvidence,metricCoverage,allowPartial=false,sectional=false,savedSectionsOnly=false}){
+ const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs,coverageEvidence,metricCoverage});
  const accepted=new Set(sections);
  const signal=AbortSignal.timeout(250000);
  const reportOptions={signal,maxOutputTokens:10240,minimumOutputTokens:3200,compactReview:true,lowEffort:true};
  if(batchReviews===undefined){
   const reused=[...reverse].filter(([,id])=>retainedProofs?.has(id));
   const reusedIds=new Set(reused.map(([alias])=>alias));
-  const batches=sectional?planPositionalEvidenceReview(providers.managedBudgetVersion===3?prioritizeManagedProofs(input):input,reusedIds):planManagedEvidenceReview(input);
+  const batches=sectional?planPositionalEvidenceReview(providers.managedBudgetVersion>=3?prioritizeManagedProofs(input):input,reusedIds):planManagedEvidenceReview(input);
   batchReviews=reused.length?[{ids:[...reusedIds],verdicts:reused.map(([,id])=>retainedProofs.get(id)).join(''),candidates:[...reusedIds]}]:[];
   for(const batch of batches){
    const review=sectional?reviewPositionalEvidenceBatch:reviewManagedEvidenceBatch;
@@ -154,14 +156,21 @@ export async function synthesizeManagedReport({brief,brand,plan,context,inventor
   evidenceCoverage};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data}){
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
- const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map();
+ const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map(),seenObservations=new Set();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
  for(const row of sorted){
   const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
+  const observationKey=customerQuoteKey(row.observation);
   if(!accepted.has(row.section)||!row.action.trim()||!row.measurement.trim()||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key)
     ||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10)continue;
+  if(managerDirected&&seenObservations.has(observationKey))continue;
+  const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
+  if(managerDirected&&sourceCards.length&&sourceCards.every(card=>card.method==='html-signals'||card.method==='html'&&/\{\{|\{%/.test(card.quote))){
+   const action=/doğrula|kontrol|test|ölç|incele|verify|check|measure/iu;
+   if(!action.test(row.action)||/görünür şekilde|kullanıcılar.{0,70}gör|işlev çalışmıyor|ham kod olarak basıl|visible to users/iu.test(row.observation))continue;
+  }
   if(row.section==='competition'){
    if(!row.peerId||seenPeers.has(row.peerId)||!context.input.entities.some(e=>e.role==='competitor'&&e.id===row.peerId))continue;
    seenPeers.add(row.peerId);
@@ -173,7 +182,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data}){
    for(const key of keys)previous.add(key);
    seenQuotes.set(row.section,previous);
   }
-  seenFindings.add(key);selected.push({...row,id:managedFindingId(row,proofs),proofs});
+  seenFindings.add(key);seenObservations.add(observationKey);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
  const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area).dimension,kind:row.kind,
   ...(row.section==='competition'?{comparisonPeerId:row.peerId}:{}),
@@ -226,7 +235,8 @@ function sectionContext(brief,input,section,focused){
  return {brief:{brandName:brief.brandName,website:brief.website,goals:brief.goals.slice(0,650),needs:brief.needs.slice(0,650)},
   brand:focused.approvedBrandFacts,understanding:input.plan.understanding,market:input.plan.market,
   tasks:list(input.plan.tasks).filter(task=>task.section===section),existing:input.existing.filter(([id])=>id===section),
-  areas:focused.areas,entities:focused.entities,observations:focused.observations,sources:focused.sources};
+  areas:focused.areas,entities:focused.entities,observations:focused.observations,sources:focused.sources,
+  ...(input.metrics?{metrics:input.metrics.filter(item=>item.section===section).map(item=>({...item,proofs:item.proofs.filter(id=>Object.hasOwn(focused.sources,id))}))}:{})};
 }
 
 const sectionFields=Object.fromEntries(Object.entries(rowSchema.properties).filter(([key])=>!['rank','section','quadrant','peerId'].includes(key)));
@@ -249,7 +259,7 @@ function projectSectionDrafts({drafts,input,reverse,context,accepted}){
   const rank=(ranks.get(row.section)||0)+1;ranks.set(row.section,rank);
   return {...row,rank};
  });
- return projectManagedDraft({context,reverse,accepted,usedInput,data:{findings,peers:drafts.flatMap(draft=>draft.peers)}});
+ return projectManagedDraft({context,reverse,accepted,usedInput,managerDirected:input.plan.managerDirected,data:{findings,peers:drafts.flatMap(draft=>draft.peers)}});
 }
 
 async function writeManagedSections({brief,brand,input,reverse,context,sections,reviewed,batchReviews,providers,allowPartial,savedSectionsOnly}){
@@ -286,7 +296,9 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   const sourceLimits=minimumFirst?(repair?[14,7]:[12,7]):repair?[24,10]:[18,10];
   for(const sourceLimit of sourceLimits){
    const excludedPeers=new Set(prior.map(([, ,peer])=>peer).filter(Boolean));
-   const priorityProofs=minimumFirst&&(['readiness','swot'].includes(section)||focusedWriting&&competition)?input.brandProofs:[];
+   const metricProofs=input.metrics?.filter(metric=>metric.section===section).flatMap(metric=>metric.proofs)||[];
+   const brandProofs=minimumFirst&&(['readiness','swot'].includes(section)||focusedWriting&&competition)?input.brandProofs:[];
+   const priorityProofs=unique([...metricProofs,...(brandProofs||[])]);
    const avoidRepeatedProofs=focusedWriting&&distinctProofSections.has(section);
    const usedQuotes=new Set(usedProofs.map(id=>quoteIdentity(context,id)).filter(Boolean));
    const excludedProofs=new Set(avoidRepeatedProofs?[...reverse].filter(([,id])=>usedQuotes.has(quoteIdentity(context,id))).map(([alias])=>alias):[]);
@@ -303,6 +315,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     if(input.evidenceByQuestion&&(swot||['readiness','perception'].includes(section)))request.proofsByQuestion=Object.fromEntries((swot?focus:[section]).map(id=>[id,(input.evidenceByQuestion[id]||[]).filter(proof=>Object.hasOwn(focused.sources,proof))]));
     if(section==='readiness')request.instruction+=' Briefteki hedef ile kaynakta görülen ürün, kanal veya operasyonu eşleştir. Kaynakta görülen mevcut koşul observation alanına, hedef için çıkarılan gereklilik analysis ve action alanına girer. İç verisi eksik koşulu toplantı sorusuna çevir. Kaynakta doğrudan öneri bulunması gerekmez. Bir kanalı şirketin tek kanalı olarak tanımlamak için bunu açıkça doğrulayan kaynak gerekir.';
     if(avoidRepeatedProofs)request.instruction+=' Her bulgunun asıl kanıtı farklı bir kaynak kesiti olmalı. Aynı deneyimi, skoru veya iş koşulunu iki bulguya bölme.';
+    if(input.plan.managerDirected)request.instruction+=' Önce doğrulanmış öncelikli metrikleri ve hedef pazarı incele. Açık metrikleri veya kaynaktaki belirsizliği kesin sonuç gibi yazma. Aksiyon mevcut kanıtın izin verdiği somut karar veya doğrulama adımı olsun. Bir gözlemi başka bir bölümde tekrar etmek yerine bağımsız ikinci bir bulgu seç. Statik HTML kaynaklı teknik işaret için ilk aksiyon canlı doğrulama olsun.';
     if(section==='digital'&&repair)request.instruction+=' Önceki bulgudan farklı bir varlığı veya aynı varlıktaki bağımsız bir işlevi değerlendir. Resmî profil, site içi arama, ürün keşfi, sepet veya iletişim akışı kaynakta açıkça görülüyorsa kullan. Ölçülmemiş performans veya takip sisteminin çalıştığı sonucunu çıkarma.';
    }
    const name='managed-section-v3:'+section;
@@ -384,10 +397,14 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     try{result=await generate(stage,request,modelSchema,options);}
     catch(error){
      const workerFitsDifferentRate=error.code==='budget_limit'&&!error.paidResponseRetained&&error.budgetDiagnostic?.role==='manager';
-     if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!(workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))throw error;
+    if(providers.managedBudgetVersion>=4&&generate===providers.manager&&providers.evidenceReviewer&&
+     (workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))result=await providers.evidenceReviewer(stage+':claude-fallback',request,modelSchema,options);
+    else{
+    if(!minimumFirst||providers.managedBudgetVersion!==3||!providers.worker||!(workerFitsDifferentRate||canSwitchBhsProvider(error,signal)))throw error;
      const fallbackRequest={...request,instruction:request.instruction+' Verilen özgün kanıt kimliğini aynen kopyala. Bir sayıya ihtiyaç duyulmadığında ürün, kanal, davranış veya çalışma koşulunu nitel anlat.'};
      const fallbackSchema=combinedPeer&&peerIds.size?obj({findings:arr(obj({...modelSchema.properties.findings.items.properties,peerId:choice([...peerIds.keys()])}),wanted)}):modelSchema;
      result=await providers.worker(stage+':cross-provider',fallbackRequest,fallbackSchema,{...options,compactWorker:true,maxOutputTokens:maxOutputTokens+450});
+    }
     }
     const findings=(swot?focus.flatMap(quadrant=>list(result.data[quadrant]).map(f=>({...f,quadrant}))):
      list(result.data.findings).map(f=>({...f,quadrant:'none'}))).map(f=>({...f,section,peerId:f.peerId||''}));
@@ -445,7 +462,8 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
    const focus=section==='swot'?quadrants.filter(quadrant=>!prior.some(([,saved])=>saved===quadrant)):[];
    const candidateCount=input.entities.filter(([,role])=>role==='competitor').length;
    const alternativePeer=section==='competition'&&input.evidenceByQuestion&&candidateCount>2;
-   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):minimumFirst&&!alternativePeer?2:3;
+   const wanted=section==='swot'?focus.length:prior.length?Math.max(1,2-prior.length):input.plan.managerDirected?
+    Math.min(4,Math.max(2,(input.metrics||[]).filter(metric=>metric.section===section&&metric.proofs.length).length)):minimumFirst&&!alternativePeer?2:3;
    const result=await write({section,wanted,focus,prior,repair:false},following);
    if(savedSectionsOnly&&result.issue==='section_not_saved'){
     const legacy=await readLegacySection({section,brief,input,reviewed,providers});
@@ -472,7 +490,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
     const focus=missingQuadrants.slice(i,i+batchSize);
     repairs.push({section,wanted:focus.length,focus,prior,repair:true,rejected:rejected.filter(row=>focus.includes(row.quadrant))});
    }
-  }else if(section==='competition'&&providers.managedBudgetVersion===3&&minimumFirst&&count===0){
+  }else if(section==='competition'&&providers.managedBudgetVersion>=3&&minimumFirst&&count===0){
    repairs.push({section,wanted:1,focus:[],prior,repair:true,rejected});
   }else repairs.push({section,wanted:Math.max(1,2-count),focus:[],prior,repair:true,rejected,usedProofs:report.findings.flatMap(f=>f.sourceIds)});
  }
@@ -484,7 +502,7 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
   group.forEach((task,j)=>retain(task.section,results[j]));
  }
  const competitionDrafts=draftsBySection.get('competition');
- if(providers.managedBudgetVersion===3&&minimumFirst&&competitionDrafts&&repairs.some(task=>task.section==='competition'&&task.wanted===1&&!task.prior.length)&&!signal.aborted){
+ if(providers.managedBudgetVersion>=3&&minimumFirst&&competitionDrafts&&repairs.some(task=>task.section==='competition'&&task.wanted===1&&!task.prior.length)&&!signal.aborted){
   const competition=project(competitionDrafts,new Set(['competition']));
   if(competition.competitors.length===1){
    const prior=competition.findings.map(f=>[f.statement,null,f.peerId||null]);

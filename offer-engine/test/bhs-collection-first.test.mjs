@@ -23,6 +23,42 @@ const fixturePacket=()=>{
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
 
+test('Claude verifies the planned metrics before writing and only its unresolved metric receives new research',async()=>{
+ const data=fixturePacket(),host=new URL(brief.website).host;
+ const page=(path,text)=>({id:'ev'+(path==='/france'?1:2),url:'https://'+host+path,finalUrl:'https://'+host+path,title:'Resmî kaynak',
+  method:'html',excerpts:[{text}],contentHash:path,retrievedAt:data.asOf});
+ const existing=page('/france','Notre distributeur en France livre les magasins et gère les commandes professionnelles.');
+ const added=page('/conditions','Livraison des commandes professionnelles en France sous cinq jours après confirmation.');
+ const initialQuery='quantité de distribution France';
+ const retryQuery='conditions de livraison France';
+ const brand={facts:[],packet:{...data,sources:[existing]},plan};
+ const managedPlan={market:'France',managerDirected:true,coveragePolicy:2,comparableProduct:'Barres avoine',
+  understanding:{goals:'Développer les ventes en France',requirements:[]},
+  tasks:[{id:'t1',section:'readiness',platform:'Resmî site',query:initialQuery,metrics:['Distribütör','Teslimat süresi'],acceptance:'Fransa satış koşulları'}]};
+ const searches=[],reviews=[];
+ const providers={managedBudgetVersion:4,withCeiling:()=>providers,focusedIndexUnavailable:true,
+  manager:async(stage,input)=>{
+   assert.equal(stage,'v8-managed-metric-review');
+   reviews.push(input.metrics.map(([id])=>id));
+   return {data:{metrics:input.metrics.map(([metric,,,,aliases])=>{
+    const proof=input.sources.find(([id,url])=>aliases.includes(id)&&url===(metric==='t1m1'?existing.url:added.url));
+    if(metric==='t1m1'&&!proof)assert.fail(JSON.stringify({aliases,sources:input.sources,expected:existing.url}));
+    return {metric,proofs:proof?[proof[0]]:['q999'],missingQuery:retryQuery,meetingQuestion:'Fransa için teslimat süresi nedir?'};
+   })}};
+  },
+  search:async query=>{searches.push(query);return {query,results:query===retryQuery?[{url:added.url,title:added.title,content:added.excerpts[0].text}]:[]};}
+ };
+ const result=await runCollectionFirstStage({phase:inventoryStages[0],brief,providers,finish:value=>value,previous:async phase=>phase==='brand'?brand:
+  phase==='sector_sources'?{managedPlan,funding:{},searches:[{taskId:'t1',query:initialQuery,results:[{url:existing.url,title:existing.title,content:existing.excerpts[0].text}]}]}:{},
+  collect:async(_brief,_plan,{prioritySources})=>({sources:prioritySources.includes(added.url)?[added]:[],unavailable:[]})
+ });
+ assert.deepEqual(reviews,[['t1m1','t1m2'],['t1m2']]);
+ assert.equal(searches.filter(query=>query===retryQuery).length,1);
+ assert.ok(!searches.includes(initialQuery));
+ assert.ok(result.metricCoverage.every(metric=>metric.status==='confirmed'&&metric.proofIds.length===1));
+ assert.equal(result.questionSources.searches.find(search=>search.query===retryQuery).taskId,'t1');
+});
+
 test('the evidence check searches only uncovered questions and passes original proof to the funded index',async()=>{
  const data=fixturePacket(),brandHost=new URL(brief.website).hostname;
  const source=(url,text)=>({id:'ev1',url,finalUrl:url,title:'Original source',method:'html',excerpts:[{text}],contentHash:url,retrievedAt:data.asOf});

@@ -74,6 +74,7 @@ export function planPositionalEvidenceReview(input,reusedIds=new Set()){
 export function prioritizeManagedProofs(input){
  const ids=[...new Set([
   ...input.entities.filter(([,role])=>role==='competitor').flatMap(([, , , ,proof])=>proof.slice(0,2)),
+  ...(input.metrics||[]).flatMap(metric=>metric.proofs),
   ...Object.values(input.evidenceByQuestion||{}).flat(),...Object.keys(input.sources)
  ])];
  return {...input,sources:Object.fromEntries(ids.filter(id=>Object.hasOwn(input.sources,id)).map(id=>[id,input.sources[id]]))};
@@ -199,7 +200,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
     if(preferWorker||!canSwitchBhsProvider(error,signal))throw error;
     if(providers.worker&&providers.managedBudgetVersion===3){
      completion=await runWorker();
-    }else if(method!==providers.manager&&error.providerOperation==='countTokens'){
+    }else if(method!==providers.manager&&(error.providerOperation==='countTokens'||providers.managedBudgetVersion>=4)){
      completion=await providers.manager(stage,request,modelSchema,options);
     }else throw error;
    }

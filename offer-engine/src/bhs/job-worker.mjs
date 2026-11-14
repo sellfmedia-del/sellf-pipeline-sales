@@ -34,7 +34,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  if(options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){
   const {chargedKurus}=await options.ledger.status();
   const remaining=options.phaseCeiling-chargedKurus;
-  if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion===3&&inventoryStages.includes(job.phase)){
+  if(job.researchVersion==='v8'&&options.providers.collectionFirst&&options.providers.managedBudgetVersion>=3&&inventoryStages.includes(job.phase)){
    if(job.phase!==inventoryStages[0]){
     if(job.inventoryBatch){
      for(const phase of inventoryStages.slice(inventoryStages.indexOf(job.phase)))

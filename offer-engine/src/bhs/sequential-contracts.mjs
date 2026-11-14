@@ -90,7 +90,13 @@ export function phaseExtractionSchema(phase){const s=structuredClone(extractionS
 export function sequentialContext(brief,evidence,{completeSources=evidence.peerDiscoveryVersion==='product-v2',includeTechnicalSignals=false}={}){
  const c=expertContext(brief,evidence,{allParagraphs:true,includeTechnicalSignals,paragraphBudget:completeSources?420000:60000}),mapping=new Map(c.cards.map(p=>[p.id,'p_'+hash({url:p.url,quote:p.quote}).slice(0,24)]));
  c.completeSources=completeSources;
- c.cards=[...new Map(c.cards.map(p=>[mapping.get(p.id),{...p,id:mapping.get(p.id)}])).values()];
+ const byProof=new Map();
+ for(const card of c.cards){
+  const id=mapping.get(card.id),prior=byProof.get(id);
+  if(card.method==='search-snippet'&&prior&&prior.method!=='search-snippet')continue;
+  byProof.set(id,{...card,id});
+ }
+ c.cards=[...byProof.values()];
  const actorSources=new Map((evidence.packet.sources||[]).filter(s=>s.provenance?.actor).map(s=>[s.finalUrl||s.url,s]));
  for(const card of c.cards)if(actorSources.has(card.url))card.scope=actorSources.get(card.url).scope;
  for(const source of c.input.sources)if(actorSources.has(source.url))source.scope=actorSources.get(source.url).scope;

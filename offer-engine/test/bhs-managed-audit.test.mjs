@@ -193,13 +193,13 @@ test('research and synthesis reserve independently, including parallel calls and
  assert.equal((await ledger.status()).chargedKurus,2500);
  const review=await managedPhaseBudget({ledger,brief,phase:managedReviewPhases[0],enabled:false});
  assert.equal(review.managedAudit,true);
- assert.equal(review.managedBudgetVersion,3);
- assert.equal(review.phaseCeiling,3300);
- await assert.rejects(review.ledger.once('oversized-review',{},801,async()=>assert.fail('review cannot borrow report funds')),error=>error.code==='budget_limit');
- await review.ledger.once('claude-review',{},800,async()=>({}));
+ assert.equal(review.managedBudgetVersion,4);
+ assert.equal(review.phaseCeiling,3000);
+ await assert.rejects(review.ledger.once('oversized-review',{},501,async()=>assert.fail('review cannot borrow report funds')),error=>error.code==='budget_limit');
+ await review.ledger.once('claude-review',{},500,async()=>({}));
  const synthesis=await managedPhaseBudget({ledger,brief,phase:'synthesis',enabled:false});
  assert.equal(synthesis.phaseCeiling,5000);
- await synthesis.ledger.once('claude',{},1300,async()=>({}));
+ await synthesis.ledger.once('claude',{},1600,async()=>({}));
  const scope=await managedPhaseBudget({ledger,brief,phase:'scope',enabled:false});
  await assert.rejects(scope.ledger.once('scope-over',{},401,async()=>assert.fail('paid provider called')),error=>error.code==='budget_limit');
  await scope.ledger.once('scope',{},400,async()=>({}));

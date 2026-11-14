@@ -32,8 +32,8 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:3}));
- const managedBudgetVersion=[2,3].includes(policy.version)?policy.version:1;
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:4}));
+ const managedBudgetVersion=[2,3,4].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
  const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
  if(!reportPhases.includes(phase)){

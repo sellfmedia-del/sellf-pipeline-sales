@@ -52,7 +52,8 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
   try{
    await scoped.once(key,{runId},0,async()=>{
     const result=await completeSections({brief,synthesis,sections:authorized.sections,ledger:scoped,getProviders,previous,collect,baseline,ceiling});
-    return {report:result.report,analysisPacket:result.analysisPacket};
+    return {report:result.report,analysisPacket:result.analysisPacket,
+     supervision:{...synthesis.supervision,gapEvidenceCoverage:result.evidenceCoverage}};
    });
   }catch(error){
    if(error.code!=='budget_pending'&&!(await baseLedger.get(key)))throw error;
@@ -67,13 +68,14 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
 async function completeSections({brief,synthesis,sections,ledger,getProviders,previous,collect,baseline,ceiling}){
  const deadline=AbortSignal.timeout(260000);
  const fetchImpl=(url,init={})=>fetch(url,{...init,signal:init.signal?AbortSignal.any([deadline,init.signal]):deadline});
- const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:3});
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
+ const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:priorPlan.managerDirected?4:3});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&f.recommendation?.measurement)
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
- const planned=(await focusedResearchPlan({brief,sections,priorPlan,findings:existing,providers})).data;
+ const missingMetrics=synthesis.supervision.metricCoverage?.filter(metric=>sections.includes(metric.section)&&!metric.proofIds.length)||[];
+ const planned=(await focusedResearchPlan({brief,sections,priorPlan,findings:existing,missingMetrics,providers})).data;
  const [priorCorpus,reviewedProofs]=await Promise.all([collectionCorpus(previous),retainedManagedProofs(brief,priorPlan,previous)]);
  const topics={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
  const retainedProofs=new Map([...reviewedProofs].filter(([,verdict])=>sections.some(section=>topics[section]===verdict)));
@@ -115,11 +117,11 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
    },indexSchema,{maxOutputTokens:3000})).data];
   }catch(error){if(!recoverable(error))throw error;}
  }
- const {report:patch}=await synthesizeManagedReport({brief,brand,plan:{...priorPlan,coveragePolicy:2},context,inventory,providers,sections,existing,evidenceUrls:newUrls,retainedProofs,sectional:true,allowPartial:true});
+ const {report:patch,evidenceCoverage}=await synthesizeManagedReport({brief,brand,plan:{...priorPlan,coveragePolicy:2},context,inventory,providers,sections,existing,evidenceUrls:newUrls,retainedProofs,sectional:true,allowPartial:true});
  const report=mergeManagedGapReport(original,patch,sections);
  const cited=new Set(report.sources.map(s=>s.url));
  const priorPacket=synthesis.analysisPacket;
- return {report,analysisPacket:{...context.packet,
+ return {report,evidenceCoverage,analysisPacket:{...context.packet,
   sources:[...new Map([...priorPacket.sources,...context.packet.sources].filter(s=>cited.has(s.finalUrl||s.url)).map(s=>[(s.finalUrl||s.url)+' '+s.contentHash,s])).values()],
   citationCards:[...new Map([...(priorPacket.citationCards||[]),...context.packet.citationCards].filter(s=>cited.has(s.url)).map(s=>[s.id,s])).values()]}};
 }
