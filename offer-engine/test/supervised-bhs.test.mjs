@@ -50,14 +50,14 @@ function transport({onGenerate,invalid=false}={}){
 }
 const base={configured:()=>true,generate:async()=>({legacyScope:true})};
 function providers(db,t){return createSupervisedProviders({ledger:db.ledger,anthropicKey:'private-manager',geminiKey:'private-worker',base,now,fetchImpl:t.fetchImpl});}
-test('managed Claude requests count plain JSON prompts and validate every paid output against the schema',async()=>{
+test('managed Claude retains structured transport without sending the output budget to token counting',async()=>{
  const db=account(),counted=[],generated=[];
  const p=createSupervisedProviders({ledger:db.ledger,anthropicKey:'fake',geminiKey:'fake',receiptVersion:'v8',managedBudgetVersion:4,
   base,now,researchFx:async()=>({usdTry:44}),fetchImpl:async(url,opts)=>{
    const body=JSON.parse(opts.body);
    if(url.endsWith('/count_tokens')){
     counted.push(body);
-    assert.deepEqual(Object.keys(body).sort(),['messages','model','system']);
+    assert.equal(body.max_tokens,undefined);
     return json({input_tokens:100});
    }
    generated.push(body);
@@ -67,9 +67,10 @@ test('managed Claude requests count plain JSON prompts and validate every paid o
  await p.manager('brand-review',{instruction:'Denetle',facts:[]},schema,{compactReview:true,maxOutputTokens:600});
  await p.evidenceReviewer('evidence-review',{instruction:'Grupla',facts:[]},schema,{maxOutputTokens:600});
  assert.equal(counted.length,2);
- assert.match(counted[0].system,/additionalProperties/);
- assert.match(counted[1].system,/additionalProperties/);
- for(const body of generated)assert.deepEqual(Object.keys(body).sort(),['max_tokens','messages','model','system']);
+ assert.equal(counted[0].output_config.format.type,'json_schema');
+ assert.equal(counted[1].tools[0].strict,true);
+ assert.equal(generated[0].output_config.format.type,'json_schema');
+ assert.equal(generated[1].tools[0].strict,true);
  assert.equal(generated.length,2);
 });
 test('a rejected Claude count still reserves the complete UTF-8 envelope and settles actual usage once',async()=>{

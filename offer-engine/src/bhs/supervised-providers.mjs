@@ -34,7 +34,16 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   const response=await fetchImpl(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{}),signal:deadline?AbortSignal.any([signal,deadline]):signal,redirect:'error'});
   const raw=await response.text();if(raw.length>2000000)throw new BudgetError('provider_size','BHS sağlayıcı yanıtı çok büyük.');
   let value;try{value=JSON.parse(raw);}catch{throw Object.assign(new BudgetError('provider_format','BHS sağlayıcı yanıtı okunamadı.'),{providerStatus:response.status});}
-  if(!response.ok){const message=value?.error?.message||'',error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');error.providerStatus=response.status;error.providerReason=failureReason(message);error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));throw error;}
+  if(!response.ok){
+   const message=[typeof value?.error==='string'?value.error:value?.error?.message,value?.message,value?.detail].filter(part=>typeof part==='string').join(' ');
+   const error=new BudgetError(response.status===429?'quota':'provider_error','BHS sağlayıcısı isteği tamamlayamadı.');
+   error.providerStatus=response.status;
+   error.providerReason=/credit balance|insufficient credits|payment required/i.test(message)?'billing_required':failureReason(message);
+   error.parameterHints=['schema','enum','complexity','states','tokens','maxOutputTokens','thinkingLevel','responseJsonSchema','anthropic-version','output_config','messages','model'].filter(k=>message.toLowerCase().includes(k.toLowerCase()));
+   const type=value?.error?.type||value?.type;
+   if(['invalid_request_error','authentication_error','permission_error','not_found_error','rate_limit_error','api_error','overloaded_error'].includes(type))error.providerErrorType=type;
+   throw error;
+  }
   return value;
  }
  async function fx(){
@@ -68,7 +77,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   quote(1,maxOutputTokens);
   const {instruction='',...context}=input;
   const thinkingLevel=receiptVersion==='v8'&&opts.compactVerdicts?'MINIMAL':receiptVersion==='v8'?'LOW':'MINIMAL';
-  const plainJson=receiptVersion==='v8'&&anthropicRole&&(opts.plainJson===true||options.managedBudgetVersion>=4);
+  const plainJson=receiptVersion==='v8'&&role==='manager'&&opts.plainJson===true;
   const system=instruction+'\n'+untrusted+(plainJson?'\nYalnız tek, tam ve geçerli JSON nesnesi ver. Önsöz, açıklama veya Markdown ekleme. Bu çıktı sözleşmesindeki zorunlu alanları aynen kullan:\n'+JSON.stringify(schema):(receiptVersion==='v8'&&role==='manager'&&stage==='v8-final-report'?'\nThink the problem through before you answer.':''));
   // Content reviews reason adaptively; only the short initial task omits
   // up-front thinking. Both modes retain exact pre-call token/TRY accounting.
@@ -80,7 +89,6 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   // thinking block. This tool only returns data; it executes no action. Sonnet
   // still independently reviews the original evidence and the final report.
   if(receiptVersion==='v8'&&role==='fallbackWorker')rawBody={model,max_tokens:maxOutputTokens,system,messages:[{role:'user',content:JSON.stringify(context)}],tools:[{name:'emit_bhs_stage',description:'Return the complete source-grounded stage result in exactly one call. This returns data only and executes no action.',input_schema:providerSchema(schema),strict:true}],tool_choice:{type:'tool',name:'emit_bhs_stage'},output_config:{effort:'medium'}};
-  if(plainJson&&options.managedBudgetVersion>=4)rawBody={model,max_tokens:maxOutputTokens,system,messages:rawBody.messages};
   // PostgreSQL jsonb reorders object keys. Canonicalise JSON context/schema
   // so a reconnect cannot turn identical research into another paid request.
   let body=rawBody;
@@ -153,9 +161,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
   if(saved)throw new BudgetError(saved.state==='reserved'?'budget_pending':'budget_uncertain','Önceki BHS model isteğinin kaydı korunuyor; tekrar ücretli çağrı yapılmadı.');
   const snapshot=await fx();
   const gbase='https://generativelanguage.googleapis.com/v1beta/models/'+model;
-  const managerCountBody=({model,system,messages})=>({model,system,messages});
-  const countBody=anthropicRole?options.managedBudgetVersion>=4?managerCountBody(body):
-   Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
+  const countBody=anthropicRole?Object.fromEntries(Object.entries(body).filter(([k])=>k!=='max_tokens')):{generateContentRequest:{model:'models/'+model,...body}};
   let count;
   let countedByBytes=false;
   const countTokens=(input=countBody)=>json(anthropicRole?'https://api.anthropic.com/v1/messages/count_tokens':gbase+':countTokens',input,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},20000,opts.signal);
@@ -220,7 +226,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
     try{return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},opts.generationTimeoutMs??(anthropicRole?240000:90000),opts.signal);}
     catch(error){
      if(options.managedBudgetVersion>=4&&error.providerStatus)
-      console.info(JSON.stringify({event:'bhs_provider_rejected',stage,role,status:error.providerStatus,reason:error.providerReason,hints:error.parameterHints}));
+      console.info(JSON.stringify({event:'bhs_provider_rejected',stage,role,status:error.providerStatus,reason:error.providerReason,type:error.providerErrorType,hints:error.parameterHints}));
      throw error;
     }
    };

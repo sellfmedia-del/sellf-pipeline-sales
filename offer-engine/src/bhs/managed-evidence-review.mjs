@@ -201,7 +201,7 @@ export async function reviewPositionalEvidenceBatch(batch,{focus,providers,signa
     if(providers.worker&&providers.managedBudgetVersion===3){
      completion=await runWorker();
     }else if(method!==providers.manager&&(error.providerOperation==='countTokens'||providers.managedBudgetVersion>=4)){
-     completion=await providers.manager(stage,request,modelSchema,providers.managedBudgetVersion>=4?{...options,plainJson:true}:options);
+     completion=await providers.manager(stage,request,modelSchema,options);
     }else throw error;
    }
    const data=normalizeData(completion.data),verdicts=ids.map(id=>data.verdicts[id]).join('');
