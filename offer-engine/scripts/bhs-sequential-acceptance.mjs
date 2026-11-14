@@ -84,6 +84,7 @@ export async function runSequentialAcceptance(){
   const synthesis=(await db.ledger.get(stageKey(brief,'synthesis','v8'))).value,audit=directAuditResult(brief,synthesis);
   result={case:caseName,status:audit.status==='ready'?'passed':'review',phase,cost:await db.ledger.status(),acceptance:audit.data.supervision.acceptance,audit,productionWrites:0};
  }catch(error){
+  if(outage&&!error.code)console.info(JSON.stringify({event:'bhs_qa_unexpected',phase,name:error.name,location:error.stack?.split('\n').find(line=>line.includes('/offer-engine/src/'))?.trim()}));
   result={case:caseName,status:'blocked',phase,cost:await db.ledger.status(),code:error.code||'qa_failed',...(error.providerStatus?{providerStatus:error.providerStatus,providerOperation:error.providerOperation,providerReason:error.providerReason,parameterHints:error.parameterHints}:{}),...(error.validationDetail?{validationDetail:error.validationDetail}:{}),...(error.budgetDiagnostic?{budgetDetail:error.budgetDiagnostic}:{}),productionWrites:0};
  }finally{
   // The build allowance was reserved before the first paid stage; this is

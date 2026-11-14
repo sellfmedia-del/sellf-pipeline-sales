@@ -698,14 +698,16 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
  }
  const searches=plan.managerDirected?await Promise.all([...targeted,...research.filter(([id])=>!targeted.some(([section])=>section===id))].map(search)):
   [...await Promise.all(research.filter(([id])=>id==='perception').map(search)),...await Promise.all(research.filter(([id])=>id!=='perception').map(search))];
+ const questionFor=({id,search})=>search.taskId&&id!=='readiness'?null:id;
  const archived=new Set(corpus.packet.sources.filter(source=>source.method!=='search-snippet'&&!source.metadataOnly).map(source=>source.finalUrl));
  const archivedFeedback=new Set(context.cards.filter(card=>!card.metadataOnly&&
   customerEvidence([card.url,card.title,card.method,card.quote])).map(card=>card.url));
- const targets=unique(searches.flatMap(({id,search})=>{
+ const targets=unique(searches.flatMap(entry=>{
+  const {id,search}=entry,question=questionFor(entry);
   const seen=id==='perception'?archivedFeedback:archived;
   const urls=unique((search.results||[]).map(r=>researchUrl(r.url)).filter(url=>url&&!seen.has(url)));
   if(id==='perception')return urls.filter(url=>nameKey(url).includes(brandName)||/sikayetvar|trustpilot|review|yorum|şikayet/iu.test(url)).slice(0,2);
-  const needsBrand=['strength','weakness','readiness'].includes(id);
+  const needsBrand=['strength','weakness','readiness'].includes(question);
   const ownUrl=url=>researchHost(url)===researchHost(brief.website);
   return search.taskId?urls.slice(0,2):[...urls.filter(url=>ownUrl(url)===needsBrand),...urls.filter(url=>ownUrl(url)!==needsBrand)].slice(0,2);
  }));
@@ -731,8 +733,9 @@ async function collectManagedQuestions({brief,plan,brand,corpus,providers,collec
   metricCoverage=await reviewManagedMetrics({plan,corpus:{searches:[...corpus.searches,...searches.map(entry=>entry.search)]},context:combined,providers:queryPool,prior:metricCoverage,signal:AbortSignal.timeout(15000)});
  }
  const freshCandidates=questionCandidates(brief,newContext);
- for(const {id,search} of searches){
-  if(id==='perception')continue;
+ for(const entry of searches){
+  const id=questionFor(entry),{search}=entry;
+  if(!id||!Object.hasOwn(verified,id))continue;
   const hosts=new Set((search.results||[]).map(result=>researchHost(result.url)));
   const found=freshCandidates[id].filter(card=>hosts.has(researchHost(card.url))).map(card=>card.id);
   evidence[id]=unique([...verified[id],...found,...evidence[id]]).slice(0,8);

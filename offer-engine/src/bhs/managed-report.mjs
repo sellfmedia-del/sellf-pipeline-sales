@@ -430,8 +430,10 @@ async function writeManagedSections({brief,brand,input,reverse,context,sections,
      if(section==='perception'&&(missingCustomerEvidence(f.observation)||!f.proof.some(id=>reviewed.isCustomerEvidence(id))))return 'customer_evidence_missing';
      if(section==='digital'&&/\b(?:kanıt|veri|sinyal|kayıt)[^.!?]{0,60}\b(?:toplanmadı|elde edilemedi|bulunamadı|yok)\b/iu.test(f.observation)&&
       !f.proof.some(id=>researchHost(focused.sources[id]?.[0])===researchHost(brief.website)))return 'digital_evidence_missing';
-     if(section==='swot'&&['opportunity','threat'].includes(f.quadrant)&&f.proof.every(id=>
-      /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(focused.sources[id]?.[0]||'')))return 'external_swot_evidence_missing';
+     if(section==='swot'&&['opportunity','threat'].includes(f.quadrant)&&f.proof.every(id=>{
+      const url=focused.sources[id]?.[0]||'';
+      return /sikayetvar\.com|trustpilot\.com|\/yorumlar(?:[/?#]|$)/iu.test(url)||enforceAnalysis&&researchHost(url)===researchHost(brief.website);
+     }))return 'external_swot_evidence_missing';
     };
     const reasoningIssue=f=>analysisIssue(f,proofText(f),briefText);
     const valid=findings.filter(f=>ids.has(managedFindingId(f,proofIds(f)))&&(!focusedWriting||!findingIssue(f))&&(!enforceAnalysis||!reasoningIssue(f)));

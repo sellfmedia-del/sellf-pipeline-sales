@@ -57,6 +57,20 @@ test('Claude verifies the planned metrics before writing and only its unresolved
  assert.ok(!searches.includes(initialQuery));
  assert.ok(result.metricCoverage.every(metric=>metric.status==='confirmed'&&metric.proofIds.length===1));
  assert.equal(result.questionSources.searches.find(search=>search.query===retryQuery).taskId,'t1');
+ const competitorQuery='fabricants de barres en France';
+ managedPlan.tasks[0]={...managedPlan.tasks[0],section:'competition'};
+ providers.manager=async(_stage,{metrics,sources})=>({data:{metrics:metrics.map(([metric,,,,aliases])=>({
+  metric,proofs:aliases.filter(id=>sources.find(([alias,url])=>alias===id&&url===added.url)),
+  missingQuery:competitorQuery,meetingQuestion:'Fransa için doğrudan rakipler kimler?'
+ }))}});
+ const initial=fixturePacket();
+ const withCompetitor=await runCollectionFirstStage({phase:inventoryStages[0],brief,
+  providers:{...providers,withCeiling:()=>({...providers,search:async query=>({query,results:query===competitorQuery?[{url:added.url,title:added.title,content:added.excerpts[0].text}]:[]})})},
+  finish:value=>value,previous:async phase=>phase==='brand'?{...brand,packet:{...initial,sources:[existing]}}:phase==='sector_sources'?{managedPlan,funding:{},searches:[]}: {},
+  collect:async(_brief,_plan,{prioritySources})=>({sources:prioritySources.includes(added.url)?[added]:[],unavailable:[]})
+ });
+ assert.ok(withCompetitor.metricCoverage.some(metric=>metric.section==='competition'&&metric.status==='confirmed'));
+ assert.equal(Object.hasOwn(withCompetitor.questionEvidence,'competition'),false);
 });
 
 test('the evidence check searches only uncovered questions and passes original proof to the funded index',async()=>{
