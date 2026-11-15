@@ -1,4 +1,5 @@
 import {understandScopedBrand,understandScopedBrief} from './scoped-research.mjs';
+import {scopedBrandCeilingKurus,scopedBriefCeilingKurus} from './managed-budget.mjs';
 import {createEvidenceCollector,mergeExtractedEvidence,evidenceHash} from './evidence.mjs';
 import {expertInstruction,projectExpertReport} from './expert-report.mjs';
 import {sourcePlanSchema,parseSourcePlan} from './source-plan.mjs';
@@ -313,14 +314,21 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(providers.collectionFirst&&providers.managedBudgetVersion>=8&&index<=sequentialPhases.indexOf('brand')){
   const scoped=providers.managedBudgetVersion>=9;
   const adaptive=providers.managedBudgetVersion>=10;
+  const protectStartup=providers.managedBudgetVersion>=12;
   if(scoped&&phase===(adaptive?'brand':'brand_draft')){
-   const understanding=await understandScopedBrief({brief,identity:prior.brandUnderstanding,providers});
+   const briefProviders=protectStartup?providers.withCeiling(scopedBriefCeilingKurus):providers;
+   const input={brief,identity:prior.brandUnderstanding,providers:briefProviders};
+   let understanding=await understandScopedBrief(input);
+   if(protectStartup&&prior.brandUnderstanding&&!understanding.value)
+    understanding=await understandScopedBrief({...input,compactRetry:true});
    return finish({...prior,briefUnderstanding:understanding.value,
     ...(understanding.issue?{toolIssues:[...(prior.toolIssues||[]),understanding.issue]}:{})});
   }
+  const brandProviders=protectStartup?providers.withCeiling(scopedBrandCeilingKurus):providers;
   if(adaptive&&phase!=='brand_plan'&&prior.brandDiscovery&&!prior.brandDiscovery.done){
-   const discovery=await understandScopedBrand({brief,packet:prior.packet,prior:prior.brandDiscovery,providers,
-    readPages:urls=>readResearchPages(brief,prior.plan,urls,providers,collect,{archive:false})});
+   const discovery=await understandScopedBrand({brief,packet:prior.packet,prior:prior.brandDiscovery,providers:brandProviders,
+    final:protectStartup&&phase==='brand_correction_draft',
+    readPages:urls=>readResearchPages(brief,prior.plan,urls,brandProviders,collect,{archive:false})});
    const {packet,...brandDiscovery}=discovery;
    return finish({...prior,packet,brandDiscovery,
     brandUnderstanding:discovery.value?{understanding:discovery.value.understanding}:prior.brandUnderstanding,
@@ -328,8 +336,8 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   }
   if(phase!=='brand_plan')return finish({...prior});
   const plan=brandPlan(brief);
-  const packet=await readResearchPages(brief,plan,[brief.website],providers,collect,{complete:!scoped,archive:!scoped});
-  const understanding=scoped?await understandScopedBrand({brief,packet,providers}):{};
+  const packet=await readResearchPages(brief,plan,[brief.website],brandProviders,collect,{complete:!scoped,archive:!scoped});
+  const understanding=scoped?await understandScopedBrand({brief,packet,providers:brandProviders}):{};
   const {packet:discoveredPacket,...brandDiscovery}=understanding;
   return finish({plan,packet,facts:[],collectionFirst:true,peerDiscoveryVersion:'product-v2',
    ...(adaptive?{packet:discoveredPacket||packet,brandDiscovery}:{}),

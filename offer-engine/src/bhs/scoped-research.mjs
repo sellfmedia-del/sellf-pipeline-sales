@@ -7,20 +7,25 @@ import {managedSections} from './managed-report.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
+const queryActors=new Set([...searchActors,'damilo/google-shopping-apify','harvestapi/linkedin-company-search']);
 const text=n=>({...str(n),minLength:1});
 const number=(min,max)=>({type:'integer',minimum:min,maximum:max});
 const understandingSchema=obj({understanding:text(2200)});
 const brandSchema=obj({understanding:text(2200),pages:arr(text(2048),6),
  searches:arr(obj({query:text(340),tool:{type:'string',enum:['tavily','gemini']},limit:number(1,6)}),4)});
+const orderedBrandSchema=obj({...brandSchema.properties,pages:arr(text(2048),1),searches:arr(brandSchema.properties.searches.items,1)});
 const needSchema=obj({id:text(20),section,target:text(150),market:text(100),metric:text(180),period:str(80),
  expected:text(240),quantity:number(1,12),query:text(340),country:str(2),language:str(2),
  first:{type:'string',enum:['tavily','gemini','both']},since:str(10)});
 const planSchema=obj({needs:arr(needSchema,32)});
+const orderedNeedSchema=obj({...needSchema.properties,first:{type:'string',enum:['tavily','gemini']}});
+const orderedPlanSchema=obj({needs:arr(orderedNeedSchema,planSchema.properties.needs.maxItems)});
 const factSchema=obj({proof:text(12),quote:str(420),item:text(180)});
 const workerSchema=obj({results:arr(obj({id:text(20),facts:arr(factSchema,12),nextQuery:str(340)}),6)});
 const commandSchema=obj({id:text(20),tool:text(90),query:str(340),url:str(2048),mode:{type:'string',enum:['default','posts','profile','reviews','engagement']},limit:number(1,12)});
 const reviewSchema=obj({approve:{type:'boolean'},newNeeds:arr(needSchema,12),
  decisions:arr(obj({id:text(20),sufficient:{type:'boolean'},proofs:arr(text(28),24)}),48),commands:arr(commandSchema,16),peers:arr(obj({name:text(100),url:text(2048),product:text(160),market:text(110),priceBand:str(110),channel:str(110)}),10)});
+const orderedReviewSchema=obj({...reviewSchema.properties,newNeeds:arr(orderedNeedSchema,12),commands:arr(commandSchema,1)});
 const compact=s=>String(s||'').replace(/\s+/g,' ').trim();
 const uniqueBy=(rows,key)=>[...new Map(rows.map(row=>[key(row),row])).values()];
 const errors=new Set(['budget_limit','budget_pending','budget_uncertain','input_budget','not_configured','model_budget','fx_limit','fx_unavailable','tariff_expired','quota','incomplete','invalid_report','token_count','model_deadline','claude_spend_limit','cancelled']);
@@ -41,20 +46,24 @@ async function ask(providers,stage,request,schema,maxOutputTokens,options={}){
  return result.value?.data?{value:result.value.data}:result;
 }
 
-export async function understandScopedBrand({brief,packet,providers,prior,readPages}){
+export async function understandScopedBrand({brief,packet,providers,prior,readPages,final=false}){
  const brand={name:brief.brandName,website:brief.website};
+ const ordered=providers.managedBudgetVersion>=12;
  const observed=new Set(packet.sources.flatMap(s=>[s.finalUrl||s.url,...(s.technicalSignals?.navigation||[]).map(l=>l.url)]).map(researchUrl).filter(Boolean));
  const lookedUp=new Set(prior?.lookedUp||[]),visited=new Set(prior?.visited||packet.sources.map(s=>researchUrl(s.finalUrl||s.url)));
  const hints=[...(prior?.hints||[])];
+ const lookupReceipts=[...(prior?.lookupReceipts||[])];
  if(prior){
   const targets=(prior.value?.pages||[]).map(researchUrl).filter(url=>observed.has(url)&&!visited.has(url));
-  for(const {query,tool,limit} of prior.value?.searches||[]){
+  const searches=prior.value?.searches||[];
+  for(const {query,tool,limit} of ordered?searches.slice(0,targets.length?0:1):searches){
    const key=hash([tool,query,limit]);
    if(lookedUp.has(key))continue;
    lookedUp.add(key);
    const search=await attempt(()=>tool==='gemini'
     ?providers.searchGemini?.({query,quantity:limit,target:brand.name,metric:'Markanın kimliği, ürün grubu ve faaliyet pazarı'},{maxResults:limit})
     :providers.search(query,{depth:'basic',maxResults:limit}));
+   if(ordered)lookupReceipts.push({query,tool,issue:search.issue||(!search.value?.results?.length?'no_results':undefined)});
    for(const row of (search.value?.results||[]).slice(0,limit)){
     const url=researchUrl(row.url);
     if(!url||visited.has(url))continue;
@@ -75,43 +84,52 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  const sources=packet.sources.filter(s=>!s.metadataOnly).map(s=>({url:s.finalUrl||s.url,title:s.title,
   excerpts:s.excerpts.slice(0,3).map(e=>e.text.slice(0,520)),
   links:(s.technicalSignals?.navigation||[]).map(({url,label})=>({url,label}))}));
- const result=await ask(providers,'bhs-scoped-brand',{brand,sources,hints,priorUnderstanding:prior?.value?.understanding,instruction:
-  'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'},brandSchema,1400);
+ const result=await ask(providers,'bhs-scoped-brand',{brand,sources,hints,priorUnderstanding:prior?.value?.understanding,
+  ...(ordered?{lookupReceipts,final}:{}),instruction:
+  'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'+
+  (ordered?' Tek seferde yalnız bir sayfa ya da tek, somut kimlik sorusu için bir araç seç. Önceki çağrıların sonuçlarını dikkate al. Bir araç hata verdiyse ve bilgi gerekliyse aynı dar soruyu uygun diğer araca kendin ver. final doğruysa ek istek gönderme ve belirsizlikleri yazarak marka anlayışını tamamla.':'')},ordered?orderedBrandSchema:brandSchema,1400);
  const value=result.value||prior?.value;
- return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],
-  done:!result.value||!result.value.pages?.length&&!result.value.searches?.length};
+ return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],...(ordered?{lookupReceipts}:{}),
+  done:final||!result.value||!result.value.pages?.length&&!result.value.searches?.length};
 }
 
-export async function understandScopedBrief({brief,identity,providers}){
+export async function understandScopedBrief({brief,identity,providers,compactRetry=false}){
  if(!identity)return {issue:'brand_understanding_unavailable'};
  const {brandName,website,...card}=brief;
- return ask(providers,'bhs-scoped-brief',{identity,card,instruction:
-  'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'},understandingSchema,1500);
+ return ask(providers,compactRetry?'bhs-scoped-brief-compact':'bhs-scoped-brief',{identity,card,instruction:
+  'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'+
+  (compactRetry?' Hedefi ve teklif kapsamını kısa ve eksiksiz bir paragrafta belirt.':'')},understandingSchema,compactRetry?850:1500);
 }
 
 export async function planScopedResearch({brief,identity,briefUnderstanding,asOf,providers}){
  if(!identity||!briefUnderstanding)return {needs:[],issue:'brief_understanding_unavailable'};
+ const guarded=providers.managedBudgetVersion>=12;
+ const taskSchema=guarded?orderedNeedSchema:needSchema;
+ const contract=guarded?orderedPlanSchema:planSchema;
  const request={brand:brief.brandName,identity,briefUnderstanding,asOf,instruction:
-  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'};
+  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'+
+  (guarded?'':' Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç.')};
+ if(guarded)request.instruction+=' Görevleri yapılma sırasına koy. Bir görev, bir metrik veya tek somut karar sorusu içersin. Her görev için ilk aracı tek başına seç. Başlangıçta yalnız sonucu başka bir sorguya bağlı olmayan, hemen çalıştırılabilecek görevler ver. Sonuç gelince devamını belirle. Bölüm veya bulgu kotası yoktur.';
  const normalizeData=data=>{
   if(!Array.isArray(data?.needs))return data;
   const needs=data.needs.flatMap(need=>{
    if(!need||typeof need!=='object')return [];
-   const fields=Object.fromEntries(Object.entries(needSchema.properties).map(([key,field])=>{
+   const fields=Object.fromEntries(Object.entries(taskSchema.properties).map(([key,field])=>{
     const value=need[key];
     if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
     return [key,value];
    }));
-   try{assertSchema(fields,needSchema);return [fields];}catch{return [];}
+   try{assertSchema(fields,taskSchema);return [fields];}catch{return [];}
   });
   if(!needs.length&&data.needs.length)throw new BudgetError('model_output_invalid','Claude’un araştırma emri doğrulanamadı.');
   return {needs:needs.slice(0,planSchema.properties.needs.maxItems)};
  };
- let result=await ask(providers,'bhs-scoped-plan',request,planSchema,3800,{normalizeData});
- if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue))
-  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},planSchema,3500,{normalizeData,plainJson:true});
+ let result=await ask(providers,'bhs-scoped-plan',request,contract,3800,{normalizeData});
+ if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&(!result.value?.needs?.length))
+  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},contract,guarded?2400:3500,{normalizeData,plainJson:true});
  const needs=uniqueBy(result.value?.needs||[],n=>n.id);
- return {needs,...(result.issue?{issue:result.issue}:{})};
+ const issue=result.issue||(guarded&&!needs.length?'research_plan_empty':undefined);
+ return {needs,...(issue?{issue}:{})};
 }
 
 function evidenceRows(result,limit,method){
@@ -157,7 +175,8 @@ async function readSearchEvidence(urls,readPages){
 async function extractFacts(searches,providers){
  const inputs=searches.map(search=>({...search,rows:search.rows.map((row,i)=>({...row,proof:'p'+(i+1)}))}));
  const withRows=inputs.filter(input=>input.rows.length&&input.rows.length<=input.need.quantity*2);
- const result=withRows.length?await attempt(()=>(providers.geminiWorker||providers.worker)('bhs-scoped-extract',{
+ const worker=providers.managedBudgetVersion>=12&&providers.modelHandoff?providers.worker:providers.geminiWorker||providers.worker;
+ const result=withRows.length?await attempt(()=>worker('bhs-scoped-extract',{
   instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
   requests:withRows.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
  },workerSchema,{maxOutputTokens:1800,minimumOutputTokens:760,compactWorker:true,generationTimeoutMs:28000})):{};
@@ -195,7 +214,7 @@ const defaultDenied=(receipts,tool)=>receipts.some(r=>r.attempts?.some(a=>a.tool
 
 // An empty or unusable controller response is not a budget decision. Reuse
 // Claude's open need and focused query while an independent search still fits.
-async function keepResearchOpen({needs,receipts,providers,readPages,issue}){
+async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true}){
  const capacity=(await attempt(()=>providers.researchCapacity?.())).value;
  if(!capacity)return {closed:false,issue:issue||'research_capacity_unknown'};
  const defaults=capacity.defaults.filter(tool=>!defaultDenied(receipts,tool));
@@ -205,10 +224,10 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue}){
   const stopReason=budget?'research_budget_exhausted':'research_tools_unavailable';
   return {closed:true,stopReason,issue:stopReason};
  }
- for(const need of needs){
+ for(const need of allowDispatch?needs:[]){
   const saved=receipts.filter(r=>r.id===need.id);
-  const queries=uniqueBy([...saved.map(r=>r.nextQuery).filter(Boolean).reverse(),need.query],query=>compact(query).toLocaleLowerCase('tr'));
-  const tools=defaults.includes(need.first)?[need.first,...defaults.filter(tool=>tool!==need.first)]:defaults;
+  const queries=ordered?[need.query]:uniqueBy([...saved.map(r=>r.nextQuery).filter(Boolean).reverse(),need.query],query=>compact(query).toLocaleLowerCase('tr'));
+  const tools=ordered?defaults.filter(tool=>tool===need.first):defaults.includes(need.first)?[need.first,...defaults.filter(tool=>tool!==need.first)]:defaults;
   for(const query of queries)for(const tool of tools){
    if(saved.some(r=>compact(r.query||need.query).toLocaleLowerCase('tr')===compact(query).toLocaleLowerCase('tr')&&
     r.attempts?.some(a=>a.tool===tool&&a.issue!=='budget_limit')))continue;
@@ -221,31 +240,37 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue}){
 
 export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
  const guarded=plan.reportOnlyAfterResearch===true&&!gap;
+ const ordered=plan.orderedResearch===true&&!gap;
  const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
  const receipts=rounds.flatMap(round=>round.receipts||[]);
  const facts=uniqueBy(receipts.flatMap(r=>r.facts.map(f=>({...f,needId:r.id}))),f=>f.id);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
  const open=need=>!confirmed(need,checked.get(need.id),facts);
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const actors=!last&&priorNeeds.some(n=>open(n)&&inScope(n))?(await attempt(()=>acquisition.availableActors?.())).value||[]:[];
+ const hasOpen=!last&&priorNeeds.some(n=>open(n)&&inScope(n));
+ const capacity=ordered&&hasOpen?(await attempt(()=>acquisition.researchCapacity?.())).value:undefined;
+ const actors=hasOpen?(capacity?.actors??(await attempt(()=>acquisition.availableActors?.())).value??[]):[];
  const latest=rounds.at(-1);
  const denied=tool=>defaultDenied(receipts,tool);
+ const available=tool=>!denied(tool)&&(!capacity||capacity.defaults.includes(tool));
  const attempted=new Set(rounds.flatMap(r=>r.commandKeys||[]));
  const waitingNeeds=priorNeeds.filter(n=>!receipts.some(receipt=>receipt.id===n.id&&receipt.defaultAttempt)).map(n=>n.id);
  const knownUrls=[...new Set([...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
   ...(s.technicalSignals?.navigation||[]).map(l=>l.url)])])].filter(Boolean);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
   identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
-  defaults:{tavily:!denied('tavily'),gemini:!denied('gemini')},
+  defaults:{tavily:available('tavily'),gemini:available('gemini')},
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
-  previous:receipts.map(r=>({id:r.id,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,nextQuery:r.nextQuery,urls:r.urls})),
-  instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak. Ticari teşhisi beşinci adıma bırak.'+
+  previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,nextQuery:r.nextQuery,urls:r.urls})),
+  instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Ticari teşhisi beşinci adıma bırak.'+
+   (!guarded?' Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak.':'')+
+   (ordered?' Bu turda yalnız tek bir sonraki işi seç. Önce son emrin sonucuna bak; ona bağlı iş ve sorguyu şimdi belirle. Bir araç hata verdiyse veya metrik için veri yetersizse sıradaki uygun aracı kendin seç. Yeni ihtiyaçları öncelik sırasıyla kaydet. Bir sonraki çağrı için genel araştırma verme; tek metrik, hedef, dönem ve gerekli en küçük örneklemi belirt.':'')+
    ' Her ihtiyacın yeterli olup olmadığına sufficient alanında sen karar ver; örneklem sayısını bulgu kotası olarak kullanma. Uygun bir ihtiyacın kanıtı Gemini ve Tavily birlikte denendikten sonra hâlâ yetersizse scraper kullan. missingDefaults varsa o iş için önce oradaki varsayılan aracı hedefli bir emirle çağır. Seçilen scraper istenen dönem, mod veya kayıt sayısını desteklemiyorsa talebi genişletmeden uygun bir başka araç seç. waitingNeeds planlanıp henüz çalıştırılmamış işlerdir. Hâlâ gereklilerse commands alanında aracı ve net sorguyu seç.'+
    (guarded?' Bilgi eksikse ve yeni bir araştırma çağrısı bütçeye sığıyorsa yazıma geçme. Açık kalan ölçüm için önceki çağrılardan farklı, uygulanabilir bir sonraki hedefli sorguyu seç. Bir komutun çalışmaması veya hiç komut üretmemek araştırmayı bitirme gerekçesi değildir. approve ancak bütün açık ihtiyaçlar kaynakla karşılandığında true olabilir.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
- },reviewSchema,last?1150:1700);
+ },ordered?orderedReviewSchema:reviewSchema,last?1150:1700);
  if(!result.value&&guarded)return keepResearchOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,
-  issue:result.issue||'research_clearance_unavailable'});
+  issue:result.issue||'research_clearance_unavailable',ordered});
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
   ...(['budget_limit','input_budget','provider_unavailable','claude_spend_limit','not_configured'].includes(result.issue)?{closed:true}:{})};
  const data=result.value;
@@ -256,31 +281,34 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  for(const row of data.decisions)if(ids.has(row.id))checked.set(row.id,{...row,proofs:row.proofs.filter(id=>facts.some(f=>f.id===id&&f.needId===row.id))});
  const decisions=[...checked.values()];
  const openNeeds=priorNeeds.filter(open);
+ const actionable=ordered?[...openNeeds,...newNeeds]:openNeeds;
  const approved=data.approve&&!data.commands.length&&!data.newNeeds.length&&(!guarded||!openNeeds.length);
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>researchHost(p.url));
  if(last||approved)return {approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),
   ...(approved&&guarded?{stopReason:'evidence_confirmed'}:{}),...(!approved?{issue:'research_needs_open'}:{})};
 
  const commandKey=c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
- const commands=uniqueBy(data.commands.filter(c=>!attempted.has(commandKey(c))),commandKey);
- const requests=[...newNeeds];
+ const pendingCommands=uniqueBy(data.commands.filter(c=>!attempted.has(commandKey(c))),commandKey);
+ const commands=ordered?pendingCommands.slice(0,1):pendingCommands;
+ const requests=ordered?[]:[...newNeeds];
  const used=[];
  for(const c of commands.filter(c=>['default','tavily','gemini'].includes(c.tool)&&c.query.trim())){
-  const need=openNeeds.find(n=>n.id===c.id&&inScope(n));
+  const need=actionable.find(n=>n.id===c.id&&inScope(n));
   const tool=c.tool==='default'?(need?.first||'tavily'):c.tool;
-  if(!need||denied(tool))continue;
+  if(!need||!available(tool))continue;
   if(gap&&previouslyAsked.has(compact(c.query).toLocaleLowerCase('tr')))continue;
   requests.push({...need,first:tool,query:c.query,quantity:c.limit});
   used.push(c);
  }
  const defaultTools=['tavily','gemini'];
- const tried=(id,tool)=>denied(tool)||receipts.some(r=>r.id===id&&r.attempts?.some(a=>a.tool===tool));
+ const tried=(id,tool)=>!available(tool)||receipts.some(r=>r.id===id&&r.attempts?.some(a=>a.tool===tool));
  const requestedIds=new Set(requests.map(r=>r.id));
  const selected=[];
  const deferred=new Map();
  for(const command of commands.filter(c=>actors.includes(c.tool)&&!requestedIds.has(c.id))){
   const need=openNeeds.find(n=>n.id===command.id&&inScope(n));
   if(!need)continue;
+  if(ordered&&queryActors.has(command.tool)&&!command.query.trim())continue;
   const missing=defaultTools.filter(tool=>!tried(need.id,tool));
   if(missing.length){
    if(!receipts.some(r=>r.id===need.id&&r.missingDefaults?.join()===missing.join()))
@@ -290,7 +318,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   }
  }
  const next=[...deferred.values(),...(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}))];
- const readers=commands.filter(c=>c.tool==='read'&&priorNeeds.some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
+ const readers=commands.filter(c=>c.tool==='read'&&(ordered?actionable:priorNeeds).some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
  used.push(...readers);
  const byNeed=new Map();
  for(const c of readers){
@@ -299,7 +327,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   byNeed.set(c.id,urls);
  }
  for(const [id,urls] of byNeed){
-  const need=priorNeeds.find(n=>n.id===id);
+  const need=(ordered?actionable:priorNeeds).find(n=>n.id===id);
   const records=await readSearchEvidence([...new Set(urls)],readPages);
   next.push(...await extractFacts([{need,rows:records,urls}],acquisition));
  }
@@ -325,7 +353,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const advanced=next.some(r=>r.facts.length||r.urls.length||r.missingDefaults?.length||
   r.attempts?.some(a=>!a.issue));
  const continuation=guarded&&!advanced?await keepResearchOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
-  providers:acquisition,readPages,issue}):{closed:guarded?false:!next.length,issue};
+  providers:acquisition,readPages,issue,ordered,allowDispatch:!ordered||!next.length&&!used.length}):{closed:guarded?false:!next.length,issue};
  const {receipts:extra=[],...completion}=continuation;
  return {approved:false,decisions,peers,newNeeds,receipts:[...next,...extra],commandKeys:used.map(commandKey),...completion,
   actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};

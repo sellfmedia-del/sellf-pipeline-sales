@@ -279,6 +279,33 @@ test('a temporary DNS failure before queueing offers pricing without starting pr
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
 
+test('current research stays in the same budget after ten minutes and a missing plan cannot open pricing automatically',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ const f=await fixture();
+ try{
+  const job=await f.enqueue();
+  await f.ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:12}));
+  await f.db.query("update public.pipeline_bhs_jobs set phase='sector_sources',created_at=now()-interval '11 minutes' where id=$1",[job.id]);
+  const h=createBoundedAuditHandler({getQueue:async()=>f.queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>f.ledger,validateWebsite:async()=>{},getProviders:()=>assert.fail('status must not call a provider'),logger:{}});
+  const request={method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{action:'start',brief,requestId:'synthetic_request_12345',context:{leadId:'synthetic-bhs'}}};
+  const before=await f.ledger.status(),pending=res();
+  await h(request,pending);
+  assert.equal(pending.code,202);
+  assert.equal(pending.body.phase,'sector_sources');
+  assert.equal(pending.body.pricingProof,undefined);
+  assert.equal((await f.queue.read(job)).state,'queued');
+  await f.db.query("update public.pipeline_bhs_jobs set state='paused',diagnostic=$2 where id=$1",[job.id,{code:'research_start_unavailable'}]);
+  const cookie=pending.headers['Set-Cookie'][0].split(';')[0];
+  const stopped=res();
+  await h({...request,headers:{...request.headers,cookie},body:{action:'status',brief,ticket:pending.body.ticket}},stopped);
+  assert.equal(stopped.code,422);
+  assert.equal(stopped.body.code,'research_start_unavailable');
+  assert.equal(stopped.body.pricingProof,undefined);
+  assert.equal(stopped.body.continuationAvailable,true);
+  assert.deepEqual(await f.ledger.status(),before);
+ }finally{await f.close();if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
+
 test('an active background job can hand off to the offer and refuses any subsequent paid reservation',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  const f=await fixture();
