@@ -1,4 +1,4 @@
-import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence} from './scoped-research.mjs';
+import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence,scopedResearchClosed} from './scoped-research.mjs';
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
 import {gzip,gunzip} from 'node:zlib';
 import {promisify} from 'node:util';
@@ -1091,6 +1091,9 @@ const decisionCode={competition:'c',digital:'d',swot:'s',perception:'p',readines
 
 export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite=true,sections,existing=[]}){
  const evidence=scopedEvidence(brand,plan,rounds);
+ if(plan.reportOnlyAfterResearch&&allowWrite&&!sections&&evidence.coverage.some(metric=>metric.status==='open')&&
+  !rounds.some(round=>round.closed&&scopedResearchClosed(round,true)))
+  throw new BudgetError('research_needs_open','Açık BHS araştırması kapanmadan rapor yazımı başlatılamaz.');
  const context=managedCollectionContext(brief,evidence.packet,{complete:true});
  const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
   directedResearch:true,coveragePolicy:2,assets:evidence.coverage.filter(c=>c.section==='digital').flatMap(c=>c.proofs.map(p=>({url:p.url,purpose:c.name,state:'examined'})))};
@@ -1133,19 +1136,21 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
-  return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{})}});
+  return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{}),
+   ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
  const adaptive=plan.adaptiveResearch===true;
  if(adaptive&&phase==='report_draft'){
   const rounds=await savedScopedRounds(previous);
-  return save({scopedTail:plan.needs.length>0&&!rounds.some(round=>round.approved||round.closed)});
+  return save({scopedTail:plan.needs.length>0&&!rounds.some(round=>scopedResearchClosed(round,plan.reportOnlyAfterResearch)),
+   ...(plan.reportOnlyAfterResearch?{researchBudgetGuarded:true}:{})});
  }
  if(phase==='coverage_plan'||(!scopedRounds.includes(phase)&&phase!=='synthesis'))return save({});
  const index=scopedRounds.indexOf(phase),rounds=(await Promise.all(scopedRounds.slice(0,index<0?undefined:index).map(previous))).filter(r=>r?.scopedRound);
  if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,
   rounds:adaptive?[...rounds,...(await previous('scoped-tail')||[])]:rounds,providers}));
- if(rounds.some(r=>r.approved||r.closed)||!plan.needs.length)return save({});
+ if(rounds.some(r=>scopedResearchClosed(r,plan.reportOnlyAfterResearch))||!plan.needs.length)return save({});
  const last=!adaptive&&index===scopedRounds.length-1;
  const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
  const waiting=plan.needs.filter(need=>!attempted.has(need.id));

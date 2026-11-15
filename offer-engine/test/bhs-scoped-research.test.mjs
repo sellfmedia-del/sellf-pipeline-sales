@@ -8,6 +8,9 @@ import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
 import {writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
+import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
+import {quoteSearch} from '../src/budget/ledger.mjs';
+import {reserveStageQuote} from '../src/bhs/supervised-providers.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -203,4 +206,64 @@ test('a provider outage allows the configured Gemini handoff to write from the e
  assert.equal(synthesis.supervision.reportModel,'gemini-3.8-flash');
  assert.deepEqual(synthesis.supervision.reportHandoff,{from:'claude',to:'gemini'});
  assert.equal(synthesis.report.meetingQuestions[0].question,'Son satış kanalının verisi paylaşılabilir mi?');
+});
+
+test('an affordable open need prevents approval and uses Claude’s saved focused query when the controller gives no command',async()=>{
+ const plan={needs:[needs[0]],reportOnlyAfterResearch:true};
+ const searched=[];
+ const providers={claudeManager:async(_,input)=>{
+  assert.match(input.instruction,/araştırma çağrısı bütçeye sığıyorsa yazıma geçme/);
+  return {data:draft({approve:true})};
+ },researchCapacity:async()=>({remainingKurus:100,defaults:['tavily'],configuredDefaults:['tavily'],actors:[]}),
+ search:async(query,options)=>{searched.push([query,options.maxResults]);return {results:[]};}};
+ const execution={identity,briefUnderstanding,plan,providers,brief,packet,readPages:async()=>({sources:[]})};
+ const first=await reviewScopedResearch({...execution,rounds:[]});
+ assert.equal(first.approved,false);
+ assert.equal(first.closed,false);
+ assert.deepEqual(searched,[[needs[0].query,10]]);
+ const duplicate=await reviewScopedResearch({...execution,rounds:[first]});
+ assert.equal(duplicate.closed,false);
+ assert.equal(searched.length,1);
+});
+
+test('an unaffordable controller does not close research while a focused provider call fits',async()=>{
+ const plan={needs:[needs[0]],reportOnlyAfterResearch:true};
+ const providers={claudeManager:async()=>{throw new BudgetError('budget_limit','model reservation');},
+  researchCapacity:async()=>({remainingKurus:62,defaults:['tavily'],configuredDefaults:['tavily','gemini'],actors:[]}),
+  search:async()=>({results:[]})};
+ const round=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:async()=>({sources:[]})});
+ assert.equal(round.closed,false);
+ assert.equal(round.receipts[0].attempts[0].tool,'tavily');
+});
+
+test('synthesis accepts an incomplete report only after the research budget closes',async()=>{
+ const plan={needs:[needs[0]],scopedResearch:true,adaptiveResearch:true,reportOnlyAfterResearch:true};
+ let written=0;
+ const providers={claudeManager:async(stage,input)=>{
+  if(stage==='bhs-scoped-review')return {data:draft({})};
+  written++;
+  assert.equal(stage,'bhs-scoped-report');
+  assert.equal(input.coverage[0].status,'open');
+  return {model:'claude-sonnet-5-5',data:{findings:[],questions:[]}};
+ },researchCapacity:async()=>({remainingKurus:61,defaults:[],configuredDefaults:['tavily','gemini'],actors:[]})};
+ const args={brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,providers};
+ await assert.rejects(writeScopedSynthesis({...args,rounds:[{closed:true,issue:'no_executable_research_command'}]}),{code:'research_needs_open'});
+ assert.equal(written,0);
+ const round=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:async()=>({sources:[]})});
+ assert.equal(round.closed,true);
+ assert.equal(round.stopReason,'research_budget_exhausted');
+ await writeScopedSynthesis({...args,rounds:[round]});
+ assert.equal(written,1);
+});
+
+test('research affordability uses the actual Tavily reservation and the research ceiling',async()=>{
+ const reservation=reserveStageQuote(quoteSearch('basic'));
+ let chargedKurus=3000-reservation;
+ const ledger={status:async()=>({capKurus:5000,chargedKurus})};
+ const providers=createSequentialProviders({ledger,phase:'report_draft',phaseLimitKurus:3000,
+  geminiKey:'test-gemini',tavilyKey:'test-tavily',apify:{availableActors:async()=>[]},
+  fetchImpl:async()=>assert.fail('affordability must not start a provider call')});
+ assert.deepEqual((await providers.researchCapacity()).defaults,['tavily']);
+ chargedKurus++;
+ assert.deepEqual((await providers.researchCapacity()).defaults,[]);
 });
