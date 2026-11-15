@@ -57,7 +57,7 @@ test('brand precedes brief and research, default tools precede targeted fallback
    assert.equal(stage,'bhs-scoped-extract');
    calls.push('gemini');
    return {data:{results:requests.flatMap(({need,sources})=>need.id==='t1'&&!sources.some(s=>s.url===post)?[]:[
-    {id:need.id,facts:sources.length?[{url:sources[0].url,item:need.section,quote:need.id==='t1'?postQuote:quote}]:[],nextQuery:''}
+    {id:need.id,facts:sources.length?[{proof:sources[0].proof,item:need.section,quote:need.id==='t1'?postQuote:quote}]:[],nextQuery:''}
    ])}};
   },
   availableActors:async()=>['apify/instagram-scraper'],

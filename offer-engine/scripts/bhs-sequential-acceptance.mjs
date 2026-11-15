@@ -99,6 +99,13 @@ export async function runSequentialAcceptance(){
   if(managed){
     const stage=(name)=>rows.find(row=>row.state==='complete'&&row.step_key.startsWith('audit:'+name+':')&&row.value?.phase===name)?.value||{};
     const plan=stage('sector_sources').managedPlan;
+    if(plan?.scopedResearch)console.info(JSON.stringify({event:'bhs_scoped_qa',case:caseName,
+     brandUnderstood:Boolean(stage('brand').brandUnderstanding),briefUnderstood:Boolean(stage('brand').briefUnderstanding),
+     planNeeds:plan.needs.length,planIssue:plan.issue,
+     rounds:rows.filter(row=>row.state==='complete'&&row.value?.scopedRound).map(row=>({phase:row.value.phase,issue:row.value.issue,
+      receipts:row.value.receipts?.map(r=>({id:r.id,facts:r.facts.length,urls:r.urls.length,issues:r.issues})),approved:row.value.approved,openNeeds:row.value.openNeeds})),
+     stages:rows.filter(r=>r.step_key.startsWith('model:bhs-v8:')&&r.step_key.includes('bhs-scoped-')).map(r=>
+      ({stage:r.step_key.split(':')[3],state:r.state,model:r.value?.model,issue:r.value?.rejectedOutput||r.value?.code}))}));
     const reviewPhases=['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft'];
     const reviewBatches=reviewPhases.flatMap(phase=>stage(phase).reviews||[]);
     const reviewIssues=Object.fromEntries([...new Set(reviewBatches.map(batch=>batch.issue).filter(Boolean))].map(issue=>[issue,reviewBatches.filter(batch=>batch.issue===issue).length]));
