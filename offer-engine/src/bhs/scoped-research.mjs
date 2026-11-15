@@ -201,9 +201,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
   identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
   defaults:{tavily:!denied('tavily'),gemini:!denied('gemini')},
-  previous:receipts.map(r=>({id:r.id,attempts:r.attempts,issues:r.issues,nextQuery:r.nextQuery,urls:r.urls})),
+  previous:receipts.map(r=>({id:r.id,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,nextQuery:r.nextQuery,urls:r.urls})),
   instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak. Ticari teşhisi beşinci adıma bırak.'+
-   ' Her ihtiyacın yeterli olup olmadığına sufficient alanında sen karar ver; örneklem sayısını bulgu kotası olarak kullanma. Uygun bir ihtiyacın kanıtı Gemini ve Tavily birlikte denendikten sonra hâlâ yetersizse scraper kullan. Seçilen scraper istenen dönem, mod veya kayıt sayısını desteklemiyorsa talebi genişletmeden uygun bir başka araç seç. waitingNeeds planlanıp henüz çalıştırılmamış işlerdir. Hâlâ gereklilerse commands alanında aracı ve net sorguyu seç.'+
+   ' Her ihtiyacın yeterli olup olmadığına sufficient alanında sen karar ver; örneklem sayısını bulgu kotası olarak kullanma. Uygun bir ihtiyacın kanıtı Gemini ve Tavily birlikte denendikten sonra hâlâ yetersizse scraper kullan. missingDefaults varsa o iş için önce oradaki varsayılan aracı hedefli bir emirle çağır. Seçilen scraper istenen dönem, mod veya kayıt sayısını desteklemiyorsa talebi genişletmeden uygun bir başka araç seç. waitingNeeds planlanıp henüz çalıştırılmamış işlerdir. Hâlâ gereklilerse commands alanında aracı ve net sorguyu seç.'+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },reviewSchema,last?1150:1700);
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
@@ -220,7 +220,6 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>researchHost(p.url));
  if(last||approved)return {approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),...(!approved?{issue:'research_needs_open'}:{})};
 
- const defaulted=new Set(receipts.filter(r=>r.defaultAttempt).map(r=>r.id));
  const commandKey=c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
  const commands=uniqueBy(data.commands.filter(c=>!attempted.has(commandKey(c))),commandKey);
  const requests=[...newNeeds];
@@ -237,18 +236,19 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const tried=(id,tool)=>denied(tool)||receipts.some(r=>r.id===id&&r.attempts?.some(a=>a.tool===tool));
  const requestedIds=new Set(requests.map(r=>r.id));
  const selected=[];
- for(const command of commands.filter(c=>actors.includes(c.tool)&&defaulted.has(c.id)&&!requestedIds.has(c.id))){
+ const deferred=new Map();
+ for(const command of commands.filter(c=>actors.includes(c.tool)&&!requestedIds.has(c.id))){
   const need=openNeeds.find(n=>n.id===command.id&&inScope(n));
   if(!need)continue;
   const missing=defaultTools.filter(tool=>!tried(need.id,tool));
   if(missing.length){
-   requests.push({...need,first:missing.length===2?'both':missing[0]});
-   requestedIds.add(need.id);
+   if(!receipts.some(r=>r.id===need.id&&r.missingDefaults?.join()===missing.join()))
+    deferred.set(need.id,{id:need.id,facts:[],urls:[],issues:['scraper_requires_default_tools'],missingDefaults:missing});
   }else{
    selected.push(command);
   }
  }
- const next=(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}));
+ const next=[...deferred.values(),...(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}))];
  const readers=commands.filter(c=>c.tool==='read'&&priorNeeds.some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
  used.push(...readers);
  const byNeed=new Map();

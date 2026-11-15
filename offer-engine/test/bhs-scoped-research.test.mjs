@@ -51,9 +51,9 @@ test('Claude plans scoped research after brand and brief, then writes and transf
    if(stage==='bhs-scoped-review'){
     reviewCount++;
     const decisions=[{id:'t0',proofs:input.findings.filter(f=>f.needId==='t0'&&!f.preliminary).map(f=>f.id)}];
-    return {data:draft({
-     decisions,commands:reviewCount<=2?[{id:'t1',tool:'apify/instagram-scraper',url:instagram,query:'',mode:'posts',limit:10}]:[]
-    })};
+    const scrape={id:'t1',tool:'apify/instagram-scraper',url:instagram,query:'',mode:'posts',limit:10};
+    if(reviewCount===2)assert.deepEqual(input.previous.find(r=>r.missingDefaults)?.missingDefaults,['gemini']);
+    return {data:draft({decisions,commands:reviewCount===2?[{...scrape,tool:'gemini',query:needs[1].query}]:reviewCount<=3?[scrape]:[]})};
    }
    if(stage==='bhs-scoped-clearance')return {data:draft({})};
    assert.equal(stage,'bhs-scoped-report');

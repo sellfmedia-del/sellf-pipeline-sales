@@ -63,6 +63,24 @@ test('worker advances persisted BHS without browser/JWT state and never repeats 
   assert.ok(!JSON.stringify(f.calls.filter(c=>c.body.p_op==='enqueue')).includes('synthetic-jwt'));
  }finally{await f.close();}
 });
+test('the existing private queue releases and reclaims a committed research phase on the same budget',async()=>{
+ const f=await fixture();try{
+  const job=await f.enqueue();
+  await f.db.query("update public.pipeline_bhs_jobs set phase='report_draft' where id=$1",[job.id]);
+  let claim=await f.queue.claim();
+  const key=stageKey(brief,'report_draft','v8');
+  const ledger=await f.queue.getLedger(claim);
+  await ledger.once(key,{phase:'report_draft'},0,async()=>({scopedTail:true}));
+  await f.queue.pause(claim,{code:'research_continues'});
+  const requeued=await f.queue.read(job);
+  assert.equal(requeued.state,'queued');
+  assert.equal(requeued.phase,'report_draft');
+  claim=await f.queue.claim();
+  assert.equal(claim.budgetId,job.budgetId);
+  await f.queue.advance(claim,{nextPhase:'synthesis',checkpointKey:key});
+  assert.equal((await f.queue.read(job)).phase,'synthesis');
+ }finally{await f.close();}
+});
 test('production additional-run binding cannot read a Preview job or attach another owner budget',async()=>{
  const f=await fixture();try{
   const preview=await f.enqueue();await f.db.exec('reset role;create table public.pipeline_offer_budgets (like public.pipeline_offer_preview_budgets including all);create table public.pipeline_offer_budget_steps (like public.pipeline_offer_preview_budget_steps including all);grant select,update on public.pipeline_offer_budgets,public.pipeline_offer_budget_steps to service_role;');
