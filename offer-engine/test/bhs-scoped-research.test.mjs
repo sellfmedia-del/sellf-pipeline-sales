@@ -7,6 +7,7 @@ import {reviewScopedResearch,scopedEvidence} from '../src/bhs/scoped-research.mj
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
+import {writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -174,4 +175,17 @@ test('an explicit gap run reuses completed research and dispatches only a new ta
  assert.deepEqual(calls,[newNeed.query]);
  assert.deepEqual(round.newNeeds,[newNeed]);
  assert.equal(scopedEvidence({packet},plan,[saved,round]).approved,false);
+});
+
+test('a provider outage allows the configured Gemini handoff to write from the existing evidence',async()=>{
+ const synthesis=await writeScopedSynthesis({brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan:{needs,scopedResearch:true},rounds:[],
+  providers:{modelHandoff:true,claudeManager:async()=>assert.fail('single-provider route bypasses handoff'),manager:async(stage,input)=>{
+   assert.equal(stage,'bhs-scoped-report');
+   assert.equal(input.approved,false);
+   assert.ok(Object.values(input.sources).some(source=>source[0]===brief.website));
+   return {model:'gemini-3.8-flash',providerHandoff:{from:'claude',to:'gemini'},data:{findings:[],questions:['Son satış kanalının verisi paylaşılabilir mi?']}};
+  }}});
+ assert.equal(synthesis.supervision.reportModel,'gemini-3.8-flash');
+ assert.deepEqual(synthesis.supervision.reportHandoff,{from:'claude',to:'gemini'});
+ assert.equal(synthesis.report.meetingQuestions[0].question,'Son satış kanalının verisi paylaşılabilir mi?');
 });

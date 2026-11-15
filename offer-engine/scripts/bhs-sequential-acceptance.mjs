@@ -141,6 +141,7 @@ export async function runSequentialAcceptance(){
     providerReason:result.providerReason,parameterHints:result.parameterHints,validationDetail:result.validationDetail,
     elapsedSeconds:Math.round((Date.now()-started)/1000),cost:result.cost,
     reportIssue:audit?.data.supervision.reportIssue,reportDiagnostic:audit?.data.supervision.reportDiagnostic,
+    reportModel:audit?.data.supervision.reportModel,reportHandoff:audit?.data.supervision.reportHandoff,
     sections:audit?.data.bhsSections?.map(({id,count,complete,missingQuadrants})=>({id,count,complete,missingQuadrants})),
     evidenceCoverage:audit?.data.supervision.evidenceCoverage,researchApproved:audit?.data.supervision.researchApproved,
     metricCoverage:audit?.data.supervision.metricCoverage?.map(({section,name,status})=>({section,name,status})),

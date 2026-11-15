@@ -32,7 +32,8 @@ async function attempt(run){
 }
 const controllerOptions={compactReview:true,lowEffort:true,generationTimeoutMs:34000};
 async function ask(providers,stage,request,schema,maxOutputTokens,options={}){
- const result=await attempt(()=>(providers.claudeManager||providers.manager)(stage,request,schema,{
+ const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
+ const result=await attempt(()=>manager(stage,request,schema,{
   ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50),...options
  }));
  return result.value?.data?{value:result.value.data}:result;
@@ -169,7 +170,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    ' waitingNeeds henüz başlamamış plan öğeleridir. Hâlâ gereklilerse commands alanında ilgili aracı ve net sorguyu seç. Bir araç erişilemezse diğer varsayılan aracı veya doğrulanmış hedefli scraper’ı değerlendir.'+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },reviewSchema,last?1150:1700);
- if(!result.value)return {issue:result.issue||'research_clearance_unavailable'};
+ if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
+  ...(['provider_unavailable','claude_spend_limit','not_configured'].includes(result.issue)?{closed:true}:{})};
  const data=result.value;
  const ids=new Set(priorNeeds.map(n=>n.id));
  const previouslyAsked=new Set(priorNeeds.map(n=>compact(n.query).toLocaleLowerCase('tr')));

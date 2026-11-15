@@ -1122,6 +1122,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
+   ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
    ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
