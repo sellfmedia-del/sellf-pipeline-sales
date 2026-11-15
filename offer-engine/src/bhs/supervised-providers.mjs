@@ -260,7 +260,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    const request=async()=>{
     try{
      const timeout=opts.generationTimeoutMs??(anthropicRole?240000:90000);
-     return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},modelHandoff?Math.min(42000,timeout):timeout,opts.signal);
+     const scopedWriter=role==='manager'&&stage==='bhs-scoped-report';
+     return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},modelHandoff&&!scopedWriter?Math.min(42000,timeout):timeout,opts.signal);
     }
     catch(error){
      if(modelHandoff&&canHandOff(error))error.providerOperation='generateContent';

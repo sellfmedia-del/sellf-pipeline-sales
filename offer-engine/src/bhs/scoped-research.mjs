@@ -2,6 +2,7 @@ import {searchActors} from './apify-inputs.mjs';
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {researchUrl,researchHost} from './research-url.mjs';
 import {arr,obj,str} from './sequential-contracts.mjs';
+import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
 
 const sections=Object.keys(managedSections);
@@ -30,9 +31,9 @@ async function attempt(run){
  }
 }
 const controllerOptions={compactReview:true,lowEffort:true,generationTimeoutMs:34000};
-async function ask(providers,stage,request,schema,maxOutputTokens){
+async function ask(providers,stage,request,schema,maxOutputTokens,options={}){
  const result=await attempt(()=>(providers.claudeManager||providers.manager)(stage,request,schema,{
-  ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50)
+  ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50),...options
  }));
  return result.value?.data?{value:result.value.data}:result;
 }
@@ -56,9 +57,23 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  if(!identity||!briefUnderstanding)return {needs:[],issue:'brief_understanding_unavailable'};
  const request={brand:brief.brandName,identity,briefUnderstanding,sections:managedSections,asOf,instruction:
   'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'};
- let result=await ask(providers,'bhs-scoped-plan',request,planSchema,3500);
+ const normalizeData=data=>{
+  if(!Array.isArray(data?.needs))return data;
+  const needs=data.needs.flatMap(need=>{
+   if(!need||typeof need!=='object')return [];
+   const fields=Object.fromEntries(Object.entries(needSchema.properties).map(([key,field])=>{
+    const value=need[key];
+    if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
+    return [key,value];
+   }));
+   try{assertSchema(fields,needSchema);return [fields];}catch{return [];}
+  });
+  if(!needs.length&&data.needs.length)throw new BudgetError('model_output_invalid','Claude’un araştırma emri doğrulanamadı.');
+  return {needs:needs.slice(0,planSchema.properties.needs.maxItems)};
+ };
+ let result=await ask(providers,'bhs-scoped-plan',request,planSchema,3800,{normalizeData});
  if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue))
-  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Kısa Türkçe ifadeler kullan. Seçtiğin işleri tek bir tamamlanmış JSON olarak döndür.'},planSchema,3500);
+  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},planSchema,3500,{normalizeData,plainJson:true});
  const needs=uniqueBy(result.value?.needs||[],n=>n.id);
  return {needs,...(result.issue?{issue:result.issue}:{})};
 }
@@ -143,13 +158,15 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const latest=rounds.at(-1);
  const denied=tool=>receipts.some(r=>r.attempts?.some(a=>a.tool===tool&&[401,403,404,429,432,433,434].includes(a.providerStatus)));
  const attempted=new Set(rounds.flatMap(r=>r.commandKeys||[]));
+ const waitingNeeds=priorNeeds.filter(n=>!receipts.some(receipt=>receipt.id===n.id&&receipt.defaultAttempt)).map(n=>n.id);
  const knownUrls=[...new Set([...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
   ...(s.technicalSignals?.navigation||[]).map(l=>l.url)])])].filter(Boolean);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
-  identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,knownUrls,...(gap?{existing}:{}),
+  identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,knownUrls,...(gap?{existing}:{}),
   defaults:{tavily:!denied('tavily'),gemini:!denied('gemini')},
   previous:receipts.map(r=>({id:r.id,attempts:r.attempts,issues:r.issues,nextQuery:r.nextQuery,urls:r.urls})),
   instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak. Ticari teşhisi beşinci adıma bırak.'+
+   ' waitingNeeds henüz başlamamış plan öğeleridir. Hâlâ gereklilerse commands alanında ilgili aracı ve net sorguyu seç. Bir araç erişilemezse diğer varsayılan aracı veya doğrulanmış hedefli scraper’ı değerlendir.'+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },reviewSchema,last?1150:1700);
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable'};

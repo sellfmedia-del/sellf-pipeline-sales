@@ -1142,7 +1142,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  const last=index===scopedRounds.length-1;
  const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
  const waiting=plan.needs.filter(need=>!attempted.has(need.id));
- if(waiting.length&&!last){
+ if(waiting.length&&index===0){
   const receipts=(await runScopedDefaults(waiting.slice(0,3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
   return save({receipts,scopedRound:true});
  }

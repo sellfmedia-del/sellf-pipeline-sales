@@ -153,8 +153,8 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  }));
  try{
   const manager=providers.claudeManager||providers.manager;
-  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:8192,minimumOutputTokens:1024,
-   compactReview:true,lowEffort:true,normalizeData,generationTimeoutMs:95000});
+  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
+   compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000});
   const report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true});
   return {report,completion};
  }catch(error){
