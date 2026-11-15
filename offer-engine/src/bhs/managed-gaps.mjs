@@ -103,16 +103,16 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  if(version===9){
   const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
   const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
-  for(let i=0;i<3&&!rounds.some(r=>r.approved);i++){
+  for(let i=0;i<3&&!rounds.at(-1)?.approved;i++){
    rounds.push(await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
     plan:priorPlan,rounds,providers,brief,packet:brand.packet,readPages,eligibleSections:sections,last:i===2}));
   }
   const result=await writeScopedSynthesis({brief,brand,plan:priorPlan,rounds,providers,sections,existing});
-  if(!result.supervision.researchApproved)return {report:original,analysisPacket:synthesis.analysisPacket,
-   supervision:synthesis.supervision,evidenceCoverage:result.supervision.evidenceCoverage};
+  if(!result.report.findings.some(f=>f.recommendation?.action))return {report:original,analysisPacket:result.analysisPacket,
+   supervision:{...synthesis.supervision,reportIssue:result.supervision.reportIssue},evidenceCoverage:result.supervision.evidenceCoverage};
   const context=managedCollectionContext(brief,result.analysisPacket);
   const merged=mergeGapEvidence(synthesis,result.report,sections,context,result.supervision.evidenceCoverage);
-  return {...merged,supervision:{...merged.supervision,researchApproved:true,metricCoverage:result.supervision.metricCoverage,
+  return {...merged,supervision:{...merged.supervision,researchApproved:result.supervision.researchApproved,metricCoverage:result.supervision.metricCoverage,
    evidenceCoverage:result.supervision.evidenceCoverage,reportIssue:result.supervision.reportIssue}};
  }
  if(version>=7){

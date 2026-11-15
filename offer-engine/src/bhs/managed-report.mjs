@@ -125,6 +125,24 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
+export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections=sectionKeys}){
+ const request={...input,needs,coverage,approved,instruction:
+  'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
+  analysisStandard+(input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+ const signal=AbortSignal.timeout(110000);
+ try{
+  const manager=providers.claudeManager||providers.manager;
+  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:8192,minimumOutputTokens:2200,
+   compactReview:true,lowEffort:true,generationTimeoutMs:95000});
+  const report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true});
+  return {report,completion};
+ }catch(error){
+  const issue=managedModelIssue(error,signal);
+  if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
+  return {reportIssue:issue};
+ }
+}
+
 export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,coverageEvidence,metricCoverage,allowPartial=false,sectional=false,savedSectionsOnly=false}){
  const {input,reverse}=managedReportInput({brief,brand,plan,context,inventory,sections,existing,evidenceUrls,retainedProofs,coverageEvidence,metricCoverage});
  const accepted=new Set(sections);

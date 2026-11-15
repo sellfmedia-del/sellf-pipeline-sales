@@ -77,7 +77,11 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  }
  if(actor==='apify/instagram-profile-scraper'||actor==='apify/instagram-scraper'){
   if(host!=='instagram.com'||parts.length!==1||!/^[\w.]+$/.test(parts[0])||['p','reel','explore','accounts','stories'].includes(parts[0]))return bad();
-  return {input:actor.endsWith('profile-scraper')?{usernames:[parts[0]],includeAboutSection:false}:{directUrls:[url],resultsType:'posts',resultsLimit:request.maxResults===undefined?6:limit(12),addParentData:false},maxItems:actor.endsWith('profile-scraper')?1:request.maxResults===undefined?6:limit(12),url,official:known.official.has(url)};
+  const official=known.official.has(url);
+  if(actor.endsWith('profile-scraper'))return {input:{usernames:[parts[0]],includeAboutSection:false},maxItems:1,url,official};
+  const maxItems=request.maxResults===undefined?6:limit(12);
+  const since=/^\d{4}-\d{2}-\d{2}$/.test(request.since||'')&&Number.isFinite(Date.parse(request.since))?request.since:null;
+  return {input:{directUrls:[url],resultsType:'posts',resultsLimit:maxItems,addParentData:false,...(since?{onlyPostsNewerThan:since}:{})},maxItems,url,official,since};
  }
  if(actor.startsWith('harvestapi/linkedin-')){
   if(host!=='linkedin.com'||parts[0]!=='company'||parts.length!==2)return bad();

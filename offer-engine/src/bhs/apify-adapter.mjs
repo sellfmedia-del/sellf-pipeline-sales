@@ -67,6 +67,7 @@ function recordsForEvidence(actor,rows,target,context){
   }else if(actor==='apify/instagram-scraper'){
    const expected=new URL(target.url).pathname.split('/').filter(Boolean)[0];
    if(String(r.ownerUsername).toLowerCase()!==expected.toLowerCase()||!target.official||!url||researchHost(url)!=='instagram.com')continue;
+   if(target.since&&!(Date.parse(r.timestamp)>=Date.parse(target.since)))continue;
    data=pick(r,['caption','timestamp','likesCount','commentsCount','videoViewCount','type']);
   }else if(actor==='harvestapi/linkedin-company-search'){
    if(researchHost(r.website)!==researchHost(context.brief.website)||!sameUrl(r.linkedinUrl,target.url))continue;

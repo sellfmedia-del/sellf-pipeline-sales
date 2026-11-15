@@ -8,7 +8,7 @@ import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases} from './managed-budget.mjs';
 import {createSupervisedReadiness} from './supervised-readiness.mjs';
-import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages} from './collection-first.mjs';
+import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages,scopedRounds} from './collection-first.mjs';
 import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 
@@ -37,6 +37,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   if(options.providers.managedBudgetVersion>=8)for(const phase of sequentialPhases.slice(1,sequentialPhases.indexOf('brand')+1))freePhases.add(phase);
   if(options.providers.managedBudgetVersion>=9){
    freePhases.delete('brand_draft');
+   for(const phase of scopedRounds)freePhases.delete(phase);
    for(const phase of managedReviewPhases)freePhases.add(phase);
   }
   if(freePhases.has(job.phase))return runStage(options);
@@ -45,7 +46,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    sequentialPhases.indexOf(job.phase)>sequentialPhases.indexOf('brand')){
    const noProvider=async()=>{throw new BudgetError('budget_limit','BHS araştırma bütçesi doldu.');};
    const disabled={...options.providers,manager:noProvider,claudeManager:noProvider,evidenceReviewer:noProvider,worker:noProvider,geminiWorker:noProvider,
-    search:noProvider,enrich:noProvider,availableActors:async()=>[],withCeiling:()=>disabled};
+    search:noProvider,searchGemini:noProvider,enrich:noProvider,availableActors:async()=>[],withCeiling:()=>disabled};
    return runStage({...options,providers:disabled});
   }
  }

@@ -15,7 +15,7 @@ import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
 import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
-import {managedReportInput,synthesizeManagedReport} from './managed-report.mjs';
+import {managedReportInput,synthesizeManagedReport,synthesizeScopedReport} from './managed-report.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -1086,16 +1086,15 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
    ...(sectionIssues?.length?{sectionIssues}:{})}};
 }
 
-export const scopedRounds=directedRounds.slice(1);
+export const scopedRounds=[...directedRounds.slice(1,-1),...inventoryStages];
 const decisionCode={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
 
 export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite=true,sections,existing=[]}){
  const evidence=scopedEvidence(brand,plan,rounds);
- const context=managedCollectionContext(brief,evidence.packet,{complete:false});
+ const context=managedCollectionContext(brief,evidence.packet,{complete:true});
  const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
   directedResearch:true,coveragePolicy:2,assets:evidence.coverage.filter(c=>c.section==='digital').flatMap(c=>c.proofs.map(p=>({url:p.url,purpose:c.name,state:'examined'})))};
- const args={brief,brand,plan:reportPlan,context,inventory:[],providers:{...providers,manager:providers.claudeManager||providers.manager},allowPartial:true,sectional:true,...(sections?{sections}:{}),existing};
- const approved=allowWrite&&evidence.approved;
+ const args={brief,brand,plan:reportPlan,context,inventory:[],...(sections?{sections}:{}),existing};
  const {input,reverse}=managedReportInput(args);
  const reviewed=Object.keys(input.sources).flatMap(id=>{
   const known=context.known.get(reverse.get(id));
@@ -1103,53 +1102,52 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   const fact=evidence.accepted.find(f=>f.url===known.url&&f.quote.includes(known.quote));
   return fact?[{id,code:decisionCode[fact.section]}]:[];
  });
- let report,model,reportIssue;
- if(approved){
-  const batchReviews=[{ids:reviewed.map(r=>r.id),verdicts:reviewed.map(r=>r.code).join(''),candidates:reviewed.map(r=>r.id)}];
-  const result=await synthesizeManagedReport({...args,batchReviews});
-  ({report,reportIssue}=result);
-  model=result.completion.model;
- }else{
+ const aliases=new Map([...reverse].map(([alias,id])=>[id,alias]));
+ const coverage=evidence.coverage.map(({proofs,...metric})=>({...metric,sources:proofs.flatMap(f=>context.cards
+  .filter(card=>card.url===f.url&&f.quote.includes(card.quote)).map(card=>aliases.get(card.id)).filter(Boolean))}));
+ const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,coverage,needs:evidence.needs,approved:evidence.approved,sections}):{};
+ let {report}=written;
+ if(!report){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
   report=projectExpertReport({findings:reviewed.slice(0,18).map(({id,code})=>{
    const sourceId=reverse.get(id),source=context.known.get(sourceId);
    const section=Object.keys(decisionCode).find(key=>decisionCode[key]===code);
    return {id:'scoped_'+id,kind:'observation',dimension:dimensionFor[section],observation:source.quote,sourceIds:[sourceId],
-    limitation:'Doğrulanan araştırma kaynağı. BHS teşhisi için açık bilgi ihtiyaçları tamamlanacak.'};
+    limitation:'Doğrulanan araştırma kaynağı.'};
   })},context);
   report.directedResearch=true;
-  reportIssue='research_needs_open';
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
- report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.name,findingIds:[]}))];
+ if(!written.report)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.name,findingIds:[]}))];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
- return {report,analysisPacket:evidence.packet,searchEvidence:[],model:model||null,usage:null,
+ return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
-   researchApproved:approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
-   evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:evidence.accepted.length},
-   ...(reportIssue?{reportIssue}:{})}};
+   researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
+   evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
+   ...(written.reportIssue?{reportIssue:written.reportIssue}:{})}};
 }
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
  const brand=await previous('brand');
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
  if(phase==='sector_sources'){
-  const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,providers});
+  const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
   return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true}});
  }
  if(!plan?.scopedResearch)return save({});
  if(phase==='coverage_plan'||(!scopedRounds.includes(phase)&&phase!=='synthesis'))return save({});
  const index=scopedRounds.indexOf(phase),rounds=(await Promise.all(scopedRounds.slice(0,index<0?undefined:index).map(previous))).filter(r=>r?.scopedRound);
  if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,rounds,providers}));
- if(rounds.some(r=>r.approved)||!plan.needs.length)return save({});
+ if(rounds.some(r=>r.approved||r.closed)||!plan.needs.length)return save({});
  const last=index===scopedRounds.length-1;
- const acquisition=last?providers:providers.withCeiling?.(2500)||providers;
- if(index===0){
-  const receipts=(await runScopedDefaults(plan.needs,acquisition,readPages,brand.packet)).map(row=>({...row,defaultAttempt:true}));
+ const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
+ const waiting=plan.needs.filter(need=>!attempted.has(need.id));
+ if(waiting.length&&!last){
+  const receipts=(await runScopedDefaults(waiting.slice(0,3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
   return save({receipts,scopedRound:true});
  }
  const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,plan,rounds,
-  providers,acquisition,brief,packet:brand.packet,readPages,last});
+  providers,brief,packet:brand.packet,readPages,last});
  return save({...round,scopedRound:true});
 }
 
