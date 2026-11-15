@@ -55,7 +55,7 @@ export function directAuditResult(brief,synthesis){
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
  const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];
- const managedIssues=[...missingSections.map(id=>'incomplete_'+id),...(managed&&synthesis.supervision.evidenceCoverage?.complete===false?['incomplete_evidence_review']:[])];
+ const managedIssues=[...missingSections.map(id=>'incomplete_'+id),...(synthesis.supervision?.scopedResearch&&!synthesis.supervision.researchApproved?['research_needs_open']:[]),...(managed&&synthesis.supervision.evidenceCoverage?.complete===false?['incomplete_evidence_review']:[])];
  const acceptance=managed?{passed:!managedIssues.length,issues:managedIssues}:synthesis.methodologyVersion===sequentialVersion?qualityAcceptance(report,{stages:synthesis.supervision?.stageDecisions||[],swot:synthesis.supervision?.swot||[],budget:synthesis.supervision?.costUpperBound,finalDecision:synthesis.supervision?.finalDecision,reviewMode:synthesis.supervision?.reviewMode}):null;
  const ready=useful&&(!acceptance||acceptance.passed);
  return {status:ready?'ready':'review',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),...(synthesis.supervision?{supervision:{...synthesis.supervision,...(acceptance?{acceptance}:{} )}}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),

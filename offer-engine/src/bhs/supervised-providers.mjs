@@ -377,6 +377,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
  }
  return {...base,...options,modelHandoff,configured:()=>Boolean(base.configured()&&(modelHandoff?anthropicKey||geminiKey:anthropicKey&&geminiKey)),
   manager:(...args)=>generateWithHandoff('manager',...args),
+  claudeManager:(...args)=>generateRole('manager',...args),
+  geminiWorker:(...args)=>generateRole('worker',...args),
   evidenceReviewer:(...args)=>generateWithHandoff('fallbackWorker',...args),
   readManagerResult:(stage,input,schema,opts)=>generateWithHandoff('manager',stage,input,schema,{...opts,reuseOnly:true}),
   worker:(...args)=>generateWithHandoff('worker',...args)};

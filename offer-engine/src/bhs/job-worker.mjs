@@ -19,7 +19,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    // The paid drafting reserve may not fit. Keep the reviewed source handoff
    // available under the fixed gateway/template reserve, without a paid call.
    const manager=async()=>{throw new BudgetError('budget_limit','Kalan bütçe için incelenmiş kanıtlar kullanılacak.');};
-   return runStage({...options,providers:{...options.providers,manager,evidenceReviewer:manager,worker:manager}});
+   return runStage({...options,providers:{...options.providers,manager,claudeManager:manager,evidenceReviewer:manager,worker:manager,geminiWorker:manager}});
   }
  }
  if(job.phase==='scope'){
@@ -35,13 +35,18 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  if(options.providers.managedBudgetVersion>=7){
   const freePhases=new Set(['coverage_plan','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft',...inventoryStages.filter(phase=>phase!=='competition')]);
   if(options.providers.managedBudgetVersion>=8)for(const phase of sequentialPhases.slice(1,sequentialPhases.indexOf('brand')+1))freePhases.add(phase);
+  if(options.providers.managedBudgetVersion>=9){
+   freePhases.delete('brand_draft');
+   for(const phase of managedReviewPhases)freePhases.add(phase);
+  }
   if(freePhases.has(job.phase))return runStage(options);
   const cost=await options.ledger.status();
   if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus&&
    sequentialPhases.indexOf(job.phase)>sequentialPhases.indexOf('brand')){
    const noProvider=async()=>{throw new BudgetError('budget_limit','BHS araştırma bütçesi doldu.');};
-   return runStage({...options,providers:{...options.providers,manager:noProvider,evidenceReviewer:noProvider,worker:noProvider,
-    withCeiling:()=>({manager:noProvider,evidenceReviewer:noProvider,worker:noProvider})}});
+   const disabled={...options.providers,manager:noProvider,claudeManager:noProvider,evidenceReviewer:noProvider,worker:noProvider,geminiWorker:noProvider,
+    search:noProvider,enrich:noProvider,availableActors:async()=>[],withCeiling:()=>disabled};
+   return runStage({...options,providers:disabled});
   }
  }
  if(options.providers.managedBudgetVersion<7&&options.phaseCeiling&&!['scope','synthesis','coverage_plan'].includes(job.phase)){

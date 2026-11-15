@@ -1,3 +1,4 @@
+import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence} from './scoped-research.mjs';
 import {BudgetError,hash,tariff} from '../budget/ledger.mjs';
 import {gzip,gunzip} from 'node:zlib';
 import {promisify} from 'node:util';
@@ -349,10 +350,10 @@ async function readPublisherFallback(brief,packet,searches,targets,pool,actor='a
   scope:actor==='apify/rag-web-browser'?'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.':'Kamuya açık platformdaki özgün müşteri deneyimi.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
 }
 
-export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false}={}){
+export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false,archive=true}={}){
  if(!targets.length)return {sources:[],unavailable:[]};
  const full=new Map();
- const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,archivePages:async pages=>{
+ const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,...(archive?{archivePages:async pages=>{
   const entries=new Map();
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
@@ -371,7 +372,7 @@ export async function readResearchPages(brief,plan,targets,providers,collect,{co
   });
   const failed=(await Promise.allSettled(workers)).find(result=>result.status==='rejected');
   if(failed)throw failed.reason;
- }});
+ }}:{})});
  if(!complete)return packet;
  const sources=await Promise.all(packet.sources.map(async source=>{
   const text=full.get(source.finalUrl+' '+source.method);
@@ -1085,9 +1086,81 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
    ...(sectionIssues?.length?{sectionIssues}:{})}};
 }
 
+export const scopedRounds=directedRounds.slice(1);
+const decisionCode={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
+
+export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite=true,sections,existing=[]}){
+ const evidence=scopedEvidence(brand,plan,rounds);
+ const context=managedCollectionContext(brief,evidence.packet,{complete:false});
+ const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+  directedResearch:true,coveragePolicy:2,assets:evidence.coverage.filter(c=>c.section==='digital').flatMap(c=>c.proofs.map(p=>({url:p.url,purpose:c.name,state:'examined'})))};
+ const args={brief,brand,plan:reportPlan,context,inventory:[],providers:{...providers,manager:providers.claudeManager||providers.manager},allowPartial:true,sectional:true,...(sections?{sections}:{}),existing};
+ const approved=allowWrite&&evidence.approved;
+ const {input,reverse}=managedReportInput(args);
+ const reviewed=Object.keys(input.sources).flatMap(id=>{
+  const known=context.known.get(reverse.get(id));
+  if(!known)return [];
+  const fact=evidence.accepted.find(f=>f.url===known.url&&f.quote.includes(known.quote));
+  return fact?[{id,code:decisionCode[fact.section]}]:[];
+ });
+ let report,model,reportIssue;
+ if(approved){
+  const batchReviews=[{ids:reviewed.map(r=>r.id),verdicts:reviewed.map(r=>r.code).join(''),candidates:reviewed.map(r=>r.id)}];
+  const result=await synthesizeManagedReport({...args,batchReviews});
+  ({report,reportIssue}=result);
+  model=result.completion.model;
+ }else{
+  const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
+  report=projectExpertReport({findings:reviewed.slice(0,18).map(({id,code})=>{
+   const sourceId=reverse.get(id),source=context.known.get(sourceId);
+   const section=Object.keys(decisionCode).find(key=>decisionCode[key]===code);
+   return {id:'scoped_'+id,kind:'observation',dimension:dimensionFor[section],observation:source.quote,sourceIds:[sourceId],
+    limitation:'Doğrulanan araştırma kaynağı. BHS teşhisi için açık bilgi ihtiyaçları tamamlanacak.'};
+  })},context);
+  report.directedResearch=true;
+  reportIssue='research_needs_open';
+ }
+ const open=evidence.coverage.filter(c=>c.status==='open');
+ report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.name,findingIds:[]}))];
+ const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
+ return {report,analysisPacket:evidence.packet,searchEvidence:[],model:model||null,usage:null,
+  researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
+   researchApproved:approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
+   evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:evidence.accepted.length},
+   ...(reportIssue?{reportIssue}:{})}};
+}
+
+async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
+ const brand=await previous('brand');
+ const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+ if(phase==='sector_sources'){
+  const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,providers});
+  return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true}});
+ }
+ if(!plan?.scopedResearch)return save({});
+ if(phase==='coverage_plan'||(!scopedRounds.includes(phase)&&phase!=='synthesis'))return save({});
+ const index=scopedRounds.indexOf(phase),rounds=(await Promise.all(scopedRounds.slice(0,index<0?undefined:index).map(previous))).filter(r=>r?.scopedRound);
+ if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,rounds,providers}));
+ if(rounds.some(r=>r.approved)||!plan.needs.length)return save({});
+ const last=index===scopedRounds.length-1;
+ const researchProviders=last?providers:providers.withCeiling?.(2500)||providers;
+ if(index===0){
+  const receipts=(await runScopedDefaults(plan.needs,researchProviders,readPages)).map(row=>({...row,defaultAttempt:true}));
+  return save({receipts,scopedRound:true});
+ }
+ const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,plan,rounds,
+  providers:researchProviders,brief,packet:brand.packet,readPages,last});
+ return save({...round,scopedRound:true});
+}
+
 export async function recoverManagedSectionSynthesis(brief,previous,providers){
  const plan=(await previous('sector_sources'))?.managedPlan;
  if(!plan)return undefined;
+ if(plan.scopedResearch){
+  const brand=await previous('brand');
+  const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase).catch(e=>{if(e.code!=='stage_pending')throw e;})))).filter(r=>r?.scopedRound);
+  return {...await writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite:false}),methodologyVersion:sequentialVersion};
+ }
  const result=await managedSynthesis(brief,plan,previous,providers,{sectional:true,savedSectionsOnly:true});
  return result?{...result,methodologyVersion:sequentialVersion}:undefined;
 }
@@ -1097,6 +1170,8 @@ export async function runCollectionFirstStage({phase,brief,providers,previous,co
  const first=phase===searchStages[0];
  const managed=first?providers.managedAudit:(await previous(searchStages[0])).managedPlan;
  const sectional=managed&&providers.managedBudgetVersion>=2;
+ if(providers.managedBudgetVersion>=9&&(first||managed?.scopedResearch))
+  return runScopedCollection({phase,brief,providers,previous,collect,plan:managed,save:data=>finish({collectionFirst:true,...data})});
  const funding=first?await providers.checkpoint(managed?'managed-collection-funding':'collection-first-funding',brief,async()=>{
   const cost=await providers.costStatus();
   if(!managed)return planCollectionFunding(cost,providers.infrastructureOffsetKurus,providers.now?.());

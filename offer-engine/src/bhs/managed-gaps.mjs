@@ -1,3 +1,4 @@
+import {reviewScopedResearch} from './scoped-research.mjs';
 import {createHmac} from 'node:crypto';
 import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {briefHash} from './brief.mjs';
@@ -5,7 +6,7 @@ import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
 import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
 import {focusedResearchPlan} from './managed-research.mjs';
-import {collectionCorpus,collectionMarket,collectPlannedCoverage,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,expandDirectedSources,retainedManagedProofs} from './collection-first.mjs';
+import {collectionCorpus,collectionMarket,collectPlannedCoverage,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,expandDirectedSources,retainedManagedProofs,scopedRounds,writeScopedSynthesis} from './collection-first.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
@@ -95,10 +96,25 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
+ if(version===9){
+  const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
+  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+  for(let i=0;i<3&&!rounds.some(r=>r.approved);i++){
+   rounds.push(await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+    plan:priorPlan,rounds,providers,brief,packet:brand.packet,readPages,eligibleSections:sections,last:i===2}));
+  }
+  const result=await writeScopedSynthesis({brief,brand,plan:priorPlan,rounds,providers,sections,existing});
+  if(!result.supervision.researchApproved)return {report:original,analysisPacket:synthesis.analysisPacket,
+   supervision:synthesis.supervision,evidenceCoverage:result.supervision.evidenceCoverage};
+  const context=managedCollectionContext(brief,result.analysisPacket);
+  const merged=mergeGapEvidence(synthesis,result.report,sections,context,result.supervision.evidenceCoverage);
+  return {...merged,supervision:{...merged.supervision,researchApproved:true,metricCoverage:result.supervision.metricCoverage,
+   evidenceCoverage:result.supervision.evidenceCoverage,reportIssue:result.supervision.reportIssue}};
+ }
  if(version>=7){
   const [priorCorpus,reviewedProofs]=await Promise.all([collectionCorpus(previous),retainedManagedProofs(brief,priorPlan,previous)]);
   const priorRounds=[{pages:priorCorpus.packet.sources,searches:priorCorpus.searches,scrapes:priorCorpus.scrapes}];

@@ -1,3 +1,4 @@
+import {understandScopedBrand,understandScopedBrief} from './scoped-research.mjs';
 import {createEvidenceCollector,mergeExtractedEvidence,evidenceHash} from './evidence.mjs';
 import {expertInstruction,projectExpertReport} from './expert-report.mjs';
 import {sourcePlanSchema,parseSourcePlan} from './source-plan.mjs';
@@ -310,10 +311,18 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
  if(prior?.collectionFirst&&index>sequentialPhases.indexOf('brand'))return runCollectionFirstStage({phase,brief,providers,previous,collect,finish});
  if(providers.collectionFirst&&providers.managedBudgetVersion>=8&&index<=sequentialPhases.indexOf('brand')){
+  const scoped=providers.managedBudgetVersion>=9;
+  if(scoped&&phase==='brand_draft'){
+   const understanding=await understandScopedBrief({brief,identity:prior.brandUnderstanding,providers});
+   return finish({...prior,briefUnderstanding:understanding.value,
+    ...(understanding.issue?{toolIssues:[...(prior.toolIssues||[]),understanding.issue]}:{})});
+  }
   if(phase!=='brand_plan')return finish({...prior});
   const plan=brandPlan(brief);
-  const packet=await readResearchPages(brief,plan,[brief.website],providers,collect,{complete:true});
-  return finish({plan,packet,facts:[],collectionFirst:true,peerDiscoveryVersion:'product-v2'});
+  const packet=await readResearchPages(brief,plan,[brief.website],providers,collect,{complete:!scoped,archive:!scoped});
+  const understanding=scoped?await understandScopedBrand({brief,packet,providers}):{};
+  return finish({plan,packet,facts:[],collectionFirst:true,peerDiscoveryVersion:'product-v2',
+   ...(scoped?{brandUnderstanding:understanding.value,...(understanding.issue?{toolIssues:[understanding.issue]}:{})}:{})});
  }
  if(providers.collectionFirst&&!providers.managedAudit&&index<=sequentialPhases.indexOf('brand')){
   const {capKurus}=await providers.costStatus();
