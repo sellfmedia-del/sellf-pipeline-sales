@@ -134,7 +134,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const partial=continuationAudit(brief,{reason:'website_network_busy',managed:true});
     return await finish(await restoreContinuation(brief,partial,ledger,now()));
    }
-   let backgroundJob,handoffReason;
+   let backgroundJob,handoffReason,managedPolicy;
    if(queue&&action!=='continue'){
     if(!job.backgroundJobId){
      const saved=await queue.enqueue(job,brief,await ledger.status());job.backgroundJobId=saved.id;
@@ -151,11 +151,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const updatedTicket=codec.encode(job,session,host);recoveryTicket=updatedTicket;
     if((backgroundJob.queueBriefHash||backgroundJob.briefHash)!==checkpointHash||backgroundJob.budgetId!==(await ledger.status()).id)throw new BudgetError('invalid_job','BHS işi araştırma bütçesiyle eşleşmiyor.');
     if(action==='complete_gaps'&&!['complete','paused','cancelled'].includes(backgroundJob.state))throw new BudgetError('completion_unavailable','Ek araştırma için incelenmiş bir BHS sonucu gerekli.');
-    if(['queued','running'].includes(backgroundJob.state)){
-     handoffReason=backgroundHandoffReason(backgroundJob,now());
+    const activeResearch=['queued','running'].includes(backgroundJob.state);
+    if(activeResearch)handoffReason=backgroundHandoffReason(backgroundJob,now());
+    if(handoffReason&&!backgroundJob.cancelRequested||backgroundJob.state==='paused')managedPolicy=await ledger.get('audit:managed-policy:'+hash);
+    const preserveActiveResearch=managedPolicy?.state==='complete'&&managedPolicy.value?.version>=12;
+    if(activeResearch){
+     if(preserveActiveResearch&&!backgroundJob.cancelRequested)handoffReason=null;
      if(!handoffReason)return res.status(202).json({phase:backgroundJob.phase,status:'in_progress',ticket:updatedTicket,cost:await cost(),execution:'background',continuationAvailable:true});
      if(!backgroundJob.cancelRequested)backgroundJob=await queue.cancel(job);
      log('bhs_automatic_continuation',{reason:handoffReason,jobPhase:backgroundJob.phase});
+    }
+    if(preserveActiveResearch&&backgroundJob.state==='paused'&&['start','status','advance'].includes(action)){
+     const code=backgroundJob.diagnostic?.code||'stage_paused';
+     const error=code==='research_start_unavailable'?'BHS araştırma görevleri oluşturulamadı. Mevcut araştırma kayıtları korundu.':'BHS araştırması durdu. Mevcut araştırma kayıtları korundu.';
+     return res.status(422).json({code,error,phase:backgroundJob.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:true});
     }
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
@@ -186,10 +195,10 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const synthesis=rows[pendingPhases.indexOf('synthesis')];phase=backgroundJob.phase;
     const reason=handoffReason||backgroundJob.diagnostic?.code||(backgroundJob.cancelRequested||backgroundJob.state==='cancelled'?'research_cancelled':'stage_paused');
     const brand=rows[pendingPhases.indexOf('brand')];
-    const policy=await ledger.get('audit:managed-policy:'+hash);
+    const policy=managedPolicy??await ledger.get('audit:managed-policy:'+hash);
     const managed=policy?.state==='complete';
     let usable=synthesis?.state==='complete'?synthesis.value:undefined;
-    if(!usable&&['report_draft','synthesis'].includes(phase)&&managed&&policy.value?.version>=2){
+    if(!usable&&managed&&policy.value?.version>=2&&(['report_draft','synthesis'].includes(phase)||policy.value.version>=12&&rows[pendingPhases.indexOf('sector_sources')]?.state==='complete')){
      try{
       usable=await recoverManagedSectionSynthesis(brief,previous,{managedBudgetVersion:policy.value.version,readCheckpoint:async(name,input)=>{
         const step=await ledger.get('audit:v8:checkpoint:'+name+':'+ledgerHash(input));

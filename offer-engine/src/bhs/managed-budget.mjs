@@ -5,6 +5,10 @@ export const researchCapKurus=3000;
 const evidenceReviewCapKurus=3300;
 export const synthesisCapKurus=2000;
 export const gapCapKurus=3000;
+// Cumulative ceilings include the current worker reservation. Discovery
+// must leave room for the separate brief and research-plan model calls.
+export const scopedBrandCeilingKurus=1600;
+export const scopedBriefCeilingKurus=2200;
 export const managedDiscoveryCeilingKurus=2500;
 export const managedGeneralSearchCeilingKurus=2050;
 export const managedInventoryCeilingKurus=2675;
@@ -33,8 +37,8 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:11}));
- const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11].includes(policy.version)?policy.version:1;
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:12}));
+ const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11,12].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
  const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
  if(!reportPhases.includes(phase)){

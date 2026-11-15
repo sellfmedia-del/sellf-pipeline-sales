@@ -163,6 +163,66 @@ test('new needs start with Tavily and Gemini and Claude can confirm a metric wit
  assert.equal(coverage.coverage.find(row=>row.id===identified.id).status,'confirmed');
 });
 
+test('an unaffordable grounded brand search leaves the brief and a usable plan funded',async()=>{
+ const saved=new Map(),calls=[];
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:12,withCeiling(limit){
+  return {...this,claudeManager:(stage,input)=>manager(stage,input,limit),searchGemini:async need=>{
+   assert.equal(need.query,'Marque produits et marché');
+   assert.equal(limit,1600);
+   throw new BudgetError('budget_limit','Grounded search reserve does not fit in discovery');
+  },search:async(query,options)=>{
+   assert.equal(limit,1600);
+   assert.equal(query,'Marque produits et marché');
+   assert.equal(options.maxResults,1);
+   calls.push('tavily');
+   return {results:[{url:about,title:'Marque'}]};
+  }};
+ },claudeManager:(stage,input)=>manager(stage,input,3000)};
+ async function manager(stage,input,limit){
+  calls.push(stage);
+  if(stage==='bhs-scoped-brand'){
+   assert.equal(limit,1600);
+   if(!input.priorUnderstanding)return {data:{...identity,pages:[],searches:[{query:'Marque produits et marché',tool:'gemini',limit:1}]}};
+   assert.ok(input.sources.some(s=>s.url===about));
+   return {data:{...identity,pages:[],searches:[]}};
+  }
+  if(stage==='bhs-scoped-brief'){
+   assert.equal(limit,2200);
+   throw new BudgetError('budget_limit','Use the compact brief call');
+  }
+  if(stage==='bhs-scoped-brief-compact'){
+   assert.equal(limit,2200);
+   assert.equal(input.card.goals,brief.goals);
+   return {data:briefUnderstanding};
+  }
+  assert.equal(limit,3000);
+  assert.deepEqual(input.briefUnderstanding,briefUnderstanding);
+  if(stage==='bhs-scoped-plan')return {data:{needs:[]}};
+  assert.equal(stage,'bhs-scoped-plan-compact');
+  return {data:{needs}};
+ }
+ for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_sources')+1)){
+  saved.set(phase,await runSequentialStage({phase,brief,providers,previous:async name=>saved.get(name),
+   collect:async(_brief,_plan,{prioritySources:[url]})=>({...packet,sources:[{...packet.sources[0],url,finalUrl:url}]})}));
+ }
+ assert.deepEqual(calls,['bhs-scoped-brand','tavily','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-brief-compact','bhs-scoped-plan','bhs-scoped-plan-compact']);
+ assert.deepEqual(saved.get('sector_sources').managedPlan.needs,needs);
+});
+
+test('an unavailable brief or twice-empty plan never commits the start of research',async()=>{
+ let calls=0;
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:12,claudeManager:async()=>{
+  calls++;
+  return {data:{needs:[]}};
+ }};
+ for(const understanding of [undefined,briefUnderstanding]){
+  const brand={collectionFirst:true,decision:'accepted',packet,brandUnderstanding:identity,briefUnderstanding:understanding};
+  await assert.rejects(runSequentialStage({phase:'sector_sources',brief,providers,previous:async()=>brand}),{code:'research_start_unavailable',
+   researchPlanIssue:understanding?'research_plan_empty':'brief_understanding_unavailable'});
+ }
+ assert.equal(calls,2);
+});
+
 test('Instagram receives the requested date and sample size',()=>{
  const selected=actorInput({actor:'apify/instagram-scraper',url:instagram,since:'2026-10-16',maxResults:10},
   {brief,packet,searches:[{results:[{url:instagram}]}]});

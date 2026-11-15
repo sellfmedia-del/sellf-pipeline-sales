@@ -52,9 +52,16 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
    const key=hash([tool,query,limit]);
    if(lookedUp.has(key))continue;
    lookedUp.add(key);
-   const search=await attempt(()=>tool==='gemini'
+   let search=await attempt(()=>tool==='gemini'
     ?providers.searchGemini?.({query,quantity:limit,target:brand.name,metric:'Markanın kimliği, ürün grubu ve faaliyet pazarı'},{maxResults:limit})
     :providers.search(query,{depth:'basic',maxResults:limit}));
+   if(providers.managedBudgetVersion>=12&&tool==='gemini'&&!search.value?.results?.length){
+    const fallbackKey=hash(['tavily',query,limit]);
+    if(!lookedUp.has(fallbackKey)){
+     lookedUp.add(fallbackKey);
+     search=await attempt(()=>providers.search(query,{depth:'basic',maxResults:limit}));
+    }
+   }
    for(const row of (search.value?.results||[]).slice(0,limit)){
     const url=researchUrl(row.url);
     if(!url||visited.has(url))continue;
@@ -82,11 +89,12 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
   done:!result.value||!result.value.pages?.length&&!result.value.searches?.length};
 }
 
-export async function understandScopedBrief({brief,identity,providers}){
+export async function understandScopedBrief({brief,identity,providers,compactRetry=false}){
  if(!identity)return {issue:'brand_understanding_unavailable'};
  const {brandName,website,...card}=brief;
- return ask(providers,'bhs-scoped-brief',{identity,card,instruction:
-  'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'},understandingSchema,1500);
+ return ask(providers,compactRetry?'bhs-scoped-brief-compact':'bhs-scoped-brief',{identity,card,instruction:
+  'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'+
+  (compactRetry?' Hedefi ve teklif kapsamını kısa ve eksiksiz bir paragrafta belirt.':'')},understandingSchema,compactRetry?850:1500);
 }
 
 export async function planScopedResearch({brief,identity,briefUnderstanding,asOf,providers}){
@@ -107,11 +115,13 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
   if(!needs.length&&data.needs.length)throw new BudgetError('model_output_invalid','Claude’un araştırma emri doğrulanamadı.');
   return {needs:needs.slice(0,planSchema.properties.needs.maxItems)};
  };
+ const guarded=providers.managedBudgetVersion>=12;
  let result=await ask(providers,'bhs-scoped-plan',request,planSchema,3800,{normalizeData});
- if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue))
-  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},planSchema,3500,{normalizeData,plainJson:true});
+ if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&(!result.value?.needs?.length))
+  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},planSchema,guarded?2400:3500,{normalizeData,plainJson:true});
  const needs=uniqueBy(result.value?.needs||[],n=>n.id);
- return {needs,...(result.issue?{issue:result.issue}:{})};
+ const issue=result.issue||(guarded&&!needs.length?'research_plan_empty':undefined);
+ return {needs,...(issue?{issue}:{})};
 }
 
 function evidenceRows(result,limit,method){

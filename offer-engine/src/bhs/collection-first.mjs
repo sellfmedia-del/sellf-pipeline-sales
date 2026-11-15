@@ -1136,6 +1136,11 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
+  if(providers.managedBudgetVersion>=12&&!planned.needs.length){
+   const error=new BudgetError('research_start_unavailable','BHS araştırma görevleri oluşturulamadı. Mevcut araştırma kayıtları korundu.');
+   error.researchPlanIssue=planned.issue;
+   throw error;
+  }
   return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
