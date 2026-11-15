@@ -260,7 +260,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    const request=async()=>{
     try{
      const timeout=opts.generationTimeoutMs??(anthropicRole?240000:90000);
-     return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},modelHandoff?Math.min(42000,timeout):timeout,opts.signal);
+     const scopedWriter=role==='manager'&&stage==='bhs-scoped-report';
+     return await json(anthropicRole?'https://api.anthropic.com/v1/messages':gbase+':generateContent',body,anthropicRole?anthHeaders:{'x-goog-api-key':geminiKey},modelHandoff&&!scopedWriter?Math.min(42000,timeout):timeout,opts.signal);
     }
     catch(error){
      if(modelHandoff&&canHandOff(error))error.providerOperation='generateContent';
@@ -377,6 +378,8 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
  }
  return {...base,...options,modelHandoff,configured:()=>Boolean(base.configured()&&(modelHandoff?anthropicKey||geminiKey:anthropicKey&&geminiKey)),
   manager:(...args)=>generateWithHandoff('manager',...args),
+  claudeManager:(...args)=>generateRole('manager',...args),
+  geminiWorker:(...args)=>generateRole('worker',...args),
   evidenceReviewer:(...args)=>generateWithHandoff('fallbackWorker',...args),
   readManagerResult:(stage,input,schema,opts)=>generateWithHandoff('manager',stage,input,schema,{...opts,reuseOnly:true}),
   worker:(...args)=>generateWithHandoff('worker',...args)};

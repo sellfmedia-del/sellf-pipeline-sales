@@ -37,7 +37,7 @@ export function renderGroundedReport(report){
    for(const id of section.findingIds){
     const f=byId.get(id);
     rows.push('### '+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,
-     f.impact,'Önerilen aksiyon: '+f.recommendation.action,'Başarı ölçümü: '+f.recommendation.measurement,
+     f.impact,'Önerilen aksiyon: '+f.recommendation.action,...(f.recommendation.measurement?['Başarı ölçümü: '+f.recommendation.measurement]:[]),
      'Kaynaklar: '+f.sourceIds.join(', '));
    }
   }

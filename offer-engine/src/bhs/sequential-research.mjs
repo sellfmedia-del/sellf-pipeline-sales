@@ -1,3 +1,4 @@
+import {understandScopedBrand,understandScopedBrief} from './scoped-research.mjs';
 import {createEvidenceCollector,mergeExtractedEvidence,evidenceHash} from './evidence.mjs';
 import {expertInstruction,projectExpertReport} from './expert-report.mjs';
 import {sourcePlanSchema,parseSourcePlan} from './source-plan.mjs';
@@ -8,7 +9,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {sequentialVersion,sequentialPhases,logicalPhases,sequentialTitles,sequentialContext,stageModelInput,withProofIds,phaseExtractionSchema,extractionSchema,reviewSchema,factReviewSchema,reviewVerdictSchema,normalizeVerdictReview,peerReviewSchema,swotSchema,swotReviewSchema,coverageSchema,targetedCoverageSchema,finalSchema,taskSchema,understandingSchema,finalReviewSchema,applyFinalReview,validateProofRows,selectReviewableFacts,acceptedRows,qualityAcceptance} from './sequential-contracts.mjs';
 import {finalEvidenceSchema,finalEvidenceCandidates,finalEvidenceInput,finalizeEvidenceVerdicts,orderedEvidenceVerdicts,essentialEvidenceCandidates} from './final-evidence-review.mjs';
-import {collectionBrandCeiling,runCollectionFirstStage} from './collection-first.mjs';
+import {collectionBrandCeiling,readResearchPages,runCollectionFirstStage} from './collection-first.mjs';
 import {assertSchema} from './schema.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
@@ -309,6 +310,31 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
  if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});
  if(prior?.collectionFirst&&index>sequentialPhases.indexOf('brand'))return runCollectionFirstStage({phase,brief,providers,previous,collect,finish});
+ if(providers.collectionFirst&&providers.managedBudgetVersion>=8&&index<=sequentialPhases.indexOf('brand')){
+  const scoped=providers.managedBudgetVersion>=9;
+  const adaptive=providers.managedBudgetVersion>=10;
+  if(scoped&&phase===(adaptive?'brand':'brand_draft')){
+   const understanding=await understandScopedBrief({brief,identity:prior.brandUnderstanding,providers});
+   return finish({...prior,briefUnderstanding:understanding.value,
+    ...(understanding.issue?{toolIssues:[...(prior.toolIssues||[]),understanding.issue]}:{})});
+  }
+  if(adaptive&&phase!=='brand_plan'&&prior.brandDiscovery&&!prior.brandDiscovery.done){
+   const discovery=await understandScopedBrand({brief,packet:prior.packet,prior:prior.brandDiscovery,providers,
+    readPages:urls=>readResearchPages(brief,prior.plan,urls,providers,collect,{archive:false})});
+   const {packet,...brandDiscovery}=discovery;
+   return finish({...prior,packet,brandDiscovery,
+    brandUnderstanding:discovery.value?{understanding:discovery.value.understanding}:prior.brandUnderstanding,
+    ...(discovery.issue?{toolIssues:[...(prior.toolIssues||[]),discovery.issue]}:{})});
+  }
+  if(phase!=='brand_plan')return finish({...prior});
+  const plan=brandPlan(brief);
+  const packet=await readResearchPages(brief,plan,[brief.website],providers,collect,{complete:!scoped,archive:!scoped});
+  const understanding=scoped?await understandScopedBrand({brief,packet,providers}):{};
+  const {packet:discoveredPacket,...brandDiscovery}=understanding;
+  return finish({plan,packet,facts:[],collectionFirst:true,peerDiscoveryVersion:'product-v2',
+   ...(adaptive?{packet:discoveredPacket||packet,brandDiscovery}:{}),
+   ...(scoped?{brandUnderstanding:adaptive&&understanding.value?{understanding:understanding.value.understanding}:understanding.value,...(understanding.issue?{toolIssues:[understanding.issue]}:{})}:{})});
+ }
  if(providers.collectionFirst&&!providers.managedAudit&&index<=sequentialPhases.indexOf('brand')){
   const {capKurus}=await providers.costStatus();
   providers=providers.withCeiling(collectionBrandCeiling(capKurus,providers.infrastructureOffsetKurus,providers.now()));
@@ -378,10 +404,10 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   return finish({...prior,workerData:{...worker.data,facts:selected.facts},operatorValidation:{rejectedCandidates:selected.rejected,rejectedOutput:worker.rejectedOperator,independentSourceReviewRequired:!selected.facts.length}});
  }
  if(phase==='brand'||phase==='brand_review'){
-  if(phase==='brand'&&!prior.repairNeeded)return finish({...prior},prior.understandingDecision);
+  if(phase==='brand'&&!prior.repairNeeded)return finish({...prior},providers.managedBudgetVersion>=7?'accepted':prior.understandingDecision);
   const check=await reviewFacts('brand',brief,prior,prior.workerData,providers,{extra:prior.repairNeeded?{repairRound:1}:{}});
   const {workerData,...saved}=prior;
-  return finish({...saved,facts:check.facts,review:check.review,unknowns:workerData.unknowns,declaredGoals:brief.goals,understandingDecision:check.review.decision},phase==='brand_review'?'accepted':check.review.decision);
+  return finish({...saved,facts:check.facts,review:check.review,unknowns:workerData.unknowns,declaredGoals:brief.goals,understandingDecision:check.review.decision},phase==='brand_review'||providers.managedBudgetVersion>=7?'accepted':check.review.decision);
  }
  if(phase==='sector_sources'){
   const queries=prior.review.nextTask.queries.length?prior.review.nextTask.queries:[`${queryBrand(brief)} industry business model customer segments`,`${prior.facts.filter(f=>['products','business_model','market'].includes(f.topic)).map(f=>f.statement).join(' ').slice(0,300)} industry sales channels customer behavior official market report`];

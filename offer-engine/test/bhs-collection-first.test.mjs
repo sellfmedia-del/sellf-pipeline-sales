@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BudgetError,tariff,tariffReadiness} from '../src/budget/ledger.mjs';
-import {comparisonResearch,peerCandidates,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,inventoryStages,planCollectionFunding} from '../src/bhs/collection-first.mjs';
+import {collectPlannedCoverage,collectionMarket,comparisonResearch,peerCandidates,runCollectionFirstStage,collectionBrandCeiling,collectionBudgetKurus,inventoryStages,planCollectionFunding} from '../src/bhs/collection-first.mjs';
 import {createResearchFx,researchTariff} from '../src/bhs/research-tariff.mjs';
 import {sequentialContext,sequentialPhases,stageModelInput} from '../src/bhs/sequential-contracts.mjs';
 import {stageBudgetLedger} from '../src/bhs/sequential-providers.mjs';
@@ -22,6 +22,37 @@ const fixturePacket=()=>{
  return {...data,entities:[...entities,{...peer,id:'alternate-peer',name:'Atelier '+peer.name,website:alternateUrl}],sources:[...sources,alternate]};
 };
 const directPeerReply=request=>({data:{decisions:request.candidates.map(([id,,,proofs])=>({id,verdict:'direct',proof:proofs[0][0],reason:'Aynı ürün ve hedef pazar.'}))}});
+
+test('a plan covers customer channels and rival publishers when Tavily rejects the lookup',async()=>{
+ const complaint='https://www.sikayetvar.com/acme-organic';
+ const product='https://www.trendyol.com/acme-organic/oat-bar-p-12345';
+ const peer='https://www.beta.example/urunler/yulaf-bari';
+ const phases=[];
+ const example={...brief,brandName:'Acme Organic'};
+ const management={market:'Türkiye',peerNames:['Beta'],comparableProduct:'Yulaf barı',tasks:[
+  {id:'t1',section:'perception',tools:['tavily','direct','google-search'],query:'Acme Organic müşteri yorumu'},
+  {id:'t2',section:'competition',tools:['google-search'],query:'Türkiye yulaf barı üreticileri'}
+ ]};
+ const result=await collectPlannedCoverage({brief:example,brand:{plan,packet:packet()},plan:management,market:collectionMarket('Türkiye'),prior:[],
+  pool:{search:async()=>{phases.push('tavily');throw Object.assign(new BudgetError('provider_error','Test quota'),{providerStatus:432});}},
+  reserved:{availableActors:async()=>['apify/google-search-scraper'],enrich:async request=>{
+   phases.push('google');
+   assert.equal(request.url,example.website);
+   assert.ok(request.queries.some(query=>query.includes('Beta')));
+   return {status:'complete',searches:[{source:'apify-google',query:'Türkiye yulaf barı üreticileri',results:[{url:peer,title:'Beta yulaf barı'}]},
+    {source:'apify-google',query:request.queries.find(query=>query.includes('trendyol')),results:[{url:product,title:'Acme Organic ürün yorumları'}]}]};
+  }},
+  collect:async(_brief,_plan,{prioritySources})=>{
+   phases.push('direct');
+   return {unavailable:[],sources:prioritySources.filter(url=>[complaint,product].includes(url)).map(url=>({url,finalUrl:url,title:'Acme Organic',method:'html',
+    excerpts:[{text:url===complaint?'Acme Organic sipariş verdim ancak teslimat gecikti.':'Acme Organic yulaf barını satın aldım ve dokusunu beğendim.'}]}))};
+  }});
+ assert.equal(phases[0],'direct');
+ assert.ok(phases.includes('google')&&phases.includes('tavily'));
+ assert.deepEqual(result.pages.map(page=>page.url),[complaint,product]);
+ assert.equal(result.searches.find(search=>search.results?.some(row=>row.url===peer)).taskId,'t2');
+ assert.ok(result.searches.some(search=>search.providerStatus===432));
+});
 
 test('Claude verifies the planned metrics before writing and only its unresolved metric receives new research',async()=>{
  const data=fixturePacket(),host=new URL(brief.website).host;
@@ -188,6 +219,28 @@ test('target-market discovery keeps a multiword publisher name and a reviewed pr
   return {sources:[],unavailable:[]};
  },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'peynir',peerNames:[]});
  assert.deepEqual(result.peerHints.map(p=>p.name),['White Dairy','Green Farm']);
+});
+
+test('when broad discovery has no publishers, competitor lookup uses a single named Google batch before Tavily',async()=>{
+ const publishers=['Beta','Gamma'];
+ const requests=[];
+ const providers={managedBudgetVersion:6,availableActors:async()=>['themineworks/google-search-scraper'],
+  search:async()=>{throw Object.assign(new BudgetError('provider_error','Test quota'),{providerStatus:433});},
+  enrich:async request=>{
+   requests.push(request);
+   return {status:'complete',searches:request.queries.map((query,index)=>({query,source:'apify-google',results:[{
+    url:'https://'+publishers[index].toLowerCase()+'.example/urunler/peynir',title:publishers[index]+' Peynir',content:'Peynir ürünleri.'
+   }]}))};
+  },evidenceReviewer:async()=>({data:{pages:[]}})
+ };
+ const brand={plan:{...plan,entities:plan.entities.filter(entity=>entity.role==='brand')},packet:packet()};
+ const result=await comparisonResearch(brief,brand,collectionMarket('Türkiye'),providers,providers,async(_brief,_plan,{prioritySources})=>{
+  assert.ok(publishers.every(name=>prioritySources.includes('https://'+name.toLowerCase()+'.example/urunler/peynir')));
+  return {sources:[],unavailable:[]};
+ },null,{market:'Türkiye',coveragePolicy:2,comparableProduct:'peynir',peerNames:publishers});
+ assert.equal(requests.length,1);
+ assert.deepEqual(requests[0].queries,publishers.map(name=>'"'+name+'" peynir resmi ürünler'));
+ assert.deepEqual(result.peerHints.map(peer=>peer.name),publishers);
 });
 
 test('a public retailer catalogue cannot count as a direct product publisher',()=>{
