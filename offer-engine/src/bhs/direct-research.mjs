@@ -174,7 +174,10 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
    const writeScope=providers.modelHandoff?'worker':'generate';
    let generated;try{generated=await providers[writeScope]('scope',{instruction:guide.instructions.join('\n')+'\nAyrıca kısa teklif girişi copy alanını oluştur: headline/accent 70, subtitle 240 karakter. Fiyat veya yeni araştırma üretme. BHS içeriğini yeniden denetleme veya değiştirme.',brief:guide.brief,audit:guide.audit,catalog:guide.catalog},{type:'object',properties:{scope:scopeSchema,copy:copySchema},required:['scope','copy'],additionalProperties:false},providers.modelHandoff?{maxOutputTokens:3072,compactWorker:true,generationTimeoutMs:32000}:{maxOutputTokens:3072,thinkingLevel:'LOW',jsonMode:true});}
    catch(error){if(!['budget_limit','budget_pending','budget_uncertain','provider_unavailable','model_temporarily_unavailable','model_content_invalid'].includes(error.code)&&!recoverableModelFailure(error))throw error;return {scopePlan:fallbackScope(brief),proposalCopy:offerCopy(null,report),costFallback:true};}
-   let scopePlan;try{scopePlan=validateScope(normalizeGeneratedScope(generated.data?.scope,brief,report),brief,report);}catch{scopePlan=fallbackScope(brief);}
+   let scopePlan;try{
+    const scope=normalizeGeneratedScope(generated.data?.scope,brief,report,{omitUnsupported:true});
+    scopePlan=scope?.services?.length?validateScope(scope,brief,report):fallbackScope(brief);
+   }catch{scopePlan=fallbackScope(brief);}
    return {scopePlan,proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(ledger.issues?.size?{toolIssues:[...ledger.issues]}:{}),...(generated.originalText?{originalModelText:generated.originalText}:{})};
   }
   throw new BudgetError('invalid_phase','Araştırma aşaması geçersiz.');

@@ -86,8 +86,17 @@ export function validateScope(value,brief,audit){
 // A model may paraphrase a briefQuote despite the literal-quote instruction.
 // Remove that false attribution when valid BHS references already support it;
 // never fabricate an exact quote or relax the pricing/save boundary validator.
-export function normalizeGeneratedScope(value,brief,audit){
+export function normalizeGeneratedScope(value,brief,audit,{omitUnsupported=false}={}){
  const plan=structuredClone(value),ids=new Set(audit.findings.map(f=>f.id));
+ if(omitUnsupported&&Array.isArray(plan?.services)){
+  plan.services=plan.services.filter(service=>{
+   if(!service||typeof service!=='object')return false;
+   service.findingIds=(Array.isArray(service.findingIds)?service.findingIds:[]).filter(id=>ids.has(id));
+   if(!inBrief(service.briefQuote,brief))service.briefQuote=null;
+   return service.briefQuote!==null||service.findingIds.length>0;
+  });
+  return plan;
+ }
  for(const service of plan?.services||[])if(service.briefQuote!==null&&!inBrief(service.briefQuote,brief)&&service.findingIds?.length&&service.findingIds.every(id=>ids.has(id)))service.briefQuote=null;
  return plan;
 }

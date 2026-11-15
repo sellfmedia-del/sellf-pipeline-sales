@@ -56,6 +56,22 @@ const geminiAnswer=(model,data)=>json({modelVersion:model,usageMetadata:{promptT
  candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}]});
 const spendLimit=()=>new Response(JSON.stringify({error:{type:'invalid_request_error',message:'You have reached your specified API usage limits.'}}),{status:400});
 
+test('a truncated draft retains a complete validated finding without a second paid writer',async()=>{
+ const db=account();
+ const t=transport({onGenerate:async(url,body)=>{
+  assert.match(url,/anthropic/);
+  return json({model:body.model,usage:{input_tokens:100,output_tokens:body.max_tokens},stop_reason:'max_tokens',
+   content:[{type:'text',text:'{"findings":[{"proof":"e1"},{"proof":'}]});
+ }});
+ const outputSchema={type:'object',properties:{findings:{type:'array',items:{type:'object',properties:{proof:{type:'string'}},required:['proof'],additionalProperties:false}}},required:['findings'],additionalProperties:false};
+ const report=await handoffProviders(db,t.fetchImpl).manager('bhs-scoped-report',{instruction:'Cite e1.'},outputSchema,
+  {plainJson:true,compactReview:true,maxOutputTokens:700,minimumOutputTokens:600,acceptPartialData:data=>data.findings.every(f=>f.proof==='e1')});
+ assert.equal(report.partialOutput,true);
+ assert.deepEqual(report.data.findings,[{proof:'e1'}]);
+ assert.equal(t.calls.filter(c=>c.url.endsWith('/messages')).length,1);
+ assert.ok((await db.ledger.status()).chargedKurus>500);
+});
+
 test('Claude spend rejection sends plan and final analysis to Gemini and reuses the selected model on reconnect',async()=>{
  for(const failureAt of ['count','generation']){
   const db=account(),calls=[];

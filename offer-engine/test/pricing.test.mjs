@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pricingEngine} from '../src/engines/pricing-engine.mjs';
 import {catalog,costVersion} from '../src/pricing/catalog.mjs';
-import {scopeEnvelope,parseTarget,validateScope} from '../src/pricing/scope.mjs';
+import {normalizeGeneratedScope,scopeEnvelope,parseTarget,validateScope} from '../src/pricing/scope.mjs';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {createPricingHandler} from '../api/pricing.js';
@@ -17,6 +17,14 @@ function context(extra={}){
  return {brief,audit,scope};
 }
 const run=({brief,audit,scope},options={})=>pricingEngine.run({brief,scope,...options},{audit});
+test('one unsupported model recommendation cannot discard the grounded service scope',()=>{
+ const {brief,audit,scope}=context();
+ Object.assign(scope.services[2],{briefQuote:'Tasarım dosyası başka bir briefte konuşuldu.',findingIds:['unavailable']});
+ assert.throws(()=>validateScope(scope,brief,audit.data),/dayanağı geçersiz/);
+ const resolved=validateScope(normalizeGeneratedScope(scope,brief,audit.data,{omitUnsupported:true}),brief,audit.data);
+ assert.deepEqual(resolved.services.map(s=>s.serviceId),['meta','google_ads']);
+ assert.equal(resolved.fallback,false);
+});
 test('default pricing endpoint reuses signed budgeted scope without any provider call',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{

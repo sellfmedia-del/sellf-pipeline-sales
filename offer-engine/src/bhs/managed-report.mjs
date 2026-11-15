@@ -54,6 +54,9 @@ const scopedReportSchema=obj({...schema.properties,findings:arr(obj({...rowSchem
 const adaptiveReportSchema=obj({...scopedReportSchema.properties,findings:arr(obj({
  ...scopedReportSchema.properties.findings.items.properties,section:field(100),area:str(80),rank:{type:'integer',minimum:1}
 }),50)});
+const linkedReportSchema=obj({...adaptiveReportSchema.properties,findings:arr(obj({
+ ...adaptiveReportSchema.properties.findings.items.properties,needIds:arr(field(20),6)
+}),50)});
 
 export function managedCoverage(report){
  const peers=new Set(report.competitors.map(peer=>peer.id));
@@ -67,13 +70,16 @@ export function managedCoverage(report){
  });
 }
 
-export function scopedCoverage(report,metrics=[]){
- const ids=unique([...report.findings.map(f=>f.bhsSection).filter(Boolean),...metrics.filter(m=>m.status==='open').map(m=>m.section||m.name)]);
+export function scopedCoverage(report,metrics=[],linked=false){
+ const peers=new Set((report.competitors||[]).map(peer=>peer.id));
+ const ids=unique([...report.findings.map(f=>f.bhsSection).filter(Boolean),...metrics.filter(m=>linked||m.status==='open').map(m=>m.section||m.name)]);
  return ids.map(id=>{
   const findings=report.findings.filter(f=>f.bhsSection===id&&f.sourceIds.length)
    .sort((a,b)=>a.bhsRank-b.bhsRank);
-  const open=metrics.some(m=>(m.section||m.name)===id&&m.status==='open');
-  return {id,title:Object.hasOwn(managedSections,id)?managedSections[id]:id,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!open};
+  const relevant=metrics.filter(m=>(m.section||m.name)===id);
+  const open=relevant.some(m=>m.status==='open'||linked&&!findings.some(f=>f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
+  const title=findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id);
+  return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!open};
  });
 }
 
@@ -149,14 +155,21 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
 
 export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason}){
  const adaptive=input.plan.adaptiveResearch===true;
- const outputSchema=adaptive?adaptiveReportSchema:scopedReportSchema;
+ const linked=input.plan.qualityReport===true;
+ const outputSchema=linked?linkedReportSchema:adaptive?adaptiveReportSchema:scopedReportSchema;
  const request={...input,needs,coverage,approved,...(stopReason?{stopReason}:{}),instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
   analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
   (stopReason?' Araştırmayı bu turda yeniden başlatma. Kapanış nedeni bütçeyse, kaynaklı bulgularla kısmi raporu yaz ve araştırılamayan metrikleri açıkça ayır.':'')+
   (adaptive?' Raporda yalnız bu brief için anlamlı başlıklar kullan. Bölüm adını her bulgunun section alanında kendin yaz. İlave başlık veya asgari bulgu kotası yoktur. area alanı teklif aktarımı için isteğe bağlı eşlemedir.':'')+
+  (linked?' Bulgunun karşılık geldiği gerçek ihtiyaç kimliklerini needIds alanına yaz. Araştırma dışı bulgular için boş liste ver. Doğrulanan rakiplerin entities içindeki kimliğini kullan ve kendi sitelerinden okunan kanıtla ilişkilendir. Trafik tahminini tahmin olarak yaz. Toplam ziyaret, oturum ve doğrudan kanal birbirinden farklıdır. Kanıt yalnız toplam ziyaret veriyorsa aksiyonda veya ölçümde o sayıyı oturuma ya da bir kanala bağlama. JSON içinde önce bulguları ver ve her alanı öz tut.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  if(adaptive&&!sections)delete request.sections;
+ if(linked){
+  request.plan={understanding:input.plan.understanding,briefUnderstanding:input.plan.briefUnderstanding};
+  request.needs=needs.map(({id,section,target,market,period})=>({id,section,target,market,period}));
+ }
+ const needsById=new Map(needs.map(need=>[need.id,need]));
  const signal=AbortSignal.timeout(110000);
  const normalizeData=data=>Object.fromEntries(Object.entries(outputSchema.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
@@ -166,6 +179,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
     if((['peerId','question','measurement','limitation'].includes(name)||adaptive&&name==='area')&&v==null)return [name,''];
     if(name==='kind'&&v==null)return [name,'inference'];
     if(name==='quadrant'&&v==null&&(adaptive||row.section!=='swot'))return [name,'none'];
+    if(name==='needIds')return [name,unique(list(v).filter(id=>needsById.has(id))).slice(0,rule.maxItems)];
     if(name==='proof'&&Array.isArray(v))return [name,unique(v.filter(id=>Object.hasOwn(request.sources,id))).slice(0,rule.maxItems)];
     return [name,typeof v==='string'&&rule.maxLength?v.trim().slice(0,rule.maxLength).toWellFormed():v];
    }));
@@ -173,13 +187,16 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   });
   return [key,rows.slice(0,field.maxItems)];
  }));
+ const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
+  usedInput:request,data,managerDirected:true,modelSelectedPeers:true,adaptive,needsById:linked?needsById:undefined});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
-   compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000});
-  const report=projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-   usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true,adaptive});
-  if(adaptive)report.bhsSections=scopedCoverage(report,coverage);
+   compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000,
+   ...(linked?{acceptPartialData:data=>project(data).findings.length>0}:{})});
+  const report=project(completion.data);
+  if(adaptive)report.bhsSections=scopedCoverage(report,coverage,linked);
+  if(completion.partialOutput)return {report,completion,reportIssue:'partial_model_document'};
   return {report,completion,...(!report.findings.length&&Object.keys(input.sources).length?{reportIssue:'no_source_backed_findings',
    reportDiagnostic:{draftFindings:completion.data.findings?.length||0}}:{})};
  }catch(error){
@@ -319,17 +336,56 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
   evidenceCoverage:reviewed.coverage,invalidObservations:reviewed.invalidObservations,reportIssue};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false}){
+function qualifyTraffic(row,cards){
+ const visits=/monthly visits|aylık ziyaret/iu;
+ const session=/\b(?:sessions?|oturum\p{L}*)\b/iu;
+ const direct=/(?:direct|doğrudan)\s+(?:\S+\s+){0,3}(?:sessions?|visits?|traffic|oturum|ziyaret|trafik)/iu;
+ const quantity=/(?<![\p{L}\p{N}])\d/u;
+ const evidence=cards.map(card=>card.quote).join('\n');
+ if(!quantity.test(row.observation)||!/trafik|ziyaret|oturum|traffic|visits|sessions/iu.test(row.observation)||!cards.some(card=>card.method==='search-snippet'&&visits.test(card.quote)))return row;
+ const unsupported=text=>quantity.test(text)&&(direct.test(text)&&!direct.test(evidence)||session.test(text)&&!session.test(evidence));
+ if(unsupported(row.observation))return null;
+ const adjusted={...row,observation:/tahmin|estimated/iu.test(row.observation)?row.observation:'Üçüncü taraf trafik tahminine göre '+row.observation,
+  limitation:'Ziyaret tahmininin dönemi ve kanal kırılımı birinci taraf analitik verileriyle doğrulanmalı.'};
+ if(unsupported(row.analysis))adjusted.analysis='Toplam ziyaret tahmini, kanal bazındaki performansı tek başına açıklamaz.';
+ if(unsupported(row.action))adjusted.action='GA4’te kanal bazında oturum ve dönüşümleri doğrulayıp büyüme önceliklerini bu verilerle belirleyin.';
+ if(unsupported(row.measurement))adjusted.measurement='GA4 kanal bazında oturum ve dönüşümler.';
+ return adjusted;
+}
+
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
+ const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
+ const peerId=value=>{
+  if(!needsById)return value;
+  const exact=rivals.find(e=>e.id===value);
+  if(exact)return exact.id;
+  const name=customerQuoteKey(value||'');
+  const matched=name?rivals.filter(e=>customerQuoteKey(e.name)===name):[];
+  return matched.length===1?matched[0].id:'';
+ };
  const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map(),seenObservations=new Set();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
- for(const row of sorted){
+ for(const proposed of sorted){
+  let row=proposed;
+  if(needsById){
+   const needIds=list(row.needIds).filter(id=>needsById.has(id));
+   const section=needsById.get(needIds[0])?.section||row.section;
+   row={...row,section,sectionTitle:row.section,needIds,peerId:peerId(row.peerId)};
+  }
   const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
   const observationKey=customerQuoteKey(row.observation);
   if((accepted&&!accepted.has(row.section))||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
+  if(needsById){
+   row=qualifyTraffic(row,sourceCards);
+   if(!row)continue;
+   const rival=rivals.find(e=>e.id===row.peerId);
+   if(rival&&!sourceCards.some(card=>researchHost(card.url)===researchHost(rival.website)&&!card.metadataOnly&&
+    !['search-snippet','html-signals'].includes(card.method)))row={...row,peerId:''};
+  }
   if(managerDirected&&sourceCards.length&&sourceCards.every(card=>card.method==='html-signals'||card.method==='html'&&/\{\{|\{%/.test(card.quote))){
    const action=/doğrula|kontrol|test|ölç|incele|verify|check|measure/iu;
    if(!action.test(row.action)||/görünür şekilde|kullanıcılar.{0,70}gör|işlev çalışmıyor|ham kod olarak basıl|visible to users/iu.test(row.observation))continue;
@@ -347,8 +403,8 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   }
   seenFindings.add(key);seenObservations.add(observationKey);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
- const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||'operations',kind:row.kind,
-  ...(row.section==='competition'?{comparisonPeerId:row.peerId}:{}),
+ const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||(needsById&&row.peerId?'competition':'operations'),kind:row.kind,
+  ...(row.section==='competition'||needsById&&row.peerId?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));
  const coverage=Object.fromEntries(methodologyAreas.map(a=>{
@@ -357,7 +413,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
  }));
  const report=projectExpertReport({findings,coverage,overviewIds:findings.slice(0,4).map(f=>f.id),
   dimensions:dimensions.map(d=>({...d,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id)})),
-  peers:(!accepted||accepted.has('competition'))?list(data.peers).map(p=>({...p,sourceIds:decoded(p.sourceIds)})):[],
+  peers:(!accepted||accepted.has('competition')||needsById&&selected.some(row=>row.peerId))?list(data.peers).map(p=>({...p,entityId:peerId(p.entityId),sourceIds:decoded(p.sourceIds)})):[],
   benchmarks:list(data.benchmarks).map(b=>({...b,sourceIds:decoded(b.sourceIds)}))
  },context,{explicitComparisons:true,modelSelectedPeers});
  const rows=new Map(selected.map(row=>[row.id,row]));
@@ -365,7 +421,8 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
  report.findings=report.findings.map(f=>{
   const row=rows.get(f.id);
   return {...f,bhsSection:row.section,bhsRank:row.rank,...(row.quadrant!=='none'?{swotQuadrant:row.quadrant}:{}),
-   ...(row.section==='competition'&&linkedPeers.has(row.peerId)?{peerId:row.peerId}:{}),recommendation:{action:row.action.trim(),measurement:row.measurement.trim()},decisionQuestion:row.question.trim()};
+   ...(needsById?{bhsSectionTitle:row.sectionTitle,researchNeedIds:row.needIds}:{}),
+   ...((row.section==='competition'||needsById)&&linkedPeers.has(row.peerId)?{peerId:row.peerId}:{}),recommendation:{action:row.action.trim(),measurement:row.measurement.trim()},decisionQuestion:row.question.trim()};
  });
  const peersWithFindings=new Set(report.findings.map(f=>f.peerId).filter(Boolean));
  report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);

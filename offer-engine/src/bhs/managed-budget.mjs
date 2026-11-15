@@ -37,14 +37,11 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:12}));
- const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11,12].includes(policy.version)?policy.version:1;
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:13}));
+ const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11,12,13].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
  const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
- if(!reportPhases.includes(phase)){
-  const phaseCeiling=managedReviewPhases.includes(phase)?reviewCap:researchCapKurus;
-  return {ledger:capBhsLedger(ledger,phaseCeiling),managedAudit:true,managedBudgetVersion,phaseCeiling};
- }
+ if(!reportPhases.includes(phase))return {ledger:capBhsLedger(ledger,managedReviewPhases.includes(phase)?reviewCap:researchCapKurus),managedAudit:true,managedBudgetVersion,phaseCeiling:managedReviewPhases.includes(phase)?reviewCap:researchCapKurus};
  const boundaryKey='audit:managed-synthesis-baseline:'+hash;
  const baseline=await ledger.once(boundaryKey,{hash},0,async()=>({chargedKurus:(await ledger.status()).chargedKurus}));
  if(!Number.isSafeInteger(baseline.chargedKurus)||baseline.chargedKurus>reviewCap)
