@@ -22,18 +22,21 @@ const instagram='https://www.instagram.com/marque/';
 const post='https://www.instagram.com/p/known/';
 const quote='Marque runs a direct wholesale catalogue for supermarket customers in France.';
 const postQuote='PublishedAt 2026-11-10 likesCount 84 commentsCount 6.';
+const about='https://marque.fr/our-story';
 const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peers:[],...overrides});
 
 test('Claude plans scoped research after brand and brief, then writes and transfers a partial report with the saved evidence',async()=>{
  const saved=new Map(),calls=[];
  let reviewCount=0;
- const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:9,
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:10,
   claudeManager:async(stage,input)=>{
    calls.push(stage);
    if(stage==='bhs-scoped-brand'){
     assert.equal(input.card,undefined);
     assert.equal(input.brief,undefined);
-    return {data:identity};
+    if(!input.priorUnderstanding)return {data:{...identity,pages:[about],searches:[]}};
+    assert.ok(input.sources.some(s=>s.url===about));
+    return {data:{...identity,pages:[],searches:[]}};
    }
    if(stage==='bhs-scoped-brief'){
     assert.deepEqual(input.identity,identity);
@@ -49,17 +52,18 @@ test('Claude plans scoped research after brand and brief, then writes and transf
     reviewCount++;
     const decisions=[{id:'t0',proofs:input.findings.filter(f=>f.needId==='t0'&&!f.preliminary).map(f=>f.id)}];
     return {data:draft({
-     decisions,commands:reviewCount===1?[{id:'t1',tool:'apify/instagram-scraper',url:instagram,query:'',mode:'posts',limit:10}]:[]
+     decisions,commands:reviewCount<=2?[{id:'t1',tool:'apify/instagram-scraper',url:instagram,query:'',mode:'posts',limit:10}]:[]
     })};
    }
    if(stage==='bhs-scoped-clearance')return {data:draft({})};
    assert.equal(stage,'bhs-scoped-report');
+   assert.equal(input.sections,undefined);
    assert.equal(input.approved,false);
    assert.ok(input.coverage.every(m=>m.status==='open'));
    assert.ok(Object.values(input.sources).some(row=>row[0]===post));
    assert.ok(Object.values(input.sources).some(row=>row[0]==='https://publisher.fr/extra'));
    const proof=Object.entries(input.sources).find(([,row])=>row[0]==='https://publisher.fr/wholesale')[0];
-   return {model:'claude-sonnet-5-5',data:{findings:[{section:'readiness',area:'operations_1',rank:1,quadrant:'none',peerId:'',
+   return {model:'claude-sonnet-5-5',data:{findings:[{section:'Dağıtım hazırlığı',area:'',rank:1,quadrant:'none',peerId:'',
     observation:'Marque Fransa’daki süpermarketler için toptan satış kataloğu sunuyor.',proof:[proof],kind:'observation',
     analysis:'Katalog, distribütör görüşmelerinde ürün uygunluğunu değerlendirmek için başlangıç sağlar.',
     action:'Katalogdan Fransız süpermarketlerle ürün örtüşmesini kontrol et.',measurement:'Dağıtıcıların kategori listesinde eşleşen ürünleri kaydet.',
@@ -78,8 +82,13 @@ test('Claude plans scoped research after brand and brief, then writes and transf
   },
   searchGemini:async(need)=>{
    calls.push('gemini-search');
-   assert.equal(need.query,needs[0].query);
    assert.equal(need.quantity,10);
+   if(need.id==='t1'){
+    assert.equal(need.since,'2026-10-16');
+    assert.equal(need.query,needs[1].query);
+    return {results:[]};
+   }
+   assert.equal(need.query,needs[0].query);
    return {results:[{url:'https://publisher.fr/wholesale',title:'Wholesale',content:quote},
     {url:'https://publisher.fr/extra',title:'Extra',content:'Marque maintains a separate case packing catalogue for regional wholesale.'}]};
   },
@@ -103,12 +112,15 @@ test('Claude plans scoped research after brand and brief, then writes and transf
   saved.set(phase,await runSequentialStage({phase,brief,providers,previous:async name=>saved.get(name),
    collect:async(_brief,_plan,options)=>{
     assert.equal(options.archivePages,undefined);
-    return options.prioritySources[0]===brief.website?packet:{...packet,sources:[]};
+    const [url]=options.prioritySources;
+    if(url===brief.website)return {...packet,sources:[{...packet.sources[0],technicalSignals:{navigation:[{url:about,label:'Our story'}]}}]};
+    return {...packet,sources:url===about?[{...packet.sources[0],url,finalUrl:url}]:[]};
    }}));
  }
- assert.deepEqual(calls.slice(0,3),['bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-plan']);
+ assert.deepEqual(calls.slice(0,4),['bhs-scoped-brand','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-plan']);
  assert.ok(calls.indexOf('tavily')<calls.indexOf('gemini'));
  assert.equal(calls.filter(c=>c==='scraper').length,1);
+ assert.equal(calls.filter(c=>c==='gemini-search').length,2);
  assert.ok(calls.indexOf('gemini')<calls.indexOf('scraper'));
  const synthesis=saved.get('synthesis');
  assert.equal(calls.at(-1),'bhs-scoped-report');
@@ -117,12 +129,13 @@ test('Claude plans scoped research after brand and brief, then writes and transf
  assert.equal(synthesis.model,'claude-sonnet-5-5');
  const result=directAuditResult(brief,synthesis);
  assert.equal(result.status,'review');
- assert.equal(result.data.report.bhsSections.find(s=>s.id==='readiness').count,1);
+ assert.equal(result.data.report.bhsSections.find(s=>s.id==='Dağıtım hazırlığı').count,1);
+ assert.equal(result.data.report.bhsSections.find(s=>s.id==='Dağıtım hazırlığı').complete,true);
  assert.match(result.data.report.findings[0].recommendation.action,/Katalogdan/);
  assert.equal(result.data.report.meetingQuestions[0].question,'Katalogla hangi Fransız zincirlerine ulaşıldı?');
 });
 
-test('new needs start with Tavily and Gemini and Claude can confirm only the required number of distinct source-backed items',async()=>{
+test('new needs start with Tavily and Gemini and Claude can confirm a metric with one adequate source',async()=>{
  const identified={...needs[0],quantity:2};
  const newNeed={...needs[1],id:'new1',first:'both'};
  const plan={needs:[identified,...needs.slice(1)]};
@@ -131,7 +144,7 @@ test('new needs start with Tavily and Gemini and Claude can confirm only the req
  }]}));
  const calls=[];
  const providers={
-  claudeManager:async()=>({data:draft({approve:true,newNeeds:[newNeed],decisions:original.map(r=>({id:r.id,proofs:[r.facts[0].id,r.facts[0].id]})),
+  claudeManager:async()=>({data:draft({approve:true,newNeeds:[newNeed],decisions:original.map(r=>({id:r.id,sufficient:true,proofs:[r.facts[0].id]})),
    commands:[{id:'new1',tool:'apify/instagram-scraper',query:'',url:instagram,mode:'posts',limit:3}]})}),
   availableActors:async()=>['apify/instagram-scraper'],
   enrich:async()=>assert.fail('scraper cannot run before a new need has used its defaults'),
@@ -144,7 +157,7 @@ test('new needs start with Tavily and Gemini and Claude can confirm only the req
  assert.equal(round.newNeeds[0].id,'new1');
  const coverage=scopedEvidence({packet},plan,[{receipts:original},round]);
  assert.equal(coverage.approved,false);
- assert.equal(coverage.coverage.find(row=>row.id===identified.id).status,'open');
+ assert.equal(coverage.coverage.find(row=>row.id===identified.id).status,'confirmed');
 });
 
 test('Instagram receives the requested date and sample size',()=>{
@@ -152,6 +165,8 @@ test('Instagram receives the requested date and sample size',()=>{
   {brief,packet,searches:[{results:[{url:instagram}]}]});
  assert.equal(selected.input.onlyPostsNewerThan,'2026-10-16');
  assert.equal(selected.input.resultsLimit,10);
+ assert.throws(()=>actorInput({actor:'apify/instagram-scraper',url:instagram,since:'2026-10-16',maxResults:15,exactScope:true},
+  {brief,packet,searches:[{results:[{url:instagram}]}]}),{code:'actor_scope_unsupported'});
 });
 
 test('an explicit gap run reuses completed research and dispatches only a new task in the requested section',async()=>{

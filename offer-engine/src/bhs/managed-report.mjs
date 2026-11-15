@@ -51,6 +51,9 @@ const schema=obj({
  questions:arr(field(220),12),invalidObservations:arr(field(16),120)
 });
 const scopedReportSchema=obj({...schema.properties,findings:arr(obj({...rowSchema.properties,measurement:str(180),limitation:str(180)}),50)});
+const adaptiveReportSchema=obj({...scopedReportSchema.properties,findings:arr(obj({
+ ...scopedReportSchema.properties.findings.items.properties,section:field(100),area:str(80),rank:{type:'integer',minimum:1}
+}),50)});
 
 export function managedCoverage(report){
  const peers=new Set(report.competitors.map(peer=>peer.id));
@@ -61,6 +64,16 @@ export function managedCoverage(report){
   const missingQuadrants=id==='swot'?quadrants.filter(q=>!selected.some(f=>f.swotQuadrant===q)):[];
   const count=supported.length;
   return {id,title:managedSections[id],findingIds:supported.map(f=>f.id),count,missingQuadrants,complete:count>=2&&!missingQuadrants.length};
+ });
+}
+
+export function scopedCoverage(report,metrics=[]){
+ const ids=unique([...report.findings.map(f=>f.bhsSection).filter(Boolean),...metrics.filter(m=>m.status==='open').map(m=>m.section||m.name)]);
+ return ids.map(id=>{
+  const findings=report.findings.filter(f=>f.bhsSection===id&&f.sourceIds.length)
+   .sort((a,b)=>a.bhsRank-b.bhsRank);
+  const open=metrics.some(m=>(m.section||m.name)===id&&m.status==='open');
+  return {id,title:Object.hasOwn(managedSections,id)?managedSections[id]:id,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!open};
  });
 }
 
@@ -129,25 +142,29 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  }
  const input={instruction:reportInstruction+(existing.length?' Yalnız belirtilen eksik bölümleri tamamla. Önceki bulguları tekrar üretme, değiştirme veya yeniden denetleme.':''),
   brief,approvedBrandFacts:brand.facts.map(({topic,statement})=>[topic,statement]),plan,
-  sections:sections.map(id=>[id,managedSections[id]]),areas:methodologyAreas.map(a=>[a.key,a.topic]),...(evidenceByQuestion?{evidenceByQuestion}:{}),
+  sections:sections.map(id=>[id,Object.hasOwn(managedSections,id)?managedSections[id]:id]),areas:methodologyAreas.map(a=>[a.key,a.topic]),...(evidenceByQuestion?{evidenceByQuestion}:{}),
   existing,entities,observations:observed,sources,...(brandProofs.length?{brandProofs}:{}),...(metrics?{metrics}:{})};
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections=sectionKeys}){
+export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections}){
+ const adaptive=input.plan.adaptiveResearch===true;
+ const outputSchema=adaptive?adaptiveReportSchema:scopedReportSchema;
  const request={...input,needs,coverage,approved,instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
   analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
+  (adaptive?' Raporda yalnız bu brief için anlamlı başlıklar kullan. Bölüm adını her bulgunun section alanında kendin yaz. İlave başlık veya asgari bulgu kotası yoktur. area alanı teklif aktarımı için isteğe bağlı eşlemedir.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+ if(adaptive&&!sections)delete request.sections;
  const signal=AbortSignal.timeout(110000);
- const normalizeData=data=>Object.fromEntries(Object.entries(scopedReportSchema.properties).map(([key,field])=>{
+ const normalizeData=data=>Object.fromEntries(Object.entries(outputSchema.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
    let value=row;
    if(key==='findings'&&row&&typeof row==='object')value=Object.fromEntries(Object.entries(field.items.properties).map(([name,rule])=>{
     const v=row[name];
-    if(['peerId','question','measurement','limitation'].includes(name)&&v==null)return [name,''];
+    if((['peerId','question','measurement','limitation'].includes(name)||adaptive&&name==='area')&&v==null)return [name,''];
     if(name==='kind'&&v==null)return [name,'inference'];
-    if(name==='quadrant'&&v==null&&row.section!=='swot')return [name,'none'];
+    if(name==='quadrant'&&v==null&&(adaptive||row.section!=='swot'))return [name,'none'];
     if(name==='proof'&&Array.isArray(v))return [name,unique(v.filter(id=>Object.hasOwn(request.sources,id))).slice(0,rule.maxItems)];
     return [name,typeof v==='string'&&rule.maxLength?v.trim().slice(0,rule.maxLength).toWellFormed():v];
    }));
@@ -157,9 +174,11 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  }));
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
-  const completion=await manager('bhs-scoped-report',request,scopedReportSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
+  const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
    compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000});
-  const report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true});
+  const report=projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
+   usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true,adaptive});
+  if(adaptive)report.bhsSections=scopedCoverage(report,coverage);
   return {report,completion,...(!report.findings.length&&Object.keys(input.sources).length?{reportIssue:'no_source_backed_findings',
    reportDiagnostic:{draftFindings:completion.data.findings?.length||0}}:{})};
  }catch(error){
@@ -299,15 +318,15 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
   evidenceCoverage:reviewed.coverage,invalidObservations:reviewed.invalidObservations,reportIssue};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false}){
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map(),seenObservations=new Set();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
  for(const row of sorted){
   const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
   const observationKey=customerQuoteKey(row.observation);
-  if(!accepted.has(row.section)||!areas.has(row.area)||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key)
-    ||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10)continue;
+  if((accepted&&!accepted.has(row.section))||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
+  if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
   if(managerDirected&&sourceCards.length&&sourceCards.every(card=>card.method==='html-signals'||card.method==='html'&&/\{\{|\{%/.test(card.quote))){
@@ -327,7 +346,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   }
   seenFindings.add(key);seenObservations.add(observationKey);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
- const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area).dimension,kind:row.kind,
+ const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||'operations',kind:row.kind,
   ...(row.section==='competition'?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));
@@ -337,7 +356,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
  }));
  const report=projectExpertReport({findings,coverage,overviewIds:findings.slice(0,4).map(f=>f.id),
   dimensions:dimensions.map(d=>({...d,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id)})),
-  peers:accepted.has('competition')?list(data.peers).map(p=>({...p,sourceIds:decoded(p.sourceIds)})):[],
+  peers:(!accepted||accepted.has('competition'))?list(data.peers).map(p=>({...p,sourceIds:decoded(p.sourceIds)})):[],
   benchmarks:list(data.benchmarks).map(b=>({...b,sourceIds:decoded(b.sourceIds)}))
  },context,{explicitComparisons:true,modelSelectedPeers});
  const rows=new Map(selected.map(row=>[row.id,row]));
@@ -351,7 +370,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
  report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);
  report.meetingQuestions=unique([...report.findings.map(f=>f.decisionQuestion).filter(Boolean),...list(data.questions)]).map(question=>({dimension:'operations',question,findingIds:report.findings.filter(f=>f.decisionQuestion===question).map(f=>f.id)}));
  if(modelSelectedPeers)report.directedResearch=true;
- report.bhsSections=managedCoverage(report);
+ report.bhsSections=adaptive?scopedCoverage(report):managedCoverage(report);
  return report;
 }
 

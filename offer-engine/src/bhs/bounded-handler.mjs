@@ -5,7 +5,7 @@ import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,hash as ledgerHash,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
 import {createRuntimeProviders as createBoundedProviders} from '../budget/providers.mjs';
-import {phases,stageKey} from './direct-research.mjs';
+import {phases,scopedResearchProgress,stageKey} from './direct-research.mjs';
 import {auditEngine} from '../engines/audit-engine.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {temporaryDnsError} from '../network-dns.mjs';
@@ -160,7 +160,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
-   const previous=async name=>rows[pendingPhases.indexOf(name)]?.value;
+   const previous=async name=>name==='scoped-tail'?(await scopedResearchProgress(ledger,checkpointHash)).rounds:rows[pendingPhases.indexOf(name)]?.value;
    const finishGaps=async(synthesis,audit)=>{
     const canComplete=['complete','paused','cancelled'].includes(backgroundJob?.state)&&synthesis?.supervision?.reviewMode==='managed-audit'
      &&(backgroundJob.state==='complete'||synthesis.supervision.researchPlan)&&(productionOffers()||getGapLedger);
@@ -187,7 +187,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     const policy=await ledger.get('audit:managed-policy:'+hash);
     const managed=policy?.state==='complete';
     let usable=synthesis?.state==='complete'?synthesis.value:undefined;
-    if(!usable&&phase==='synthesis'&&managed&&policy.value?.version>=2){
+    if(!usable&&['report_draft','synthesis'].includes(phase)&&managed&&policy.value?.version>=2){
      try{
       usable=await recoverManagedSectionSynthesis(brief,previous,{managedBudgetVersion:policy.value.version,readCheckpoint:async(name,input)=>{
         const step=await ledger.get('audit:v8:checkpoint:'+name+':'+ledgerHash(input));
@@ -206,6 +206,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      return await finish(continuationAudit(brief,{synthesis:updated,reason}),gapCompletion);
     }
     return await finish(await restoreContinuation(brief,partial,ledger,now()),gapCompletion);
+   }
+   if(!backgroundJob&&rows[pendingPhases.indexOf('report_draft')]?.value?.scopedTail&&rows[pendingPhases.indexOf('synthesis')]?.state!=='complete'){
+    let progress=await scopedResearchProgress(ledger,checkpointHash);
+    phase='report_draft';
+    if(progress.step?.state==='reserved'&&!abandonedStage(progress.step,now()))
+     return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+    if(!progress.done){
+     if(action!=='advance')return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+     const budget=await managedPhaseBudget({ledger,brief,phase});
+     const providers=getProviders({ledger:budget.ledger,researchVersion,phase,managedAudit:budget.managedAudit,managedBudgetVersion:budget.managedBudgetVersion,phaseLimitKurus:budget.phaseCeiling});
+     await runStage({phase,brief,checkpointHash,ledger:budget.ledger,providers,researchVersion,researchModel:job.researchModel,scopedRoundIndex:progress.index});
+     progress=await scopedResearchProgress(ledger,checkpointHash);
+     return res.status(202).json({phase:progress.done?'synthesis':phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
+    }
    }
    const stoppedIndex=rows.findIndex(step=>step?.state!=='complete');
    if(['start','status'].includes(action)&&stoppedIndex>=0&&canContinue(rows[stoppedIndex],now())){

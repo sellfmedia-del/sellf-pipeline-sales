@@ -1133,14 +1133,20 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
-  return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true}});
+  return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
+ const adaptive=plan.adaptiveResearch===true;
+ if(adaptive&&phase==='report_draft'){
+  const rounds=await savedScopedRounds(previous);
+  return save({scopedTail:plan.needs.length>0&&!rounds.some(round=>round.approved||round.closed)});
+ }
  if(phase==='coverage_plan'||(!scopedRounds.includes(phase)&&phase!=='synthesis'))return save({});
  const index=scopedRounds.indexOf(phase),rounds=(await Promise.all(scopedRounds.slice(0,index<0?undefined:index).map(previous))).filter(r=>r?.scopedRound);
- if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,rounds,providers}));
+ if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,
+  rounds:adaptive?[...rounds,...(await previous('scoped-tail')||[])]:rounds,providers}));
  if(rounds.some(r=>r.approved||r.closed)||!plan.needs.length)return save({});
- const last=index===scopedRounds.length-1;
+ const last=!adaptive&&index===scopedRounds.length-1;
  const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
  const waiting=plan.needs.filter(need=>!attempted.has(need.id));
  if(waiting.length&&index===0){
@@ -1152,12 +1158,27 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  return save({...round,scopedRound:true});
 }
 
+async function savedScopedRounds(previous){
+ return (await Promise.all(scopedRounds.map(previous))).filter(round=>round?.scopedRound);
+}
+
+export async function continueScopedCollection({brief,providers,previous,collect}){
+ const [brand,stage,marker,rounds,tail]=await Promise.all([
+  previous('brand'),previous('sector_sources'),previous('report_draft'),savedScopedRounds(previous),previous('scoped-tail')
+ ]);
+ if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
+ const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+ return reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+  plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
+}
+
 export async function recoverManagedSectionSynthesis(brief,previous,providers){
  const plan=(await previous('sector_sources'))?.managedPlan;
  if(!plan)return undefined;
  if(plan.scopedResearch){
   const brand=await previous('brand');
   const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase).catch(e=>{if(e.code!=='stage_pending')throw e;})))).filter(r=>r?.scopedRound);
+  if(plan.adaptiveResearch)rounds.push(...(await previous('scoped-tail')||[]));
   return {...await writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite:false}),methodologyVersion:sequentialVersion};
  }
  const result=await managedSynthesis(brief,plan,previous,providers,{sectional:true,savedSectionsOnly:true});

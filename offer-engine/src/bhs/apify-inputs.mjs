@@ -18,6 +18,13 @@ export const actorIds=Object.freeze({
  'fatihtahta/trendyol-scraper':'AoPP8ru9uKws5t80G','junglee/free-amazon-product-scraper':'XVDTQc4a7MDTqSTMJ','damilo/google-shopping-apify':'F1ITW3XNjGuy7ZzcM'
 });
 export const searchActors=['themineworks/google-search-scraper','apify/google-search-scraper','desearch/web-search'];
+const scrollingActors=['apify/instagram-scraper','harvestapi/linkedin-post-search','clockworks/tiktok-scraper'];
+const actorsByMode={
+ posts:scrollingActors,engagement:scrollingActors,
+ profile:['apify/instagram-profile-scraper','harvestapi/linkedin-company-search'],
+ reviews:['apify/instagram-comment-scraper','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper',
+  'compass/google-maps-reviews-scraper','compass/crawler-google-places','harvestapi/linkedin-post-search','fatihtahta/trendyol-scraper']
+};
 export function observedActorTargets(context){
  const urls=new Set([researchUrl(context.brief.website)]),official=new Set(urls);
  for(const source of context.packet.sources||[]){
@@ -32,12 +39,24 @@ export function observedActorTargets(context){
 }
 export function actorInput(request,context,known=observedActorTargets(context)){
  const {actor}=request,url=researchUrl(request.url);
- const limit=maximum=>request.maxResults===undefined?maximum:Math.max(1,Math.min(maximum,request.maxResults));
+ const unsupported=()=>{throw new BudgetError('actor_scope_unsupported','Aktör istenen dönem veya kayıt sayısını desteklemiyor.');};
+ const limit=maximum=>{
+  if(request.exactScope&&request.maxResults>maximum)return unsupported();
+  return request.maxResults===undefined?maximum:Math.max(1,Math.min(maximum,request.maxResults));
+ };
  if(!actorIds[actor]||!url||!known.urls.has(url))throw new BudgetError('actor_source_unverified','Aktör için gözlemlenmiş kaynak URLsi gerekli.');
  const u=new URL(url),host=researchHost(url),parts=u.pathname.split('/').filter(Boolean);
  const locale=()=>{const g=context.geo;if(!g||request.countryCode!==g.countryCode||request.language!==g.language||!['TR','GB','US','DE','FR','IT','ES','NL'].includes(g.countryCode))throw new BudgetError('actor_locale_unverified','Aktör için doğrulanmış hedef ülke ve dil gerekli.');return g;};
  const bad=()=>{throw new BudgetError('actor_source_unverified','Aktör hedefi bu kaynağa uygun değil.');};
  if(request.maxResults!==undefined&&(!Number.isInteger(request.maxResults)||request.maxResults<1))return bad();
+ if(request.exactScope){
+  if(request.mode&&request.mode!=='default'&&!actorsByMode[request.mode]?.includes(actor))return unsupported();
+  if(request.period&&!request.since)return unsupported();
+  if(request.since&&(actor!=='apify/instagram-scraper'||!/^\d{4}-\d{2}-\d{2}$/.test(request.since)||!Number.isFinite(Date.parse(request.since))))return unsupported();
+  if(['apify/rag-web-browser','apify/instagram-profile-scraper','harvestapi/linkedin-company-search','junglee/free-amazon-product-scraper'].includes(actor)&&request.maxResults!==1)return unsupported();
+  if(actor==='apify/google-search-scraper'&&request.maxResults!==10)return unsupported();
+  if(actor==='compass/crawler-google-places'&&request.mode!=='reviews'&&request.maxResults!==1)return unsupported();
+ }
  if(actor==='apify/rag-web-browser'){
   if(isIP(host.replace(/^\[|\]$/g,''))||!/[.](?:[a-z]{2,}|xn--[a-z0-9-]+)$/i.test(host)||/\.(?:local|internal|test|invalid|localhost)$/i.test(host))return bad();
   return {input:{query:url,maxResults:1,outputFormats:['markdown'],scrapingTool:'browser-playwright',requestTimeoutSecs:22,maxRequestRetries:0,dynamicContentWaitSecs:4,desiredConcurrency:1},maxItems:1,url};

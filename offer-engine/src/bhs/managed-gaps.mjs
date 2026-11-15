@@ -12,6 +12,7 @@ import {researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
 
 const receiptKey='audit:managed-gap-result';
+const sectionTitle=id=>Object.hasOwn(managedSections,id)?managedSections[id]:id;
 
 const indexSchema=obj({observations:arr(obj({area:str(80),text:str(350),sourceIds:arr(str(80))})),organizations:arr(obj({name:str(120),sourceId:str(80)}))});
 const unique=values=>[...new Set(values)];
@@ -32,7 +33,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  const independent=synthesis.supervision.researchPlan?.directedResearch===true;
  const remaining=independent?gapCapKurus:Math.max(0,Math.min(gapCapKurus,tariff.capKurus-base.chargedKurus));
  if(!authorization){
-  if(action!=='complete_gaps')return sections.length&&remaining?{available:true,sections:sections.map(id=>managedSections[id]),capKurus:remaining}:null;
+  if(action!=='complete_gaps')return sections.length&&remaining?{available:true,sections:sections.map(sectionTitle),capKurus:remaining}:null;
   if(!sections.length||!remaining)return null;
   await baseLedger.once(markerKey,{runId,sections},0,async()=>({runId,sections,sharedBudget:!independent,directedResearch:independent,baseline:base.chargedKurus,allowance:remaining}));
  }
@@ -40,7 +41,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
  if(authorized.directedResearch){
   // Only an explicit action can open the independent 30 TL account.
-  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return {available:true,sections:authorized.sections.map(id=>managedSections[id]),capKurus:gapCapKurus};
+  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return {available:true,sections:authorized.sections.map(sectionTitle),capKurus:gapCapKurus};
   const ledger=await getGapLedger(runId);
   if(action==='complete_gaps'){
    await ledger.begin();
@@ -96,12 +97,13 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
- if(version===9){
+ if(version>=9){
   const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
+  if(priorPlan.adaptiveResearch)rounds.push(...(await previous('scoped-tail')||[]));
   const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
   for(let i=0;i<3;i++){
    const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,

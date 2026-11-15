@@ -2,7 +2,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {backgroundBhsEnabled,createBhsJobStore} from './job-store.mjs';
 import {createSequentialProviders} from './sequential-providers.mjs';
 import {runClaimedBhsStage} from './background-runner.mjs';
-import {runBoundedStage} from './direct-research.mjs';
+import {runBoundedStage,stageKey} from './direct-research.mjs';
 import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
@@ -40,10 +40,18 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    for(const phase of scopedRounds)freePhases.delete(phase);
    for(const phase of managedReviewPhases)freePhases.add(phase);
   }
+  if(options.scopedRoundIndex!==undefined)freePhases.delete(job.phase);
+  const phaseIndex=sequentialPhases.indexOf(job.phase);
+  const adaptiveBrand=options.providers.managedBudgetVersion>=10&&phaseIndex>0&&phaseIndex<=sequentialPhases.indexOf('brand');
+  if(adaptiveBrand){
+   const prior=(await options.ledger.get(stageKey(options.brief,sequentialPhases[phaseIndex-1],options.researchVersion,options.checkpointHash)))?.value;
+   if(job.phase==='brand'?prior?.brandUnderstanding:prior?.brandDiscovery&&!prior.brandDiscovery.done)freePhases.delete(job.phase);
+   else return runStage(options);
+  }
   if(freePhases.has(job.phase))return runStage(options);
   const cost=await options.ledger.status();
   if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus&&
-   sequentialPhases.indexOf(job.phase)>sequentialPhases.indexOf('brand')){
+   (adaptiveBrand||phaseIndex>sequentialPhases.indexOf('brand'))){
    const noProvider=async()=>{throw new BudgetError('budget_limit','BHS araştırma bütçesi doldu.');};
    const disabled={...options.providers,manager:noProvider,claudeManager:noProvider,evidenceReviewer:noProvider,worker:noProvider,geminiWorker:noProvider,
     search:noProvider,searchGemini:noProvider,enrich:noProvider,availableActors:async()=>[],withCeiling:()=>disabled};
@@ -94,7 +102,8 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   }
  }
  if(options.phaseCeiling&&job.phase==='coverage_plan')return runStage(options);
- return meter({job,ledger:options.ledger,run:()=>runStage(options)});
+ return meter({job:options.scopedRoundIndex===undefined?job:{...job,scopedRoundIndex:options.scopedRoundIndex},
+  ledger:options.ledger,run:()=>runStage(options)});
 }
 
 export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>process.env.BHS_WORKER_SECRET,getQueue=()=>createBhsJobStore(),getProviders=createSequentialProviders,run=runClaimedBhsStage,readiness=()=>createSupervisedReadiness({env:{...process.env,VERCEL_ENV:'preview'}}),logger=console}={}){

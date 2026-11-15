@@ -10,7 +10,7 @@ import {methodologyAreas,methodologyAreasSchema} from './methodology-areas.mjs';
 import {groundOfferReport} from './source-gate.mjs';
 import {isExpertMethodology} from './expert-report.mjs';
 import {sequentialVersion,qualityAcceptance} from './sequential-contracts.mjs';
-import {managedCoverage} from './managed-report.mjs';
+import {managedCoverage,scopedCoverage} from './managed-report.mjs';
 
 export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
@@ -51,7 +51,8 @@ export function directAuditResult(brief,synthesis){
  const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const managed=synthesis.supervision?.reviewMode==='managed-audit';
- if(managed)report.bhsSections=managedCoverage(report);
+ const adaptive=managed&&synthesis.supervision?.researchPlan?.adaptiveResearch===true;
+ if(managed)report.bhsSections=adaptive?scopedCoverage(report,synthesis.supervision.metricCoverage):managedCoverage(report);
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
  const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];

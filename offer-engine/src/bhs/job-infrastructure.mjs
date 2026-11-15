@@ -8,7 +8,7 @@ export async function meteredBhsStage({job,ledger,run,region=process.env.VERCEL_
  const recovery=['shared-budget-v1','shared-budget-v2'].includes(job.budgetRecoveryVersion)&&job.budgetRecoveryPhase===job.phase;
  // An explicitly authorized recovery keeps the old unmeasured commitment.
  // The new attempt has its own once-only receipt in the SAME capped account.
- const key='infra:v8:'+job.phase+':'+job.briefHash+(recovery?':'+job.budgetRecoveryVersion:'');
+ const key='infra:v8:'+job.phase+':'+job.briefHash+(job.scopedRoundIndex===undefined?'':':'+job.scopedRoundIndex)+(recovery?':'+job.budgetRecoveryVersion:'');
  let failure;
  const result=await ledger.once(key,{jobId:job.id,phase:job.phase,region},workerInfraReservationKurus,async()=>{
   const started=clock(),usage=cpu();

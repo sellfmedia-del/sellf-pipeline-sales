@@ -24,6 +24,25 @@ test('expired lease, changed brief and abandoned phase cannot restart paid work'
  await assert.rejects(runClaimedBhsStage({...common,job:{...job,briefHash:'f'.repeat(64)}}),e=>e.code==='changed_brief');
  await assert.rejects(runClaimedBhsStage(common),e=>e.code==='stage_abandoned');assert.equal(calls,0);
 });
+test('a committed research phase requeues while Claude has work and advances once the saved round closes',async()=>{
+ const current={...job,researchVersion:'v8',phase:'report_draft'};
+ const marker=stageKey(brief,current.phase,'v8');
+ const rows=new Map([[marker,{state:'complete',value:{scopedTail:true}}],
+  ['audit:managed-policy:'+hash,{state:'complete',value:{version:10}}]]);
+ const executed=[],events=[];
+ const ledger={get:async key=>rows.get(key)};
+ const queue={pause:async(_,data)=>events.push(data.code),advance:async(_,data)=>events.push(data.nextPhase)};
+ const args={job:current,queue,getLedger:async()=>ledger,getProviders:async()=>({}),now:()=>0,
+  runStage:async({scopedRoundIndex})=>{
+   executed.push(scopedRoundIndex);
+   rows.set('audit:scoped-round:'+hash+':'+scopedRoundIndex,{state:'complete',value:{closed:scopedRoundIndex===1}});
+  }};
+ assert.equal((await runClaimedBhsStage(args)).nextPhase,'report_draft');
+ assert.equal((await runClaimedBhsStage(args)).nextPhase,'synthesis');
+ assert.equal((await runClaimedBhsStage(args)).nextPhase,'synthesis');
+ assert.deepEqual(executed,[0,1]);
+ assert.deepEqual(events,['research_continues','synthesis','synthesis']);
+});
 test('prepared PostgreSQL queue requires private roles, a lease and a committed matching budget checkpoint',async()=>{
  const db=new PGlite();
  try{
