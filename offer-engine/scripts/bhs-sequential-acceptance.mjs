@@ -103,7 +103,7 @@ export async function runSequentialAcceptance(){
      brandUnderstood:Boolean(stage('brand').brandUnderstanding),briefUnderstood:Boolean(stage('brand').briefUnderstanding),
      planNeeds:plan.needs.length,planIssue:plan.issue,
      rounds:rows.filter(row=>row.state==='complete'&&row.value?.scopedRound).map(row=>({phase:row.value.phase,issue:row.value.issue,
-      receipts:row.value.receipts?.map(r=>({id:r.id,facts:r.facts.length,urls:r.urls.length,issues:r.issues})),approved:row.value.approved,openNeeds:row.value.openNeeds})),
+      receipts:row.value.receipts?.map(r=>({id:r.id,facts:r.facts.length,urls:r.urls.length,issues:r.issues,providerStatus:r.providerStatus})),approved:row.value.approved,openNeeds:row.value.openNeeds})),
      stages:rows.filter(r=>r.step_key.startsWith('model:bhs-v8:')&&r.step_key.includes('bhs-scoped-')).map(r=>
       ({stage:r.step_key.split(':')[3],state:r.state,model:r.value?.model,issue:r.value?.rejectedOutput||r.value?.code}))}));
     const reviewPhases=['coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft'];

@@ -25,7 +25,7 @@ async function attempt(run){
  try{return {value:await run()};}
  catch(error){
   if(error instanceof BudgetError||errors.has(error.code)||['AbortError','TimeoutError'].includes(error.name)||error instanceof TypeError&&error.message==='fetch failed')
-   return {issue:error.code||'provider_timeout'};
+   return {issue:error.code||'provider_timeout',providerStatus:error.providerStatus};
   throw error;
  }
 }
@@ -71,27 +71,33 @@ function evidenceRows(result,limit,method){
  }).slice(0,limit);
 }
 
-async function seekDefault(needs,providers,readPages){
+async function seekDefault(needs,providers,readPages,packet){
  const searches=await Promise.all(needs.map(async need=>{
   const limit=Math.min(12,Math.max(3,need.quantity));
   const result=await attempt(()=>providers.search(need.query,{depth:'basic',maxResults:limit,countryCode:need.country.toUpperCase(),language:need.language}));
   const rows=evidenceRows(result.value?.results,limit,'search-snippet');
-  // Read a small number of relevant pages in place of forwarding raw search datasets.
   const count=need.quantity===1?1:Math.min(need.quantity,3);
-  const read=await attempt(()=>readPages(rows.slice(0,count).map(row=>row.url)));
-  const pages=evidenceRows(read.value?.sources?.map(source=>({...source,text:source.excerpts?.slice(0,2).map(e=>e.text.slice(0,420)).join(' ')})),count,'extracted');
-  return {need,rows:[...pages,...rows],issue:result.issue};
+  const read=await readSearchEvidence(rows,count,readPages);
+  const known=['digital','swot','readiness'].includes(need.section)?evidenceRows(
+   packet?.sources?.slice(0,1).map(source=>({...source,text:source.excerpts?.slice(0,2).map(e=>e.text.slice(0,420)).join(' ')})),1,'extracted'):[];
+  return {need,rows:uniqueBy([...read,...rows,...known],row=>row.url+' '+row.content),issue:result.issue,providerStatus:result.providerStatus};
  }));
  return extractFacts(searches,providers);
 }
 
+async function readSearchEvidence(rows,count,readPages){
+ if(!rows.length)return [];
+ const read=await attempt(()=>readPages(rows.slice(0,count).map(row=>row.url)));
+ return evidenceRows(read.value?.sources?.map(source=>({...source,text:source.excerpts?.slice(0,2).map(e=>e.text.slice(0,420)).join(' ')})),count,'extracted');
+}
+
 async function extractFacts(searches,providers){
- const inputs=searches.map(({need,rows,issue})=>({need,issue,rows:rows.map((row,i)=>({...row,proof:'p'+(i+1)}))}));
+ const inputs=searches.map(({need,rows,issue,providerStatus})=>({need,issue,providerStatus,rows:rows.map((row,i)=>({...row,proof:'p'+(i+1)}))}));
  const result=await attempt(()=>(providers.geminiWorker||providers.worker)('bhs-scoped-extract',{
   instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
   requests:inputs.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
  },workerSchema,{maxOutputTokens:1800,minimumOutputTokens:760,compactWorker:true,generationTimeoutMs:28000}));
- return inputs.map(({need,rows,issue})=>{
+ return inputs.map(({need,rows,issue,providerStatus})=>{
   const output=result.value?.data?.results.find(r=>r.id===need.id);
   const makeFact=(source,quote,item)=>({id:'q'+hash([need.id,source.url,quote]).slice(0,18),quote,item,url:source.url,title:source.title,method:source.method});
   const extracted=(output?.facts||[]).flatMap(fact=>{
@@ -103,29 +109,32 @@ async function extractFacts(searches,providers){
   const candidates=extracted.length?extracted:rows.slice(0,need.quantity).map(source=>
    ({...makeFact(source,source.content.slice(0,420),source.title||source.url),preliminary:true}));
   const facts=uniqueBy(candidates,row=>row.item.toLocaleLowerCase('tr')).slice(0,need.quantity);
-  return {id:need.id,facts,urls:[...new Set(rows.map(r=>r.url))],nextQuery:output?.nextQuery||'',issues:[issue,result.issue].filter(Boolean)};
+  return {id:need.id,facts,urls:[...new Set(rows.map(r=>r.url))],nextQuery:output?.nextQuery||'',issues:[issue,result.issue].filter(Boolean),...(providerStatus?{providerStatus}:{})};
  });
 }
 
-export async function runScopedDefaults(needs,providers,readPages){
+export async function runScopedDefaults(needs,providers,readPages,packet){
  // Two bounded groups keep a 10-item request separate from unrelated metrics.
  const results=[];
- for(let i=0;i<needs.length;i+=3)results.push(...await seekDefault(needs.slice(i,i+3),providers,readPages));
+ for(let i=0;i<needs.length;i+=3)results.push(...await seekDefault(needs.slice(i,i+3),providers,readPages,packet));
  return results;
 }
 
-export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections}){
+export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,acquisition=providers}){
  const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
  const receipts=rounds.flatMap(round=>round.receipts||[]);
  const facts=uniqueBy(receipts.flatMap(r=>r.facts.map(f=>({...f,needId:r.id}))),f=>f.id);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row.proofs]));
  const open=need=>countProofs(need,checked.get(need.id),facts)<need.quantity;
- const actors=!last&&priorNeeds.some(n=>open(n)&&eligibleSections.includes(n.section))?(await attempt(()=>providers.availableActors?.())).value||[]:[];
+ const actors=!last&&priorNeeds.some(n=>open(n)&&eligibleSections.includes(n.section))?(await attempt(()=>acquisition.availableActors?.())).value||[]:[];
  const latest=rounds.at(-1);
+ const rejectedTavily=receipts.some(r=>[401,432,433,434,429].includes(r.providerStatus));
+ const knownUrls=[...new Set([...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
+  ...(s.technicalSignals?.navigation||[]).map(l=>l.url)])])].filter(Boolean);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
-  identity,briefUnderstanding,needs:priorNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,
+  identity,briefUnderstanding,needs:priorNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,knownUrls,tavilyAvailable:!rejectedTavily,
   previous:uniqueBy(receipts,row=>row.id).map(r=>({id:r.id,issues:r.issues,nextQuery:r.nextQuery,urls:r.urls.slice(0,12)})),
-  instruction:'Denetlediğin her ihtiyacın yalnız doğru marka/ürün, hedef pazar, metrik ve döneme uyan kaynaklı bulgularını proofs ile onayla. Önceki geçerli kararları tekrar yazma. Her proof farklı ve doğrudan karşılık veren bir öğe olmalı. preliminary etiketi varsa özgün alıntının ihtiyaçtan istenen veriyi doğrudan kanıtladığını ayrıca denetle. Bir ihtiyacın verisi yetersizse açık bırak. Yeni bir ihtiyaç varsa newNeeds ile ekle. Açık ihtiyaca hedefli bir default komutu ile Gemini ve Tavily akışını tekrar seçebilir veya yalnız o ihtiyaç için uygun scraper, gözlemlenen tam URL, mod ve örneklem seçebilirsin. Arama aktörü için hedefli sorgu yaz. Sınırsız araştırma isteme. Peers içindeki adayları ürün, pazar, fiyat bandı ve kanal ile kayda geçir ve kaynaklı ürün URL kullan. Son turda yeni komut ya da ihtiyaç ekleme. Approve ancak tüm bilgi ihtiyaçları tam karşılandıysa ve yeni iş kalmadıysa true. Ticari analiz, teşhis veya rapor yazma.'
+  instruction:'Denetlediğin her ihtiyacın yalnız doğru marka/ürün, hedef pazar, metrik ve döneme uyan kaynaklı bulgularını proofs ile onayla. Önceki geçerli kararları tekrar yazma. Her proof farklı ve doğrudan karşılık veren bir öğe olmalı. preliminary etiketi varsa özgün alıntının ihtiyaçtan istenen veriyi doğrudan kanıtladığını ayrıca denetle. Bir ihtiyacın verisi yetersizse açık bırak. Yeni bir ihtiyaç varsa newNeeds ile ekle. Açık ihtiyaca hedefli bir default komutu ile Gemini ve Tavily akışını tekrar seçebilir veya yalnız o ihtiyaç için uygun scraper, gözlemlenen tam URL, mod ve örneklem seçebilirsin. Gözlemlenen URL yoksa özel scraper çağırmadan önce araç listesindeki bir arama scraperına hedefli sorgu gönder. Aynı arama reddedildiyse sorguyu veya kaynağı değiştir. Tavily reddedildiyse o koşuda tekrar isteme. Resmî sayfanın site bağlantıları da gözlemlenmiş URL’dir. Açık kalan ihtiyaç için hangi hedefin eksik olduğunu belirle. Sınırsız araştırma isteme. Peers içindeki adayları ürün, pazar, fiyat bandı ve kanal ile kayda geçir ve kaynaklı ürün URL kullan. Son turda yeni komut ya da ihtiyaç ekleme. Approve ancak tüm bilgi ihtiyaçları tam karşılandıysa ve yeni iş kalmadıysa true. Ticari analiz, teşhis veya rapor yazma.'
  },reviewSchema,last?1150:1700);
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable'};
  const data=result.value;
@@ -142,26 +151,28 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const requests=new Map(newNeeds.map(n=>[n.id,n]));
  for(const c of data.commands.filter(c=>c.tool==='default'&&c.query.trim())){
   const need=openNeeds.find(n=>n.id===c.id&&eligibleSections.includes(n.section));
-  if(need)requests.set(c.id,{...need,query:c.query});
+  if(need&&!rejectedTavily)requests.set(c.id,{...need,query:c.query});
  }
- const next=(await runScopedDefaults([...requests.values()],providers,readPages)).map(r=>({...r,defaultAttempt:true}));
- const known=uniqueBy(receipts.flatMap(r=>r.urls).map(url=>({url})),row=>row.url);
+ const next=(await runScopedDefaults([...requests.values()],acquisition,readPages,packet)).map(r=>({...r,defaultAttempt:true}));
+ const known=knownUrls.map(url=>({url}));
  const eligible=new Set(openNeeds.filter(n=>eligibleSections.includes(n.section)).map(n=>n.id));
- const selected=data.commands.filter(c=>actors.includes(c.tool)&&defaulted.has(c.id)&&eligible.has(c.id)&&!requests.has(c.id));
+ const selected=uniqueBy(data.commands.filter(c=>actors.includes(c.tool)&&defaulted.has(c.id)&&eligible.has(c.id)&&!requests.has(c.id)),c=>c.id);
  const scraped=await Promise.all(selected.map(async c=>{
   const need=openNeeds.find(n=>n.id===c.id);
   const candidate=peers.find(p=>p.name.toLocaleLowerCase('tr')===need.target.toLocaleLowerCase('tr')&&known.some(row=>row.url===researchUrl(p.url)));
   const targetBrief=candidate?{...brief,brandName:candidate.name,website:candidate.url}:brief;
   const targetPacket=candidate?(await attempt(()=>readPages([candidate.url]))).value||packet:packet;
   const isSearch=searchActors.includes(c.tool);
-  const found=await attempt(()=>providers.enrich({actor:c.tool,url:isSearch?targetBrief.website:researchUrl(c.url),mode:c.mode,
+  const found=await attempt(()=>acquisition.enrich({actor:c.tool,url:isSearch?targetBrief.website:researchUrl(c.url),mode:c.mode,
    ...(c.query.trim()?{query:c.query,queries:[c.query]}:{}),maxResults:c.limit,countryCode:need.country.toUpperCase(),language:need.language},
   {brief:targetBrief,packet:targetPacket,searches:[{results:known}],scrapes:rounds.flatMap(r=>r.actorTargets||[]),geo:{countryCode:need.country.toUpperCase(),language:need.language}}));
   const actorResult=found.value;
-  const rows=evidenceRows([...(actorResult?.pages||[]),...(actorResult?.searches||[]).flatMap(s=>s.results||[])],c.limit,'extracted');
-  return {need,rows,issue:found.issue||actorResult?.reason,actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:rows.map(({url})=>({url}))}:null};
+  const records=evidenceRows(actorResult?.pages,c.limit,'extracted');
+  const search=evidenceRows((actorResult?.searches||[]).flatMap(s=>s.results||[]),c.limit,'search-snippet');
+  const read=await readSearchEvidence(search,Math.min(need.quantity,2),readPages);
+  return {need,rows:[...records,...read,...search],issue:found.issue||actorResult?.reason,actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
  }));
- if(scraped.length)next.push(...await extractFacts(scraped,providers));
+ for(let i=0;i<scraped.length;i+=3)next.push(...await extractFacts(scraped.slice(i,i+3),acquisition));
  return {decisions,peers,newNeeds,receipts:next,actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};
 }
 

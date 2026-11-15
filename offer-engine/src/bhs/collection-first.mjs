@@ -1143,13 +1143,13 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  if(phase==='synthesis')return save(await writeScopedSynthesis({brief,brand,plan,rounds,providers}));
  if(rounds.some(r=>r.approved)||!plan.needs.length)return save({});
  const last=index===scopedRounds.length-1;
- const researchProviders=last?providers:providers.withCeiling?.(2500)||providers;
+ const acquisition=last?providers:providers.withCeiling?.(2500)||providers;
  if(index===0){
-  const receipts=(await runScopedDefaults(plan.needs,researchProviders,readPages)).map(row=>({...row,defaultAttempt:true}));
+  const receipts=(await runScopedDefaults(plan.needs,acquisition,readPages,brand.packet)).map(row=>({...row,defaultAttempt:true}));
   return save({receipts,scopedRound:true});
  }
  const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,plan,rounds,
-  providers:researchProviders,brief,packet:brand.packet,readPages,last});
+  providers,acquisition,brief,packet:brand.packet,readPages,last});
  return save({...round,scopedRound:true});
 }
 
