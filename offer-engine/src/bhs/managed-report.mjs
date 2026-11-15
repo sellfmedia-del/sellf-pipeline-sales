@@ -50,6 +50,7 @@ const schema=obj({
  benchmarks:arr(finalSchema.properties.benchmarks.items,12),
  questions:arr(field(220),12),invalidObservations:arr(field(16),120)
 });
+const scopedReportSchema=obj({...schema.properties,findings:arr(obj({...rowSchema.properties,measurement:str(180),limitation:str(180)}),50)});
 
 export function managedCoverage(report){
  const peers=new Set(report.competitors.map(peer=>peer.id));
@@ -139,12 +140,15 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  const signal=AbortSignal.timeout(110000);
- const normalizeData=data=>Object.fromEntries(Object.entries(schema.properties).map(([key,field])=>{
+ const normalizeData=data=>Object.fromEntries(Object.entries(scopedReportSchema.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
    let value=row;
-   if(key==='findings'&&row&&typeof row==='object')value=Object.fromEntries(Object.entries(rowSchema.properties).map(([name,rule])=>{
+   if(key==='findings'&&row&&typeof row==='object')value=Object.fromEntries(Object.entries(field.items.properties).map(([name,rule])=>{
     const v=row[name];
-    if(['peerId','question'].includes(name)&&v==null)return [name,''];
+    if(['peerId','question','measurement','limitation'].includes(name)&&v==null)return [name,''];
+    if(name==='kind'&&v==null)return [name,'inference'];
+    if(name==='quadrant'&&v==null&&row.section!=='swot')return [name,'none'];
+    if(name==='proof'&&Array.isArray(v))return [name,unique(v.filter(id=>Object.hasOwn(request.sources,id))).slice(0,rule.maxItems)];
     return [name,typeof v==='string'&&rule.maxLength?v.trim().slice(0,rule.maxLength).toWellFormed():v];
    }));
    try{assertSchema(value,field.items);return [value];}catch{return [];}
@@ -153,10 +157,11 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  }));
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
-  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
+  const completion=await manager('bhs-scoped-report',request,scopedReportSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
    compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000});
   const report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true});
-  return {report,completion};
+  return {report,completion,...(!report.findings.length&&Object.keys(input.sources).length?{reportIssue:'no_source_backed_findings',
+   reportDiagnostic:{draftFindings:completion.data.findings?.length||0}}:{})};
  }catch(error){
   const issue=managedModelIssue(error,signal);
   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
