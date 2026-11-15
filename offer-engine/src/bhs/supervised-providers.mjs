@@ -3,6 +3,7 @@ import {createRuntimeProviders} from '../budget/providers.mjs';
 import {offerGeminiKey} from '../config.mjs';
 import {assertSchema,providerSchema} from './schema.mjs';
 import {failureReason} from './provider.mjs';
+import {readPartialOutput} from './partial-output.mjs';
 
 // BHS-only routing. Pricing, logos and the scope writer keep their existing
 // provider, tariff and receipts. Reviewed against first-party prices 2026-11-09.
@@ -151,6 +152,7 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    try{
     const data=normalizeData?normalizeData(value.data):value.data;
     assertSchema(data,responseSchema);validateData?.(data);
+    if(value.partialOutput&&!opts.acceptPartialData?.(data))throw new BudgetError('incomplete','Kesilen yanıtta doğrulanmış bulgu yok.');
     return normalizeData?{...value,data}:value;
    }catch(error){const failure=new BudgetError('model_output_invalid',error.code==='research_empty'?error.message:'BHS model çıktısı doğrulanamadı.');failure.paidResponseRetained=true;failure.validationDetail=/^BHS (?:metin|liste|veri|seçenek|sayı|alanları)/.test(error.message||'')?error.message.slice(0,180):'proof_or_content_validation';throw failure;}
   };
@@ -298,8 +300,17 @@ export function createSupervisedProviders({ledger,anthropicKey=process.env.ANTHR
    }
    if(!integer(inputTokens,1)||inputTokens>upper||!integer(outputTokens,1)||outputTokens>maxOutputTokens)throw new BudgetError('provider_accounting','BHS kullanımı ayrılan üst sınırla eşleşmiyor.');
    const rate=chargedRateFor(role,inputTokens,now()),accountedKurus=Math.ceil((inputTokens*rate.input+outputTokens*rate.output)/1e6*snapshot.usdTry*1.03*100);
-   let data,rejectedOutput;try{const fenced=plainJson&&typeof text==='string'?text.trim().match(/^```(?:json)?\s*([\s\S]+?)\s*```$/i):null;data=JSON.parse(fenced?fenced[1]:text);}catch{rejectedOutput='invalid_report';}if(!stopped)rejectedOutput='incomplete';
-   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),...(countedByBytes?{inputReservationBasis:'serialized-utf8-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data}),accountingVersion:'bhs-supervised-v7',tariffVersion:pricing.version};
+   let data,rejectedOutput,partialOutput;
+   const outputLimit=anthropicRole?value.stop_reason==='max_tokens':value.candidates?.[0]?.finishReason==='MAX_TOKENS';
+   if(opts.acceptPartialData&&outputLimit&&typeof text==='string'){
+    data=readPartialOutput(text).data;
+    if(Array.isArray(data?.findings)&&data.findings.length)partialOutput=true;
+   }
+   if(!partialOutput){
+    try{const fenced=plainJson&&typeof text==='string'?text.trim().match(/^```(?:json)?\s*([\s\S]+?)\s*```$/i):null;data=JSON.parse(fenced?fenced[1]:text);}catch{rejectedOutput='invalid_report';}
+    if(!stopped)rejectedOutput='incomplete';
+   }
+   return {model,role,usage,...(role==='manager'?{stopReason:stopped?'end_turn':'not_end_turn'}:usage.cachedContentTokenCount?{billingBasis:'implicit-cache-undiscounted-upper-bound'}:{}),...(countedByBytes?{inputReservationBasis:'serialized-utf8-upper-bound'}:{}),fx:snapshot,accountedKurus,reservedKurus:amount,...(rejectedOutput?{rejectedOutput}:{data,...(partialOutput?{partialOutput}:{})}),accountingVersion:'bhs-supervised-v7',tariffVersion:pricing.version};
   },{settle:value=>value.accountedKurus,limitKurus:limit});}
   catch(error){
    if(legacyWorkerFallback&&receiptVersion==='v8'&&role==='worker'&&error.providerStatus===403&&error.providerReason==='billing_required'){

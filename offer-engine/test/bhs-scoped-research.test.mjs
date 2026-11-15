@@ -3,7 +3,7 @@ import test from 'node:test';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {runSequentialStage} from '../src/bhs/sequential-research.mjs';
-import {reviewScopedResearch,scopedEvidence} from '../src/bhs/scoped-research.mjs';
+import {reviewScopedResearch,runScopedDefaults,scopedEvidence} from '../src/bhs/scoped-research.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
@@ -27,6 +27,51 @@ const quote='Marque runs a direct wholesale catalogue for supermarket customers 
 const postQuote='PublishedAt 2026-11-10 likesCount 84 commentsCount 6.';
 const about='https://marque.fr/our-story';
 const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peers:[],...overrides});
+
+test('short Tavily receipts reach the controller without an extra extraction call',async()=>{
+ const [receipt]=await runScopedDefaults([needs[1]],{managedBudgetVersion:13,
+  search:async()=>({results:[{url:instagram,content:postQuote}]}),worker:()=>assert.fail('redundant model call')},
+ ()=>assert.fail('read must be selected by the controller'));
+ assert.equal(receipt.facts[0].quote,postQuote);
+ assert.equal(receipt.facts[0].method,'search-snippet');
+ assert.equal(receipt.facts[0].preliminary,true);
+});
+
+test('scoped transfer ties Claude’s headings and rivals to evidence and retains qualified traffic estimates',async()=>{
+ const rival={url:'https://comparable.fr/catalogue',name:'Comparable',product:'Packaged groceries',market:'France',channel:'Online wholesale',priceBand:''};
+ const traffic={id:'qtraffic',url:'https://traffic.fr/marque',title:'Traffic estimate',item:'Traffic estimate',quote:'Marque website traffic estimate — Monthly visits: 2,570.',method:'search-snippet'};
+ const product={id:'qproduct',url:rival.url,title:rival.name,item:rival.name,quote:'Comparable distributes packaged groceries via an online wholesale catalogue.',method:'extracted'};
+ const plan={qualityReport:true,adaptiveResearch:true,scopedResearch:true,orderedResearch:true,reportOnlyAfterResearch:true,
+  needs:[{...needs[0],section:'rakipler'},{...needs[1],section:'kanal',metric:'Kanal bazında oturum sayısı'}]};
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const receipts=[{id:'t0',facts:[product]},{id:'t1',facts:[traffic]}];
+ const terminal={approved:false,closed:true,stopReason:'research_budget_exhausted',peers:[rival],receipts,
+  decisions:[{id:'t0',sufficient:true,proofs:[product.id]},{id:'t1',sufficient:false,proofs:[traffic.id]}]};
+ const snippets={...terminal,receipts:[{id:'t0',facts:[{...product,method:'search-snippet'}]},receipts[1]]};
+ assert.equal(scopedEvidence(brand,plan,[snippets]).coverage[0].status,'open');
+ assert.equal(scopedEvidence(brand,plan,[terminal]).coverage[0].status,'confirmed');
+ const providers={manager:async(_stage,input)=>{
+  const proof=url=>Object.entries(input.sources).find(([,row])=>row[0]===url)[0];
+  const base={area:'',rank:1,quadrant:'none',peerId:'',kind:'observation',analysis:'Kanal seçimi için başlangıç noktası oluşturuyor.',
+   action:'Toptan satış kataloğunu karşılaştır.',question:'Kanal satış verisini paylaşabilir misiniz?',measurement:'Sipariş sayısı',limitation:''};
+  return {model:'claude-sonnet-5-5',partialOutput:true,data:{findings:[
+   {...base,section:'Rakiplerin Satış Kanalları',needIds:['t0'],peerId:rival.name,observation:'Comparable paketli gıdaları çevrimiçi toptan satış kataloğuyla dağıtıyor.',proof:[proof(rival.url)]},
+   {...base,rank:2,section:'Kanal Stratejisi ve Kârlılık',needIds:['t1'],observation:'Marque sitesi ayda 2.570 ziyaret alıyor.',
+    action:'2.570 doğrudan oturumu satışa çevir.',measurement:'2.570 doğrudan oturum',proof:[proof(traffic.url)]}
+  ],peers:[{entityId:rival.name,relationship:'direct',reason:'Çevrimiçi toptan satış ve paketli gıda.',sourceIds:[proof(rival.url)]}],benchmarks:[],questions:[],invalidObservations:[]}};
+ }};
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds:[terminal],providers});
+ const result=directAuditResult(brief,synthesis);
+ const report=result.data.report;
+ assert.equal(report.competitors[0]?.name,rival.name);
+ assert.equal(report.bhsSections.find(s=>s.id==='rakipler')?.complete,true);
+ assert.equal(report.findings.length,2);
+ assert.deepEqual(report.bhsSections.find(s=>s.id==='kanal'),{id:'kanal',title:'Kanal Stratejisi ve Kârlılık',findingIds:[report.findings[1].id],count:1,missingQuadrants:[],complete:false});
+ assert.match(report.findings[1].statement,/trafik tahminine göre/);
+ assert.match(report.findings[1].recommendation.action,/GA4/);
+ assert.doesNotMatch(report.findings[1].recommendation.action,/2\.570/);
+ assert.ok(result.data.supervision.acceptance.issues.includes('partial_model_document'));
+});
 
 test('Claude plans scoped research after brand and brief, then writes and transfers a partial report with the saved evidence',async()=>{
  const saved=new Map(),calls=[];

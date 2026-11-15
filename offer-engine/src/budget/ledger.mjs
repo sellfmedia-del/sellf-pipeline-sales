@@ -71,7 +71,7 @@ export function createLedger(call,{reuseCompleted=false}={}){
   const previous=claims;let release;claims=new Promise(resolve=>{release=resolve;});await previous;
   try{
    const existing=await get(args.step);
-   if(!existing&&(await call('status')).chargedKurus+args.amount>limitKurus)throw new BudgetError('budget_limit','Otomatik araştırmanın 30 TL maliyet hedefine ulaşıldı. Kayıtlar ve rezervler korundu; yeni ücretli çağrı yapılmadı.');
+   if(!existing&&(await call('status')).chargedKurus+args.amount>limitKurus)throw new BudgetError('budget_limit','Bu işlemin rezervi araştırma için kalan bütçeye sığmıyor. Kayıtlar ve rezervler korundu.');
    return await call('reserve',args);
   }finally{release();}
  }
