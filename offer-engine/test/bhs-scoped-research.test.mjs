@@ -152,3 +152,26 @@ test('Instagram receives the requested date and sample size',()=>{
  assert.equal(selected.input.onlyPostsNewerThan,'2026-10-16');
  assert.equal(selected.input.resultsLimit,10);
 });
+
+test('an explicit gap run reuses completed research and dispatches only a new task in the requested section',async()=>{
+ const existing=[['readiness','Marque has a French wholesale catalogue.',null,null]];
+ const newNeed={...needs[0],id:'regional',first:'tavily',query:'grossistes régionaux catalogue alimentaire Marque France'};
+ const repeated={...needs[0],id:'duplicate'};
+ const outOfScope={...needs[1],id:'other',query:'Different Instagram account'};
+ const calls=[];
+ const providers={claudeManager:async(_,input)=>{
+  assert.deepEqual(input.existing,existing);
+  assert.deepEqual(input.eligibleSections,['readiness']);
+  return {data:draft({newNeeds:[repeated,newNeed,outOfScope]})};
+ },search:async query=>{
+  calls.push(query);
+  return {results:[]};
+ }};
+ const plan={needs};
+ const saved={approved:true,decisions:[],receipts:[]};
+ const round=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[saved],providers,brief,packet,
+  readPages:async()=>({sources:[]}),eligibleSections:['readiness'],existing,gap:true});
+ assert.deepEqual(calls,[newNeed.query]);
+ assert.deepEqual(round.newNeeds,[newNeed]);
+ assert.equal(scopedEvidence({packet},plan,[saved,round]).approved,false);
+});

@@ -55,7 +55,7 @@ export async function understandScopedBrief({brief,identity,providers}){
 export async function planScopedResearch({brief,identity,briefUnderstanding,asOf,providers}){
  if(!identity||!briefUnderstanding)return {needs:[],issue:'brief_understanding_unavailable'};
  const request={brand:brief.brandName,identity,briefUnderstanding,sections:managedSections,asOf,instruction:
-  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden hareketle neyi araştıracağına kendin karar ver. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi hedefi belirleyen soruları seç. Hedef ciro artırmaksa ürün fiyatları, rakip satış performansı, ürün memnuniyeti ve erişilebilir geçmiş pazarlama ve satış verimine odaklan. Örnekleri her markaya uygulama. İhtiyaç sayısını ve başlıklarını işin gerektirdiği kadar seç. Dördüncü adım için her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken örneklem büyüklüğünü açıkça belirt. On aktif distribütör isteniyorsa quantity 10; Instagram son bir ayda paylaşım sıklığı ve etkileşimi isteniyorsa kesin başlangıç tarihini since alanında YYYY-MM-DD olarak ve yeterli gönderi örneklem büyüklüğünü quantity alanında ver. Tarih filtresi gerekmiyorsa since boş olsun. İlk araç olarak ihtiyaca göre Gemini, Tavily veya ikisini seç. Sorgulara gereken pazar ve dil bağlamını kat. Yalnız istenen ölçüme yetecek kayıtları talep et. Önceki işi tekrar eden ihtiyaç ekleme. Bölüm kodları raporun aktarımı içindir.'};
+  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'};
  let result=await ask(providers,'bhs-scoped-plan',request,planSchema,3500);
  if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue))
   result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Kısa Türkçe ifadeler kullan. Seçtiğin işleri tek bir tamamlanmış JSON olarak döndür.'},planSchema,3500);
@@ -83,7 +83,11 @@ async function seekDefault(needs,providers,readPages){
   const attempts=await Promise.all(calls.map(async ([tool,run])=>({tool,...await attempt(run)})));
   const rows=attempts.flatMap(({value})=>evidenceRows(value?.results,need.quantity,'search-snippet'));
   const urls=[...new Set(attempts.flatMap(({value})=>(value?.results||[]).map(row=>researchUrl(row.url)).filter(Boolean)))];
-  const read=await readSearchEvidence(urls,readPages);
+  // Tavily already provides excerpts. Resolve grounded publisher links, whose
+  // Gemini-generated summaries are discovery hints rather than source text.
+  const toRead=[...new Set(attempts.filter(({tool})=>tool==='gemini').flatMap(({value})=>
+   (value?.results||[]).map(row=>researchUrl(row.url)).filter(Boolean)))];
+  const read=await readSearchEvidence(toRead,readPages);
   return {need,rows:uniqueBy([...read,...rows],row=>row.url+' '+row.content),urls,
    attempts:attempts.map(({tool,issue,providerStatus})=>({tool,issue,providerStatus}))};
  }));
@@ -101,7 +105,7 @@ async function readSearchEvidence(urls,readPages){
 
 async function extractFacts(searches,providers){
  const inputs=searches.map(search=>({...search,rows:search.rows.map((row,i)=>({...row,proof:'p'+(i+1)}))}));
- const withRows=inputs.filter(input=>input.rows.length);
+ const withRows=inputs.filter(input=>input.rows.length&&input.rows.length<=input.need.quantity*2);
  const result=withRows.length?await attempt(()=>(providers.geminiWorker||providers.worker)('bhs-scoped-extract',{
   instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
   requests:withRows.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
@@ -129,7 +133,7 @@ export async function runScopedDefaults(needs,providers,readPages){
  return results;
 }
 
-export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,acquisition=providers}){
+export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
  const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
  const receipts=rounds.flatMap(round=>round.receipts||[]);
  const facts=uniqueBy(receipts.flatMap(r=>r.facts.map(f=>({...f,needId:r.id}))),f=>f.id);
@@ -142,15 +146,18 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const knownUrls=[...new Set([...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
   ...(s.technicalSignals?.navigation||[]).map(l=>l.url)])])].filter(Boolean);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
-  identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,knownUrls,
+  identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,findings:facts,checked:[...checked],tools:actors,last,eligibleSections,knownUrls,...(gap?{existing}:{}),
   defaults:{tavily:!denied('tavily'),gemini:!denied('gemini')},
   previous:receipts.map(r=>({id:r.id,attempts:r.attempts,issues:r.issues,nextQuery:r.nextQuery,urls:r.urls})),
-  instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Varsayılan arama gereken veriyi sağladıysa scraper çağırma. Ek arama için commands içinde tavily veya gemini aracına tam sorguyu, URL ve limiti ver. Varsayılan araçlar bu ihtiyaç için yetersiz kaldıysa yalnız açık ihtiyaç için uygun scraper, gözlemlenen tam URL veya hedefli arama sorgusu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Yeniden doğrulanabilir bir ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakip adayları için ürün/pazar/fiyat bandı/kanal ölçütlerini koru. Peers alanında kaynağı olan adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlanıp ihtiyaç duyduğun kanıt yeterliyse approve true. Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak. Ticari teşhisi beşinci adıma bırak.'
+  instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak. Ticari teşhisi beşinci adıma bırak.'+
+   (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },reviewSchema,last?1150:1700);
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable'};
  const data=result.value;
  const ids=new Set(priorNeeds.map(n=>n.id));
- const newNeeds=last?[]:uniqueBy(data.newNeeds.filter(n=>!ids.has(n.id)&&eligibleSections.includes(n.section)),n=>n.id);
+ const previouslyAsked=new Set(priorNeeds.map(n=>compact(n.query).toLocaleLowerCase('tr')));
+ const newNeeds=last?[]:uniqueBy(data.newNeeds.filter(n=>!ids.has(n.id)&&eligibleSections.includes(n.section)&&
+  (!gap||!previouslyAsked.has(compact(n.query).toLocaleLowerCase('tr')))),n=>n.id);
  for(const row of data.decisions)if(ids.has(row.id))checked.set(row.id,row.proofs);
  const decisions=[...checked].map(([id,proofs])=>({id,proofs}));
  const openNeeds=priorNeeds.filter(open);
@@ -167,10 +174,24 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const need=openNeeds.find(n=>n.id===c.id&&eligibleSections.includes(n.section));
   const tool=c.tool==='default'?(need?.first||'tavily'):c.tool;
   if(!need||denied(tool))continue;
+  if(gap&&previouslyAsked.has(compact(c.query).toLocaleLowerCase('tr')))continue;
   requests.push({...need,first:tool,query:c.query,quantity:c.limit});
   used.push(c);
  }
  const next=(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}));
+ const readers=commands.filter(c=>c.tool==='read'&&ids.has(c.id)&&knownUrls.includes(researchUrl(c.url)));
+ used.push(...readers);
+ const byNeed=new Map();
+ for(const c of readers){
+  const urls=byNeed.get(c.id)||[];
+  urls.push(researchUrl(c.url));
+  byNeed.set(c.id,urls);
+ }
+ for(const [id,urls] of byNeed){
+  const need=priorNeeds.find(n=>n.id===id);
+  const records=await readSearchEvidence([...new Set(urls)],readPages);
+  next.push(...await extractFacts([{need,rows:records,urls}],acquisition));
+ }
  const known=knownUrls.map(url=>({url}));
  const eligible=new Set(openNeeds.filter(n=>eligibleSections.includes(n.section)).map(n=>n.id));
  const requestIds=new Set(requests.map(r=>r.id));
@@ -192,7 +213,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   return {need,rows:[...records,...read,...search],issue:found.issue||actorResult?.reason,actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
  }));
  for(let i=0;i<scraped.length;i+=3)next.push(...await extractFacts(scraped.slice(i,i+3),acquisition));
- return {decisions,peers,newNeeds,receipts:next,commandKeys:used.map(commandKey),closed:!data.commands.length&&!newNeeds.length,
+ return {approved:false,decisions,peers,newNeeds,receipts:next,commandKeys:used.map(commandKey),closed:!data.commands.length&&!newNeeds.length,
   actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};
 }
 
@@ -205,7 +226,7 @@ export function scopedEvidence(brand,plan,rounds){
  const needs=uniqueBy([...plan.needs,...rounds.flatMap(r=>r.newNeeds||[])],n=>n.id);
  const facts=uniqueBy(rounds.flatMap(r=>(r.receipts||[]).flatMap(row=>row.facts.map(f=>({...f,needId:row.id})))),f=>f.id);
  const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,row.proofs]));
- const clearance=rounds.findLast(r=>r.approved)||rounds.at(-1)||{};
+ const clearance=rounds.findLast(r=>typeof r.approved==='boolean')||{};
  const coverage=needs.map(n=>({id:n.id,section:n.section,name:n.metric,status:clearance.approved||countProofs(n,checked.get(n.id),facts)>=n.quantity?'confirmed':'open',
   proofs:facts.filter(f=>f.needId===n.id&&checked.get(n.id)?.includes(f.id))}));
  const accepted=coverage.flatMap(c=>c.proofs.map(f=>({...f,section:c.section})));

@@ -74,13 +74,21 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  const aliases=new Map();
  const sources={};
  const observed=[];
+ const paragraphs=new Map();
+ if(plan.scopedResearch)for(const source of context.input.sources)for(const section of source.sections){
+  const representative=section.proofIds.find(id=>context.known.has(id));
+  if(!representative)continue;
+  for(const id of section.proofIds)if(!paragraphs.has(id))paragraphs.set(id,{representative,text:section.text});
+ }
  function addSource(id){
+  const paragraph=paragraphs.get(id);
+  id=paragraph?.representative||id;
   const card=context.known.get(id);
   if(!card)return null;
   if(!aliases.has(id)){
    const alias='s'+(aliases.size+1);
    aliases.set(id,alias);
-   sources[alias]=[card.url,card.title,card.method,card.quote];
+   sources[alias]=[card.url,card.title,card.method,paragraph?.text||card.quote];
   }
   return aliases.get(id);
  }
@@ -128,18 +136,31 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
 export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections=sectionKeys}){
  const request={...input,needs,coverage,approved,instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
-  analysisStandard+(input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+  analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
+  (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  const signal=AbortSignal.timeout(110000);
+ const normalizeData=data=>Object.fromEntries(Object.entries(schema.properties).map(([key,field])=>{
+  const rows=list(data?.[key]).flatMap(row=>{
+   let value=row;
+   if(key==='findings'&&row&&typeof row==='object')value=Object.fromEntries(Object.entries(rowSchema.properties).map(([name,rule])=>{
+    const v=row[name];
+    if(['peerId','question'].includes(name)&&v==null)return [name,''];
+    return [name,typeof v==='string'&&rule.maxLength?v.trim().slice(0,rule.maxLength).toWellFormed():v];
+   }));
+   try{assertSchema(value,field.items);return [value];}catch{return [];}
+  });
+  return [key,rows.slice(0,field.maxItems)];
+ }));
  try{
   const manager=providers.claudeManager||providers.manager;
-  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:8192,minimumOutputTokens:2200,
-   compactReview:true,lowEffort:true,generationTimeoutMs:95000});
+  const completion=await manager('bhs-scoped-report',request,schema,{signal,maxOutputTokens:8192,minimumOutputTokens:1024,
+   compactReview:true,lowEffort:true,normalizeData,generationTimeoutMs:95000});
   const report=projectManagedDraft({context,reverse,accepted:new Set(sections),usedInput:request,data:completion.data,managerDirected:true,modelSelectedPeers:true});
   return {report,completion};
  }catch(error){
   const issue=managedModelIssue(error,signal);
   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
-  return {reportIssue:issue};
+  return {reportIssue:issue,reportDiagnostic:error.budgetDiagnostic||error.validationDetail};
  }
 }
 

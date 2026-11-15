@@ -103,9 +103,11 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  if(version===9){
   const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
   const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
-  for(let i=0;i<3&&!rounds.at(-1)?.approved;i++){
-   rounds.push(await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
-    plan:priorPlan,rounds,providers,brief,packet:brand.packet,readPages,eligibleSections:sections,last:i===2}));
+  for(let i=0;i<3;i++){
+   const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+    plan:priorPlan,rounds,providers,brief,packet:brand.packet,readPages,eligibleSections:sections,existing,gap:true,last:i===2});
+   rounds.push(round);
+   if(round.approved||round.closed)break;
   }
   const result=await writeScopedSynthesis({brief,brand,plan:priorPlan,rounds,providers,sections,existing});
   if(!result.report.findings.some(f=>f.recommendation?.action))return {report:original,analysisPacket:result.analysisPacket,

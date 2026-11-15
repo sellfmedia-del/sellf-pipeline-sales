@@ -1124,7 +1124,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
-   ...(written.reportIssue?{reportIssue:written.reportIssue}:{})}};
+   ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
 }
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
