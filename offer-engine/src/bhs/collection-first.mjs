@@ -9,7 +9,7 @@ import {methodologyAreas} from './methodology-areas.mjs';
 import {actorInput,observedActorTargets,searchActors} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
-import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
+import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialPhases,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
 import {requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
@@ -1087,6 +1087,21 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
 }
 
 export const scopedRounds=[...directedRounds.slice(1,-1),...inventoryStages];
+const brandDiscoveryPhases=sequentialPhases.slice(0,sequentialPhases.indexOf('brand')).reverse();
+
+async function loadScopedBrand(previous){
+ const brand=await previous('brand');
+ if(brand.packet)return brand;
+ // Older checkpoints may retain the completed identity and brief without the
+ // packet. Read the newest surviving packet from this same research run.
+ for(const phase of brandDiscoveryPhases){
+  const saved=await previous(phase).catch(error=>{
+   if(error.code!=='stage_pending')throw error;
+  });
+  if(saved?.packet)return {...brand,packet:saved.packet};
+ }
+ throw new BudgetError('research_start_unavailable','Kayıtlı marka kaynaklarına ulaşılamadı. Mevcut araştırma kayıtları korundu.');
+}
 
 export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite=true,sections,existing=[]}){
  const evidence=scopedEvidence(brand,plan,rounds);
@@ -1137,7 +1152,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
 }
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
- const brand=await previous('brand');
+ const brand=await loadScopedBrand(previous);
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
@@ -1180,7 +1195,7 @@ async function savedScopedRounds(previous){
 
 export async function continueScopedCollection({brief,providers,previous,collect}){
  const [brand,stage,marker,rounds,tail]=await Promise.all([
-  previous('brand'),previous('sector_sources'),previous('report_draft'),savedScopedRounds(previous),previous('scoped-tail')
+  loadScopedBrand(previous),previous('sector_sources'),previous('report_draft'),savedScopedRounds(previous),previous('scoped-tail')
  ]);
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
@@ -1192,7 +1207,7 @@ export async function recoverManagedSectionSynthesis(brief,previous,providers){
  const plan=(await previous('sector_sources'))?.managedPlan;
  if(!plan)return undefined;
  if(plan.scopedResearch){
-  const brand=await previous('brand');
+  const brand=await loadScopedBrand(previous);
   const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase).catch(e=>{if(e.code!=='stage_pending')throw e;})))).filter(r=>r?.scopedRound);
   if(plan.adaptiveResearch)rounds.push(...(await previous('scoped-tail')||[]));
   return {...await writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite:false}),methodologyVersion:sequentialVersion};

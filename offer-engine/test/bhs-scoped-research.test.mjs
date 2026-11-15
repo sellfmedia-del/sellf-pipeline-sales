@@ -216,6 +216,44 @@ test('an unaffordable grounded brand search leaves the brief and a usable plan f
  assert.equal(saved.get('sector_sources').managedPlan.orderedResearch,true);
 });
 
+test('an already-read brand page preserves the sources through the brief and into planning',async()=>{
+ const saved=new Map(),reads=[],calls=[];
+ const orderedNeed={...needs[0],first:'tavily'};
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:12,withCeiling(){return this;},
+  async claudeManager(stage,input){
+   calls.push(stage);
+   if(stage==='bhs-scoped-brand')return {data:{...identity,pages:[about],searches:[]}};
+   if(stage==='bhs-scoped-brief')return {data:briefUnderstanding};
+   assert.equal(stage,'bhs-scoped-plan');
+   assert.equal(input.asOf,packet.asOf);
+   assert.deepEqual(input.identity,identity);
+   assert.deepEqual(input.briefUnderstanding,briefUnderstanding);
+   return {data:{needs:[orderedNeed]}};
+  }};
+ const previous=async phase=>{
+  if(!saved.has(phase))throw new BudgetError('stage_pending','Missing checkpoint');
+  return saved.get(phase);
+ };
+ const run=phase=>runSequentialStage({phase,brief,providers,previous,
+  collect:async(_brief,_plan,{prioritySources:[url]})=>{
+   reads.push(url);
+   return {...packet,sources:[{...packet.sources[0],url,finalUrl:url,technicalSignals:{navigation:[{url:about,label:'Our story'}]}}]};
+  }});
+ for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('brand')+1))saved.set(phase,await run(phase));
+ assert.equal(saved.get('brand_draft').brandDiscovery.done,true);
+ assert.deepEqual(saved.get('brand').packet.sources.map(source=>source.finalUrl),[brief.website,about]);
+ assert.deepEqual((await run('sector_sources')).managedPlan.needs,[orderedNeed]);
+
+ // A checkpoint from the previous deployment can have a completed brief but
+ // lose its packet after the last successful source read.
+ for(const phase of sequentialPhases.slice(sequentialPhases.indexOf('brand_draft'),sequentialPhases.indexOf('brand')+1)){
+  saved.set(phase,{...saved.get(phase),packet:undefined});
+ }
+ assert.deepEqual((await run('sector_sources')).managedPlan.needs,[orderedNeed]);
+ assert.deepEqual(reads,[brief.website,about]);
+ assert.deepEqual(calls,['bhs-scoped-brand','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-plan','bhs-scoped-plan']);
+});
+
 test('ordered research runs one exact command, then returns the evidence to the controller before its next choice',async()=>{
  const plan={orderedResearch:true,reportOnlyAfterResearch:true,needs:[{...needs[0],first:'tavily'},needs[1]]};
  const requests=[],query='distributeurs indépendants alimentation bio France';

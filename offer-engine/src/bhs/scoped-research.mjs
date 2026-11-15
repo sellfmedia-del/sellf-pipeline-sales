@@ -71,7 +71,7 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
     hints.push({url,title:row.title});
    }
   }
-  if(!targets.length&&lookedUp.size===(prior.lookedUp||[]).length)return {...prior,done:true};
+  if(!targets.length&&lookedUp.size===(prior.lookedUp||[]).length)return {...prior,packet,done:true};
   const additions=[];
   for(const url of new Set(targets)){
    visited.add(url);
