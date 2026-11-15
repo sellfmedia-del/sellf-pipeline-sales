@@ -1087,12 +1087,12 @@ async function managedSynthesis(brief,plan,previous,providers,{sectional,savedSe
 }
 
 export const scopedRounds=[...directedRounds.slice(1,-1),...inventoryStages];
-const decisionCode={competition:'c',digital:'d',swot:'s',perception:'p',readiness:'r'};
 
 export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,allowWrite=true,sections,existing=[]}){
  const evidence=scopedEvidence(brand,plan,rounds);
- if(plan.reportOnlyAfterResearch&&allowWrite&&!sections&&evidence.coverage.some(metric=>metric.status==='open')&&
-  !rounds.some(round=>round.closed&&scopedResearchClosed(round,true)))
+ const terminal=rounds.findLast(round=>scopedResearchClosed(round,true));
+ if(plan.reportOnlyAfterResearch&&allowWrite&&!sections&&(plan.orderedResearch||evidence.coverage.some(metric=>metric.status==='open'))&&
+  (!terminal||!plan.orderedResearch&&!terminal.closed))
   throw new BudgetError('research_needs_open','Açık BHS araştırması kapanmadan rapor yazımı başlatılamaz.');
  const context=managedCollectionContext(brief,evidence.packet,{complete:true});
  const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
@@ -1103,21 +1103,26 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   const known=context.known.get(reverse.get(id));
   if(!known)return [];
   const fact=evidence.accepted.find(f=>f.url===known.url&&f.quote.includes(known.quote));
-  return fact?[{id,code:decisionCode[fact.section]}]:[];
+  return fact?[{id,section:fact.section}]:[];
  });
  const aliases=new Map([...reverse].map(([alias,id])=>[id,alias]));
  const coverage=evidence.coverage.map(({proofs,...metric})=>({...metric,sources:proofs.flatMap(f=>context.cards
   .filter(card=>card.url===f.url&&f.quote.includes(card.quote)).map(card=>aliases.get(card.id)).filter(Boolean))}));
- const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,coverage,needs:evidence.needs,approved:evidence.approved,sections}):{};
+ const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,coverage,needs:evidence.needs,approved:evidence.approved,sections,
+  ...(plan.orderedResearch&&terminal?{stopReason:terminal.stopReason}:{})}):{};
  let {report}=written;
  if(!report){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
-  report=projectExpertReport({findings:reviewed.slice(0,18).map(({id,code})=>{
+  const retained=reviewed.slice(0,18);
+  report=projectExpertReport({findings:retained.map(({id,section})=>{
    const sourceId=reverse.get(id),source=context.known.get(sourceId);
-   const section=Object.keys(decisionCode).find(key=>decisionCode[key]===code);
-   return {id:'scoped_'+id,kind:'observation',dimension:dimensionFor[section],observation:source.quote,sourceIds:[sourceId],
+   return {id:'scoped_'+id,kind:'observation',dimension:Object.hasOwn(dimensionFor,section)?dimensionFor[section]:'operations',observation:source.quote,sourceIds:[sourceId],
     limitation:'Doğrulanan araştırma kaynağı.'};
   })},context);
+  if(plan.orderedResearch){
+   const headings=new Map(retained.map(({id,section})=>['scoped_'+id,section]));
+   report.findings=report.findings.map((finding,index)=>({...finding,bhsSection:headings.get(finding.id),bhsRank:index+1}));
+  }
   report.directedResearch=true;
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
@@ -1142,6 +1147,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    throw error;
   }
   return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{}),
+   ...(providers.managedBudgetVersion>=12?{orderedResearch:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
@@ -1160,7 +1166,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
  const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
  const waiting=plan.needs.filter(need=>!attempted.has(need.id));
  if(waiting.length&&index===0){
-  const receipts=(await runScopedDefaults(waiting.slice(0,3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
+  const receipts=(await runScopedDefaults(waiting.slice(0,plan.orderedResearch?1:3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
   return save({receipts,scopedRound:true});
  }
  const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,plan,rounds,

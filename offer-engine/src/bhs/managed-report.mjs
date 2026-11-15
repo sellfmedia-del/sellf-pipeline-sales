@@ -147,12 +147,13 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections}){
+export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason}){
  const adaptive=input.plan.adaptiveResearch===true;
  const outputSchema=adaptive?adaptiveReportSchema:scopedReportSchema;
- const request={...input,needs,coverage,approved,instruction:
+ const request={...input,needs,coverage,approved,...(stopReason?{stopReason}:{}),instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
   analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
+  (stopReason?' Araştırmayı bu turda yeniden başlatma. Kapanış nedeni bütçeyse, kaynaklı bulgularla kısmi raporu yaz ve araştırılamayan metrikleri açıkça ayır.':'')+
   (adaptive?' Raporda yalnız bu brief için anlamlı başlıklar kullan. Bölüm adını her bulgunun section alanında kendin yaz. İlave başlık veya asgari bulgu kotası yoktur. area alanı teklif aktarımı için isteğe bağlı eşlemedir.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  if(adaptive&&!sections)delete request.sections;

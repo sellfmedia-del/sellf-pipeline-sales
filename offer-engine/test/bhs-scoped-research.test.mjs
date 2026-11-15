@@ -165,6 +165,7 @@ test('new needs start with Tavily and Gemini and Claude can confirm a metric wit
 
 test('an unaffordable grounded brand search leaves the brief and a usable plan funded',async()=>{
  const saved=new Map(),calls=[];
+ const orderedNeeds=needs.map(need=>({...need,first:'tavily'}));
  const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:12,withCeiling(limit){
   return {...this,claudeManager:(stage,input)=>manager(stage,input,limit),searchGemini:async need=>{
    assert.equal(need.query,'Marque produits et marché');
@@ -183,6 +184,11 @@ test('an unaffordable grounded brand search leaves the brief and a usable plan f
   if(stage==='bhs-scoped-brand'){
    assert.equal(limit,1600);
    if(!input.priorUnderstanding)return {data:{...identity,pages:[],searches:[{query:'Marque produits et marché',tool:'gemini',limit:1}]}};
+   if(input.lookupReceipts.at(-1)?.tool==='gemini'){
+    assert.equal(input.lookupReceipts.at(-1).issue,'budget_limit');
+    assert.ok(!calls.includes('tavily'));
+    return {data:{...identity,pages:[],searches:[{query:'Marque produits et marché',tool:'tavily',limit:1}]}};
+   }
    assert.ok(input.sources.some(s=>s.url===about));
    return {data:{...identity,pages:[],searches:[]}};
   }
@@ -199,14 +205,43 @@ test('an unaffordable grounded brand search leaves the brief and a usable plan f
   assert.deepEqual(input.briefUnderstanding,briefUnderstanding);
   if(stage==='bhs-scoped-plan')return {data:{needs:[]}};
   assert.equal(stage,'bhs-scoped-plan-compact');
-  return {data:{needs}};
+  return {data:{needs:orderedNeeds}};
  }
  for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_sources')+1)){
   saved.set(phase,await runSequentialStage({phase,brief,providers,previous:async name=>saved.get(name),
    collect:async(_brief,_plan,{prioritySources:[url]})=>({...packet,sources:[{...packet.sources[0],url,finalUrl:url}]})}));
  }
- assert.deepEqual(calls,['bhs-scoped-brand','tavily','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-brief-compact','bhs-scoped-plan','bhs-scoped-plan-compact']);
- assert.deepEqual(saved.get('sector_sources').managedPlan.needs,needs);
+ assert.deepEqual(calls,['bhs-scoped-brand','bhs-scoped-brand','tavily','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-brief-compact','bhs-scoped-plan','bhs-scoped-plan-compact']);
+ assert.deepEqual(saved.get('sector_sources').managedPlan.needs,orderedNeeds);
+ assert.equal(saved.get('sector_sources').managedPlan.orderedResearch,true);
+});
+
+test('ordered research runs one exact command, then returns the evidence to the controller before its next choice',async()=>{
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,needs:[{...needs[0],first:'tavily'},needs[1]]};
+ const requests=[],query='distributeurs indépendants alimentation bio France';
+ const first={id:needs[0].id,tool:'tavily',query,url:'',mode:'default',limit:3};
+ const second={id:needs[1].id,tool:'gemini',query:needs[1].query,url:'',mode:'default',limit:2};
+ const providers={managedBudgetVersion:12,modelHandoff:true,
+  manager:async(stage,input,schema)=>{
+   assert.equal(stage,'bhs-scoped-review');
+   assert.equal(schema.properties.commands.maxItems,1);
+   if(!input.previous.length)return {data:draft({commands:[first,second]})};
+   assert.deepEqual(requests.map(r=>r[0]),['tavily','worker']);
+   assert.equal(input.previous[0].query,query);
+   assert.ok(input.findings.some(f=>f.quote===quote));
+   return {data:draft({commands:[second]})};
+  },
+  search:async(q,o)=>{requests.push(['tavily',q,o.maxResults,o.countryCode]);return {results:[{url:about,title:'Marque',content:quote}]};},
+  searchGemini:async(need)=>{requests.push(['gemini',need.query,need.quantity,need.since]);return {results:[{url:post,title:'Post',content:postQuote}]};},
+  geminiWorker:async()=>assert.fail('evidence extraction must be able to hand off to Claude'),
+  worker:async(stage,input)=>{requests.push(['worker',stage,input.requests.length]);return {data:{results:[]}};}
+ };
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:async()=>({sources:[]})};
+ const one=await reviewScopedResearch({...args,rounds:[]});
+ assert.equal(one.receipts.length,1);
+ const two=await reviewScopedResearch({...args,rounds:[one]});
+ assert.equal(two.receipts.length,1);
+ assert.deepEqual(requests,[['tavily',query,3,'FR'],['worker','bhs-scoped-extract',1],['gemini',needs[1].query,2,needs[1].since],['worker','bhs-scoped-extract',1]]);
 });
 
 test('an unavailable brief or twice-empty plan never commits the start of research',async()=>{
@@ -297,22 +332,29 @@ test('an unaffordable controller does not close research while a focused provide
 });
 
 test('synthesis accepts an incomplete report only after the research budget closes',async()=>{
- const plan={needs:[needs[0]],scopedResearch:true,adaptiveResearch:true,reportOnlyAfterResearch:true};
+ const plan={needs:[{...needs[0],first:'tavily'}],scopedResearch:true,adaptiveResearch:true,reportOnlyAfterResearch:true,orderedResearch:true};
+ const facts=[{id:'q-one',item:'Wholesale',url:about,quote,title:'Marque',method:'extracted'}];
+ const receipts=[{id:needs[0].id,facts,attempts:[],urls:[about]}];
+ const approvedEvidence={receipts,decisions:[{id:needs[0].id,sufficient:true,proofs:['q-one']}]};
+ const partialEvidence={receipts,decisions:[{id:needs[0].id,sufficient:false,proofs:['q-one']}]};
  let written=0;
  const providers={claudeManager:async(stage,input)=>{
   if(stage==='bhs-scoped-review')return {data:draft({})};
   written++;
   assert.equal(stage,'bhs-scoped-report');
   assert.equal(input.coverage[0].status,'open');
+  assert.equal(input.stopReason,'research_budget_exhausted');
+  assert.ok(Object.values(input.sources).some(source=>source[0]===about));
   return {model:'claude-sonnet-5-5',data:{findings:[],questions:[]}};
  },researchCapacity:async()=>({remainingKurus:61,defaults:[],configuredDefaults:['tavily','gemini'],actors:[]})};
  const args={brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,providers};
  await assert.rejects(writeScopedSynthesis({...args,rounds:[{closed:true,issue:'no_executable_research_command'}]}),{code:'research_needs_open'});
+ await assert.rejects(writeScopedSynthesis({...args,rounds:[approvedEvidence]}),{code:'research_needs_open'});
  assert.equal(written,0);
  const round=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:async()=>({sources:[]})});
  assert.equal(round.closed,true);
  assert.equal(round.stopReason,'research_budget_exhausted');
- await writeScopedSynthesis({...args,rounds:[round]});
+ await writeScopedSynthesis({...args,rounds:[partialEvidence,round]});
  assert.equal(written,1);
 });
 

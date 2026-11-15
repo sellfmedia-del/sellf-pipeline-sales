@@ -104,7 +104,7 @@ export function actorInput(request,context,known=observedActorTargets(context)){
  }
  if(actor.startsWith('harvestapi/linkedin-')){
   if(host!=='linkedin.com'||parts[0]!=='company'||parts.length!==2)return bad();
-  return {input:actor.endsWith('company-search')?{scraperMode:'full',searchQuery:'"'+context.brief.brandName.replace(/"/g,'')+'"',maxItems:1,startPage:1,takePages:1}:{authorUrls:[url],maxPosts:limit(5),postedLimit:'year',sortBy:'date',profileScraperMode:'short',startPage:1,scrapePages:1,scrapeReactions:request.mode==='engagement',maxReactions:request.mode==='engagement'?limit(5):0,scrapeComments:request.mode==='reviews',maxComments:request.mode==='reviews'?limit(5):0},maxItems:actor.endsWith('company-search')?1:limit(5),url,official:known.official.has(url)};
+  return {input:actor.endsWith('company-search')?{scraperMode:'full',searchQuery:request.exactScope&&request.query?request.query:'"'+context.brief.brandName.replace(/"/g,'')+'"',maxItems:1,startPage:1,takePages:1}:{authorUrls:[url],maxPosts:limit(5),postedLimit:'year',sortBy:'date',profileScraperMode:'short',startPage:1,scrapePages:1,scrapeReactions:request.mode==='engagement',maxReactions:request.mode==='engagement'?limit(5):0,scrapeComments:request.mode==='reviews',maxComments:request.mode==='reviews'?limit(5):0},maxItems:actor.endsWith('company-search')?1:limit(5),url,official:known.official.has(url)};
  }
  if(actor==='curious_coder/linkedin-jobs-scraper'){
   if(host!=='linkedin.com'||!u.pathname.startsWith('/jobs/search')||!u.searchParams.has('f_C'))return bad();

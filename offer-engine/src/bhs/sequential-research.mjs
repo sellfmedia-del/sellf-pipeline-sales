@@ -327,6 +327,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const brandProviders=protectStartup?providers.withCeiling(scopedBrandCeilingKurus):providers;
   if(adaptive&&phase!=='brand_plan'&&prior.brandDiscovery&&!prior.brandDiscovery.done){
    const discovery=await understandScopedBrand({brief,packet:prior.packet,prior:prior.brandDiscovery,providers:brandProviders,
+    final:protectStartup&&phase==='brand_correction_draft',
     readPages:urls=>readResearchPages(brief,prior.plan,urls,brandProviders,collect,{archive:false})});
    const {packet,...brandDiscovery}=discovery;
    return finish({...prior,packet,brandDiscovery,
