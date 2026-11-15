@@ -20,6 +20,7 @@ import {runSupervisedStage} from './supervised-research.mjs';
 import {runSequentialStage} from './sequential-research.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {continueScopedCollection} from './collection-first.mjs';
+import {scopedResearchClosed} from './scoped-research.mjs';
 
 export const phases=['source_plan','evidence','synthesis','scope','complete'];
 // Reuse paid discovery/evidence. Improved synthesis is versioned separately;
@@ -29,14 +30,22 @@ const stageRevisions={brand_plan:'r2',brand_draft:'r6',brand_correction_sources:
 const sectorRepairRevision=phase=>stageRevisions[phase]?'-'+stageRevisions[phase]:'';
 export const stageKey=(brief,phase,version='v4',checkpointHash=hash(brief))=>'audit:'+phase+':'+(['v7','v8'].includes(version)?phase+'-'+version+(version==='v8'?sectorRepairRevision(phase):'')+':':version==='v6'?phase+'-v6:':version==='v3'?(phase==='scope'?'report-v3-format2:':phase==='synthesis'?'report-v3:':''):phase+'-'+(version==='v5'&&['synthesis','scope'].includes(phase)?'v5':'v4')+':')+checkpointHash;
 const scopedRoundKey=(checkpointHash,index)=>'audit:scoped-round:'+checkpointHash+':'+index;
-export async function scopedResearchProgress(ledger,checkpointHash){
+export async function scopedResearchProgress(ledger,checkpointHash,{guarded=false,skipReserved=false,before=Infinity}={}){
  const rounds=[];
- for(let index=0;;index++){
+ for(let index=0;index<before;index++){
   const step=await ledger.get(scopedRoundKey(checkpointHash,index));
-  if(step?.state!=='complete')return {rounds,index,done:Boolean(step),step};
+  if(step?.state!=='complete'){
+   if(guarded&&(step?.state==='uncertain'||step?.state==='reserved'&&
+    (typeof skipReserved==='function'?skipReserved(step):skipReserved))){
+    rounds.push({issue:'research_round_interrupted'});
+    continue;
+   }
+   return {rounds,index,done:!guarded&&Boolean(step),step};
+  }
   rounds.push(step.value);
-  if(step.value.approved||step.value.closed)return {rounds,index,done:true};
+  if(scopedResearchClosed(step.value,guarded))return {rounds,index,done:true};
  }
+ return {rounds,index:before,done:false};
 }
 export function seedQueries(brief){const brand='"'+brief.brandName.replace(/"/g,'')+'"',domain=new URL(brief.website).hostname;return [
  `site:${domain} ${brand} products pricing about shop subscription ürün fiyat`,
@@ -88,7 +97,9 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
   try{
   const receipts=new Map();
   const previous=name=>{
-   if(name==='scoped-tail')return scopedResearchProgress(ledger,checkpointHash).then(result=>result.rounds);
+   if(name==='scoped-tail')return scopedResearchProgress(ledger,checkpointHash,{
+    guarded:providers.managedBudgetVersion>=11,skipReserved:true,before:scopedRoundIndex
+   }).then(result=>result.rounds);
    if(!receipts.has(name))receipts.set(name,ledger.get(key(name)).then(row=>{
     if(row?.state!=='complete')throw new BudgetError('stage_pending','Önceki araştırma aşaması henüz tamamlanmadı.');
     return row.value;

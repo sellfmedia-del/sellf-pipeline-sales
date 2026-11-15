@@ -160,7 +160,9 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    }
    const pendingPhases=activePhases.filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
-   const previous=async name=>name==='scoped-tail'?(await scopedResearchProgress(ledger,checkpointHash)).rounds:rows[pendingPhases.indexOf(name)]?.value;
+   const researchMarker=rows[pendingPhases.indexOf('report_draft')]?.value;
+   const progressOptions={guarded:researchMarker?.researchBudgetGuarded===true,skipReserved:step=>abandonedStage(step,now())};
+   const previous=async name=>name==='scoped-tail'?(await scopedResearchProgress(ledger,checkpointHash,progressOptions)).rounds:rows[pendingPhases.indexOf(name)]?.value;
    const finishGaps=async(synthesis,audit)=>{
     const canComplete=['complete','paused','cancelled'].includes(backgroundJob?.state)&&synthesis?.supervision?.reviewMode==='managed-audit'
      &&(backgroundJob.state==='complete'||synthesis.supervision.researchPlan)&&(productionOffers()||getGapLedger);
@@ -207,8 +209,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     }
     return await finish(await restoreContinuation(brief,partial,ledger,now()),gapCompletion);
    }
-   if(!backgroundJob&&rows[pendingPhases.indexOf('report_draft')]?.value?.scopedTail&&rows[pendingPhases.indexOf('synthesis')]?.state!=='complete'){
-    let progress=await scopedResearchProgress(ledger,checkpointHash);
+   if(!backgroundJob&&researchMarker?.scopedTail&&rows[pendingPhases.indexOf('synthesis')]?.state!=='complete'){
+    let progress=await scopedResearchProgress(ledger,checkpointHash,progressOptions);
     phase='report_draft';
     if(progress.step?.state==='reserved'&&!abandonedStage(progress.step,now()))
      return res.status(200).json({phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
@@ -217,7 +219,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      const budget=await managedPhaseBudget({ledger,brief,phase});
      const providers=getProviders({ledger:budget.ledger,researchVersion,phase,managedAudit:budget.managedAudit,managedBudgetVersion:budget.managedBudgetVersion,phaseLimitKurus:budget.phaseCeiling});
      await runStage({phase,brief,checkpointHash,ledger:budget.ledger,providers,researchVersion,researchModel:job.researchModel,scopedRoundIndex:progress.index});
-     progress=await scopedResearchProgress(ledger,checkpointHash);
+     progress=await scopedResearchProgress(ledger,checkpointHash,progressOptions);
      return res.status(202).json({phase:progress.done?'synthesis':phase,status:'in_progress',nextAction:'advance',ticket,cost:await cost()});
     }
    }

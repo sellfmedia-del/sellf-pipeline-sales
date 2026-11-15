@@ -41,11 +41,12 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
    if(job.phase==='report_draft')step=await ledger.get(key);
   }
   if(job.phase==='report_draft'&&step?.value?.scopedTail){
-   let progress=await scopedResearchProgress(ledger,checkpointHash);
+   const guarded=step.value.researchBudgetGuarded===true;
+   let progress=await scopedResearchProgress(ledger,checkpointHash,{guarded,skipReserved:true});
    if(!progress.done&&!job.cancelRequested){
     const indexed={...await loadOptions(),scopedRoundIndex:progress.index};
     await runStage(indexed);
-    progress=await scopedResearchProgress(ledger,checkpointHash);
+    progress=await scopedResearchProgress(ledger,checkpointHash,{guarded,skipReserved:true});
     if(!progress.done){
      await queue.pause(job,{code:'research_continues',phase:job.phase});
      return {status:'queued',nextPhase:job.phase};

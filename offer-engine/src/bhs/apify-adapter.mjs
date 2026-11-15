@@ -6,6 +6,7 @@ import {evidenceExcerpts} from './evidence.mjs';
 import {resolveTarget} from '../network.mjs';
 
 const terminal=new Set(['SUCCEEDED','FAILED','TIMED-OUT','ABORTED']);
+const datasetAllowanceKurus=10;
 const identifier=s=>typeof s==='string'&&/^[a-zA-Z0-9]{10,30}$/.test(s);
 const scalar=v=>typeof v==='string'?v.slice(0,1800):typeof v==='number'&&Number.isFinite(v)?v:typeof v==='boolean'?v:undefined;
 const pick=(r,keys)=>Object.fromEntries(keys.flatMap(k=>scalar(r?.[k])===undefined?[]:[[k,scalar(r[k])]]));
@@ -139,9 +140,22 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
  }
  const infoFor=id=>{if(!metadata.has(id))metadata.set(id,json('acts/'+id).then(r=>r.data));return metadata.get(id);};
  const pricingFor=info=>(info.pricingInfos||[]).filter(p=>Date.parse(p.startedAt)<=now()).sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt))[0];
- return {async availableActors(){
+ return {async availableActors({affordable=false}={}){
    const saved=await tasks(),names=Object.keys(actorIds).filter(a=>matchedActorTasks(actorIds[a],saved).length);
-   const checks=await Promise.allSettled(names.map(async name=>{const p=pricingFor(await infoFor(actorIds[name]));const cap=Math.min(.2,matchedActorTasks(actorIds[name],saved)[0].options.maxTotalChargeUsd);return eventOnlyPricing(p)&&(!Number.isFinite(p.minimalMaxTotalChargeUsd)||p.minimalMaxTotalChargeUsd<=cap)?name:null;}));
+   const status=affordable?await ledger.status():null;
+   const checks=await Promise.allSettled(names.map(async name=>{
+    const actorId=actorIds[name],task=matchedActorTasks(actorId,saved)[0],pricing=pricingFor(await infoFor(actorId));
+    const cap=Math.min(.2,task.options.maxTotalChargeUsd);
+    if(!eventOnlyPricing(pricing)||Number.isFinite(pricing.minimalMaxTotalChargeUsd)&&pricing.minimalMaxTotalChargeUsd>cap)return null;
+    if(status){
+     const minimum=Math.max(.000001,pricing.minimalMaxTotalChargeUsd||0);
+     const quote=actorChargeLimit({actor:name,actorId,task,requestedUsd:minimum,
+      remainingKurus:status.capKurus-status.chargedKurus-datasetAllowanceKurus,followingKurus,pricing});
+     const reserve=ledger.quoteReservation||((amount)=>amount);
+     if(reserve(quote.reservedKurus)+reserve(datasetAllowanceKurus)>status.capKurus-status.chargedKurus)return null;
+    }
+    return name;
+   }));
    return checks.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
   },
   async enrich(request,context){
@@ -157,7 +171,6 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
     if(request.actor==='apify/rag-web-browser')try{await validateUrl(target.url);}
     catch{throw new BudgetError('actor_source_unverified','Tarayıcı hedefinin herkese açık olduğu doğrulanamadı.');}
     const info=await infoFor(actorId),pricing=pricingFor(info);
-    const datasetAllowanceKurus=10;
     const status=await ledger.status();
     // Meet a verified minimum only inside the saved individual cap and total account.
     const preferredUsd=['apify/rag-web-browser','tamgadev/sikayetvar-scraper','shahidirfan/trendyol-reviews-scraper'].includes(request.actor)?.018:.04;
@@ -173,7 +186,6 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
    })();
    // .0004 USD/1000 reads + .20 USD/GB external transfer, reviewed 2026-11-10.
    // One <=1 MB, <=10-item read is <.00021 USD; ten kurus adds ample headroom.
-   const datasetAllowanceKurus=10;
    const stop=async()=>{await json('actor-runs/'+start.runId+'/abort',{body:{}}).catch(()=>{});return {actor:request.actor,status:'unavailable',runId:start.runId,reason:'actor_time_limit',reservedKurus:start.reservedKurus};};
    let run;for(let poll=0;poll<16;poll++){
     if(now()>=deadline)return stop();

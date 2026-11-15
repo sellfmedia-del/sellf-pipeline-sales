@@ -43,6 +43,26 @@ test('a committed research phase requeues while Claude has work and advances onc
  assert.deepEqual(executed,[0,1]);
  assert.deepEqual(events,['research_continues','synthesis','synthesis']);
 });
+test('guarded research requeues past an obsolete closure and an interrupted round before writing',async()=>{
+ const current={...job,researchVersion:'v8',phase:'report_draft'};
+ const marker=stageKey(brief,current.phase,'v8'),round='audit:scoped-round:'+hash+':';
+ const rows=new Map([[marker,{state:'complete',value:{scopedTail:true,researchBudgetGuarded:true}}],
+  ['audit:managed-policy:'+hash,{state:'complete',value:{version:11}}],
+  [round+'0',{state:'complete',value:{closed:true,issue:'no_executable_research_command'}}],
+  [round+'1',{state:'uncertain'}]]);
+ const executed=[],events=[];
+ const ledger={get:async key=>rows.get(key)};
+ const queue={pause:async(_,data)=>events.push(data.code),advance:async(_,data)=>events.push(data.nextPhase)};
+ const args={job:current,queue,getLedger:async()=>ledger,getProviders:async()=>({}),now:()=>0,
+  runStage:async({scopedRoundIndex:index})=>{
+   executed.push(index);
+   rows.set(round+index,{state:'complete',value:index===2?{closed:false}:{closed:true,stopReason:'research_budget_exhausted'}});
+  }};
+ assert.equal((await runClaimedBhsStage(args)).nextPhase,'report_draft');
+ assert.equal((await runClaimedBhsStage(args)).nextPhase,'synthesis');
+ assert.deepEqual(executed,[2,3]);
+ assert.deepEqual(events,['research_continues','synthesis']);
+});
 test('prepared PostgreSQL queue requires private roles, a lease and a committed matching budget checkpoint',async()=>{
  const db=new PGlite();
  try{

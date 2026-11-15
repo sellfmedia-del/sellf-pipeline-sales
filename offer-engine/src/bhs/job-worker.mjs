@@ -54,7 +54,9 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    (adaptiveBrand||phaseIndex>sequentialPhases.indexOf('brand'))){
    const noProvider=async()=>{throw new BudgetError('budget_limit','BHS araştırma bütçesi doldu.');};
    const disabled={...options.providers,manager:noProvider,claudeManager:noProvider,evidenceReviewer:noProvider,worker:noProvider,geminiWorker:noProvider,
-    search:noProvider,searchGemini:noProvider,enrich:noProvider,availableActors:async()=>[],withCeiling:()=>disabled};
+    search:noProvider,searchGemini:noProvider,enrich:noProvider,availableActors:async()=>[],
+    researchCapacity:async()=>({remainingKurus:options.phaseCeiling-cost.chargedKurus,defaults:[],configuredDefaults:[],actors:[],workerBudgetExhausted:true}),
+    withCeiling:()=>disabled};
    return runStage({...options,providers:disabled});
   }
  }
