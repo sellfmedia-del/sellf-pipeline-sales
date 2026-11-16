@@ -1,3 +1,6 @@
+const readMethods=new Set(['html','pdf','rendered','extracted']);
+export const isReadEvidence=source=>readMethods.has(source?.method)&&!source.metadataOnly;
+
 // Useful partial research needs a supported observation, not just headings,
 // citations or meeting context. Run this only after the provenance gate.
 export function hasGroundedResearch(report){

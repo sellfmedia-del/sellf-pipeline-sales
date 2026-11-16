@@ -218,6 +218,10 @@
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
       }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length));
+      if(data.verifiedResearch?.competitorCandidates?.length){
+        heading('Doğrulanacak rakip adayları');
+        data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));
+      }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       if(data.researchContinuity){

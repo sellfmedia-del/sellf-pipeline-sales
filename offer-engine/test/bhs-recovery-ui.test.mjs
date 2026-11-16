@@ -23,6 +23,7 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
    window.PipelineAuditRequest=async payload=>{
     const response=await original(payload);
     Object.assign(response.result.data,{findings:[],researchContinuity:{status:'unavailable',notice:'Görüşme bilgileriyle teklife devam edebilirsin.'},
+     verifiedResearch:{metrics:[],competitorCandidates:[{name:'Örnek Aday',url:'https://candidate.example/catalogue'}]},
      supervision:{researchStopReason:width===1280?'research_engine_failure':'research_source_plan_invalid'},
      bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
@@ -38,6 +39,8 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   for(const row of ['Instagram’da son 30 günün etkileşimi — Aranmadı','Markanın YouTube hesabı — Kaynak yetersiz','Reklam maliyetleri — Kanıt bulundu, rapora aktarılamadı'])assert.ok(text.includes(row),row);
   assert.doesNotMatch(text,/instagram_marka|youtube_marka|reklam_maliyet/);
   assert.equal(await page.locator('.ob-research-report article').count(),0);
+  assert.equal(await page.locator('.ob-research-report h3').filter({hasText:'Doğrulanacak rakip adayları'}).count(),1);
+  assert.match(text,/Örnek Aday · https:\/\/candidate\.example\/catalogue/);
   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   assert.deepEqual(errors,[]);await page.close();

@@ -10,7 +10,7 @@ import {actorInput,observedActorTargets,searchActors} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialPhases,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
-import {requireGroundedResearch} from './research-content.mjs';
+import {isReadEvidence,requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
@@ -569,16 +569,18 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-export function managedCollectionContext(brief,packet,{complete=false}={}){
+export function managedCollectionContext(brief,packet,{complete=false,readEvidenceOnly=false}={}){
  const peerHosts=new Set(packet.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
  const brandHost=researchHost(brief.website);
  const primary=[],other=[];
  for(const source of packet.sources){
+  if(readEvidenceOnly&&!isReadEvidence(source))continue;
   const host=researchHost(source.finalUrl||source.url);
   const isPrimary=host===brandHost||peerHosts.has(host);
   (isPrimary&&!source.metadataOnly&&source.method!=='search-snippet'?primary:other).push(source);
  }
- const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
+ const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},
+  {includeTechnicalSignals:!readEvidenceOnly,completeEvidence:complete});
  context.collectionFirst=true;
  return context;
 }
@@ -1110,7 +1112,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(plan.reportOnlyAfterResearch&&allowWrite&&!sections&&(plan.orderedResearch||evidence.coverage.some(metric=>metric.status==='open'))&&
   (!terminal||!plan.orderedResearch&&!terminal.closed))
   throw new BudgetError('research_needs_open','Açık BHS araştırması kapanmadan rapor yazımı başlatılamaz.');
- const context=managedCollectionContext(brief,evidence.packet,{complete:true});
+ const context=managedCollectionContext(brief,evidence.packet,{complete:true,readEvidenceOnly:plan.readEvidenceOnly});
  const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
   directedResearch:true,coveragePolicy:2,assets:evidence.coverage.filter(c=>c.section==='digital').flatMap(c=>c.proofs.map(p=>({url:p.url,purpose:c.name,state:'examined'})))};
  const args={brief,brand,plan:reportPlan,context,inventory:[],...(sections?{sections}:{}),existing};
@@ -1158,12 +1160,13 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  }
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse);
+  if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
   report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
  if(useSavedEvidence)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
- return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
+ return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
    ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
    ...(plan.targetedEvidence&&terminal?.stopReason?{researchStopReason:terminal.stopReason}:{}),
@@ -1221,6 +1224,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=14?{targetedEvidence:true}:{}),
    ...(providers.managedBudgetVersion>=17?{verifiedResults:true}:{}),
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
+   ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

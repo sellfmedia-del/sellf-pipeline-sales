@@ -8,7 +8,7 @@ import {executeDirectedResearch,planDirectedResearch} from './directed-research.
 import {focusedResearchPlan} from './managed-research.mjs';
 import {collectionCorpus,collectionMarket,collectPlannedCoverage,comparisonResearch,managedCollectionContext,peerCandidates,readResearchPages,expandDirectedSources,retainedManagedProofs,scopedRounds,writeScopedSynthesis} from './collection-first.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
-import {researchUrl} from './research-url.mjs';
+import {researchHost,researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
 import {salesSectionTitle} from './sales-research-labels.mjs';
 
@@ -110,14 +110,14 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  if(version>=9){
   const rounds=priorPlan.compactQueue?[]:(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
   if(priorPlan.adaptiveResearch)rounds.push(...(await previous('scoped-tail')||[]));
-  const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+  const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,...(priorPlan.readEvidenceOnly?{evidenceFocus}:{})});
   for(let i=0;i<3;i++){
    const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
     plan:priorPlan,rounds,providers,brief,packet:brand.packet,readPages,eligibleSections:sections,existing,gap:true,last:i===2});
@@ -127,7 +127,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
   const result=await writeScopedSynthesis({brief,brand,plan:priorPlan,rounds,providers,sections,existing});
   if(!result.report.verifiedResearch&&!result.report.findings.some(f=>f.recommendation?.action))return {report:original,analysisPacket:result.analysisPacket,
    supervision:{...synthesis.supervision,reportIssue:result.supervision.reportIssue},evidenceCoverage:result.supervision.evidenceCoverage};
-  const context=managedCollectionContext(brief,result.analysisPacket);
+  const context=managedCollectionContext(brief,result.analysisPacket,{complete:priorPlan.readEvidenceOnly,readEvidenceOnly:priorPlan.readEvidenceOnly});
   const merged=mergeGapEvidence(synthesis,result.report,sections,context,result.supervision.evidenceCoverage);
   return {...merged,supervision:{...merged.supervision,researchApproved:result.supervision.researchApproved,metricCoverage:result.supervision.metricCoverage,
    evidenceCoverage:result.supervision.evidenceCoverage,reportIssue:result.supervision.reportIssue}};
@@ -254,8 +254,11 @@ export function mergeManagedGapReport(original,patch,sections){
  }
  const addedIds=new Set(findings.slice(original.findings.length).map(f=>f.id));
  const sourceIds=new Set([...evidenceRefs,...[...findings,...competitors].flatMap(f=>f.sourceIds)]);
+ const acceptedHosts=new Set(competitors.map(peer=>researchHost(peer.website)));
+ const candidates=[...new Map([...(original.verifiedResearch?.competitorCandidates||[]),...(patch.verifiedResearch?.competitorCandidates||[])]
+  .filter(candidate=>!acceptedHosts.has(researchHost(candidate.url))).map(candidate=>[researchHost(candidate.url),candidate])).values()];
  return {...original,findings,competitors,
-  ...(verified?{verifiedResearch:{metrics:[...metrics.values()]}}:{}),
+  ...(verified?{verifiedResearch:{metrics:[...metrics.values()],...(candidates.length?{competitorCandidates:candidates}:{})}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};

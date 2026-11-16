@@ -107,6 +107,121 @@ test('an engagement proof cannot clear the frequency task and follow-up needs ge
  assert.deepEqual(result.coverage.find(row=>row.id===frequency.id).proofs,[]);
 });
 
+test('a cited search snippet is opened before another paid search and only the publisher proof can clear the task',async()=>{
+ const need={...instagramScope,...engagement};
+ const plan={needs:[need],orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,readEvidenceOnly:true};
+ const url=post;
+ const captured='2026-11-10T09:30:00Z';
+ const [receipt]=await runScopedDefaults([need],{managedBudgetVersion:20,
+  search:async()=>({results:[{url,title:'Official post',content:postQuote}]})},()=>assert.fail());
+ const snippet=receipt.facts[0];
+ const rounds=[{receipts:[{...receipt,defaultAttempt:true}],reviewedProofIds:[snippet.id]}];
+ let reads=0;
+ const providers={managedBudgetVersion:20,researchCapacity:async()=>openingCapacity(1800),
+  manager:async(stage,input)=>{
+   assert.equal(stage,'bhs-scoped-review');
+   assert.match(input.instruction,/veri dönemi ile yayın ve erişim tarihini ayır/);
+   const proof=input.findings.find(f=>f.method==='html');
+   return {data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[(proof||snippet).id]}],
+    commands:proof?[]:[{id:need.id,tool:'tavily',query:'Unnecessary repeat query',url:'',mode:'default',limit:1}]})};
+  },
+  search:()=>assert.fail('read the already discovered page before another paid search')
+ };
+ const review=()=>reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages:async urls=>{
+  assert.deepEqual(urls,[url]);
+  reads++;
+  return {sources:[{url,title:snippet.title,method:'html',retrievedAt:captured,excerpts:[{text:postQuote}]}]};
+ }});
+ rounds.push(await review());
+ assert.equal(rounds.at(-1).approved,false);
+ assert.deepEqual(rounds.at(-1).decisions[0].proofs,[]);
+ assert.deepEqual(rounds.at(-1).commandResults.map(({tool,status})=>[tool,status]),[['read','executed'],['tavily','not_dispatched']]);
+ const publisher=rounds.at(-1).receipts[0].facts[0];
+ assert.notEqual(publisher.id,snippet.id);
+ assert.equal(publisher.retrievedAt,captured);
+ rounds.push(await review());
+ assert.equal(reads,1);
+ assert.equal(rounds.at(-1).stopReason,'evidence_confirmed');
+ assert.deepEqual(scopedEvidence({packet},plan,rounds).coverage[0].proofs.map(f=>f.id),[publisher.id]);
+});
+
+test('search-only and metadata-only sources remain outside claims, partial recovery and verified competitors',async()=>{
+ const price={...needs[0],id:'price',section:'FİYAT',metric:'Türkiye liste fiyatı',first:'tavily'};
+ const peerNeed={...needs[0],id:'peers',section:'RAKIP',first:'tavily'};
+ const social={...instagramScope,...engagement};
+ const plan={scopedResearch:true,verifiedResults:true,qualityReport:true,adaptiveResearch:true,targetedEvidence:true,
+  orderedResearch:true,reportOnlyAfterResearch:true,readEvidenceOnly:true,needs:[price,peerNeed,social]};
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const makeFact=(id,url,quote,method='html')=>({id,url,quote,method,title:id,item:id});
+ const priceSnippet=makeFact('price-snippet','https://retailer.fr/product/159','Türkiye 2026 ürün liste fiyatı 159 TL olarak belirtiliyor.','search-snippet');
+ const socialMetadata={...makeFact('meta',instagram,'Marque Instagram hesabında ayda 22 paylaşım.'),metadataOnly:true};
+ const direct=makeFact('direct','https://comparable.fr/catalogue','Comparable sells packaged groceries in France for supermarket distribution.');
+ const candidate=makeFact('candidate','https://suggested.fr/groceries','Suggested sells packaged groceries in France for supermarket distribution.','search-snippet');
+ const readSocial=makeFact('read-post',post,postQuote,'extracted');
+ const readAlso=makeFact('also-read','https://other.fr/story','Marque goods are available through the brand website.');
+ const peer=(fact,name)=>({name,url:fact.url,product:'Packaged groceries',market:'France',channel:'Supermarkets',priceBand:'',relationship:'direct'});
+ const receipt=(need,facts)=>({id:need.id,urls:facts.map(f=>f.url),facts,attempts:[{tool:'tavily'}]});
+ const terminal={closed:true,stopReason:'research_budget_exhausted',peers:[peer(direct,'Comparable'),peer(candidate,'Suggested')],
+  receipts:[receipt(price,[priceSnippet,readAlso]),receipt(peerNeed,[direct,candidate]),receipt(social,[socialMetadata,readSocial])],
+  decisions:[{id:price.id,sufficient:true,proofs:[priceSnippet.id]},{id:peerNeed.id,sufficient:false,proofs:[direct.id,candidate.id]},
+   {id:social.id,sufficient:true,proofs:[socialMetadata.id,readSocial.id]}]};
+ const summaryArgs={brief,brand,plan,rounds:[terminal]};
+ const saved=await writeScopedSynthesis({...summaryArgs,providers:{},allowWrite:false});
+ const drafted=await writeScopedSynthesis({...summaryArgs,providers:{manager:async(_stage,input)=>{
+  const proof=fragment=>Object.entries(input.sources).find(([,row])=>row[1].includes(fragment))?.[0];
+  assert.equal(proof('159 TL'),undefined);
+  assert.equal(proof('ayda 22'),undefined);
+  assert.equal(proof('Suggested sells'),undefined);
+  assert.ok(Object.values(input.documents).every(row=>['html','extracted'].includes(row[2])));
+  assert.deepEqual(input.coverage.find(m=>m.id===price.id).sources,[]);
+  const base={area:'',quadrant:'none',peerId:'',kind:'observation',analysis:'Kanalı değerlendirmeye yardımcı olur.',
+   action:'Satış kanallarını incele.',measurement:'',limitation:'',question:''};
+  return {data:{findings:[
+   {...base,rank:1,section:'Dijital',needIds:[social.id],observation:'Gönderi 84 beğeni aldı.',proof:[proof(postQuote)]},
+   {...base,rank:2,section:'Fiyat',needIds:[price.id],observation:'Marque ürünleri marka sitesinde yer alıyor.',proof:[proof(readAlso.quote)]},
+   {...base,rank:3,section:'Pazar',needIds:[],peerId:'Suggested',observation:'Suggested doğrudan rakip.',proof:[proof(direct.quote)]}
+  ],peers:[],benchmarks:[],questions:[]}};
+ }}});
+ for(const synthesis of [saved,drafted]){
+  const result=directAuditResult(brief,synthesis).data;
+  assert.equal(synthesis.supervision.metricCoverage.find(m=>m.id===price.id).status,'open');
+  assert.equal(synthesis.supervision.metricCoverage.find(m=>m.id===social.id).status,'confirmed');
+  assert.deepEqual(result.competitors.map(c=>c.name),['Comparable']);
+  assert.deepEqual(result.verifiedResearch.competitorCandidates,[{name:'Suggested',url:candidate.url}]);
+  assert.deepEqual(selectProposalAudit(result,brief).competitors.map(c=>c.name),['Comparable']);
+  assert.match(result.rawReport,/Doğrulanacak rakip adayları\s+Suggested/);
+  assert.ok(result.findings.some(f=>f.statement.includes('84')));
+  assert.ok(!result.findings.some(f=>/159 TL|ayda 22|Suggested doğrudan|marka sitesinde yer alıyor/.test(f.statement)));
+  assert.ok(result.sources.every(source=>source.verification.method!=='search-snippet'&&source.url!==instagram));
+ }
+});
+
+test('an unreadable publisher page stays open and the next source is tried without retrying that URL',async()=>{
+ const need={...instagramScope,...followers};
+ const plan={needs:[need],orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,readEvidenceOnly:true};
+ const snippet={id:'cached-snippet',url:instagram,title:'Instagram',quote:'Marque hesabının 1532 takipçisi olduğu listeleniyor.',
+  method:'search-snippet',item:'Official account'};
+ const rounds=[{receipts:[{id:need.id,query:need.query,urls:[instagram],attempts:[{tool:'tavily'}],defaultAttempt:true,facts:[snippet]}]}];
+ const nextQuery='Marque Instagram compte officiel statistiques source';
+ const searchCalls=[];
+ let readCalls=0;
+ const args={identity,briefUnderstanding,plan,rounds,brief,packet,readPages:async()=>{
+  readCalls++;
+  return {sources:[],unavailable:[{url:instagram,reason:'HTTP_403'}]};
+ },providers:{
+  managedBudgetVersion:20,researchCapacity:async()=>openingCapacity(1800),
+  manager:async()=>({data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[snippet.id]}],
+   commands:[{id:need.id,tool:'tavily',query:nextQuery,url:'',mode:'default',limit:2}]})}),
+  search:async(query,options)=>{searchCalls.push([query,options.maxResults]);return {results:[]};}
+ }};
+ rounds.push(await reviewScopedResearch(args));
+ rounds.push(await reviewScopedResearch(args));
+ assert.equal(readCalls,1);
+ assert.deepEqual(searchCalls,[[nextQuery,2]]);
+ assert.equal(rounds.at(-1).approved,false);
+ assert.equal(scopedEvidence({packet},plan,rounds).coverage[0].status,'open');
+});
+
 test('a source plan validation failure stays isolated and a different affordable need still runs',async()=>{
  const target={...needs[0],first:'tavily'};
  const independent={...needs[1],section:target.section};

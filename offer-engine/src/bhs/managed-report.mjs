@@ -170,7 +170,9 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (linked?' Bulgunun karşılık geldiği gerçek ihtiyaç kimliklerini needIds alanına yaz. Araştırma dışı bulgular için boş liste ver. Doğrulanan rakiplerin entities içindeki kimliğini kullan ve kendi sitelerinden okunan kanıtla ilişkilendir. Trafik tahminini tahmin olarak yaz. Toplam ziyaret, oturum ve doğrudan kanal birbirinden farklıdır. Kanıt yalnız toplam ziyaret veriyorsa aksiyonda veya ölçümde o sayıyı oturuma ya da bir kanala bağlama. JSON içinde önce bulguları ver ve her alanı öz tut.':'')+
   (targeted?' sources satırı [belgeKimliği, alıntı], documents satırı [URL, başlık, okuma yöntemi] biçiminde. Proof için alıntının sources kimliğini kullan. Her bulguda tek ölçüm veya tek somut olgu ver. Tabloda sayı, birim, yıl ve kategori aynı kanıtla desteklenmeli. Farklı platformları, tarihleri, tahminleri ve gerçekleşen ölçümleri ayrı tut. Kanıtı hazır ama ölçümü kısmi olan bir ihtiyaçta doğrulanan kısmı kendi bulgusu olarak yaz. En önemli kararları ve açık soruları önce ver.':'')+
   (input.plan.verifiedResults?' Araştırmada doğrulanan rakipler ve ölçümler korunur. Bunları brief açısından analiz et ve hangi aksiyonu desteklediklerini yaz. Sayısal pazar bulgusunda coverage.marketMeasures içindeki doğrulanmış tutarı, birimi, yılı ve kategori ifadesini aynen ve aynı kaynağa bağlı kullan.':'')+
+  (input.plan.readEvidenceOnly?' Araştırma ihtiyacına bağlı bulguda coverage.sources içindeki okunmuş kanıtı kullan. Fiyat, doz, mevzuat, pazar, rakip ve sosyal ölçüm için ilgili ürün veya hesap, coğrafya, veri dönemi ve birimi kanıtın izin verdiği kapsamda açıkça yaz. Yayın veya erişim tarihini veri dönemi yerine koyma. Kanıt yalnız örneklem veriyorsa ölçümü o örneklemle sınırla. Rakip adayını kesin rakip olarak kullanma.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+ if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
   request.plan={understanding:input.plan.understanding,briefUnderstanding:input.plan.briefUnderstanding};
@@ -187,6 +189,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  }
  const needsById=new Map(needs.map(need=>[need.id,need]));
  const marketCoverage=input.plan.verifiedResults?coverage.filter(m=>m.marketMeasures):undefined;
+ const metricCoverage=input.plan.readEvidenceOnly?new Map(coverage.map(metric=>[metric.id,metric.sources])):undefined;
  const signal=AbortSignal.timeout(110000);
  const normalizeData=data=>Object.fromEntries(Object.entries(outputSchema.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
@@ -205,7 +208,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   return [key,rows.slice(0,field.maxItems)];
  }));
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage});
+  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
@@ -401,7 +404,7 @@ function recoverDraftProofs(row,proofs,context){
   action:'Bulguyu aynı dönem ve aynı kapsamda birinci taraf verisiyle karşılaştır.',measurement:''},proofs};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage}){
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage,metricCoverage}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
  const peerId=value=>{
@@ -419,7 +422,9 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   if(needsById){
    const needIds=list(row.needIds).filter(id=>needsById.has(id));
    const section=needsById.get(needIds[0])?.section||row.section;
-   row={...row,section,sectionTitle:row.section,needIds,peerId:peerId(row.peerId)};
+   const resolvedPeerId=peerId(row.peerId);
+   if(metricCoverage&&row.peerId&&!verifiedPeers?.some(peer=>peer.entityId===resolvedPeerId))continue;
+   row={...row,section,sectionTitle:row.section,needIds,peerId:resolvedPeerId};
   }
   let proofs=decoded(row.proof);
   const key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
@@ -427,6 +432,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   if((accepted&&!accepted.has(row.section))||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
+  if(metricCoverage&&list(row.needIds).some(id=>!metricCoverage.get(id)?.some(alias=>row.proof.includes(alias))))continue;
   if(targeted)({row,proofs}=recoverDraftProofs(row,proofs,context));
   if(marketCoverage?.length){
    const sources=proofs.flatMap(id=>context.proofGroups.get(id)||[id]);
