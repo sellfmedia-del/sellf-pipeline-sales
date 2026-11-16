@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {webcrypto} from 'node:crypto';
+import {EventEmitter} from 'node:events';
+import https from 'node:https';
+import {Readable} from 'node:stream';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,fakeCollector,packet,modelAnswer,plan} from './fixtures/sequential.mjs';
 import {sequentialContext,stageModelInput,sequentialVersion,sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
@@ -140,6 +143,58 @@ test('a compact research marker is free and a low-balance turn can still fund a 
   assert.ok(metered.accountedKurus<shortResearchReservationKurus);
   assert.equal((await f.ledger.status()).chargedKurus,2862+metered.accountedKurus);
  }finally{await f.close();}
+});
+
+test('normal and short BHS turns read a publisher page from a saved brand-only plan',async t=>{
+ for(const [kind,priorCharge] of [['normal',0],['short',2300]])await t.test(kind,async t=>{
+  const f=await localBudget();
+  try{
+   // A public literal reaches the HTTPS mock without DNS or a network call.
+   const publisher='https://93.184.216.34/catalog';
+   const excerpt='The publisher confirms that its wholesale catalogue is available to local retailers.';
+   const request=t.mock.method(https,'get',(url,_options,respond)=>{
+    assert.equal(url.href,publisher);
+    const response=Readable.from([Buffer.from(excerpt)]);
+    response.statusCode=200;
+    response.headers={'content-type':'text/plain'};
+    respond(response);
+    return new EventEmitter();
+   });
+   const brandPlan={entities:plan.entities.slice(0,1),sources:plan.sources.slice(0,1)};
+   const brandPacket=packet();
+   const need={id:'n1',section:'kanal',target:brief.brandName,market:'Türkiye',metric:'Katalog satışı',period:'',
+    expected:'Satış kanalı',quantity:1,query:'Katalog satışı',country:'TR',language:'tr',first:'tavily',since:''};
+   const managedPlan={needs:[need],compactQueue:true,scopedResearch:true,adaptiveResearch:true,orderedResearch:true,
+    targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true};
+   await f.ledger.once('synthetic-prior-research',{},priorCharge,async()=>({}));
+   await f.ledger.once(stageKey(brief,'brand','v8'),{},0,async()=>({plan:brandPlan,brandUnderstanding:{understanding:brief.brandName},
+    briefUnderstanding:{understanding:'Katalog satışını doğrula.'},packet:{...brandPacket,entities:brandPlan.entities,sources:brandPacket.sources.slice(0,1)}}));
+   await f.ledger.once(stageKey(brief,'sector_sources','v8'),{},0,async()=>({managedPlan}));
+   await f.ledger.once(stageKey(brief,'report_draft','v8'),{},0,async()=>({scopedTail:true,researchBudgetGuarded:true}));
+   await f.ledger.once('audit:scoped-round:'+hash+':0',{},0,async()=>({
+    receipts:[{id:need.id,defaultAttempt:true,attempts:[{tool:'tavily'}],urls:[publisher],facts:[]}]}));
+
+   const providers={managedBudgetVersion:18,collectionFirst:true,
+    withExecutionWindow(){return this;},
+    researchCapacity:async()=>({defaults:['tavily'],configuredDefaults:['tavily'],actors:[],minimumDefaultKurus:51,remainingKurus:89}),
+    manager:async stage=>{
+     assert.equal(stage,'bhs-scoped-review');
+     return {data:{approve:false,newNeeds:[],decisions:[],peers:[],commands:[
+      {id:need.id,tool:'read',query:'',url:publisher,mode:'default',limit:1}]}};
+    },
+    search:()=>assert.fail('the saved search must not be repeated')};
+   const job={id:other,phase:'report_draft',briefHash:hash,researchVersion:'v8'};
+   await runMeteredBhsPhase(job,{...job,brief,ledger:f.ledger,providers,phaseCeiling:3000,
+    researchModel:'claude-sonnet-5-5',scopedRoundIndex:1},{
+    meter:async({shortResearch,run})=>{assert.equal(Boolean(shortResearch),kind==='short');await run();}
+   });
+   const round=await f.ledger.get('audit:scoped-round:'+hash+':1');
+   assert.equal(request.mock.callCount(),1);
+   assert.equal(round.state,'complete');
+   assert.equal(round.value.commandResults[0].status,'executed');
+   assert.ok(round.value.receipts[0].facts.some(fact=>fact.url===publisher&&fact.quote===excerpt));
+  }finally{await f.close();}
+ });
 });
 test('production additional-run binding cannot read a Preview job or attach another owner budget',async()=>{
  const f=await fixture();try{

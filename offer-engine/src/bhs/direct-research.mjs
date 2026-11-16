@@ -57,7 +57,8 @@ export function seedQueries(brief){const brand='"'+brief.brandName.replace(/"/g,
  `${brand} Similarweb Semrush Ahrefs traffic authority social followers engagement`,
  `${brand} website PageSpeed SEO Meta Ad Library advertising content`
  ].map(q=>q.slice(0,500));}
-const collector=()=>createEvidenceCollector({timeout:75000,onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))});
+const collector=({allowPartialPlan=false}={})=>createEvidenceCollector({allowPartialPlan,timeout:75000,
+ onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))});
 function legacyFollowupQueries(brief,plan){
  const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,5);
  const peerQueries=peers.map(e=>`${e.name} ${researchHost(e.website)?'site:'+researchHost(e.website)+' ':''}products prices subscription reviews social followers revenue growth`);
@@ -106,7 +107,7 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
    }));
    return receipts.get(name);
   };
-  if(scopedRoundIndex!==undefined)return continueScopedCollection({brief,providers,previous,collect:collect||collector()});
+  if(scopedRoundIndex!==undefined)return continueScopedCollection({brief,providers,previous,collect:collect||collector({allowPartialPlan:true})});
   if(skipManagedCollection){
    const prior=await previous(sequentialPhases[sequentialPhases.indexOf(phase)-1]);
    return {collectionFirst:true,phase,decision:'accepted',methodologyVersion:prior.methodologyVersion,

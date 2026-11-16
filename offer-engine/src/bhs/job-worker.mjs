@@ -25,7 +25,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
    // inside the smaller worker envelope. Renderer work stays in full turns.
    const now=providers.now||Date.now,deadline=now()+55000;
    const short=providers.withExecutionWindow(deadline,shortResearchReservationKurus);
-   const collect=options.collect||((...args)=>createEvidenceCollector({hardDeadline:true,render:async()=>[],
+   const collect=options.collect||((...args)=>createEvidenceCollector({allowPartialPlan:true,hardDeadline:true,render:async()=>[],
     timeout:Math.max(0,deadline-now()-16000)})(...args));
    return meter({job:scopedJob,ledger:options.ledger,shortResearch:true,run:()=>runStage({...options,providers:short,collect})});
   }
