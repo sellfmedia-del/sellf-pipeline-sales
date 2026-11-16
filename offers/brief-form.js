@@ -190,7 +190,11 @@
         const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
         for(const section of data.bhsSections){
           heading(section.title);
-          if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
+          if(section.openMetrics?.length){
+            for(const metric of section.openMetrics)paragraph(
+              (metric.status==='missing_from_report'?'Rapora aktarılamadı · ':'Ek kanıt gerekli · ')+metric.name
+            );
+          }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
           for(const id of section.findingIds){
             const f=findings.get(id);if(!f?.recommendation)continue;
             const article=document.createElement('article');box.append(article);
@@ -213,7 +217,13 @@
       }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
-      if(data.researchContinuity){dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';dialog.querySelector('.ob-review-notice').textContent=data.researchContinuity.notice;}
+      if(data.researchContinuity){
+        dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';
+        const stop=data.supervision?.researchStopReason;
+        const reason=stop==='research_budget_exhausted'?'Kalan araştırma bütçesi yeni bir çağrıyı karşılamadı. ':
+          stop==='research_tools_unavailable'?'Bu araştırma turunda kullanılabilir bir sonraki araç çağrısı bulunamadı. ':'';
+        dialog.querySelector('.ob-review-notice').textContent=reason+data.researchContinuity.notice;
+      }
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
       dialog.querySelector('.ob-service-selection').hidden=result.status!=='ready';
       if(result.status==='ready')ensureSelection().catch(error=>{monthlyError.textContent=error.message;});

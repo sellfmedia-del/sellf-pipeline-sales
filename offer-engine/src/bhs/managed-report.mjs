@@ -2,10 +2,10 @@ import {dimensions} from './brief.mjs';
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {methodologyAreas} from './methodology-areas.mjs';
 import {arr,finalSchema,obj,peerSchema,sequentialContext,str} from './sequential-contracts.mjs';
-import {projectExpertReport} from './expert-report.mjs';
+import {projectExpertReport,unsafeExpertClaim} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
-import {supportedNumbers} from './numeric-evidence.mjs';
+import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -70,16 +70,17 @@ export function managedCoverage(report){
  });
 }
 
-export function scopedCoverage(report,metrics=[],linked=false){
+export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false){
  const peers=new Set((report.competitors||[]).map(peer=>peer.id));
  const ids=unique([...report.findings.map(f=>f.bhsSection).filter(Boolean),...metrics.filter(m=>linked||m.status==='open').map(m=>m.section||m.name)]);
  return ids.map(id=>{
   const findings=report.findings.filter(f=>f.bhsSection===id&&f.sourceIds.length)
    .sort((a,b)=>a.bhsRank-b.bhsRank);
   const relevant=metrics.filter(m=>(m.section||m.name)===id);
-  const open=relevant.some(m=>m.status==='open'||linked&&!findings.some(f=>f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
+  const openNeeds=relevant.filter(m=>m.status==='open'||linked&&!findings.some(f=>f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
   const title=findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id);
-  return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!open};
+  return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!openNeeds.length,
+   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(({name,status})=>({name,status:status==='open'?'needs_evidence':'missing_from_report'}))}:{})};
  });
 }
 
@@ -156,6 +157,7 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
 export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason}){
  const adaptive=input.plan.adaptiveResearch===true;
  const linked=input.plan.qualityReport===true;
+ const targeted=input.plan.targetedEvidence===true;
  const outputSchema=linked?linkedReportSchema:adaptive?adaptiveReportSchema:scopedReportSchema;
  const request={...input,needs,coverage,approved,...(stopReason?{stopReason}:{}),instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
@@ -163,11 +165,21 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (stopReason?' Araştırmayı bu turda yeniden başlatma. Kapanış nedeni bütçeyse, kaynaklı bulgularla kısmi raporu yaz ve araştırılamayan metrikleri açıkça ayır.':'')+
   (adaptive?' Raporda yalnız bu brief için anlamlı başlıklar kullan. Bölüm adını her bulgunun section alanında kendin yaz. İlave başlık veya asgari bulgu kotası yoktur. area alanı teklif aktarımı için isteğe bağlı eşlemedir.':'')+
   (linked?' Bulgunun karşılık geldiği gerçek ihtiyaç kimliklerini needIds alanına yaz. Araştırma dışı bulgular için boş liste ver. Doğrulanan rakiplerin entities içindeki kimliğini kullan ve kendi sitelerinden okunan kanıtla ilişkilendir. Trafik tahminini tahmin olarak yaz. Toplam ziyaret, oturum ve doğrudan kanal birbirinden farklıdır. Kanıt yalnız toplam ziyaret veriyorsa aksiyonda veya ölçümde o sayıyı oturuma ya da bir kanala bağlama. JSON içinde önce bulguları ver ve her alanı öz tut.':'')+
+  (targeted?' sources satırı [belgeKimliği, alıntı], documents satırı [URL, başlık, okuma yöntemi] biçiminde. Proof için alıntının sources kimliğini kullan. Her bulguda tek ölçüm veya tek somut olgu ver. Tabloda sayı, birim, yıl ve kategori aynı kanıtla desteklenmeli. Farklı platformları, tarihleri, tahminleri ve gerçekleşen ölçümleri ayrı tut. Kanıtı hazır ama ölçümü kısmi olan bir ihtiyaçta doğrulanan kısmı kendi bulgusu olarak yaz. En önemli kararları ve açık soruları önce ver.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  if(adaptive&&!sections)delete request.sections;
  if(linked){
   request.plan={understanding:input.plan.understanding,briefUnderstanding:input.plan.briefUnderstanding};
   request.needs=needs.map(({id,section,target,market,period})=>({id,section,target,market,period}));
+ }
+ if(targeted){
+  const documents=new Map();
+  request.sources=Object.fromEntries(Object.entries(input.sources).map(([proof,[url,title,method,quote]])=>{
+   const key=JSON.stringify([url,title,method]);
+   if(!documents.has(key))documents.set(key,'d'+(documents.size+1));
+   return [proof,[documents.get(key),quote]];
+  }));
+  request.documents=Object.fromEntries([...documents].map(([key,id])=>[id,JSON.parse(key)]));
  }
  const needsById=new Map(needs.map(need=>[need.id,need]));
  const signal=AbortSignal.timeout(110000);
@@ -188,14 +200,14 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   return [key,rows.slice(0,field.maxItems)];
  }));
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-  usedInput:request,data,managerDirected:true,modelSelectedPeers:true,adaptive,needsById:linked?needsById:undefined});
+  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
    compactReview:true,lowEffort:true,plainJson:true,normalizeData,generationTimeoutMs:95000,
    ...(linked?{acceptPartialData:data=>project(data).findings.length>0}:{})});
   const report=project(completion.data);
-  if(adaptive)report.bhsSections=scopedCoverage(report,coverage,linked);
+  if(adaptive)report.bhsSections=scopedCoverage(report,coverage,linked,targeted);
   if(completion.partialOutput)return {report,completion,reportIssue:'partial_model_document'};
   return {report,completion,...(!report.findings.length&&Object.keys(input.sources).length?{reportIssue:'no_source_backed_findings',
    reportDiagnostic:{draftFindings:completion.data.findings?.length||0}}:{})};
@@ -336,13 +348,14 @@ async function writeDirectedSections({brief,brand,input,reverse,context,sections
   evidenceCoverage:reviewed.coverage,invalidObservations:reviewed.invalidObservations,reportIssue};
 }
 
-function qualifyTraffic(row,cards){
+function qualifyTraffic(row,cards,targeted=false){
  const visits=/monthly visits|aylık ziyaret/iu;
  const session=/\b(?:sessions?|oturum\p{L}*)\b/iu;
  const direct=/(?:direct|doğrudan)\s+(?:\S+\s+){0,3}(?:sessions?|visits?|traffic|oturum|ziyaret|trafik)/iu;
  const quantity=/(?<![\p{L}\p{N}])\d/u;
  const evidence=cards.map(card=>card.quote).join('\n');
- if(!quantity.test(row.observation)||!/trafik|ziyaret|oturum|traffic|visits|sessions/iu.test(row.observation)||!cards.some(card=>card.method==='search-snippet'&&visits.test(card.quote)))return row;
+ if(!quantity.test(row.observation)||!/trafik|ziyaret|oturum|traffic|visits|sessions/iu.test(row.observation)||!cards.some(card=>
+  (card.method==='search-snippet'||targeted&&researchHost(card.url)==='tavily.com')&&visits.test(card.quote)))return row;
  const unsupported=text=>quantity.test(text)&&(direct.test(text)&&!direct.test(evidence)||session.test(text)&&!session.test(evidence));
  if(unsupported(row.observation))return null;
  const adjusted={...row,observation:/tahmin|estimated/iu.test(row.observation)?row.observation:'Üçüncü taraf trafik tahminine göre '+row.observation,
@@ -353,7 +366,37 @@ function qualifyTraffic(row,cards){
  return adjusted;
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById}){
+const statements=new Intl.Segmenter('tr',{granularity:'sentence'});
+const words=value=>new Set(customerQuoteKey(value).match(/\p{L}{4,}/gu)||[]);
+function recoverDraftProofs(row,proofs,context){
+ const cards=ids=>unique(ids.flatMap(id=>context.proofGroups.get(id)||[id])).map(id=>context.known.get(id)).filter(Boolean);
+ const quoted=ids=>cards(ids).map(c=>c.quote).join('\n');
+ const original=quoted(proofs);
+ const safe=(observation,evidence)=>supportedNumbers(observation,evidence)&&!unsafeExpertClaim({observation},evidence);
+ if(safe(row.observation,original))return {row,proofs};
+ const originalCards=cards(proofs);
+ const existingIds=new Set(originalCards.map(c=>c.id));
+ const needed=numericEvidence(row.observation,{locale:'tr',claims:true}).filter(n=>!supportedNumbers(n.literal,original));
+ const terms=words(row.observation);
+ const extra=[];
+ for(const number of needed){
+  const matches=context.input.sources.filter(s=>originalCards.some(c=>c.url===s.url&&c.method===s.method)&&!s.metadataOnly)
+   .flatMap(s=>s.sections).filter(s=>s.proofIds.length&&!s.proofIds.some(id=>existingIds.has(id))&&supportedNumbers(number.literal,s.text))
+   .map(s=>({id:s.proofIds[0],score:[...words(s.text)].filter(w=>terms.has(w)).length})).filter(s=>s.score>=2)
+   .sort((a,b)=>b.score-a.score);
+  if(matches[0])extra.push(matches[0].id);
+ }
+ const rebound=unique([...proofs,...extra]);
+ if(extra.length&&rebound.length<=6&&safe(row.observation,quoted(rebound)))return {row,proofs:rebound};
+ const parts=[...statements.segment(row.observation)].map(x=>x.segment.trim()).filter(Boolean);
+ const kept=parts.length>1?parts.filter(part=>part.length>=24&&safe(part,original)):[];
+ if(!kept.length)return {row,proofs};
+ return {row:{...row,observation:kept.join(' '),analysis:'Kaynak, bu gözlemi kısmen destekliyor ve daha geniş çıkarım için ek kanıt gerekiyor.',
+  limitation:'Yalnız kaynakla eşleşen ölçüm korundu.',question:'Bu gözlemin kapsamını hangi verilerle doğrulayabiliriz?',
+  action:'Bulguyu aynı dönem ve aynı kapsamda birinci taraf verisiyle karşılaştır.',measurement:''},proofs};
+}
+
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
  const peerId=value=>{
@@ -373,14 +416,16 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    const section=needsById.get(needIds[0])?.section||row.section;
    row={...row,section,sectionTitle:row.section,needIds,peerId:peerId(row.peerId)};
   }
-  const proofs=decoded(row.proof),key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
+  let proofs=decoded(row.proof);
+  const key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
   const observationKey=customerQuoteKey(row.observation);
   if((accepted&&!accepted.has(row.section))||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
+  if(targeted)({row,proofs}=recoverDraftProofs(row,proofs,context));
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
   if(needsById){
-   row=qualifyTraffic(row,sourceCards);
+   row=qualifyTraffic(row,sourceCards,targeted);
    if(!row)continue;
    const rival=rivals.find(e=>e.id===row.peerId);
    if(rival&&!sourceCards.some(card=>researchHost(card.url)===researchHost(rival.website)&&!card.metadataOnly&&

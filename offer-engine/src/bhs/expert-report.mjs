@@ -94,12 +94,13 @@ export function unsafeExpertClaim(f,quotes){
  const countUnits=['sikayet|complaints?','yorum|reviews?','takipci|followers?','personel|calisan|employees?','franchise|sube|branches','magaza|stores?','liman|ports?'];
  if(/(?:olcum|roas|retarget|yeniden pazarlama|butce|donusum)[^.?!]{0,120}(?:imkansiz|yapilamaz|yapilamiyor|sifira|mahved|mahvol)/.test(t))return 'unmeasured_performance';
  if(/(?:403|ebusy|bot)/.test(q)&&/(?:seo|google|ziyaretci|musteri)[^.?!]{0,100}(?:bozuk|erisem|engell|kritik sorun)/.test(t))return 'reader_failure_not_brand_failure';
- if(/followers|takipci/.test(q)&&!/(?:employees|personel|calisan|team size)/.test(q)&&/(?:\d+[\s\S]{0,30}(?:personel|calisan)|(?:personel|calisan)[\s\S]{0,30}\d+)/.test(t))return 'followers_not_employees';
+ if(/followers|takipci/.test(q)&&!/(?:employees|personel|calisan|team size|headcount[^\d]{0,24}\d)/.test(q)&&/(?:\d+[\s\S]{0,30}(?:personel|calisan)|(?:personel|calisan)[\s\S]{0,30}\d+)/.test(t))return 'followers_not_employees';
  if(/tek (?:bir )?(?:fiziksel lokasyon|sube|magaza)/.test(t)&&!/(?:tek|yalnizca bir|sadece bir|single|only one|one (?:store|location|branch))/.test(q))return 'location_total_unconfirmed';
  const countText=q.replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'');
  for(const unit of countUnits)for(const match of t.matchAll(new RegExp('(?<![a-z0-9])([0-9]+(?:[.,][0-9]+)*)\\s*(?:adet\\s*)?(?:'+unit+')','g'))){
   const literal=match[1].replace(/(?<=\d)[,.](?=\d{3}(?:\D|$))/g,'').replace(/[.*+?^$()|[\]{}\\]/g,'\\$&'),bound='(?<![a-z0-9.,])'+literal+'(?![0-9.,])';
-  if(!new RegExp(bound+'\\s*(?:adet\\s*)?(?:'+unit+')|(?:'+unit+')[ :–-]*'+bound).test(countText))return 'quantity_unit_unconfirmed';
+  const label=unit.includes('employees')?'(?:'+unit+'|headcount[ :–-]*(?:now[ :–-]*)?)':unit;
+  if(!new RegExp(bound+'\\s*(?:adet\\s*)?(?:'+unit+')|(?:'+label+')[ :–-]*'+bound).test(countText))return 'quantity_unit_unconfirmed';
  }
  if(/shopify|wordpress|ideasoft|woocommerce/.test(q)&&/(?:geride|mahrum|avantaj|ustun|sorunsuz|iki kat|2x|verimsiz|daha eski|daha modern|yavaslat|hizli operasyon)/.test(t))return 'platform_not_performance';
  if(/(?:price|fiyat|traffic|trafik|followers|takipci)/.test(q)&&!/(?:profit|ebitda|net income|net kar|katki kar)/.test(q)&&/(?:kar marjini artir|yuksek kar marj|gelirde onemli.*artis|finansal olarak saglikli|gelir artisi.*guclu)/.test(t))return 'proxy_not_profit';

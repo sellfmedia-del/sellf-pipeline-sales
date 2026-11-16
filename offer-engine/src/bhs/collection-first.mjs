@@ -350,10 +350,10 @@ async function readPublisherFallback(brief,packet,searches,targets,pool,actor='a
   scope:actor==='apify/rag-web-browser'?'Kamuya açık yayıncı sayfası, tarayıcı ile okundu.':'Kamuya açık platformdaki özgün müşteri deneyimi.',provenance:{actor,runId:result.runId}}))).filter(Boolean);
 }
 
-export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false,archive=true}={}){
+export async function readResearchPages(brief,plan,targets,providers,collect,{complete=false,archive=true,evidenceFocus}={}){
  if(!targets.length)return {sources:[],unavailable:[]};
  const full=new Map();
- const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,...(archive?{archivePages:async pages=>{
+ const packet=await collect(brief,plan,{extraSources:targets,prioritySources:targets,explicitSourcesOnly:true,allowEmpty:true,sourceLimit:targets.length,...(evidenceFocus?{evidenceFocus}:{}),...(archive?{archivePages:async pages=>{
   const entries=new Map();
   for(const page of pages){
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
@@ -1150,6 +1150,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
    ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
+   ...(plan.targetedEvidence&&terminal?.stopReason?{researchStopReason:terminal.stopReason}:{}),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
    ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
@@ -1157,9 +1158,9 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
  const brand=await loadScopedBrand(previous);
- const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
  if(phase==='sector_sources'){
-  const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers});
+  const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers,packet:brand.packet});
   if(providers.managedBudgetVersion>=12&&!planned.needs.length){
    const error=new BudgetError('research_start_unavailable','BHS araştırma görevleri oluşturulamadı. Mevcut araştırma kayıtları korundu.');
    error.researchPlanIssue=planned.issue;
@@ -1168,6 +1169,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
   return save({managedPlan:{...planned,scopedResearch:true,directedResearch:true,...(providers.managedBudgetVersion>=10?{adaptiveResearch:true}:{}),
    ...(providers.managedBudgetVersion>=12?{orderedResearch:true}:{}),
    ...(providers.managedBudgetVersion>=13?{qualityReport:true}:{}),
+   ...(providers.managedBudgetVersion>=14?{targetedEvidence:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
@@ -1203,7 +1205,7 @@ export async function continueScopedCollection({brief,providers,previous,collect
   loadScopedBrand(previous),previous('sector_sources'),previous('report_draft'),savedScopedRounds(previous),previous('scoped-tail')
  ]);
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
- const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
  return reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
   plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
 }

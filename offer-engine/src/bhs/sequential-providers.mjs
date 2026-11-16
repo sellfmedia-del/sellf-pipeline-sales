@@ -55,7 +55,8 @@ export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date
    const defaults=Object.keys(quotes).filter(tool=>reserveStageQuote(quotes[tool])<=remainingKurus);
    const actorsThatFit=remainingKurus>0?await actors.availableActors({affordable:true}):[];
    const configuredActors=actorsThatFit.length?actorsThatFit:await actors.availableActors();
-   return {remainingKurus,defaults,configuredDefaults:Object.keys(quotes),actors:actorsThatFit,configuredActors};
+   return {remainingKurus,defaults,configuredDefaults:Object.keys(quotes),actors:actorsThatFit,configuredActors,
+    minimumDefaultKurus:defaults.length?Math.min(...defaults.map(tool=>reserveStageQuote(quotes[tool]))):0};
   },
   withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,researchFx,...options})};
 }
