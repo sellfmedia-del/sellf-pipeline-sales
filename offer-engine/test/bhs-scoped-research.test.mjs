@@ -184,6 +184,7 @@ test('an expensive opening preference is deferred when it would crowd out the ot
  const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
  const round=await reviewScopedResearch({...args,rounds:[]});
  assert.equal(round.receipts[0].attempts[0].tool,'tavily');
+ assert.deepEqual(round.receipts[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'opening_budget_reserved'});
  assert.deepEqual(searches.map(s=>s.query),[first.query,second.query]);
  const seenFirst={...round,receipts:[{...round.receipts[0],attempts:[{tool:'tavily',issue:'provider_timeout'}]}]};
  const next=await reviewScopedResearch({...args,rounds:[seenFirst]});
@@ -205,6 +206,75 @@ test('a funded Gemini preference retains a budget for the following opening topi
  };
  const result=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:()=>assert.fail()});
  assert.deepEqual(result.receipts.map(r=>[r.id,r.attempts[0].tool]),[[first.id,'gemini']]);
+ assert.equal(result.receipts[0].toolRouting,undefined);
+});
+
+test('an unaffordable planned tool is recorded and a follow-up uses the same need when the tool fits',async()=>{
+ const need={...needs[1],first:'gemini'};
+ const other={...needs[0],section:need.section,first:'tavily'};
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[need,other]};
+ const searched=[];
+ let remaining=600;
+ const providers={managedBudgetVersion:18,researchCapacity:async()=>openingCapacity(remaining),
+  search:async query=>{searched.push(['tavily',query]);return {results:[{url:instagram,content:quote}]};},
+  searchGemini:async requested=>{searched.push(['gemini',requested.query]);assert.deepEqual(requested,need);return {results:[]};},
+  worker:async()=>({data:{decisions:[]}}),manager:async(stage,input)=>{
+   assert.equal(stage,'bhs-scoped-review');
+   assert.deepEqual(input.previous[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'budget_limit'});
+   return {data:draft({decisions:[{id:need.id,sufficient:false,proofs:[]}]})};
+  }};
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
+ const first=await reviewScopedResearch({...args,rounds:[]});
+ assert.deepEqual(first.receipts[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'budget_limit'});
+ remaining=1500;
+ const followUp=await reviewScopedResearch({...args,rounds:[first]});
+ assert.deepEqual(searched,[['tavily',need.query],['gemini',need.query]]);
+ assert.equal(followUp.receipts[0].id,need.id);
+ assert.deepEqual(followUp.receipts[0].toolRouting,{requestedTool:'tavily',selectedTool:'gemini',reason:'insufficient_evidence'});
+});
+
+test('an unaffordable explicit search keeps the selected need, query and sample size on the alternate tool',async()=>{
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs};
+ const command={id:needs[1].id,tool:'gemini',query:'Marque Instagram France avis',url:'',mode:'default',limit:3};
+ const providers={managedBudgetVersion:14,researchCapacity:async()=>openingCapacity(200),
+  manager:async()=>({data:draft({commands:[command]})}),searchGemini:()=>assert.fail(),
+  search:async(query,{maxResults,since})=>{
+   assert.equal(query,command.query);
+   assert.equal(maxResults,command.limit);
+   assert.equal(since,needs[1].since);
+   return {results:[]};
+  }};
+ const result=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:()=>assert.fail()});
+ assert.equal(result.commandResults[0].status,'budget_limit');
+ assert.equal(result.receipts[0].id,command.id);
+ assert.deepEqual(result.receipts[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'budget_limit'});
+});
+
+test('a specialized command first searches the missing default for its own need, then keeps the actual actor receipt',async()=>{
+ const need=needs[1];
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[need]};
+ const command={id:need.id,tool:'apify/instagram-scraper',query:'',url:instagram,mode:'posts',limit:3};
+ const seed={receipts:[{id:need.id,query:need.query,attempts:[{tool:'tavily'}],urls:[instagram],facts:[],defaultAttempt:true}]};
+ const called=[];
+ const providers={managedBudgetVersion:18,researchCapacity:async()=>({...openingCapacity(1600),actors:[command.tool]}),
+  manager:async()=>({data:draft({commands:[command]})}),search:()=>assert.fail('the first Tavily result is already saved'),
+  searchGemini:async requested=>{called.push('gemini');assert.deepEqual(requested,{...need,first:'gemini'});return {results:[]};},
+  enrich:async request=>{
+   called.push(request.actor);
+   assert.equal(request.maxResults,command.limit);
+   assert.equal(request.since,need.since);
+   assert.equal(request.url,instagram);
+   return {status:'complete',runId:'synthetic',pages:[{url:post,text:postQuote}]};
+  },worker:async()=>({data:{results:[]}})};
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
+ const prerequisite=await reviewScopedResearch({...args,rounds:[seed]});
+ assert.equal(prerequisite.commandResults[0].status,'default_searched_first');
+ assert.deepEqual(prerequisite.receipts[0].toolRouting,{requestedTool:command.tool,selectedTool:'gemini',reason:'required_default_first'});
+ const result=await reviewScopedResearch({...args,rounds:[seed,prerequisite]});
+ assert.deepEqual(called,['gemini',command.tool]);
+ assert.equal(result.commandResults[0].status,'executed');
+ assert.equal(result.receipts[0].attempts[0].tool,command.tool);
+ assert.equal(result.receipts[0].facts[0].url,post);
 });
 
 test('publisher identity and social links are usable after a catalogue with many product links',async()=>{

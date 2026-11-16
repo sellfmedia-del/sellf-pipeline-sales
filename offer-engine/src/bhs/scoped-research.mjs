@@ -262,6 +262,25 @@ export function scopedResearchClosed(round,guarded=false){
 const defaultDenied=(receipts,tool)=>receipts.some(r=>r.attempts?.some(a=>a.tool===tool&&
  (['not_configured','tariff_expired','fx_limit'].includes(a.issue)||[401,402,403,404,429,432,433,434].includes(a.providerStatus))));
 
+function defaultBlocker(tool,{capacity,receipts,readerBlocked}){
+ if(tool==='gemini'&&readerBlocked)return 'source_reader_unavailable';
+ if(defaultDenied(receipts,tool))return 'provider_unavailable';
+ if(capacity?.configuredDefaults&&!capacity.configuredDefaults.includes(tool))return 'not_configured';
+ if(capacity&&!capacity.defaults.includes(tool))return 'budget_limit';
+}
+
+function priorSearchAttempt(receipts,id,query,tool){
+ const key=compact(query).toLocaleLowerCase('tr');
+ return receipts.filter(r=>r.id===id&&compact(r.query||query).toLocaleLowerCase('tr')===key)
+  .flatMap(r=>r.attempts||[]).findLast(a=>a.tool===tool&&a.issue!=='budget_limit');
+}
+
+function defaultReceipt(receipt,requestedTool,reason){
+ const selectedTool=receipt.attempts[0]?.tool;
+ return {...receipt,defaultAttempt:true,...(reason&&selectedTool&&requestedTool!==selectedTool?
+  {toolRouting:{requestedTool,selectedTool,reason}}:{})};
+}
+
 async function openingSearchPlan({plan,receipts,providers,readerBlocked}){
  // Claude supplies the topics, priority and exact query. Each original topic
  // gets its first funded search before the controller can deepen another topic.
@@ -280,7 +299,7 @@ async function openingSearchPlan({plan,receipts,providers,readerBlocked}){
  const capacity=(await attempt(()=>providers.researchCapacity?.({includeActors:false}))).value;
  if(!capacity?.quotes)return;
  const {remainingKurus,capKurus,quotes}=capacity;
- const available=defaultTools.filter(tool=>(!readerBlocked||tool!=='gemini')&&capacity.defaults.includes(tool)&&!defaultDenied(receipts,tool));
+ const available=defaultTools.filter(tool=>!defaultBlocker(tool,{capacity,receipts,readerBlocked}));
  const queues=pending.map(need=>{
   const tried=(attemptsByNeed.get(need.id)||[]).map(a=>a.tool);
   const tools=[need.first,...defaultTools.filter(t=>t!==need.first)].filter(t=>available.includes(t)&&!tried.includes(t));
@@ -306,16 +325,22 @@ async function openingSearchPlan({plan,receipts,providers,readerBlocked}){
  }
  const pool=tool==='gemini'&&rest.length&&providers.withCeiling?
   providers.withCeiling(capKurus-Math.min(reserve,remainingKurus-used)):providers;
- return {selected,pool,searchFloor:floor-nextInfrastructure};
+ const routing=Object.fromEntries(selected.flatMap(need=>{
+  const planned=topics.get(compact(need.section).toLocaleLowerCase('tr')).first;
+  if(!defaultTools.includes(planned)||planned===need.first)return [];
+  const prior=priorSearchAttempt(receipts,need.id,need.query,planned);
+  return [[need.id,{requested:planned,reason:defaultBlocker(planned,{capacity,receipts,readerBlocked})||prior?.issue||'opening_budget_reserved'}]];
+ }));
+ return {selected,pool,routing,searchFloor:floor-nextInfrastructure};
 }
 
 // An empty or unusable controller response is not a budget decision. Reuse
 // Claude's open need and focused query while an independent search still fits.
-async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries,readerBlocked=false,readerWasBlocked=false}){
+async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries,readerBlocked=false,readerWasBlocked=false,focus}){
  const capacity=(await attempt(()=>providers.researchCapacity?.())).value;
  const blocked={closed:true,stopReason:'research_source_plan_invalid',issue:'source_plan_invalid'};
  if(!capacity)return readerBlocked&&allowDispatch?blocked:{closed:false,issue:issue||'research_capacity_unknown'};
- const defaults=capacity.defaults.filter(tool=>(!readerBlocked||tool!=='gemini')&&!defaultDenied(receipts,tool));
+ const defaults=capacity.defaults.filter(tool=>!defaultBlocker(tool,{capacity,receipts,readerBlocked}));
  if(!defaults.length&&!capacity.actors.length){
   const budget=capacity.workerBudgetExhausted||capacity.remainingKurus<=0||
    capacity.configuredDefaults.some(tool=>!defaultDenied(receipts,tool))||capacity.configuredActors?.length;
@@ -324,16 +349,24 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordere
   return {closed:true,stopReason,issue:stopReason};
  }
  const orderedNeeds=targeted?[...needs.filter(n=>!receipts.some(r=>r.id===n.id&&r.defaultAttempt)),...needs.filter(n=>receipts.some(r=>r.id===n.id&&r.defaultAttempt))]:needs;
+ const focusIndex=ordered&&targeted?orderedNeeds.findIndex(need=>need.id===focus?.id):-1;
+ if(focusIndex>0)orderedNeeds.unshift(...orderedNeeds.splice(focusIndex,1));
  for(const need of allowDispatch?orderedNeeds:[]){
   const saved=receipts.filter(r=>r.id===need.id);
-  const queries=uniqueBy([nextQueries?.get(need.id)?.nextQuery,...(ordered?[]:saved.map(r=>r.nextQuery).reverse()),need.query].filter(Boolean),query=>compact(query).toLocaleLowerCase('tr'));
-  const preferred=defaults.includes(need.first)?[need.first,...defaults.filter(tool=>tool!==need.first)]:defaults;
+  const focused=focus?.id===need.id?focus:undefined;
+  const command=focused?.command;
+  const previous=focused?.attempts?.findLast(a=>defaultTools.includes(a.tool));
+  const requested=command?.tool||previous?.tool||need.first;
+  const queries=uniqueBy([command?.query,nextQueries?.get(need.id)?.nextQuery,...(ordered?[]:saved.map(r=>r.nextQuery).reverse()),need.query].filter(Boolean),query=>compact(query).toLocaleLowerCase('tr'));
+  const preferred=defaults.includes(requested)?[requested,...defaults.filter(tool=>tool!==requested)]:defaults;
   const tools=ordered&&!targeted?defaults.filter(tool=>tool===need.first):preferred;
   for(const query of queries)for(const tool of tools){
-   if(saved.some(r=>compact(r.query||need.query).toLocaleLowerCase('tr')===compact(query).toLocaleLowerCase('tr')&&
-    r.attempts?.some(a=>a.tool===tool&&a.issue!=='budget_limit')))continue;
-   const [result]=await runScopedDefaults([{...need,query,first:tool}],providers,readPages);
-   return {closed:false,issue:issue||'research_needs_open',receipts:[{...result,defaultAttempt:true}]};
+   if(priorSearchAttempt(saved,need.id,query,tool))continue;
+   const prior=priorSearchAttempt(saved,need.id,query,requested);
+   const reason=defaultTools.includes(requested)?defaultBlocker(requested,{capacity,receipts,readerBlocked})||prior?.issue||previous?.issue||((prior||previous)?'insufficient_evidence':undefined):undefined;
+   const quantity=query===command?.query?command.limit:need.quantity;
+   const [result]=await runScopedDefaults([{...need,query,quantity,first:tool}],providers,readPages);
+   return {closed:false,issue:issue||'research_needs_open',receipts:[defaultReceipt(result,requested,reason)]};
   }
  }
  if(readerBlocked&&allowDispatch){
@@ -441,7 +474,10 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const openingArgs={plan,receipts,providers:acquisition,readerBlocked};
   const opening=await openingSearchPlan(openingArgs);
   if(opening){
-   const results=(await runScopedDefaults(opening.selected,opening.pool,readPages)).map(result=>({...result,defaultAttempt:true}));
+   const results=(await runScopedDefaults(opening.selected,opening.pool,readPages)).map(result=>{
+    const route=opening.routing[result.id];
+    return defaultReceipt(result,route?.requested,route?.reason);
+   });
    let check={};
    if(incremental){
     const combined=[...receipts,...results];
@@ -459,8 +495,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const capacity=ordered&&hasOpen?(await attempt(()=>acquisition.researchCapacity?.())).value:undefined;
  const actors=hasOpen?(capacity?.actors??(await attempt(()=>acquisition.availableActors?.())).value??[]):[];
  const latest=rounds.at(-1);
- const denied=tool=>defaultDenied(receipts,tool);
- const available=tool=>(!readerBlocked||tool!=='gemini')&&!denied(tool)&&(!capacity||capacity.defaults.includes(tool));
+ const blocker=tool=>defaultBlocker(tool,{capacity,receipts,readerBlocked});
+ const available=tool=>!blocker(tool);
+ const followUp=()=>receipts.findLast(r=>r.defaultAttempt&&priorNeeds.some(n=>n.id===r.id&&open(n)));
  const attempted=new Set(rounds.flatMap(r=>r.commandKeys||[]));
  const waitingNeeds=priorNeeds.filter(n=>!receipts.some(receipt=>receipt.id===n.id&&receipt.defaultAttempt)).map(n=>n.id);
  const observedUrls=[...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
@@ -471,7 +508,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const reviewContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
  const alreadyRead=(id,url)=>history.some(r=>r.id===id&&r.tool==='read'&&researchUrl(r.url)===researchUrl(url)&&r.status==='executed');
  const recoverReview=async issue=>{
-  if(!incremental)return {...await keepOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted}),...proofCheckpoint()};
+  if(!incremental)return {...await keepOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted,focus:followUp()}),...proofCheckpoint()};
   const added=[];
   const commandResults=[];
   let check=await checkNew();
@@ -494,7 +531,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const moreReads=commandResults.length&&openNeeds.some(n=>checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read)&&!commandResults.some(c=>c.id===n.id&&c.url===checked.get(n.id).read));
   if(!last&&(moreChecks||!readerBlocked&&moreReads))return {...saved(),closed:false,issue,receipts:added};
   const continuation=await keepOpen({needs:openNeeds,receipts:[...receipts,...added],providers:acquisition,readPages,issue,
-   ordered,targeted,allowDispatch:!last,nextQueries:checked});
+   ordered,targeted,allowDispatch:!last,nextQueries:checked,focus:followUp()});
   const updated=[...added,...(continuation.receipts||[])];
   if(continuation.receipts?.length){
    const finalCheck=await checkBeforeWorkerEnds(updated);
@@ -510,7 +547,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
   ...(readerBlocked?{publisherReadAvailable:false}:{}),
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
-  previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,nextQuery:r.nextQuery,...(!targeted?{urls:r.urls}:{})})),
+  previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,
+   nextQuery:r.nextQuery,...(r.toolRouting?{toolRouting:r.toolRouting}:{}),...(!targeted?{urls:r.urls}:{})})),
   ...(targeted?{commandHistory:uniqueBy(history,r=>r.key).map(({key,...r})=>r)}:{}),
   instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Ticari teşhisi beşinci adıma bırak.'+
    (!guarded?' Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak.':'')+
@@ -559,15 +597,25 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const commands=ordered?pendingCommands.slice(0,1):pendingCommands;
  const requests=ordered?[]:[...newNeeds];
  const used=[];
+ const searchRoutes=new Map();
+ const routingStatus=new Map();
+ let focusedCommand;
  for(const c of commands.filter(c=>['default','tavily','gemini'].includes(c.tool)&&c.query.trim())){
   const need=actionable.find(n=>n.id===c.id&&inScope(n));
   const tool=c.tool==='default'?(need?.first||'tavily'):c.tool;
-  if(!need||!available(tool))continue;
+  if(!need)continue;
+  const blocked=blocker(tool);
+  const prior=ordered&&targeted&&priorSearchAttempt(receipts,need.id,c.query,tool);
+  if(blocked||prior){
+   routingStatus.set(c,blocked||'duplicate');
+   if(ordered&&targeted)focusedCommand={id:need.id,command:{...c,tool}};
+   continue;
+  }
   if(gap&&previouslyAsked.has(compact(c.query).toLocaleLowerCase('tr')))continue;
   requests.push({...need,first:tool,query:c.query,quantity:c.limit});
   used.push(c);
  }
- const tried=(id,tool)=>!available(tool)||receipts.some(r=>r.id===id&&r.attempts?.some(a=>a.tool===tool));
+ const tried=(id,tool)=>!available(tool)||receipts.some(r=>r.id===id&&r.attempts?.some(a=>a.tool===tool&&a.issue!=='budget_limit'));
  const requestedIds=new Set(requests.map(r=>r.id));
  const selected=[];
  const deferred=new Map();
@@ -577,13 +625,23 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   if(ordered&&queryActors.has(command.tool)&&!command.query.trim())continue;
   const missing=defaultTools.filter(tool=>!tried(need.id,tool));
   if(missing.length){
+   if(ordered&&targeted){
+    const first=missing.includes(need.first)?need.first:missing[0];
+    requests.push({...need,first});
+    searchRoutes.set(need.id,{requested:command.tool,reason:'required_default_first'});
+    routingStatus.set(command,'default_searched_first');
+    continue;
+   }
    if(!receipts.some(r=>r.id===need.id&&r.missingDefaults?.join()===missing.join()))
     deferred.set(need.id,{id:need.id,facts:[],urls:[],issues:['scraper_requires_default_tools'],missingDefaults:missing});
   }else{
    selected.push(command);
   }
  }
- const next=[...deferred.values(),...(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}))];
+ const next=[...deferred.values(),...(await runScopedDefaults(requests,acquisition,readPages)).map(result=>{
+  const route=searchRoutes.get(result.id);
+  return defaultReceipt(result,route?.requested,route?.reason);
+ })];
  const readers=readerBlocked?[]:commands.filter(c=>c.tool==='read'&&(ordered?actionable:priorNeeds).some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
  used.push(...readers);
  const byNeed=new Map();
@@ -612,19 +670,22 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const records=evidenceRows(actorResult?.pages,c.limit,'extracted');
   const search=evidenceRows((actorResult?.searches||[]).flatMap(s=>s.results||[]),c.limit,'search-snippet');
   const read=await readSearchEvidence([...new Set(search.map(r=>r.url))],readPages);
-  return {need,rows:[...records,...read,...search],issue:found.issue||actorResult?.reason,actorStarted:Boolean(actorResult?.runId),actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
+  const issue=found.issue||actorResult?.reason;
+  return {need,rows:[...records,...read,...search],issue,attempts:[{tool:c.tool,issue,providerStatus:found.providerStatus}],
+   actorStarted:Boolean(actorResult?.runId),actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
  }));
  for(let i=0;i<scraped.length;i+=3)next.push(...await extractFacts(scraped.slice(i,i+3),acquisition));
  const issue=!next.length&&data.commands.length?'no_executable_research_command':undefined;
  const advanced=next.some(r=>r.facts.length||r.urls.length||r.missingDefaults?.length||
   r.attempts?.some(a=>!a.issue));
  const continuation=guarded&&!advanced?await keepOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
-  providers:acquisition,readPages,issue,ordered,targeted,allowDispatch:!ordered||!next.length&&!used.length}):{closed:guarded?false:!next.length,issue};
+  providers:acquisition,readPages,issue,ordered,targeted,allowDispatch:!ordered||!next.length&&!used.length,
+  nextQueries:checked,focus:focusedCommand||followUp()}):{closed:guarded?false:!next.length,issue};
  const {receipts:extra=[],...completion}=continuation;
  const followUpCheck=await checkBeforeWorkerEnds([...next,...extra],[...priorNeeds,...newNeeds]);
  return {approved:false,decisions:followUpCheck.decisions?[...checked.values()]:decisions,peers,newNeeds,receipts:[...next,...extra],commandKeys:used.map(commandKey),...completion,...proofCheckpoint(),
   ...(followUpCheck.issue||omitted.issue?{evidenceReviewIssue:followUpCheck.issue||omitted.issue}:{}),
-  ...(targeted?{commandResults:data.commands.map(c=>({...c,key:commandKey(c),status:readerBlocked&&c.tool==='read'?'source_plan_invalid':used.includes(c)?'executed':commandState(c)||'not_dispatched'}))}:{}),
+  ...(targeted?{commandResults:data.commands.map(c=>({...c,key:commandKey(c),status:readerBlocked&&c.tool==='read'?'source_plan_invalid':used.includes(c)?'executed':routingStatus.get(c)||commandState(c)||'not_dispatched'}))}:{}),
   actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};
 }
 
