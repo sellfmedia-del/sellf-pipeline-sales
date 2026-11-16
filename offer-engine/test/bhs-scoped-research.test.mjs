@@ -13,6 +13,7 @@ import {quoteSearch} from '../src/budget/ledger.mjs';
 import {reserveStageQuote} from '../src/bhs/supervised-providers.mjs';
 import {sourceLinks} from '../src/bhs/evidence.mjs';
 import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
+import {localBudget} from './fixtures/local-budget.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -40,9 +41,16 @@ test('the active worker covers all ten planned opening topics before a deeper re
  const planNeeds=[opening[0],deeper,...opening.slice(1)];
  const saved=new Map([['brand',{decision:'accepted',collectionFirst:true,packet,facts:[],brandUnderstanding:identity,briefUnderstanding}]]);
  let charged=1300,reviewed=0;
- const dispatched=[],waves=[];
- const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:15,infrastructureOffsetKurus:300,
+ const dispatched=[],waves=[],checkpoints=[];
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:16,infrastructureOffsetKurus:300,
   researchCapacity:async()=>openingCapacity(3000-charged),
+  worker:async(stage,{tasks},_schema,options)=>{
+   assert.equal(stage,'bhs-scoped-evidence-check');
+   assert.ok(charged+options.reserveForFollowingKurus+5<=3000,`${charged} spent, ${options.reserveForFollowingKurus} reserved`);
+   charged+=5;
+   checkpoints.push({prior:dispatched.length,ids:tasks.map(task=>task.id)});
+   return {data:{decisions:tasks.map(({id})=>({id,sufficient:false,proofs:[],read:'',nextQuery:''}))}};
+  },
   manager:async(stage,input)=>{
    if(stage==='bhs-scoped-plan')return {data:{needs:planNeeds}};
    assert.equal(stage,'bhs-scoped-review');
@@ -68,6 +76,7 @@ test('the active worker covers all ten planned opening topics before a deeper re
   if(reviewed)break;
  }
  assert.deepEqual(waves,[['N1','N2','N3'],['N4','N5','N6'],['N7','N8','N9'],['N10']]);
+ assert.deepEqual(checkpoints,waves.map((ids,i)=>({prior:Math.min((i+1)*3,10),ids})));
  assert.equal(reviewed,1);
  assert.equal(dispatched.at(-1),deeper.query);
  assert.ok(charged<3000);
@@ -150,6 +159,113 @@ test('an unavailable controller can use the saved narrow query with the affordab
  assert.equal(used,1);assert.equal(recovered.closed,false);assert.equal(recovered.receipts[0].attempts[0].tool,'tavily');
  const final=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[recovered],providers,brief,packet,readPages:()=>assert.fail()});
  assert.equal(used,1);assert.equal(final.closed,true);
+});
+
+test('after a controller budget rejection, a compact check reads the official source before the next paid search',async()=>{
+ const market={...needs[0],id:'N2',section:'pazar',first:'tavily',metric:'2025 mobilya ihracatı',target:'Mobilya',market:'Türkiye'};
+ const price={...needs[0],id:'N4',section:'fiyat',first:'tavily',metric:'YRP-210 iki kanalda fiyat kıyası',query:'YRP-210 site:magaza.example TL'};
+ const plan={targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[market,price]};
+ const pdf='https://ticaret.gov.tr/raporlar/mobilya-2025.pdf';
+ const shop='https://magaza.example/yrp-210';
+ const marketplace='https://pazaryeri.example/yrp-210';
+ const variant='https://pazaryeri.example/yrp-211';
+ const source=(id,url,quote)=>({id,url,title:'Publisher',item:quote,method:'search-snippet',quote});
+ const prior={issue:'budget_limit',receipts:[
+  {id:market.id,query:market.query,urls:[pdf],facts:[source('reportLink',pdf,'Mobilya sektörü 2025 faaliyet raporu yayımlandı.')],defaultAttempt:true,attempts:[{tool:'tavily'}]},
+  {id:price.id,query:price.query,urls:[shop,variant],facts:[source('shopPrice',shop,'YRP-210 Üçlü koltuk. 24.900 TL / adet.'),
+   source('wrongSku',variant,'YRP-211 Köşe koltuk. 28.900 TL / adet.')],defaultAttempt:true,attempts:[{tool:'tavily'}]}
+ ]};
+ const events=[];
+ const matchQuery='YRP-210 üçlü koltuk site:pazaryeri.example';
+ const providers={managedBudgetVersion:16,researchCapacity:async()=>openingCapacity(350),
+  manager:()=>assert.fail('the unavailable full controller must not be retried for each new receipt'),
+  worker:async(stage,{tasks})=>{
+   assert.equal(stage,'bhs-scoped-evidence-check');
+   events.push('check '+tasks.map(t=>t.id).join('/'));
+   return {data:{decisions:tasks.map(task=>{
+    if(task.id===market.id){
+     const table=task.sources.find(s=>s.method==='pdf');
+     if(table){assert.match(table.quote,/milyon USD/);return {id:task.id,proofs:[table.id,'shopPrice'],sufficient:true,read:'',nextQuery:''};}
+     return {id:task.id,proofs:[],sufficient:false,read:'reportLink',nextQuery:''};
+    }
+    const comparable=task.sources.find(s=>s.url===marketplace);
+    return {id:task.id,proofs:['shopPrice',...(comparable?[comparable.id]:[])],sufficient:Boolean(comparable),
+     read:comparable?'':'unknown-source',nextQuery:comparable?'':matchQuery};
+   })}};
+  },
+  search:async(query,options)=>{
+   assert.equal(query,matchQuery);assert.equal(options.maxResults,price.quantity);
+   events.push('search '+query);
+   return {results:[{url:marketplace,content:'YRP-210 Üçlü koltuk. 26.400 TL / adet.'}]};
+  }};
+ const readPages=async(urls,focus)=>{
+  assert.deepEqual(urls,[pdf]);assert.ok(focus.includes('ihracatı'));events.push('read report');
+  return {sources:[{url:pdf,title:'2025 Mobilya',method:'pdf',excerpts:[{text:'2025 Türkiye mobilya ihracatı tablosu. Ticaret Bakanlığı. 4.500 milyon USD.'}]}]};
+ };
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages};
+ const first=await reviewScopedResearch({...args,rounds:[prior]});
+ assert.deepEqual(events,['check N2/N4','read report','check N2','search '+matchQuery]);
+ const verified=first.decisions.find(row=>row.id===market.id);
+ assert.deepEqual(verified.proofs,[first.receipts[0].facts[0].id]);
+ assert.equal(first.decisions.find(row=>row.id===price.id).sufficient,false);
+ const final=await reviewScopedResearch({...args,rounds:[prior,first]});
+ assert.deepEqual(events.slice(4),['check N4']);
+ assert.equal(final.stopReason,'evidence_confirmed');
+ const coverage=scopedEvidence({packet},plan,[prior,first,final]).coverage;
+ assert.deepEqual(coverage.find(c=>c.id===price.id).proofs.map(p=>p.url),[shop,marketplace]);
+});
+
+test('a compact check that cannot fit preserves receipts and allows another affordable exact query',async()=>{
+ const need={...needs[1],first:'gemini'};
+ const plan={targetedEvidence:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ const saved={issue:'budget_limit',receipts:[{id:need.id,query:need.query,urls:[post],defaultAttempt:true,attempts:[{tool:'gemini'}],
+  facts:[{id:'old',url:post,title:'Post',quote:postQuote,item:'Post',method:'html'}]}]};
+ let checked=0,searched=0;
+ const providers={managedBudgetVersion:16,researchCapacity:async()=>openingCapacity(searched?10:62),
+  manager:()=>assert.fail('full reviewer remains unaffordable'),
+  worker:async()=>{checked++;throw new BudgetError('budget_limit','compact request does not fit');},
+  search:async query=>{assert.equal(query,need.query);searched++;return {results:[]};}};
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail('no read selected')};
+ const first=await reviewScopedResearch({...args,rounds:[saved]});
+ assert.equal(first.closed,false);assert.equal(first.evidenceReviewIssue,'budget_limit');
+ const second=await reviewScopedResearch({...args,rounds:[saved,first]});
+ assert.equal(second.stopReason,'research_budget_exhausted');
+ assert.equal(checked,2);assert.equal(searched,1);
+ assert.equal(scopedEvidence({packet},plan,[saved,first,second]).coverage[0].status,'open');
+});
+
+test('the compact proof check uses the capped ledger and replays its saved provider response',async t=>{
+ const {ledger,close}=await localBudget();t.after(close);
+ await ledger.once('synthetic-research-spend',{},2380,async()=>({}));
+ const need={...needs[0],first:'tavily'};
+ const plan={targetedEvidence:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ const saved={issue:'budget_limit',receipts:[{id:need.id,query:need.query,urls:[about],defaultAttempt:true,attempts:[{tool:'tavily'}],
+  facts:[{id:'publisher',url:about,title:'Catalogue',quote,item:'Catalogue',method:'html'}]}]};
+ let generated=0;
+ const providers=createSequentialProviders({ledger,phase:'report_draft',phaseLimitKurus:3000,managedBudgetVersion:16,
+  anthropicKey:'fixture',geminiKey:'fixture',now:()=>Date.parse('2026-11-16T12:00:00Z'),researchFx:async()=>({usdTry:44}),
+  fetchImpl:async(url,{body})=>{
+   assert.match(url,/generativelanguage\.googleapis\.com/);
+   if(url.endsWith(':countTokens'))return Response.json({totalTokens:1150});
+   assert.ok(url.endsWith(':generateContent'));
+   const request=JSON.parse(body);
+   const input=JSON.parse(request.contents[0].parts[0].text);
+   assert.deepEqual(input.tasks.map(task=>[task.id,task.newProofs]),[[need.id,['publisher']]]);
+   assert.equal(request.generationConfig.thinkingConfig.thinkingLevel,'MINIMAL');
+   assert.ok(request.generationConfig.maxOutputTokens<=1224);
+   generated++;
+   const data={decisions:[{id:need.id,sufficient:true,proofs:['publisher'],read:'',nextQuery:''}]};
+   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}],
+    usageMetadata:{promptTokenCount:1150,candidatesTokenCount:100,totalTokenCount:1250}});
+  }});
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,rounds:[saved],readPages:()=>assert.fail('unexpected source read')};
+ const first=await reviewScopedResearch(args);
+ assert.equal(first.stopReason,'evidence_confirmed');
+ const charge=(await ledger.status()).chargedKurus;
+ assert.ok(charge>2880&&charge<=3000);
+ assert.deepEqual(await reviewScopedResearch(args),first);
+ assert.equal((await ledger.status()).chargedKurus,charge);
+ assert.equal(generated,1);
 });
 
 test('an executed read and invalid external need ID are reported back without purchasing the command again',async()=>{
