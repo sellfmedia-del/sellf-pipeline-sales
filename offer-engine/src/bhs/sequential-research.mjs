@@ -306,7 +306,11 @@ async function reviewFacts(phase,brief,evidence,worker,providers,{schema=phase==
 }
 export async function runSequentialStage({phase,brief,providers,previous,collect=makeCollector()}){
  if(!sequentialPhases.includes(phase)||['scope','complete'].includes(phase))throw new BudgetError('invalid_phase','Sıralı BHS aşaması geçersiz.');
- const index=sequentialPhases.indexOf(phase),prior=index?await previous(sequentialPhases[index-1]):null;
+ const index=sequentialPhases.indexOf(phase);
+ const compactPlan=phase==='report_draft'&&providers.managedBudgetVersion>=18?(await previous('sector_sources').catch(error=>{
+  if(error.code!=='stage_pending')throw error;
+ }))?.managedPlan?.compactQueue===true:false;
+ const prior=index?await previous(compactPlan?'sector_sources':sequentialPhases[index-1]):null;
  const swotGapResearch=phase==='coverage_plan'&&prior?.phase==='swot'&&prior.decision==='limited'&&prior.review&&Array.isArray(prior.swot);
  if(prior?.decision!=='accepted'&&index&&phase!=='sector_validation'&&!swotGapResearch)throw new BudgetError('research_stage_incomplete','Önceki aşamanın temel anlayışı doğrulanmadı; sonraki ücretli aşama başlatılmadı.');
  const finish=(data,decision='accepted')=>({...data,phase,decision,methodologyVersion:sequentialVersion,briefHash:briefHash(brief),parentHash:prior?hash(prior):null});

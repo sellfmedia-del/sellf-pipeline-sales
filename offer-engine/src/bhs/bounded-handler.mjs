@@ -16,7 +16,7 @@ import {validateScope,fallbackScope} from '../pricing/scope.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
 import {supervisedPhases} from './supervised-research.mjs';
-import {sequentialPhases} from './sequential-contracts.mjs';
+import {compactResearchPhases,sequentialPhases} from './sequential-contracts.mjs';
 import {collectionFirstEnabled,createSequentialProviders} from './sequential-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {backgroundBhsEnabled,browserBhsJobStore,queuedBhsBrief} from './job-store.mjs';
@@ -167,7 +167,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      return res.status(422).json({code,error,phase:backgroundJob.phase,ticket:updatedTicket,cost:await cost(),continuationAvailable:true});
     }
    }
-   const pendingPhases=activePhases.filter(x=>x!=='complete');
+   const planCheckpoint=researchVersion==='v8'&&(backgroundJob||action==='continue')?await ledger.get(key('sector_sources')):undefined;
+   const pendingPhases=(planCheckpoint?.value?.managedPlan?.compactQueue===true?compactResearchPhases:activePhases).filter(x=>x!=='complete');
    const rows=await Promise.all(pendingPhases.map(name=>ledger.get(key(name))));
    const researchMarker=rows[pendingPhases.indexOf('report_draft')]?.value;
    const progressOptions={guarded:researchMarker?.researchBudgetGuarded===true,skipReserved:step=>abandonedStage(step,now())};

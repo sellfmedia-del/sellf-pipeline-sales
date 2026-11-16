@@ -25,15 +25,25 @@ function gapRunId(baseId,brief,secret){
 
 export async function resolveManagedGaps({action,brief,synthesis,sections,secret,baseLedger,getGapLedger,getProviders,previous,allowance=true,collect=createEvidenceCollector({timeout:25000,allowPartialPlan:true,hardDeadline:true})}){
  if(synthesis.supervision?.reviewMode!=='managed-audit'||!allowance)return null;
+ const researchPlan=synthesis.supervision.researchPlan;
+ const separateCosts=researchPlan?.separateGapCosts===true;
+ if(separateCosts){
+  const saved=synthesis.report.verifiedResearch?.metrics||[];
+  // A clipped report can omit an already confirmed measurement. Its evidence
+  // stays in the report and offer. Paid completion is for open research only.
+  sections=sections.filter(section=>!saved.some(m=>m.section===section)||saved.some(m=>m.section===section&&m.status==='open'));
+ }
  const base=await baseLedger.status();
  if(!/^[a-f0-9-]{36}$/i.test(base.id||''))return null;
  const runId=gapRunId(base.id,brief,secret);
  const markerKey='audit:managed-gap-authorization:'+briefHash(brief);
  const authorization=await baseLedger.get(markerKey);
- const independent=synthesis.supervision.researchPlan?.directedResearch===true;
+ const independent=researchPlan?.directedResearch===true;
  const remaining=independent?gapCapKurus:Math.max(0,Math.min(gapCapKurus,tariff.capKurus-base.chargedKurus));
+ const estimate=separateCosts&&independent?{baseCommittedKurus:base.chargedKurus,maximumCombinedKurus:base.chargedKurus+gapCapKurus}:{};
+ const available=(ids,capKurus)=>({available:true,sections:ids.map(sectionTitle),capKurus,...estimate});
  if(!authorization){
-  if(action!=='complete_gaps')return sections.length&&remaining?{available:true,sections:sections.map(sectionTitle),capKurus:remaining}:null;
+  if(action!=='complete_gaps')return sections.length&&remaining?available(sections,remaining):null;
   if(!sections.length||!remaining)return null;
   await baseLedger.once(markerKey,{runId,sections},0,async()=>({runId,sections,sharedBudget:!independent,directedResearch:independent,baseline:base.chargedKurus,allowance:remaining}));
  }
@@ -41,7 +51,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
  if(authorized.directedResearch){
   // Only an explicit action can open the independent 30 TL account.
-  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return {available:true,sections:authorized.sections.map(sectionTitle),capKurus:gapCapKurus};
+  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return available(authorized.sections,gapCapKurus);
   const ledger=await getGapLedger(runId);
   if(action==='complete_gaps'){
    await ledger.begin();
@@ -58,7 +68,9 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
    }
    receipt=await ledger.get(receiptKey);
   }
-  return {available:false,chargedKurus:(await ledger.status()).chargedKurus,capKurus:gapCapKurus,status:receipt?.state||'authorized',
+  const chargedKurus=(await ledger.status()).chargedKurus;
+  return {available:false,chargedKurus,capKurus:gapCapKurus,status:receipt?.state||'authorized',...estimate,
+   ...(separateCosts?{combinedCommittedKurus:base.chargedKurus+chargedKurus}:{}),
    ...(receipt?.state==='complete'?{synthesis:{...synthesis,...receipt.value}}:{})};
  }
  if(!authorized.sharedBudget){
@@ -97,12 +109,12 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  if(version>=9){
-  const rounds=(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
+  const rounds=priorPlan.compactQueue?[]:(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
   if(priorPlan.adaptiveResearch)rounds.push(...(await previous('scoped-tail')||[]));
   const readPages=urls=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false});
   for(let i=0;i<3;i++){

@@ -390,10 +390,13 @@
       const gapCap=Number.isSafeInteger(gap.capKurus)?gap.capKurus:3000;
       if(gap.available&&current.ticket){
         gapAudit=current;gapBox.hidden=false;
-        gapBox.querySelector('p').textContent='Eksik bölümler: '+gap.sections.join(', ')+'. Yalnız bu bölümler için '+gapMoney(gapCap)+' TL’ye kadar ek araştırma yapabilirsin.';
+        const combined=Number.isSafeInteger(gap.maximumCombinedKurus)&&Number.isSafeInteger(gap.baseCommittedKurus)?
+          ' Mevcut kullanım ve rezerv '+gapMoney(gap.baseCommittedKurus)+' TL. Ek araştırma için ayrı bütçe açılır ve bu tutarla birlikte toplam '+gapMoney(gap.maximumCombinedKurus)+' TL’ye kadar çıkabilir.':'';
+        gapBox.querySelector('p').textContent='Eksik bölümler: '+gap.sections.join(', ')+'. Yalnız bu bölümler için '+gapMoney(gapCap)+' TL’ye kadar ek araştırma yapabilirsin.'+combined;
       }else if(Number.isSafeInteger(gap.chargedKurus)){
         const state=gap.status==='complete'?'Ek araştırma tamamlandı.':gap.status==='reserved'?'Ek araştırma henüz sonuçlanmadı. Mevcut bulgular kullanılabilir.':'Ek araştırmadan mevcut rapora aktarılabilecek yeni sonuç alınmadı.';
         notice.textContent+=' '+state+' Bu adımın kullanım ve rezervi: '+gapMoney(gap.chargedKurus)+' / '+gapMoney(gapCap)+' TL.';
+        if(Number.isSafeInteger(gap.combinedCommittedKurus))notice.textContent+=' BHS ve ek araştırmanın birlikte kullanım ve rezervi '+gapMoney(gap.combinedCommittedKurus)+' TL.';
       }
     }
     function showAuditContinuation(current,active){
@@ -402,9 +405,9 @@
       section.querySelector('p').textContent=active?'Araştırmayı durdurup görüşme bilgileriyle teklife geçebilirsin. Başlatılmış işlemlerin maliyetleri korunur.':'Doğrulanan bulgular ve görüşme bilgileriyle teklif hazırlığına geçebilirsin. Bu adım ek ücretli model çağrısı yapmaz.';
       section.hidden=false;
     }
-    function showAuditCost(cost){
+    function showAuditCost(cost,separateGap=false){
       const money=value=>Number.isSafeInteger(value)?(value/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi (kullanım ve rezerv): '+money(cost.attemptChargedKurus)+' TL · ':'')+'Bu teklif çalışması (kullanım ve rezerv): '+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL · Toplam sınır korunur.';
+      dialog.querySelector('.ob-footer>p').textContent=(window.PipelineOfferPersistence?'Kalıcı test alanı · ':'')+(Number.isSafeInteger(cost.attemptChargedKurus)?'Bu BHS denemesi (kullanım ve rezerv): '+money(cost.attemptChargedKurus)+' TL · ':'')+(separateGap?'Normal BHS ve teklif bütçesi (kullanım ve rezerv): ':'Bu teklif çalışması (kullanım ve rezerv): ')+money(cost.chargedKurus)+' / '+money(cost.capKurus??5000)+' TL.'+(separateGap?'':' Toplam sınır korunur.');
       const detail=dialog.querySelector('.ob-cost-detail'),b=cost.breakdown;detail.hidden=!b;
       if(b)dialog.querySelector('.ob-cost-copy').textContent='Bu kontrolde ayrıştırılabilen kullanım: '+money(b.verifiedUsageKurus)+' TL · Korunan model/işlem rezervi: '+money(b.knownReservationKurus)+' TL · Önceki kullanım ve rezervler: '+money(b.historicalCommittedKurus)+' TL · Sabit altyapı rezervi: '+money(b.infraReserveKurus)+' TL. Kullanım makbuzu bulunmayan rezervler kesinleşmiş harcama olarak gösterilmez.';
     }
@@ -440,7 +443,7 @@
           if(response.ticket)current.ticket=response.ticket;
           if(response.execution==='background')current.background=true;
           if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
-          if(response.cost){current.bounded=true;showAuditCost(response.cost);}
+          if(response.cost){current.bounded=true;showAuditCost(response.cost,Number.isSafeInteger(response.gapCompletion?.maximumCombinedKurus));}
           if(response.phase==='complete'&&response.result){
             continuableAudit=null;dialog.querySelector('.ob-continuation').hidden=true;
             applyAuditResponse(current,response);task=null;return;

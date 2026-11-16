@@ -57,7 +57,7 @@ const controllerOptions={compactReview:true,lowEffort:true,generationTimeoutMs:3
 async function ask(providers,stage,request,schema,maxOutputTokens,options={}){
  const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
  const result=await attempt(()=>manager(stage,request,schema,{
-  ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50),...options
+  ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50),signal:providers.executionSignal,...options
  }));
  return result.value?.data?{value:result.value.data}:result;
 }
@@ -332,7 +332,7 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordere
   }
  }
  if(targeted&&allowDispatch&&['budget_limit','provider_unavailable','claude_spend_limit','not_configured','input_budget','tariff_expired'].includes(issue)){
-  const stopReason=['budget_limit','input_budget'].includes(issue)?'research_budget_exhausted':'research_tools_unavailable';
+  const stopReason=providers.managedBudgetVersion<18&&['budget_limit','input_budget'].includes(issue)?'research_budget_exhausted':'research_tools_unavailable';
   return {closed:true,stopReason,issue};
  }
  return {closed:false,issue:issue||'research_needs_open'};
@@ -361,7 +361,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
    (scopedMarket?' '+marketMeasureInstruction:'')
  },scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
-  reserveForFollowingKurus,generationTimeoutMs:22000}));
+  reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
  if(!result.value?.data)return {issue:result.issue||'research_clearance_unavailable'};
  const decisions=[];
  for(const task of tasks){

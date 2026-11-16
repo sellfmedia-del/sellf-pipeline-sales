@@ -29,7 +29,7 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
    const phaseBudget=job.researchVersion==='v8'
     ?await managedPhaseBudget({ledger,brief,phase:job.phase,existingBrandPlan:step})
     :{ledger,managedAudit:false};
-   const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,managedBudgetVersion:phaseBudget.managedBudgetVersion,phaseLimitKurus:phaseBudget.phaseCeiling});
+   const providers=await getProviders({ledger:phaseBudget.ledger,researchVersion:job.researchVersion,phase:job.phase,managedAudit:phaseBudget.managedAudit,managedBudgetVersion:phaseBudget.managedBudgetVersion,phaseLimitKurus:phaseBudget.phaseCeiling,...(job.compactQueue?{compactQueue:true}:{})});
    return options={phase:job.phase,brief,checkpointHash,ledger:phaseBudget.ledger,providers,phaseCeiling:phaseBudget.phaseCeiling,researchVersion:job.researchVersion,researchModel:job.researchModel,freshResearch:true};
   };
   if(step?.state!=='complete'){
@@ -38,8 +38,9 @@ export async function runClaimedBhsStage({job,queue,getLedger,getProviders,runSt
    if(step?.state==='uncertain'&&!authorizedBudgetRecovery)throw new BudgetError('stage_paused','Önceki aşama durdu; kayıtlar korunuyor.');
    const result=await runStage(await loadOptions());
    if(result?.advanceSkippedInventory===true&&job.inventoryBatch&&inventoryStages.includes(job.phase))nextPhase='coverage_plan';
-   if(job.phase==='report_draft')step=await ledger.get(key);
+   if(job.phase==='report_draft'||job.phase==='sector_sources'&&job.compactQueue)step=await ledger.get(key);
   }
+  if(job.phase==='sector_sources'&&job.compactQueue&&step?.value?.managedPlan?.compactQueue===true)nextPhase='report_draft';
   if(job.phase==='report_draft'&&step?.value?.scopedTail){
    const guarded=step.value.researchBudgetGuarded===true;
    let progress=await scopedResearchProgress(ledger,checkpointHash,{guarded,skipReserved:true});

@@ -5,6 +5,7 @@ import {dimensions} from './brief.mjs';
 
 export const sequentialVersion='sellf-pre-bhs-2026-11-10-sequential-v8';
 export const sequentialPhases=Object.freeze(['brand_plan','brand_sources','brand_draft','brand_review','brand_correction_sources','brand_correction_draft','brand','sector_sources','sector_draft','sector_review','sector_correction_sources','sector_correction_draft','sector','sector_validation','competition_plan','competition_sources','competition_draft','competition_review','competition_correction_sources','competition_correction_draft','competition','swot_sources','swot_draft','swot_review','swot_correction_sources','swot_correction_draft','swot','coverage_plan','coverage_sources','coverage_actors','coverage_discovery','coverage','report_draft','synthesis','scope','complete']);
+export const compactResearchPhases=Object.freeze(sequentialPhases.filter((phase,index)=>index<=sequentialPhases.indexOf('sector_sources')||index>=sequentialPhases.indexOf('report_draft')));
 export const logicalPhases=Object.freeze(['brand','sector','competition','swot','coverage','synthesis']);
 export const sequentialTitles=Object.freeze({brand:'Marka kimliği ve iş modeli',sector:'Sektör, gelir dinamikleri ve müşteri',competition:'Doğrudan rekabet ve sektör riskleri',swot:'SWOT, itibar ve darboğazlar',coverage:'BHS kapsamı ve eksik araştırması',synthesis:'Son kontrol ve nihai ön BHS'});
 // Every phase shares the same run-level 50 TRY account; no phase allocation.

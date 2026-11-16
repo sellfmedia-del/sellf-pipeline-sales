@@ -192,3 +192,17 @@ test('status does not open the additional account and consent reserves no more t
  assert.equal(opened,1);
  assert.equal((await original.ledger.status()).chargedKurus,4500);
 });
+
+test('only open research can trigger an extra account, and 36.79 plus 30 TRY is disclosed before consent',async t=>{
+ const base=await localBudget({lead:'scoped-separate-cost'});t.after(base.close);
+ await base.ledger.once('synthetic-original-cost',{},3179,async()=>({}));
+ const metrics=[{id:'price',section:'fiyat',status:'open',sourceIds:['p1']},{id:'market',section:'pazar',status:'confirmed',sourceIds:['p2']}];
+ const input={brief,synthesis:{supervision:{reviewMode:'managed-audit',researchPlan:{directedResearch:true,separateGapCosts:true}},
+  report:{verifiedResearch:{metrics}}},sections:['pazar','fiyat'],secret:'test-secret',baseLedger:base.ledger,
+  getGapLedger:()=>assert.fail('cost preview and confirmed evidence never create an extra account'),
+  getProviders:()=>assert.fail('approved evidence needs no provider')};
+ assert.deepEqual(await resolveManagedGaps({...input,action:'status'}),{available:true,sections:['fiyat'],capKurus:3000,baseCommittedKurus:3679,maximumCombinedKurus:6679});
+ assert.equal(await resolveManagedGaps({...input,action:'complete_gaps',sections:['pazar']}),null);
+ assert.equal(await resolveManagedGaps({...input,action:'status',sections:['pazar']}),null);
+ assert.equal((await base.ledger.status()).chargedKurus,3679);
+});
