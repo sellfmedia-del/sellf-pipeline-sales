@@ -29,6 +29,86 @@ const quote='Marque runs a direct wholesale catalogue for supermarket customers 
 const postQuote='PublishedAt 2026-11-10 likesCount 84 commentsCount 6.';
 const about='https://marque.fr/our-story';
 const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peers:[],...overrides});
+const searchQuotes={tavily:62,gemini:1044};
+const openingCapacity=remainingKurus=>({remainingKurus,capKurus:3000,quotes:searchQuotes,
+ defaults:Object.keys(searchQuotes).filter(t=>searchQuotes[t]<=remainingKurus),configuredDefaults:Object.keys(searchQuotes),actors:[],configuredActors:[]});
+
+test('the active worker covers all ten planned opening topics before a deeper review of any single topic',async()=>{
+ const topics=['rakipler','pazar','pazaryeri','fiyat','müşteri deneyimi','Instagram','YouTube','bilinirlik','influencer','reklam maliyeti'];
+ const opening=topics.map((section,i)=>({...needs[0],id:'N'+(i+1),section,query:'Açılış: '+section,first:'tavily'}));
+ const deeper={...opening[0],id:'D1',query:'Rakip ürün sayfasında ayrıntılı fiyat karşılaştırması'};
+ const planNeeds=[opening[0],deeper,...opening.slice(1)];
+ const saved=new Map([['brand',{decision:'accepted',collectionFirst:true,packet,facts:[],brandUnderstanding:identity,briefUnderstanding}]]);
+ let charged=1300,reviewed=0;
+ const dispatched=[],waves=[];
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:15,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(3000-charged),
+  manager:async(stage,input)=>{
+   if(stage==='bhs-scoped-plan')return {data:{needs:planNeeds}};
+   assert.equal(stage,'bhs-scoped-review');
+   assert.deepEqual(dispatched,opening.map(n=>n.query));
+   assert.deepEqual(input.waitingNeeds,[deeper.id]);
+   assert.ok(input.findings.some(f=>f.needId==='N10'));
+   reviewed++;
+   return {data:draft({commands:[{id:deeper.id,tool:'tavily',query:deeper.query,url:'',mode:'default',limit:3}]})};
+  },
+  search:async(query,options)=>{
+   assert.ok(charged+62<=3000);
+   charged+=51;
+   assert.equal(options.countryCode,'FR');
+   dispatched.push(query);
+   return {results:[{url:post,content:postQuote}]};
+  }};
+ for(const phase of sequentialPhases.slice(sequentialPhases.indexOf('sector_sources'))){
+  charged+=300;
+  const result=await runSequentialStage({phase,brief,providers,previous:async p=>saved.get(p),collect:()=>assert.fail('unrequested page read')});
+  charged-=275;
+  saved.set(phase,result);
+  if(result.openingSearch)waves.push(result.receipts.map(r=>r.id));
+  if(reviewed)break;
+ }
+ assert.deepEqual(waves,[['N1','N2','N3'],['N4','N5','N6'],['N7','N8','N9'],['N10']]);
+ assert.equal(reviewed,1);
+ assert.equal(dispatched.at(-1),deeper.query);
+ assert.ok(charged<3000);
+});
+
+test('an expensive opening preference is deferred when it would crowd out the other opening searches',async()=>{
+ const first={...needs[0],first:'gemini'};
+ const second={...needs[1],first:'tavily'};
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[first,second]};
+ const searches=[];
+ const providers={managedBudgetVersion:15,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(1100),
+  manager:()=>assert.fail('the opening search still fits'),
+  searchGemini:()=>assert.fail('retain funding for the two opening topics'),
+  search:async(query,{maxResults,since})=>{searches.push({query,maxResults,since});return {results:[]};}
+ };
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
+ const round=await reviewScopedResearch({...args,rounds:[]});
+ assert.equal(round.receipts[0].attempts[0].tool,'tavily');
+ assert.deepEqual(searches.map(s=>s.query),[first.query,second.query]);
+ const seenFirst={...round,receipts:[{...round.receipts[0],attempts:[{tool:'tavily',issue:'provider_timeout'}]}]};
+ const next=await reviewScopedResearch({...args,rounds:[seenFirst]});
+ assert.deepEqual(next.receipts.map(r=>r.id),[second.id]);
+ assert.deepEqual(searches.at(-1),{query:second.query,maxResults:second.quantity,since:second.since});
+});
+
+test('a funded Gemini preference retains a budget for the following opening topic',async()=>{
+ const first={...needs[0],first:'gemini'};
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[first,needs[1]]};
+ const providers={managedBudgetVersion:15,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(1500),
+  withCeiling:ceiling=>{
+   assert.equal(ceiling,3000-300-62);
+   return {...providers,searchGemini:async need=>{assert.deepEqual(need,first);return {results:[]};}};
+  },
+  manager:()=>assert.fail('the opening search still fits'),
+  search:()=>assert.fail('use the funded first tool')
+ };
+ const result=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:()=>assert.fail()});
+ assert.deepEqual(result.receipts.map(r=>[r.id,r.attempts[0].tool]),[[first.id,'gemini']]);
+});
 
 test('publisher identity and social links are usable after a catalogue with many product links',async()=>{
  const corporate='https://marque.com/contact',html='<a href="/product">Ürün</a>'.repeat(100)+

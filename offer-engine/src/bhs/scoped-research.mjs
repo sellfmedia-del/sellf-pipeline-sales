@@ -38,6 +38,7 @@ const peerHosts=(peers,website,targeted=false)=>new Set(uniqueBy(peers,p=>resear
 const publisherRead=fact=>!['search-snippet','html-signals'].includes(fact.method)&&!fact.metadataOnly;
 const commandSignature=c=>hash([c.id,c.tool,compact(c.query).toLocaleLowerCase('tr'),researchUrl(c.url),c.mode,c.limit]);
 const defaultTools=['tavily','gemini'];
+const defaultConcurrency=3;
 const errors=new Set(['budget_limit','budget_pending','budget_uncertain','input_budget','not_configured','model_budget','fx_limit','fx_unavailable','tariff_expired','quota','incomplete','invalid_report','token_count','model_deadline','claude_spend_limit','cancelled']);
 async function attempt(run){
  try{return {value:await run()};}
@@ -136,6 +137,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
    .flatMap(s=>s.technicalSignals?.identityLinks||[]),l=>l.url);
   request.instruction+=' Yayıncıdan gelen bağlantılar varsa ilgili hesabı ve kuruluşu doğrudan hedefle. Birden çok platform ve ölçümü tek genel sorguda toplama. Her işi somut bir metrik veya doğrulama olarak yaz.';
  }
+ if(providers.managedBudgetVersion>=15)request.instruction+=' İlk planda teklif kararını etkileyen her bağımsız başlık için bir açılış sorgusu yaz ve başlıkları karar önceliğine göre sırala. Bu sorgular ilk turda çalıştırılabilir olmalı. Aynı başlık için farklı kaynak arama veya bir sonuca bağlı ayrıntı isteme işlerini, ilk kanıtlar geldikten sonra belirle.';
  const normalizeData=data=>{
   if(!Array.isArray(data?.needs))return data;
   const needs=data.needs.flatMap(need=>{
@@ -239,7 +241,7 @@ async function extractFacts(searches,providers){
 export async function runScopedDefaults(needs,providers,readPages){
  // Group independent tasks while bounding provider concurrency.
  const results=[];
- for(let i=0;i<needs.length;i+=3)results.push(...await seekDefault(needs.slice(i,i+3),providers,readPages));
+ for(let i=0;i<needs.length;i+=defaultConcurrency)results.push(...await seekDefault(needs.slice(i,i+defaultConcurrency),providers,readPages));
  return results;
 }
 
@@ -251,6 +253,54 @@ export function scopedResearchClosed(round,guarded=false){
 
 const defaultDenied=(receipts,tool)=>receipts.some(r=>r.attempts?.some(a=>a.tool===tool&&
  (['not_configured','tariff_expired','fx_limit'].includes(a.issue)||[401,402,403,404,429,432,433,434].includes(a.providerStatus))));
+
+async function runOpeningSearches({plan,receipts,providers,readPages}){
+ // Claude supplies the topics, priority and exact query. Each original topic
+ // gets its first funded search before the controller can deepen another topic.
+ const topics=new Map();
+ for(const need of plan.needs){
+  const topic=compact(need.section).toLocaleLowerCase('tr');
+  if(!topics.has(topic))topics.set(topic,need);
+ }
+ const attemptsByNeed=new Map();
+ for(const receipt of receipts){
+  if(!receipt.defaultAttempt)continue;
+  attemptsByNeed.set(receipt.id,[...(attemptsByNeed.get(receipt.id)||[]),...(receipt.attempts||[])]);
+ }
+ const pending=[...topics.values()].filter(need=>!(attemptsByNeed.get(need.id)||[]).some(a=>!a.issue));
+ if(!pending.length)return;
+ const capacity=(await attempt(()=>providers.researchCapacity?.({includeActors:false}))).value;
+ if(!capacity?.quotes)return;
+ const {remainingKurus,capKurus,quotes}=capacity;
+ const available=defaultTools.filter(tool=>capacity.defaults.includes(tool)&&!defaultDenied(receipts,tool));
+ const queues=pending.map(need=>{
+  const tried=(attemptsByNeed.get(need.id)||[]).map(a=>a.tool);
+  const tools=[need.first,...defaultTools.filter(t=>t!==need.first)].filter(t=>available.includes(t)&&!tried.includes(t));
+  return {need,tools,min:tools.length?Math.min(...tools.map(t=>quotes[t])):0};
+ }).filter(q=>q.tools.length);
+ if(!queues.length)return;
+ const nextInfrastructure=queues.length>1?providers.infrastructureOffsetKurus||0:0;
+ const floor=queues.reduce((sum,q)=>sum+q.min,nextInfrastructure);
+ const first=floor<=remainingKurus?queues[0]:queues.reduce((best,q)=>q.min<best.min?q:best);
+ const rest=queues.filter(q=>q!==first);
+ const reserve=floor-first.min;
+ const tool=first.tools.find(t=>quotes[t]<=Math.max(first.min,remainingKurus-reserve));
+ const selected=[{...first.need,first:tool}];
+ let used=quotes[tool];
+ if(tool==='tavily'){
+  for(const q of rest){
+   // Keep Gemini reads out of the batch. Cheap independent web searches can
+   // share one worker reservation and still use the atomic per-call ledger.
+   if(q.tools[0]!=='tavily'||selected.length>=defaultConcurrency||used+quotes.tavily>remainingKurus)break;
+   selected.push({...q.need,first:'tavily'});
+   used+=quotes.tavily;
+  }
+ }
+ const pool=tool==='gemini'&&rest.length&&providers.withCeiling?
+  providers.withCeiling(capKurus-Math.min(reserve,remainingKurus-used)):providers;
+ const results=await runScopedDefaults(selected,pool,readPages);
+ return {closed:false,openingSearch:true,receipts:results.map(result=>({...result,defaultAttempt:true}))};
+}
 
 // An empty or unusable controller response is not a budget decision. Reuse
 // Claude's open need and focused query while an independent search still fits.
@@ -290,6 +340,10 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const targeted=plan.targetedEvidence===true;
  const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
  const receipts=rounds.flatMap(round=>round.receipts||[]);
+ if(ordered&&!last&&providers.managedBudgetVersion>=15){
+  const opening=await runOpeningSearches({plan,receipts,providers:acquisition,readPages});
+  if(opening)return opening;
+ }
  const facts=uniqueBy(receipts.flatMap(r=>r.facts.map(f=>({...f,needId:r.id}))),f=>f.id);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
  let rivalHosts=plan.qualityReport?peerHosts(rounds.flatMap(r=>r.peers||[]),brief.website,targeted):undefined;

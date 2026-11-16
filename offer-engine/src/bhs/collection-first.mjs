@@ -1185,10 +1185,8 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
   rounds:adaptive?[...rounds,...(await previous('scoped-tail')||[])]:rounds,providers}));
  if(rounds.some(r=>scopedResearchClosed(r,plan.reportOnlyAfterResearch))||!plan.needs.length)return save({});
  const last=!adaptive&&index===scopedRounds.length-1;
- const attempted=new Set(rounds.flatMap(r=>(r.receipts||[]).filter(receipt=>receipt.defaultAttempt).map(receipt=>receipt.id)));
- const waiting=plan.needs.filter(need=>!attempted.has(need.id));
- if(waiting.length&&index===0){
-  const receipts=(await runScopedDefaults(waiting.slice(0,plan.orderedResearch?1:3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
+ if(index===0&&!(providers.managedBudgetVersion>=15)){
+  const receipts=(await runScopedDefaults(plan.needs.slice(0,plan.orderedResearch?1:3),providers,readPages)).map(row=>({...row,defaultAttempt:true}));
   return save({receipts,scopedRound:true});
  }
  const round=await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,plan,rounds,

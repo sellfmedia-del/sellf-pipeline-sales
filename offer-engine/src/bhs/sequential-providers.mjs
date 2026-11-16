@@ -49,14 +49,15 @@ export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date
   const receipt=await scoped.get(checkpointKey(name,input));
   return receipt?.state==='complete'?receipt.value:undefined;
  },availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
-  researchCapacity:async()=>{
+  researchCapacity:async({includeActors=true}={})=>{
    const status=await scoped.status(),remainingKurus=status.capKurus-status.chargedKurus;
-   const quotes=base.searchReservations();
-   const defaults=Object.keys(quotes).filter(tool=>reserveStageQuote(quotes[tool])<=remainingKurus);
+   const quotes=Object.fromEntries(Object.entries(base.searchReservations()).map(([tool,amount])=>[tool,reserveStageQuote(amount)]));
+   const defaults=Object.keys(quotes).filter(tool=>quotes[tool]<=remainingKurus);
+   if(!includeActors)return {remainingKurus,capKurus:status.capKurus,quotes,defaults,configuredDefaults:Object.keys(quotes)};
    const actorsThatFit=remainingKurus>0?await actors.availableActors({affordable:true}):[];
    const configuredActors=actorsThatFit.length?actorsThatFit:await actors.availableActors();
    return {remainingKurus,defaults,configuredDefaults:Object.keys(quotes),actors:actorsThatFit,configuredActors,
-    minimumDefaultKurus:defaults.length?Math.min(...defaults.map(tool=>reserveStageQuote(quotes[tool]))):0};
+    minimumDefaultKurus:defaults.length?Math.min(...defaults.map(tool=>quotes[tool])):0};
   },
   withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,researchFx,...options})};
 }
