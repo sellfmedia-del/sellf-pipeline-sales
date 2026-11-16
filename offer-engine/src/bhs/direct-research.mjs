@@ -32,16 +32,24 @@ export const stageKey=(brief,phase,version='v4',checkpointHash=hash(brief))=>'au
 const scopedRoundKey=(checkpointHash,index)=>'audit:scoped-round:'+checkpointHash+':'+index;
 export async function scopedResearchProgress(ledger,checkpointHash,{guarded=false,skipReserved=false,before=Infinity}={}){
  const rounds=[];
+ let previousFailure;
  for(let index=0;index<before;index++){
   const step=await ledger.get(scopedRoundKey(checkpointHash,index));
   if(step?.state!=='complete'){
    if(guarded&&(step?.state==='uncertain'||step?.state==='reserved'&&
     (typeof skipReserved==='function'?skipReserved(step):skipReserved))){
+    const failure=step.state==='uncertain'&&step.charge_kurus===0?step.value?.scopedFailureFingerprint:undefined;
+    if(failure&&failure===previousFailure){
+     rounds.push({issue:'research_round_interrupted',closed:true,stopReason:'research_engine_failure'});
+     return {rounds,index,done:true};
+    }
+    previousFailure=failure;
     rounds.push({issue:'research_round_interrupted'});
     continue;
    }
    return {rounds,index,done:!guarded&&Boolean(step),step};
   }
+  previousFailure=undefined;
   rounds.push(step.value);
   if(scopedResearchClosed(step.value,guarded))return {rounds,index,done:true};
  }

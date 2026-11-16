@@ -10,7 +10,7 @@ import {brief,fakeCollector,packet,modelAnswer,plan} from './fixtures/sequential
 import {sequentialContext,stageModelInput,sequentialVersion,sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {projectExpertReport} from '../src/bhs/expert-report.mjs';
 import {briefHash} from '../src/bhs/brief.mjs';
-import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
+import {runBoundedStage,scopedResearchProgress,stageKey} from '../src/bhs/direct-research.mjs';
 import {runClaimedBhsStage} from '../src/bhs/background-runner.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createBhsJobStore,queuedBhsBrief} from '../src/bhs/job-store.mjs';
@@ -18,7 +18,7 @@ import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs
 import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus,workerMaxDurationSeconds} from '../src/bhs/job-infrastructure.mjs';
-import {inventoryOutputTokens,inventoryStages} from '../src/bhs/collection-first.mjs';
+import {inventoryOutputTokens,inventoryStages,recoverManagedSectionSynthesis} from '../src/bhs/collection-first.mjs';
 import {managedInventoryCeilingKurus} from '../src/bhs/managed-budget.mjs';
 import {minimumV8GeminiReservation} from '../src/bhs/supervised-providers.mjs';
 import {researchTariff} from '../src/bhs/research-tariff.mjs';
@@ -195,6 +195,53 @@ test('normal and short BHS turns read a publisher page from a saved brand-only p
    assert.ok(round.value.receipts[0].facts.some(fact=>fact.url===publisher&&fact.quote===excerpt));
   }finally{await f.close();}
  });
+});
+
+test('the queue closes two identical local failures without a third charge and keeps saved evidence for the offer',async()=>{
+ const f=await fixture();
+ try{
+  const job=await f.enqueue();
+  const brand={packet:packet(),plan,facts:[],brandUnderstanding:{understanding:brief.brandName},briefUnderstanding:{understanding:brief.goals}};
+  const need={id:'n1',section:'kanal',target:brief.brandName,market:'Türkiye',metric:'Katalog satışı',
+   expected:'Satış kanalı',period:'',quantity:1,query:'Katalog satışı',country:'TR',language:'tr',first:'tavily',since:''};
+  const managedPlan={needs:[need],compactQueue:true,scopedResearch:true,adaptiveResearch:true,orderedResearch:true,
+   targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true};
+  await f.ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:18}));
+  await f.ledger.once(stageKey(brief,'brand','v8'),{},0,async()=>brand);
+  await f.ledger.once(stageKey(brief,'sector_sources','v8'),{},0,async()=>({managedPlan}));
+  await f.ledger.once(stageKey(brief,'report_draft','v8'),{},0,async()=>({scopedTail:true,researchBudgetGuarded:true}));
+  const publisher='https://publisher.example/product';
+  const quote='A wholesale catalogue is available for local retailers that sell packaged food.';
+  await f.ledger.once('audit:scoped-round:'+hash+':0',{},0,async()=>({
+   receipts:[{id:need.id,defaultAttempt:true,attempts:[{tool:'tavily'}],urls:[publisher],
+    facts:[{id:'saved',url:publisher,title:'Publisher',method:'html',item:'Katalog',quote}]}],
+   decisions:[{id:need.id,proofs:['saved'],sufficient:false}],reviewedProofIds:['saved']
+  }));
+  await f.db.query("update public.pipeline_bhs_jobs set phase='report_draft' where id=$1",[job.id]);
+  let calls=0;
+  const run=current=>runClaimedBhsStage({job:current,queue:f.queue,getLedger:f.queue.getLedger,
+   getProviders:async opts=>({...opts,collectionFirst:true,modelHandoff:true,
+    researchCapacity:async()=>({defaults:['tavily'],actors:[],minimumDefaultKurus:51}),
+    manager:async()=>{calls++;throw new TypeError('Malformed local research result');}}),
+   runStage:opts=>runMeteredBhsPhase(current,opts,{meter:args=>meteredBhsStage({...args,region:'iad1'})})});
+  for(let i=0;i<2;i++){
+   const claim=await f.queue.claim();
+   await assert.rejects(run(claim),error=>error.code==='research_engine_failure');
+  }
+  const progress=await scopedResearchProgress(f.ledger,hash,{guarded:true,skipReserved:true});
+  assert.equal(progress.done,true);
+  assert.equal(progress.rounds.at(-1).stopReason,'research_engine_failure');
+  assert.equal(progress.rounds[0].receipts[0].facts[0].quote,quote);
+  const cost=await f.ledger.status();
+  assert.equal((await run(await f.queue.claim())).nextPhase,'synthesis');
+  assert.equal(calls,2);
+  assert.deepEqual(await f.ledger.status(),cost);
+  const saved=await recoverManagedSectionSynthesis(brief,async name=>name==='scoped-tail'?progress.rounds:
+   (await f.ledger.get(stageKey(brief,name,'v8')))?.value,{});
+  assert.equal(saved.supervision.researchStopReason,'research_engine_failure');
+  assert.ok(saved.report.sources.some(source=>source.url===publisher));
+  assert.ok(saved.report.findings.length);
+ }finally{await f.close();}
 });
 test('production additional-run binding cannot read a Preview job or attach another owner budget',async()=>{
  const f=await fixture();try{

@@ -1167,6 +1167,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
    ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
    ...(plan.targetedEvidence&&terminal?.stopReason?{researchStopReason:terminal.stopReason}:{}),
+   ...(rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid')?{sourceReaderIssue:'source_plan_invalid'}:{}),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
    ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
@@ -1256,8 +1257,19 @@ export async function continueScopedCollection({brief,providers,previous,collect
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
  const rounds=stage.managedPlan.compactQueue?[]:await savedScopedRounds(previous);
  const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
- return reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
-  plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
+ try{
+  return await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+   plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
+ }catch(error){
+  // Compare opaque identifiers across consecutive failed turns. Provider
+  // errors and transport timeouts continue through their existing paths.
+  if(error instanceof Error&&!error.code&&(['TypeError','ReferenceError','RangeError','SyntaxError'].includes(error.name)&&error.message!=='fetch failed'||
+   /^BHS (veri |liste sınırı:|metin sınırı:)/.test(error.message))){
+   error.scopedFailureFingerprint=hash([error.name,error.message,error.stack?.split('\n')[1]]);
+   error.code='research_engine_failure';
+  }
+  throw error;
+ }
 }
 
 export async function recoverManagedSectionSynthesis(brief,previous,providers){

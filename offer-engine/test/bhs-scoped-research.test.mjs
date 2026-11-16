@@ -18,6 +18,7 @@ import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
 import {scopedCoverage} from '../src/bhs/managed-report.mjs';
+import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -37,6 +38,46 @@ const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peer
 const searchQuotes={tavily:62,gemini:1044};
 const openingCapacity=remainingKurus=>({remainingKurus,capKurus:3000,quotes:searchQuotes,
  defaults:Object.keys(searchQuotes).filter(t=>searchQuotes[t]<=remainingKurus),configuredDefaults:Object.keys(searchQuotes),actors:[],configuredActors:[]});
+
+test('a source plan validation failure stays isolated and a different affordable need still runs',async()=>{
+ const target={...needs[0],first:'tavily'};
+ const independent={...needs[1],section:target.section};
+ const plan={needs:[target,independent],orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true};
+ const original={id:'saved',item:'Katalog',title:'Marque',url:about,quote,method:'search-snippet'};
+ const rounds=[{receipts:[{id:target.id,query:target.query,urls:[about],attempts:[{tool:'tavily'}],facts:[original],defaultAttempt:true}],
+  decisions:[{id:target.id,proofs:[original.id],sufficient:false}],reviewedProofIds:[original.id]}];
+ const dispatched=[];
+ let reads=0;
+ const review=()=>reviewScopedResearch({identity,briefUnderstanding,plan,rounds,brief,packet,
+  readPages:async()=>{reads++;parseSourcePlan({entities:[],sources:[]},{allowPartial:true});},
+  providers:{managedBudgetVersion:18,modelHandoff:true,researchCapacity:async()=>openingCapacity(1600),
+   manager:async(stage,input)=>{
+    assert.equal(stage,'bhs-scoped-review');
+    assert.ok(input.findings.some(fact=>fact.id===original.id));
+    if(reads)assert.equal(input.publisherReadAvailable,false);
+    return {data:draft({commands:[{id:target.id,tool:'read',url:about,query:'',mode:'default',limit:1}]})};
+   },
+   worker:async()=>({data:{decisions:[]}}),
+   searchGemini:()=>assert.fail('grounded results require the unavailable reader'),
+   search:async query=>{dispatched.push(query);return {results:[{url:instagram,title:'Marque',content:postQuote}]};}
+  }});
+ rounds.push(await review());
+ assert.equal(rounds.at(-1).commandResults[0].status,'source_plan_invalid');
+ assert.equal(rounds.at(-1).sourceReaderIssue,'source_plan_invalid');
+ assert.equal(rounds.at(-1).closed,false);
+ rounds.push(await review());
+ assert.equal(rounds.at(-1).receipts[0].id,independent.id);
+ assert.ok(rounds.at(-1).receipts[0].facts.length);
+ rounds.push(await review());
+ assert.equal(rounds.at(-1).stopReason,'research_source_plan_invalid');
+ assert.equal(rounds.at(-1).closed,true);
+ assert.deepEqual(dispatched,[independent.query]);
+ assert.equal(reads,1);
+ const synthesis=await writeScopedSynthesis({brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,rounds,providers:{},allowWrite:false});
+ assert.equal(synthesis.supervision.researchStopReason,'research_source_plan_invalid');
+ assert.equal(synthesis.supervision.sourceReaderIssue,'source_plan_invalid');
+ assert.ok(synthesis.report.findings.length);
+});
 
 test('sales gaps use human names and distinguish blocked searches, weak sources and saved facts without report analysis',async()=>{
  const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};

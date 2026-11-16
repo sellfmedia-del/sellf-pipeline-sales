@@ -6,6 +6,7 @@ import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
 import {marketMeasureInstruction,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
 import {salesMetricName} from './sales-research-labels.mjs';
+import {SourcePlanValidationError} from './source-plan.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -255,13 +256,13 @@ export async function runScopedDefaults(needs,providers,readPages){
 export function scopedResearchClosed(round,guarded=false){
  if(!guarded)return Boolean(round.approved||round.closed);
  return round.approved===true&&round.stopReason==='evidence_confirmed'||
-  round.closed===true&&['research_budget_exhausted','research_tools_unavailable'].includes(round.stopReason);
+  round.closed===true&&['research_budget_exhausted','research_tools_unavailable','research_source_plan_invalid','research_engine_failure'].includes(round.stopReason);
 }
 
 const defaultDenied=(receipts,tool)=>receipts.some(r=>r.attempts?.some(a=>a.tool===tool&&
  (['not_configured','tariff_expired','fx_limit'].includes(a.issue)||[401,402,403,404,429,432,433,434].includes(a.providerStatus))));
 
-async function openingSearchPlan({plan,receipts,providers}){
+async function openingSearchPlan({plan,receipts,providers,readerBlocked}){
  // Claude supplies the topics, priority and exact query. Each original topic
  // gets its first funded search before the controller can deepen another topic.
  const topics=new Map();
@@ -279,7 +280,7 @@ async function openingSearchPlan({plan,receipts,providers}){
  const capacity=(await attempt(()=>providers.researchCapacity?.({includeActors:false}))).value;
  if(!capacity?.quotes)return;
  const {remainingKurus,capKurus,quotes}=capacity;
- const available=defaultTools.filter(tool=>capacity.defaults.includes(tool)&&!defaultDenied(receipts,tool));
+ const available=defaultTools.filter(tool=>(!readerBlocked||tool!=='gemini')&&capacity.defaults.includes(tool)&&!defaultDenied(receipts,tool));
  const queues=pending.map(need=>{
   const tried=(attemptsByNeed.get(need.id)||[]).map(a=>a.tool);
   const tools=[need.first,...defaultTools.filter(t=>t!==need.first)].filter(t=>available.includes(t)&&!tried.includes(t));
@@ -310,13 +311,15 @@ async function openingSearchPlan({plan,receipts,providers}){
 
 // An empty or unusable controller response is not a budget decision. Reuse
 // Claude's open need and focused query while an independent search still fits.
-async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries}){
+async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries,readerBlocked=false,readerWasBlocked=false}){
  const capacity=(await attempt(()=>providers.researchCapacity?.())).value;
- if(!capacity)return {closed:false,issue:issue||'research_capacity_unknown'};
- const defaults=capacity.defaults.filter(tool=>!defaultDenied(receipts,tool));
+ const blocked={closed:true,stopReason:'research_source_plan_invalid',issue:'source_plan_invalid'};
+ if(!capacity)return readerBlocked&&allowDispatch?blocked:{closed:false,issue:issue||'research_capacity_unknown'};
+ const defaults=capacity.defaults.filter(tool=>(!readerBlocked||tool!=='gemini')&&!defaultDenied(receipts,tool));
  if(!defaults.length&&!capacity.actors.length){
   const budget=capacity.workerBudgetExhausted||capacity.remainingKurus<=0||
    capacity.configuredDefaults.some(tool=>!defaultDenied(receipts,tool))||capacity.configuredActors?.length;
+  if(readerBlocked)return blocked;
   const stopReason=budget?'research_budget_exhausted':'research_tools_unavailable';
   return {closed:true,stopReason,issue:stopReason};
  }
@@ -332,6 +335,11 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordere
    const [result]=await runScopedDefaults([{...need,query,first:tool}],providers,readPages);
    return {closed:false,issue:issue||'research_needs_open',receipts:[{...result,defaultAttempt:true}]};
   }
+ }
+ if(readerBlocked&&allowDispatch){
+  // An actor can still return its own source text. Let the controller see
+  // the reader failure before closing if that independent option remains.
+  return !readerWasBlocked&&capacity.actors.length?{closed:false,issue:'source_plan_invalid'}:blocked;
  }
  if(targeted&&allowDispatch&&['budget_limit','provider_unavailable','claude_spend_limit','not_configured','input_budget','tariff_expired'].includes(issue)){
   const stopReason=providers.managedBudgetVersion<18&&['budget_limit','input_budget'].includes(issue)?'research_budget_exhausted':'research_tools_unavailable';
@@ -393,11 +401,21 @@ function marketDecision(need,decision,proposed,facts,saved){
  return {...decision,proofs,marketMeasures,sufficient:Boolean(marketMeasures.length&&decision.sufficient)};
 }
 
-export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
+export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages:readPublisherPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
  const guarded=plan.reportOnlyAfterResearch===true&&!gap;
  const ordered=plan.orderedResearch===true&&!gap;
  const targeted=plan.targetedEvidence===true;
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
+ const readerWasBlocked=guarded&&rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid');
+ let readerBlocked=readerWasBlocked;
+ const readPages=async (...args)=>{
+  if(!readerBlocked){
+   try{return await readPublisherPages(...args);}
+   catch(error){if(!guarded||!(error instanceof SourcePlanValidationError))throw error;readerBlocked=true;}
+  }
+  return {sources:[]};
+ };
+ const keepOpen=options=>keepResearchOpen({...options,readerBlocked,readerWasBlocked});
  const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
  const receipts=rounds.flatMap(round=>round.receipts||[]);
  let facts=receiptFacts(receipts);
@@ -415,9 +433,12 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   facts=receiptFacts([...receipts,...added]);
   return checkNew(0,needs);
  };
- const proofCheckpoint=()=>incremental?{reviewedProofIds:[...seen].filter(id=>!reviewedBefore.has(id))}:{};
+ const proofCheckpoint=()=>({
+  ...(incremental?{reviewedProofIds:[...seen].filter(id=>!reviewedBefore.has(id))}:{}),
+  ...(readerBlocked?{sourceReaderIssue:'source_plan_invalid'}:{})
+ });
  if(ordered&&!last&&providers.managedBudgetVersion>=15){
-  const openingArgs={plan,receipts,providers:acquisition};
+  const openingArgs={plan,receipts,providers:acquisition,readerBlocked};
   const opening=await openingSearchPlan(openingArgs);
   if(opening){
    const results=(await runScopedDefaults(opening.selected,opening.pool,readPages)).map(result=>({...result,defaultAttempt:true}));
@@ -427,7 +448,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
     facts=receiptFacts(combined);
     // Review in the same metered invocation while retaining the floor for
     // pending opening topics. Deferred proof stays eligible for the next check.
-    const pending=await openingSearchPlan({...openingArgs,receipts:combined});
+    const pending=await openingSearchPlan({...openingArgs,receipts:combined,readerBlocked});
     check=await checkNew(pending?pending.searchFloor+(acquisition.infrastructureOffsetKurus||0):0);
    }
    return {closed:false,openingSearch:true,receipts:results,...proofCheckpoint(),
@@ -439,7 +460,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const actors=hasOpen?(capacity?.actors??(await attempt(()=>acquisition.availableActors?.())).value??[]):[];
  const latest=rounds.at(-1);
  const denied=tool=>defaultDenied(receipts,tool);
- const available=tool=>!denied(tool)&&(!capacity||capacity.defaults.includes(tool));
+ const available=tool=>(!readerBlocked||tool!=='gemini')&&!denied(tool)&&(!capacity||capacity.defaults.includes(tool));
  const attempted=new Set(rounds.flatMap(r=>r.commandKeys||[]));
  const waitingNeeds=priorNeeds.filter(n=>!receipts.some(receipt=>receipt.id===n.id&&receipt.defaultAttempt)).map(n=>n.id);
  const observedUrls=[...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
@@ -450,17 +471,17 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const reviewContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
  const alreadyRead=(id,url)=>history.some(r=>r.id===id&&r.tool==='read'&&researchUrl(r.url)===researchUrl(url)&&r.status==='executed');
  const recoverReview=async issue=>{
-  if(!incremental)return keepResearchOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted});
+  if(!incremental)return {...await keepOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted}),...proofCheckpoint()};
   const added=[];
   const commandResults=[];
   let check=await checkNew();
-  const need=!last&&!capacity?.workerBudgetExhausted&&priorNeeds.find(n=>open(n)&&checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read));
+  const need=!last&&!readerBlocked&&!capacity?.workerBudgetExhausted&&priorNeeds.find(n=>open(n)&&checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read));
   if(need){
    const url=checked.get(need.id).read;
    const command={id:need.id,tool:'read',query:'',url,mode:'default',limit:1};
    const rows=await readSearchEvidence([url],readPages,need);
    added.push(...await extractFacts([{need,rows,urls:[url]}],acquisition,{excerptsOnly:true}));
-   commandResults.push({...command,key:commandSignature(command),status:'executed'});
+   commandResults.push({...command,key:commandSignature(command),status:readerBlocked?'source_plan_invalid':'executed'});
    facts=receiptFacts([...receipts,...added]);
    const rereview=await checkNew();
    if(rereview.issue||rereview.decisions)check=rereview;
@@ -471,8 +492,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   if(!openNeeds.length)return {...saved(),approved:true,stopReason:'evidence_confirmed',receipts:added};
   const moreChecks=seen.size>reviewedBefore.size&&!check.issue&&facts.some(f=>!seen.has(f.id));
   const moreReads=commandResults.length&&openNeeds.some(n=>checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read)&&!commandResults.some(c=>c.id===n.id&&c.url===checked.get(n.id).read));
-  if(!last&&(moreChecks||moreReads))return {...saved(),closed:false,issue,receipts:added};
-  const continuation=await keepResearchOpen({needs:openNeeds,receipts:[...receipts,...added],providers:acquisition,readPages,issue,
+  if(!last&&(moreChecks||!readerBlocked&&moreReads))return {...saved(),closed:false,issue,receipts:added};
+  const continuation=await keepOpen({needs:openNeeds,receipts:[...receipts,...added],providers:acquisition,readPages,issue,
    ordered,targeted,allowDispatch:!last,nextQueries:checked});
   const updated=[...added,...(continuation.receipts||[])];
   if(continuation.receipts?.length){
@@ -482,11 +503,12 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   if(!priorNeeds.some(open))return {...saved(),approved:true,stopReason:'evidence_confirmed',receipts:updated};
   return {...saved(),...continuation,receipts:updated};
  };
- if(targeted&&guarded&&!last&&['budget_limit','input_budget','provider_unavailable','not_configured','tariff_expired'].includes(latest?.issue))
+ if(targeted&&guarded&&!last&&!readerBlocked&&['budget_limit','input_budget','provider_unavailable','not_configured','tariff_expired'].includes(latest?.issue))
   return recoverReview(latest.issue);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
   identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
+  ...(readerBlocked?{publisherReadAvailable:false}:{}),
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
   previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,nextQuery:r.nextQuery,...(!targeted?{urls:r.urls}:{})})),
   ...(targeted?{commandHistory:uniqueBy(history,r=>r.key).map(({key,...r})=>r)}:{}),
@@ -499,6 +521,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (targeted?' commands.id aynen needs veya bu turdaki newNeeds kimliği olmalı. commandHistory içindeki uygulanmış komutu tekrarlama. Aynı URL okunmuşsa yeni ilgili sayfa veya başka bir ihtiyaç seç. Rakip için ürün ve hedef pazar kadar bağımsızlığı, satış kanalını ve fiyat örtüşmesini değerlendir. peers.relationship değerini doğrudan kaynakla kıyaslanan bağımsız rakip için direct, belirsiz aday için candidate, bağlantılı marka için related yaz. Bir adayın ürünü görülünce bütün rakip planı bitmiş sayılmaz. Resmi tablo veya rapor bulunduysa ölçümün birimini, dönemini ve kapsamını başlıkla birlikte okumak için URL’yi read aracına ver. Zayıf sonuçta bir sonraki emri farklı kaynakla veya daha dar metrikle ver.':'')+
    (incremental?' Son aramadaki kanıtın hangi ihtiyacı karşıladığını bir sonraki sorgudan önce decisions alanında kaydet. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya tam varyantı iki gerçek kaynakta eşleştir. Para birimini, satış birimini ve dönemi doğrula. İlgili sayfa zaten bulunmuşsa önce read ile doğrudan kaynağı oku.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
+   (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },scopedMarket?withMarketMeasures(reviewContract):reviewContract,last?1150:1700,targeted&&capacity?.minimumDefaultKurus?
   {reserveForFollowingKurus:capacity.minimumDefaultKurus}:{});
@@ -529,6 +552,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
 
  const commandKey=targeted?commandSignature:c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
  const commandState=c=>!actionable.some(n=>n.id===c.id&&inScope(n))?'need_unavailable':
+  readerBlocked&&c.tool==='read'?'source_plan_invalid':
   attempted.has(commandKey(c))||targeted&&c.tool==='read'&&alreadyRead(c.id,c.url)?'duplicate':
   c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
  const pendingCommands=uniqueBy(data.commands.filter(c=>targeted?!commandState(c):!attempted.has(commandKey(c))),commandKey);
@@ -560,7 +584,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   }
  }
  const next=[...deferred.values(),...(await runScopedDefaults(requests,acquisition,readPages)).map(r=>({...r,defaultAttempt:true}))];
- const readers=commands.filter(c=>c.tool==='read'&&(ordered?actionable:priorNeeds).some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
+ const readers=readerBlocked?[]:commands.filter(c=>c.tool==='read'&&(ordered?actionable:priorNeeds).some(n=>n.id===c.id&&inScope(n))&&knownUrls.includes(researchUrl(c.url)));
  used.push(...readers);
  const byNeed=new Map();
  for(const c of readers){
@@ -594,13 +618,13 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const issue=!next.length&&data.commands.length?'no_executable_research_command':undefined;
  const advanced=next.some(r=>r.facts.length||r.urls.length||r.missingDefaults?.length||
   r.attempts?.some(a=>!a.issue));
- const continuation=guarded&&!advanced?await keepResearchOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
+ const continuation=guarded&&!advanced?await keepOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
   providers:acquisition,readPages,issue,ordered,targeted,allowDispatch:!ordered||!next.length&&!used.length}):{closed:guarded?false:!next.length,issue};
  const {receipts:extra=[],...completion}=continuation;
  const followUpCheck=await checkBeforeWorkerEnds([...next,...extra],[...priorNeeds,...newNeeds]);
  return {approved:false,decisions:followUpCheck.decisions?[...checked.values()]:decisions,peers,newNeeds,receipts:[...next,...extra],commandKeys:used.map(commandKey),...completion,...proofCheckpoint(),
   ...(followUpCheck.issue||omitted.issue?{evidenceReviewIssue:followUpCheck.issue||omitted.issue}:{}),
-  ...(targeted?{commandResults:data.commands.map(c=>({...c,key:commandKey(c),status:used.includes(c)?'executed':commandState(c)||'not_dispatched'}))}:{}),
+  ...(targeted?{commandResults:data.commands.map(c=>({...c,key:commandKey(c),status:readerBlocked&&c.tool==='read'?'source_plan_invalid':used.includes(c)?'executed':commandState(c)||'not_dispatched'}))}:{}),
   actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};
 }
 

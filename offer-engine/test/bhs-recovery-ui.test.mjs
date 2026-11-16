@@ -18,21 +18,23 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   });
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');
   await page.waitForFunction(()=>typeof window.PipelineAuditRequest==='function');
-  await page.evaluate(()=>{
+  await page.evaluate(width=>{
    const original=window.PipelineAuditRequest;
    window.PipelineAuditRequest=async payload=>{
     const response=await original(payload);
     Object.assign(response.result.data,{findings:[],researchContinuity:{status:'unavailable',notice:'Görüşme bilgileriyle teklife devam edebilirsin.'},
+     supervision:{researchStopReason:width===1280?'research_engine_failure':'research_source_plan_invalid'},
      bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
       {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
       {name:'Reklam maliyetleri',status:'missing_from_report'}]}]});
     return response;
    };
-  });
+  },width);
   await page.locator('#review-restored').click();
   await page.locator('.ob-price:not([hidden])').waitFor();
   const text=await page.locator('.ob-research-report').innerText();
+  assert.match(await page.locator('.ob-review-notice').textContent(),width===1280?/aynı işlem hatası/:/Kaynak planı doğrulanamadı/);
   for(const row of ['Instagram’da son 30 günün etkileşimi — Aranmadı','Markanın YouTube hesabı — Kaynak yetersiz','Reklam maliyetleri — Kanıt bulundu, rapora aktarılamadı'])assert.ok(text.includes(row),row);
   assert.doesNotMatch(text,/instagram_marka|youtube_marka|reklam_maliyet/);
   assert.equal(await page.locator('.ob-research-report article').count(),0);

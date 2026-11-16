@@ -224,7 +224,10 @@
         dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';
         const stop=data.supervision?.researchStopReason;
         const reason=stop==='research_budget_exhausted'?'Kalan araştırma bütçesi yeni bir çağrıyı karşılamadı. ':
-          stop==='research_tools_unavailable'?'Bu araştırma turunda kullanılabilir bir sonraki araç çağrısı bulunamadı. ':'';
+          stop==='research_tools_unavailable'?'Bu araştırma turunda kullanılabilir bir sonraki araç çağrısı bulunamadı. ':
+          stop==='research_engine_failure'?'Araştırma aynı işlem hatası tekrar ettiği için durdu. ':
+          stop==='research_source_plan_invalid'?'Kaynak planı doğrulanamadı ve kalan araştırma bağımsız bir araçla sürdürülemedi. ':
+          data.supervision?.sourceReaderIssue==='source_plan_invalid'?'Kaynak planı doğrulanamadığı için bazı sayfalar okunamadı. ':'';
         dialog.querySelector('.ob-review-notice').textContent=reason+data.researchContinuity.notice;
       }
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
