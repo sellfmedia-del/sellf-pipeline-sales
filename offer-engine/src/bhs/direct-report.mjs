@@ -52,7 +52,8 @@ export function directAuditResult(brief,synthesis){
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const managed=synthesis.supervision?.reviewMode==='managed-audit';
  const adaptive=managed&&synthesis.supervision?.researchPlan?.adaptiveResearch===true;
- if(managed)report.bhsSections=adaptive?scopedCoverage(report,synthesis.supervision.metricCoverage,synthesis.supervision.researchPlan.qualityReport===true):managedCoverage(report);
+ if(managed)report.bhsSections=adaptive?scopedCoverage(report,synthesis.supervision.metricCoverage,synthesis.supervision.researchPlan.qualityReport===true,
+  synthesis.supervision.researchPlan.targetedEvidence===true):managedCoverage(report);
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
  const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];

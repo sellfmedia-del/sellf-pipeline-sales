@@ -11,6 +11,8 @@ const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('h
 export const evidenceHash=packet=>digest(packet);
 const blockedText=text=>/verify you are human|checking your browser|access denied|captcha|just a moment|bir hata oluştu!|beklenmedik bir hata meydana geldi/i.test(text.slice(0,1500));
 const relevance=/hakkımızda|kurumsal|about|company|bayi|dealer|servis|service|yatırımcı|investor|faaliyet|annual|finansal|financial|product|ürün|urun|kuruyem|nuts|snack|category|kategori|catalog|shop|store|pricing|price|fiyat|review|yorum|career|kariyer|job|contact|iletişim|shipping|delivery|return|iade|subscription|subscribe|blog|faq/i;
+const identityPath=/\/(?:ilet[iİı]şim|iletisim|contact(?:-us)?|hakk[iı]m[iı]zda|hakkimizda|about(?:-us)?|kurumsal|company|corporate|production|uretim|üretim|factory)(?:[/.-]|$)/iu;
+const socialHost=/(^|\.)(?:instagram\.com|facebook\.com|tiktok\.com|youtube\.com|linkedin\.com)$/i;
 export const evidenceTopics=[/revenue|profit|growth|funding|investment|ciro|büyüme|yatırım|fiyat|price|finans/gi,/team|employee|career|hiring|job|logistic|shipping|return|support|ekip|çalışan|kargo|iade|destek/gi,/cart|checkout|subscribe|subscription|newsletter|appointment|sepete|satın|randevu|abone|payment|trial/gi,/seo|search|traffic|website|social|instagram|tiktok|advert|reklam|takipçi|organic|content|içerik/gi,/review|rating|complaint|trustpilot|şikayet|yorum|puan|customer|müşteri/gi,/competitor|different|premium|market|rakip|farklı|pazar|position|konum/gi];
 export function publicMetadata(html){
  const values=[];
@@ -23,21 +25,33 @@ export function publicMetadata(html){
 export function researchHtmlText(html){
  return normalized(plainHtml(Buffer.from(html.replace(/<(header|nav|footer|aside|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' '))));
 }
-export function sourceLinks(html,url){
+export function sourceLinks(html,url,{identity=false}={}){
  const links=[];
+ const seen=new Set();
  for(const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)){
   const href=match[1].match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];if(!href)continue;
-  try{const target=new URL(href.replace(/&amp;/g,'&'),url);target.hash='';const value=publicUrl(target.href);const label=normalized(plainHtml(Buffer.from(match[2])));if(value&&relevance.test(label+' '+target.pathname))links.push({url:value,label:label.slice(0,200)});}catch{/* Ignore malformed links. */}
-  if(links.length===80)break;
+  try{
+   const target=new URL(href.replace(/&amp;/g,'&'),url);target.hash='';
+   const value=publicUrl(target.href),label=normalized(plainHtml(Buffer.from(match[2])));
+   const useful=identity?(socialHost.test(target.hostname)&&target.pathname!=='/'&&!/^\/(?:share|sharer|intent)(?:[./]|$)/i.test(target.pathname)||
+    identityPath.test(decodeURIComponent(target.pathname))):relevance.test(label+' '+target.pathname);
+   if(value&&useful&&(!identity||!seen.has(value))){seen.add(value);links.push({url:value,label:label.slice(0,200)});}
+  }catch{/* Ignore malformed links. */}
+  if(links.length===(identity?16:80))break;
  }
  return links;
 }
-export function evidenceExcerpts(text,{maxChunks=7,size=1800}={}){
+export function evidenceExcerpts(text,{maxChunks=7,size=1800,focus=[]}={}){
  const value=normalized(text),chunks=[];
  for(let offset=0;offset<value.length;offset+=Math.max(1,size-240)){chunks.push({id:'p'+chunks.length,text:value.slice(offset,offset+size),offset});if(chunks.length>=1200)break;}
  // Round-robin the methodology dimensions. Financial keywords must not crowd
  // out checkout, delivery, customer reviews or operational evidence on long pages.
  const selected=new Set(chunks.length?[0]:[]);
+ if(focus.length){
+  const ranked=chunks.map((chunk,i)=>({i,matches:focus.filter(word=>chunk.text.toLocaleLowerCase('tr').includes(word)).length}))
+   .filter(chunk=>chunk.matches).sort((a,b)=>b.matches-a.matches||a.i-b.i);
+  for(const chunk of ranked.slice(0,Math.max(0,maxChunks-2)))selected.add(chunk.i);
+ }
  const ranked=evidenceTopics.map(pattern=>chunks.map((chunk,i)=>({i,score:(chunk.text.match(pattern)||[]).length})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||a.i-b.i));
  for(let depth=0;selected.size<Math.min(maxChunks,chunks.length);depth++){
   let added=false;for(const group of ranked){const item=group.filter(x=>!selected.has(x.i))[0];if(item&&selected.size<maxChunks){selected.add(item.i);added=true;}}
@@ -72,7 +86,7 @@ export function mergeExtractedEvidence(packet,extraction={}){
  result.unavailable=[...(result.unavailable||[]),...(extraction.failed||[])].slice(0,80);return result;
 }
 export function createEvidenceCollector({read,render,clock=Date.now,timeout=100000,maxSources=24,onDiagnostic,allowPartialPlan=false,concurrency=8,preferProductLinks=false,maxSourceChars=180000,hardDeadline=false}={}){
- return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false,archivePages,allowEmpty=false}={}){
+ return async function collect(brief,sourcePlan,{extraSources=[],prioritySources=[],initialPacket,identityOnly=false,sourceLimit=maxSources,explicitSourcesOnly=false,archivePages,allowEmpty=false,evidenceFocus=[]}={}){
   if(!Number.isSafeInteger(maxSourceChars)||maxSourceChars<180000||maxSourceChars>360000)throw Error('Kanıt taşıma sınırı geçersiz.');
   const capacity=Math.min(maxSources,Number.isSafeInteger(sourceLimit)&&sourceLimit>0?sourceLimit:maxSources);
   const plan=parseSourcePlan(sourcePlan,{allowPartial:allowPartialPlan}),deadline=clock()+(identityOnly?Math.min(timeout,20000):timeout);
@@ -110,13 +124,13 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
      canonicalLink:/<link\b[^>]*\brel\s*=\s*["']canonical["']/i.test(html),
      noindexMeta:/<meta\b(?=[^>]*\bname\s*=\s*["'](?:robots|googlebot)["'])(?=[^>]*\bcontent\s*=\s*["'][^"']*\bnoindex\b)/i.test(html),
      structuredData:/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html),
-     navigation:sourceLinks(html,url).slice(0,20),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
+     navigation:sourceLinks(html,url).slice(0,20),...(explicitSourcesOnly?{identityLinks:sourceLinks(html,url,{identity:true})}:{}),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
     return {url:input,finalUrl:url,title,text,technicalSignals,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
    }
    throw Error('redirect_limit');
   }
   function keep(page){
-   const excerpts=evidenceExcerpts(page.text);if(!excerpts.length||excerpts[0].text.length<24)return false;
+   const excerpts=evidenceExcerpts(page.text,{focus:evidenceFocus});if(!excerpts.length||excerpts[0].text.length<24)return false;
    const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered'&&!sources[previous].metadataOnly)return false;
    const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.technicalSignals?{technicalSignals:page.technicalSignals}:{}),...(page.metadataOnly?{metadataOnly:true}:{}),...(page.pages?{pages:page.pages}:{})};
    const nextChars=JSON.stringify(sources).length+JSON.stringify(record).length-(previous>=0?JSON.stringify(sources[previous]).length:0);

@@ -14,7 +14,7 @@ import {createBhsJobStore,queuedBhsBrief} from '../src/bhs/job-store.mjs';
 import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs.mjs';
 import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
-import {meteredBhsStage,workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
+import {meteredBhsStage,workerInfraReservationKurus,workerMaxDurationSeconds} from '../src/bhs/job-infrastructure.mjs';
 import {inventoryOutputTokens,inventoryStages} from '../src/bhs/collection-first.mjs';
 import {managedInventoryCeilingKurus} from '../src/bhs/managed-budget.mjs';
 import {minimumV8GeminiReservation} from '../src/bhs/supervised-providers.mjs';
@@ -118,7 +118,10 @@ test('worker endpoint denies unauthenticated or disabled calls before touching j
 });
 test('worker compute settles measured failures and retains the ceiling only when measurement is unknown',async()=>{
  const f=await localBudget();try{
-  let time=0,calls=0;const job={id:other,phase:'brand_plan',briefHash:hash},options={job,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:arg=>arg?{user:600000000,system:0}:{user:0,system:0},run:async()=>{calls++;time+=300000;}};
+  const duration=workerMaxDurationSeconds*1000;
+  for(const url of [new URL('../vercel.json',import.meta.url),new URL('../../vercel.json',import.meta.url)])
+   assert.equal(JSON.parse(await readFile(url,'utf8')).functions['api/bhs-worker.js'].maxDuration,workerMaxDurationSeconds);
+  let time=0,calls=0;const job={id:other,phase:'brand_plan',briefHash:hash},options={job,ledger:f.ledger,region:'iad1',clock:()=>time,cpu:arg=>arg?{user:duration*2000,system:0}:{user:0,system:0},run:async()=>{calls++;time+=duration;}};
   const result=await meteredBhsStage(options);assert.ok(result.accountedKurus>0&&result.accountedKurus<workerInfraReservationKurus);assert.equal((await f.ledger.status()).chargedKurus,500+result.accountedKurus);
   await meteredBhsStage(options);assert.equal(calls,1);
   await assert.rejects(meteredBhsStage({...options,region:'unknown'}),e=>e.code==='infra_tariff_unverified');
@@ -132,7 +135,7 @@ test('worker compute settles measured failures and retains the ceiling only when
 
 test('a completed BHS can reach the deterministic scope fallback even below one worker reservation',async()=>{
  const f=await localBudget();try{
-  await f.ledger.once('prior-public-research',{},4200,async()=>({retained:true}));
+  await f.ledger.once('prior-public-research',{},4201,async()=>({retained:true}));
   await f.ledger.once(stageKey(brief,'synthesis','v8'),{brief,phase:'synthesis',version:'bounded-bhs-v1'},0,async()=>({report:{summary:'',sources:[],findings:[]}}));
   const cost=await f.ledger.status(),job={id:other,phase:'scope',briefHash:hash};
   const result=await runMeteredBhsPhase(job,{phase:'scope',brief,ledger:f.ledger,researchVersion:'v8',researchModel:'claude-sonnet-5-5',providers:{generate:()=>assert.fail('no paid scope call')}});
@@ -141,7 +144,8 @@ test('a completed BHS can reach the deterministic scope fallback even below one 
 });
 test('all eight unaffordable Gemini inventory phases skip before compute or provider calls',async()=>{
  const now=()=>Date.parse('2026-11-12T14:23:33Z');
- const options={phaseCeiling:3000,ledger:{status:async()=>({chargedKurus:2209})},
+ const chargedKurus=managedInventoryCeilingKurus-workerInfraReservationKurus-minimumV8GeminiReservation(inventoryOutputTokens,now(),researchTariff);
+ const options={phaseCeiling:3000,ledger:{status:async()=>({chargedKurus:chargedKurus+1})},
   providers:{collectionFirst:true,managedBudgetVersion:2,now}};
  const skips=[];
  for(const phase of inventoryStages){
@@ -152,7 +156,6 @@ test('all eight unaffordable Gemini inventory phases skip before compute or prov
  }
  assert.equal(skips.length,8);
  const phase=inventoryStages[0];
- const chargedKurus=managedInventoryCeilingKurus-workerInfraReservationKurus-minimumV8GeminiReservation(inventoryOutputTokens,now(),researchTariff);
  let metered=0;
  await runMeteredBhsPhase({phase,researchVersion:'v8'},{...options,phase,ledger:{status:async()=>({chargedKurus})}},{
   meter:async({run})=>{metered++;return run();},
@@ -174,14 +177,16 @@ test('the inventory batch advances one lease only after every zero-cost checkpoi
  const prior=sequentialPhases[sequentialPhases.indexOf(phase)-1];
  await ledger.once(stageKey(brief,prior,'v8',job.queueBriefHash),{},0,async()=>({methodologyVersion:sequentialVersion,collectionFirst:true}));
  await ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:2}));
- await ledger.once('previous-research',{},1709,async()=>({}));
+ const now=()=>Date.parse('2026-11-12T14:23:33Z');
+ const spent=managedInventoryCeilingKurus-workerInfraReservationKurus-minimumV8GeminiReservation(inventoryOutputTokens,now(),researchTariff)+1-500;
+ await ledger.once('previous-research',{},spent,async()=>({}));
  const completed=await ledger.get('previous-research');
  completed.charge_kurus=0;
- assert.equal((await ledger.get('previous-research')).charge_kurus,1709);
+ assert.equal((await ledger.get('previous-research')).charge_kurus,spent);
  assert.equal(f.calls.filter(call=>call.body.p_data?.op==='get'&&call.body.p_data.step==='previous-research').length,0);
  const before=await ledger.status();
  const result=await runClaimedBhsStage({job,queue:f.queue,getLedger:()=>ledger,
-  getProviders:options=>({...options,collectionFirst:true}),runStage:options=>runMeteredBhsPhase(job,options,{
+  getProviders:options=>({...options,collectionFirst:true,now}),runStage:options=>runMeteredBhsPhase(job,options,{
    meter:()=>assert.fail('skipped inventory has no worker reservation')
   })});
  assert.deepEqual(result,{status:'queued',nextPhase:'coverage_plan'});
@@ -198,7 +203,7 @@ test('the inventory batch advances one lease only after every zero-cost checkpoi
 });
 test('the managed report can pass reviewed evidence to the offer when a paid worker reservation cannot fit',async()=>{
  const job={phase:'synthesis'};
- const options={phase:'synthesis',phaseCeiling:4621,ledger:{status:async()=>({chargedKurus:4222,capKurus:5000})},
+ const options={phase:'synthesis',phaseCeiling:4621,ledger:{status:async()=>({chargedKurus:4622-workerInfraReservationKurus,capKurus:5000})},
   providers:{manager:()=>assert.fail('a paid writer must not run without the reservation')}};
  const result=await runMeteredBhsPhase(job,options,{meter:()=>assert.fail('the worker reservation does not fit'),runStage:async({providers})=>{
   await assert.rejects(providers.manager(),error=>error.code==='budget_limit');

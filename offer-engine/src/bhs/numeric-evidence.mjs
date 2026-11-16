@@ -54,6 +54,8 @@ export function numericEvidence(text,{locale='auto',claims=false}={}){
  return result;
 }
 export function supportedNumbers(value,evidence){
- const known=String(evidence||'').split('\n').flatMap(line=>numericEvidence(line)),numbers=new Set(known.map(n=>n.number)),literals=new Set(known.map(n=>n.literal));
+ const known=String(evidence||'').split('\n').flatMap(line=>numericEvidence(line.replace(
+  /(?<=\p{L})(?=\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*(?:TL|TRY|USD|EUR)\b)/gu,' ')));
+ const numbers=new Set(known.map(n=>n.number)),literals=new Set(known.map(n=>n.literal));
  return numericEvidence(value,{locale:'tr',claims:true}).every(n=>numbers.has(n.number)||literals.has(n.literal));
 }

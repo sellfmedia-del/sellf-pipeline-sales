@@ -3,7 +3,7 @@ import test from 'node:test';
 import {snapshotBrief} from '../src/bhs/brief.mjs';
 import {sequentialPhases} from '../src/bhs/sequential-contracts.mjs';
 import {runSequentialStage} from '../src/bhs/sequential-research.mjs';
-import {reviewScopedResearch,runScopedDefaults,scopedEvidence} from '../src/bhs/scoped-research.mjs';
+import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence,understandScopedBrand} from '../src/bhs/scoped-research.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
@@ -11,6 +11,8 @@ import {writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {quoteSearch} from '../src/budget/ledger.mjs';
 import {reserveStageQuote} from '../src/bhs/supervised-providers.mjs';
+import {sourceLinks} from '../src/bhs/evidence.mjs';
+import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -27,6 +29,97 @@ const quote='Marque runs a direct wholesale catalogue for supermarket customers 
 const postQuote='PublishedAt 2026-11-10 likesCount 84 commentsCount 6.';
 const about='https://marque.fr/our-story';
 const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peers:[],...overrides});
+
+test('publisher identity and social links are usable after a catalogue with many product links',async()=>{
+ const corporate='https://marque.com/contact',html='<a href="/product">Ürün</a>'.repeat(100)+
+  '<a href="/iletisim">İletişim</a><a href="'+corporate+'">Corporate</a><a href="'+instagram+'"></a>';
+ const identityLinks=sourceLinks(html,brief.website,{identity:true});
+ assert.deepEqual(identityLinks.map(link=>link.url),[new URL('/iletisim',brief.website).href,corporate,instagram]);
+ const original={...packet,sources:[{...packet.sources[0],technicalSignals:{identityLinks}}]};
+ const model={managedBudgetVersion:14,manager:async(stage,input)=>{
+  if(stage==='bhs-scoped-plan'){
+   assert.ok(input.publisherLinks.some(link=>link.url===instagram));
+   return {data:{needs:[needs[1]]}};
+  }
+  assert.equal(input.card,undefined);
+  assert.ok(input.sources[0].links.some(link=>link.url===corporate));
+  assert.equal(input.readReceipts[0].status,'read');
+  return {data:{...identity,pages:[],searches:[]}};
+ }};
+ const prior={value:{...identity,pages:[corporate],searches:[]}};
+ const brand=await understandScopedBrand({brief,packet:original,providers:model,prior,readPages:async urls=>{
+  assert.deepEqual(urls,[corporate]);
+  return {sources:[{...packet.sources[0],url:corporate,finalUrl:corporate}]};
+ }});
+ assert.ok(brand.packet.sources.some(s=>s.url===corporate));
+ assert.equal((await planScopedResearch({brief,identity,briefUnderstanding,asOf:packet.asOf,providers:model,packet:brand.packet})).needs[0].id,'t1');
+});
+
+test('an unavailable controller can use the saved narrow query with the affordable alternate',async()=>{
+ const need={...needs[1],first:'gemini'};
+ const plan={targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ let used=0;
+ const providers={managedBudgetVersion:14,manager:async()=>{throw new BudgetError('budget_limit','synthetic admission');},
+  researchCapacity:async()=>({remainingKurus:3000-2615-workerInfraReservationKurus,minimumDefaultKurus:62,
+   defaults:['tavily'],configuredDefaults:['tavily','gemini'],actors:[]}),
+  search:async(query,opts)=>{
+   used++;assert.equal(query,need.query);assert.equal(opts.since,need.since);assert.equal(opts.maxResults,need.quantity);
+   return {results:[{url:post,content:postQuote}]};
+  }};
+ const recovered=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:()=>assert.fail()});
+ assert.equal(used,1);assert.equal(recovered.closed,false);assert.equal(recovered.receipts[0].attempts[0].tool,'tavily');
+ const final=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[recovered],providers,brief,packet,readPages:()=>assert.fail()});
+ assert.equal(used,1);assert.equal(final.closed,true);
+});
+
+test('an executed read and invalid external need ID are reported back without purchasing the command again',async()=>{
+ const need={...needs[0],first:'tavily'};
+ const plan={targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ const args={identity,briefUnderstanding,plan,brief,packet};
+ const read={id:need.id,tool:'read',mode:'default',query:'',url:about,limit:1};
+ const initial={receipts:[{id:need.id,query:need.query,urls:[about],facts:[],issues:[],defaultAttempt:true,attempts:[{tool:'tavily'}]}]};
+ const commands=[read,{...read,limit:2},{...read,id:'c1'}];
+ let reads=0,review=0;
+ const providers={managedBudgetVersion:14,researchCapacity:async()=>({remainingKurus:690,defaults:['tavily'],actors:[]}),
+  manager:async(_stage,input)=>{
+   if(review)assert.equal(input.commandHistory[0].status,'executed');
+   return {data:draft({commands:[commands[review++]]})};
+  },worker:async()=>({data:{results:[]}}),search:()=>assert.fail('duplicated query')};
+ const readPages=async()=>{reads++;return {sources:[{...packet.sources[0],url:about,finalUrl:about}]};};
+ const first=await reviewScopedResearch({...args,rounds:[initial],providers,readPages});
+ const second=await reviewScopedResearch({...args,rounds:[initial,first],providers,readPages});
+ const third=await reviewScopedResearch({...args,rounds:[initial,first,second],providers,readPages});
+ assert.equal(reads,1);assert.equal(second.commandResults[0].status,'duplicate');assert.equal(third.commandResults[0].status,'need_unavailable');
+});
+
+test('source transport preserves every alias and retains valid parts of a clipped draft',async()=>{
+ const metrics={...needs[0],section:'PAZAR',first:'tavily'};
+ const url='https://publisher.fr/market-figures',product='https://publisher.fr/category-cpc';
+ const plan={targetedEvidence:true,qualityReport:true,adaptiveResearch:true,scopedResearch:true,orderedResearch:true,
+  reportOnlyAfterResearch:true,needs:[metrics]};
+ const fact=(id,target,quote)=>({id,url:target,title:'Kamu verileri',item:id,quote,method:'search-snippet'});
+ const receipts=[{id:metrics.id,facts:[
+  fact('a',url,'Kategori yılına ilişkin perakende kayıtları kaynak tablosundan derlendi. Kasım mobilya kampanyası 27 Kasım 2026 tarihinde gerçekleştirildi.'),
+  fact('b',product,'Kategori Google Ads tahmini tıklama maliyeti: Ev dekorasyon5 - 18 TL, ulusal arama reklamları.')
+ ]}];
+ const providers={manager:async(_stage,input)=>{
+  const alias=part=>Object.entries(input.sources).find(([,row])=>row[1].includes(part))[0];
+  const base={section:'Pazar',needIds:[metrics.id],area:'',quadrant:'none',peerId:'',kind:'observation',analysis:'Kampanya planlaması için kullanılabilir.',
+   action:'Kampanya planını gözden geçir.',measurement:'Dönüşüm oranı',limitation:'',question:''};
+  assert.ok(Object.values(input.documents).some(doc=>doc[0]===url));
+  return {model:'offline',partialOutput:true,data:{findings:[
+   {...base,rank:1,observation:'Kasım mobilya kampanyası 27 Kasım 2026 tarihinde gerçekleştirildi.',proof:[alias('perakende kayıtları')]},
+   {...base,rank:2,observation:'Ev dekorasyonunda Google Ads maliyet tahmini 5–18 TL. Aynı sektörün toplam cirosu 999 milyon TL.',proof:[alias('dekorasyon5')]},
+   {...base,rank:3,observation:'Kategori toplam cirosu 999 milyon TL.',proof:[alias('dekorasyon5')]}
+  ],peers:[],benchmarks:[],questions:[]}};
+ }};
+ const result=await writeScopedSynthesis({brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,
+  rounds:[{closed:true,stopReason:'research_budget_exhausted',receipts}],providers});
+ assert.equal(result.report.findings.length,2);
+ assert.match(result.report.findings[1].statement,/5–18 TL/);
+ assert.doesNotMatch(result.report.findings[1].statement,/999/);
+ assert.equal(result.report.bhsSections.find(s=>s.id==='PAZAR').complete,false);
+});
 
 test('short Tavily receipts reach the controller without an extra extraction call',async()=>{
  const [receipt]=await runScopedDefaults([needs[1]],{managedBudgetVersion:13,
