@@ -16,6 +16,8 @@ import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
+import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
+import {scopedCoverage} from '../src/bhs/managed-report.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -35,6 +37,49 @@ const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peer
 const searchQuotes={tavily:62,gemini:1044};
 const openingCapacity=remainingKurus=>({remainingKurus,capKurus:3000,quotes:searchQuotes,
  defaults:Object.keys(searchQuotes).filter(t=>searchQuotes[t]<=remainingKurus),configuredDefaults:Object.keys(searchQuotes),actors:[],configuredActors:[]});
+
+test('sales gaps use human names and distinguish blocked searches, weak sources and saved facts without report analysis',async()=>{
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const targets=[{...needs[1],id:'ig',section:'DİJİTAL',metric:'instagram_marka'},
+  {...needs[1],id:'yt',section:'DİJİTAL',metric:'youtube_marka',period:''},
+  {...needs[1],id:'p',section:'FİYAT',metric:'E-ticaret sitesindeki liste fiyatları'},
+  {...needs[1],id:'c',section:'KANAL',metric:'pazaryeri'},
+  {...needs[1],id:'r',section:'PAZAR',metric:'influencer_pazar'}];
+ const plan={needs:targets,qualityReport:true,targetedEvidence:true,orderedResearch:true,adaptiveResearch:true,verifiedResults:true};
+ const fact={id:'recorded_price',url:about,quote,title:'Marque',method:'html',item:'Katalog'};
+ const round={closed:true,stopReason:'research_budget_exhausted',receipts:[
+  {id:'ig',facts:[],urls:[],attempts:[{tool:'tavily',issue:'budget_limit'}]},
+  {id:'yt',facts:[],urls:[],attempts:[{tool:'tavily'}]},
+  {id:'p',facts:[fact],urls:[fact.url]},
+  {id:'c',facts:[],urls:[],missingDefaults:['tavily'],issues:['scraper_requires_default_tools']},
+  {id:'r',facts:[],urls:[],actorStarted:true,issues:['actor_time_limit']}],
+  commandResults:[{id:'c',status:'not_dispatched'},{id:'r',status:'executed'}],
+  decisions:[{id:'p',sufficient:true,proofs:[fact.id]}]};
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds:[round],providers:{manager:()=>assert.fail('formatting saved research is free')},allowWrite:false});
+ const audit=continuationAudit(brief,{synthesis,reason:'budget_limit'}).data;
+ const digital=audit.bhsSections.find(s=>s.id==='DİJİTAL');
+ assert.equal(digital.title,'Dijital varlıklar');
+ assert.deepEqual(digital.openMetrics,[
+  {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
+  {name:'Markanın YouTube hesabı',status:'insufficient_sources'}]);
+ assert.deepEqual(audit.bhsSections.find(s=>s.id==='FİYAT').openMetrics,[{name:'E-ticaret sitesindeki liste fiyatları',status:'missing_from_report'}]);
+ assert.equal(audit.bhsSections.find(s=>s.id==='KANAL').openMetrics[0].status,'not_searched');
+ assert.equal(audit.bhsSections.find(s=>s.id==='PAZAR').openMetrics[0].status,'insufficient_sources');
+ assert.ok(audit.findings.some(f=>f.researchEvidenceOnly));
+ assert.doesNotMatch(audit.researchContinuity.notice,/Ek kanıt gereken|instagram_marka|youtube_marka/);
+ assert.ok(!audit.meetingQuestions.some(q=>q.question.includes('instagram_marka')));
+ const covered=scopedCoverage({competitors:[],findings:[{id:'finished',bhsSection:'FİYAT',researchNeedIds:['p'],sourceIds:['ev2']}]},
+  synthesis.supervision.metricCoverage,true,true);
+ assert.equal(covered.find(s=>s.id==='FİYAT').openMetrics,undefined);
+ const historical=scopedCoverage({findings:[]},[{id:'old',section:'pazar',name:'reklam_maliyet',status:'open'}],true,true)[0];
+ assert.deepEqual(historical.openMetrics,[{name:'Reklam maliyetleri',status:'unknown'}]);
+ const stale={data:{...audit,researchContinuity:{...audit.researchContinuity,notice:'Eski araştırma. Ek kanıt gereken bölümler: PAZAR.'},
+  bhsSections:[{id:'PAZAR',title:'PAZAR',complete:false,openMetrics:[{name:'reklam_maliyet',status:'needs_evidence'}]}]}};
+ const restored=(await restoreContinuation(brief,stale,{get:()=>assert.fail('saved statuses are formatted without launching research')})).data;
+ assert.equal(restored.bhsSections[0].title,'Pazar analizi');
+ assert.deepEqual(restored.bhsSections[0].openMetrics,historical.openMetrics);
+ assert.equal(restored.researchContinuity.notice,'Eski araştırma.');
+});
 
 test('the active worker covers all ten planned opening topics before a deeper review of any single topic',async()=>{
  const topics=['rakipler','pazar','pazaryeri','fiyat','müşteri deneyimi','Instagram','YouTube','bilinirlik','influencer','reklam maliyeti'];

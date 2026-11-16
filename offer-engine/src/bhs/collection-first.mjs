@@ -1132,7 +1132,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const verifiedPeers=plan.verifiedResults?projectExpertReport({peers:evidence.verifiedPeers.map(({proofs,...peer})=>
   ({...peer,sourceIds:unique(proofs.flatMap(cite))}))},context).competitors.map(peer=>
   ({entityId:peer.id,relationship:'direct',reason:peer.scope,sourceIds:peer.sourceIds})):undefined;
- const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,coverage,needs:evidence.needs,approved:evidence.approved,sections,
+ const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,
+  coverage:coverage.map(({displayName,searched,...metric})=>metric),needs:evidence.needs,approved:evidence.approved,sections,
   verifiedPeers,
   ...(plan.orderedResearch&&terminal?{stopReason:terminal.stopReason}:{})}):{};
  let {report}=written;
@@ -1160,7 +1161,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
- if(useSavedEvidence)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.name,findingIds:[]}))];
+ if(useSavedEvidence)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,

@@ -6,6 +6,42 @@ import path from 'node:path';
 import chromium from '@sparticuz/chromium';
 import {chromium as playwright} from 'playwright-core';
 
+test('desktop/mobile display distinct sales gap reasons even when no findings reached the offer',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
+ try{for(const width of [1280,390]){
+  const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',async route=>{
+   const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));
+   const file=path.join(process.cwd(),'public',u.pathname);
+   try{await route.fulfill({contentType:{'.html':'text/html','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css'}[path.extname(file)],body:await readFile(file)});}
+   catch{await route.fulfill({status:404,body:''});}
+  });
+  await page.goto('https://preview.vercel.app/offers/recovery-review.html');
+  await page.waitForFunction(()=>typeof window.PipelineAuditRequest==='function');
+  await page.evaluate(()=>{
+   const original=window.PipelineAuditRequest;
+   window.PipelineAuditRequest=async payload=>{
+    const response=await original(payload);
+    Object.assign(response.result.data,{findings:[],researchContinuity:{status:'unavailable',notice:'Görüşme bilgileriyle teklife devam edebilirsin.'},
+     bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
+      {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
+      {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
+      {name:'Reklam maliyetleri',status:'missing_from_report'}]}]});
+    return response;
+   };
+  });
+  await page.locator('#review-restored').click();
+  await page.locator('.ob-price:not([hidden])').waitFor();
+  const text=await page.locator('.ob-research-report').innerText();
+  for(const row of ['Instagram’da son 30 günün etkileşimi — Aranmadı','Markanın YouTube hesabı — Kaynak yetersiz','Reklam maliyetleri — Kanıt bulundu, rapora aktarılamadı'])assert.ok(text.includes(row),row);
+  assert.doesNotMatch(text,/instagram_marka|youtube_marka|reklam_maliyet/);
+  assert.equal(await page.locator('.ob-research-report article').count(),0);
+  assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
+  assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+  assert.deepEqual(errors,[]);await page.close();
+ }}finally{await browser.close();}
+});
+
 test('desktop/mobile restores the recorded research view at 46.21 TRY and reaches the offer with only a start read',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
  try{for(const width of [1280,390]){

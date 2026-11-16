@@ -201,7 +201,7 @@ test('only open research can trigger an extra account, and 36.79 plus 30 TRY is 
   report:{verifiedResearch:{metrics}}},sections:['pazar','fiyat'],secret:'test-secret',baseLedger:base.ledger,
   getGapLedger:()=>assert.fail('cost preview and confirmed evidence never create an extra account'),
   getProviders:()=>assert.fail('approved evidence needs no provider')};
- assert.deepEqual(await resolveManagedGaps({...input,action:'status'}),{available:true,sections:['fiyat'],capKurus:3000,baseCommittedKurus:3679,maximumCombinedKurus:6679});
+ assert.deepEqual(await resolveManagedGaps({...input,action:'status'}),{available:true,sections:['Ürün ve rakip fiyatları'],capKurus:3000,baseCommittedKurus:3679,maximumCombinedKurus:6679});
  assert.equal(await resolveManagedGaps({...input,action:'complete_gaps',sections:['pazar']}),null);
  assert.equal(await resolveManagedGaps({...input,action:'status',sections:['pazar']}),null);
  assert.equal((await base.ledger.status()).chargedKurus,3679);

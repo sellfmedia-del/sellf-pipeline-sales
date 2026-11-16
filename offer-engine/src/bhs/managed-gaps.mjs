@@ -10,9 +10,9 @@ import {collectionCorpus,collectionMarket,collectPlannedCoverage,comparisonResea
 import {createEvidenceCollector} from './evidence.mjs';
 import {researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
+import {salesSectionTitle} from './sales-research-labels.mjs';
 
 const receiptKey='audit:managed-gap-result';
-const sectionTitle=id=>Object.hasOwn(managedSections,id)?managedSections[id]:id;
 
 const indexSchema=obj({observations:arr(obj({area:str(80),text:str(350),sourceIds:arr(str(80))})),organizations:arr(obj({name:str(120),sourceId:str(80)}))});
 const unique=values=>[...new Set(values)];
@@ -41,7 +41,8 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  const independent=researchPlan?.directedResearch===true;
  const remaining=independent?gapCapKurus:Math.max(0,Math.min(gapCapKurus,tariff.capKurus-base.chargedKurus));
  const estimate=separateCosts&&independent?{baseCommittedKurus:base.chargedKurus,maximumCombinedKurus:base.chargedKurus+gapCapKurus}:{};
- const available=(ids,capKurus)=>({available:true,sections:ids.map(sectionTitle),capKurus,...estimate});
+ const available=(ids,capKurus)=>({available:true,sections:ids.map(id=>salesSectionTitle(id,
+  Object.hasOwn(managedSections,id)?managedSections[id]:synthesis.report.bhsSections?.find(s=>s.id===id)?.title)),capKurus,...estimate});
  if(!authorization){
   if(action!=='complete_gaps')return sections.length&&remaining?available(sections,remaining):null;
   if(!sections.length||!remaining)return null;

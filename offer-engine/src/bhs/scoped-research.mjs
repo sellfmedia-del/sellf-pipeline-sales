@@ -5,6 +5,7 @@ import {arr,obj,str} from './sequential-contracts.mjs';
 import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
 import {marketMeasureInstruction,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
+import {salesMetricName} from './sales-research-labels.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -226,7 +227,7 @@ async function extractFacts(searches,providers,{excerptsOnly=false}={}){
   instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
   requests:withRows.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
  },workerSchema,{maxOutputTokens:1800,minimumOutputTokens:760,compactWorker:true,generationTimeoutMs:28000})):{};
- return inputs.map(({need,rows,issue,attempts=[],urls=[]})=>{
+ return inputs.map(({need,rows,issue,attempts=[],urls=[],actorStarted})=>{
   const output=result.value?.data?.results.find(r=>r.id===need.id);
   const makeFact=(source,quote,item)=>({id:'q'+hash([need.id,source.url,quote,item]).slice(0,18),quote,item,url:source.url,title:source.title,method:source.method,
    ...(source.metadataOnly?{metadataOnly:true}:{})});
@@ -239,6 +240,7 @@ async function extractFacts(searches,providers,{excerptsOnly=false}={}){
   const candidates=rows.map(source=>({...makeFact(source,source.content,source.title||source.url),preliminary:true}));
   const facts=uniqueBy([...candidates,...extracted],row=>row.id+' '+row.item);
   return {id:need.id,query:need.query,facts,urls:[...new Set([...urls,...rows.map(r=>r.url)])],attempts,nextQuery:output?.nextQuery||'',
+   ...(actorStarted?{actorStarted:true}:{}),
    issues:[issue,result.issue,...attempts.map(a=>a.issue)].filter(Boolean)};
  });
 }
@@ -586,7 +588,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const records=evidenceRows(actorResult?.pages,c.limit,'extracted');
   const search=evidenceRows((actorResult?.searches||[]).flatMap(s=>s.results||[]),c.limit,'search-snippet');
   const read=await readSearchEvidence([...new Set(search.map(r=>r.url))],readPages);
-  return {need,rows:[...records,...read,...search],issue:found.issue||actorResult?.reason,actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
+  return {need,rows:[...records,...read,...search],issue:found.issue||actorResult?.reason,actorStarted:Boolean(actorResult?.runId),actorTarget:actorResult?.status==='complete'?{actor:c.tool,status:'complete',pages:records.map(({url})=>({url}))}:null};
  }));
  for(let i=0;i<scraped.length;i+=3)next.push(...await extractFacts(scraped.slice(i,i+3),acquisition));
  const issue=!next.length&&data.commands.length?'no_executable_research_command':undefined;
@@ -612,9 +614,23 @@ function confirmed(need,decision,facts,rivalHosts){
  return countProofs(need,decision?.proofs,facts)>=need.quantity;
 }
 
+const blockedResearch=new Set(['actor_budget_limit','actor_limit_unverified','actor_source_unverified','actor_time_limit','budget_limit','cancelled','claude_spend_limit','fx_limit','fx_unavailable',
+ 'input_budget','model_budget','model_deadline','not_configured','scraper_requires_default_tools','tariff_expired','token_count']);
+function researchAttempted(receipt,executed){
+ if(receipt.facts?.length||receipt.urls?.length||receipt.actorStarted)return true;
+ if(receipt.attempts?.length)return receipt.attempts.some(({issue})=>!blockedResearch.has(issue));
+ return executed&&!receipt.missingDefaults?.length&&!receipt.issues?.some(issue=>blockedResearch.has(issue));
+}
+
 export function scopedEvidence(brand,plan,rounds){
  const needs=uniqueBy([...plan.needs,...rounds.flatMap(r=>r.newNeeds||[])],n=>n.id);
- const facts=uniqueBy(rounds.flatMap(r=>(r.receipts||[]).flatMap(row=>row.facts.map(f=>({...f,needId:row.id})))),f=>f.id);
+ const receipts=rounds.flatMap(r=>r.receipts||[]);
+ const facts=receiptFacts(receipts);
+ const interrupted=rounds.some(round=>round.issue==='research_round_interrupted');
+ const searched=new Set(rounds.flatMap(round=>{
+  const executed=new Set((round.commandResults||[]).filter(c=>c.status==='executed').map(c=>c.id));
+  return (round.receipts||[]).filter(r=>researchAttempted(r,executed.has(r.id))).map(r=>r.id);
+ }));
  const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,row]));
  const clearance=rounds.findLast(r=>typeof r.approved==='boolean')||{};
  const peers=uniqueBy(rounds.flatMap(r=>r.peers||[]),p=>researchHost(p.url));
@@ -623,6 +639,7 @@ export function scopedEvidence(brand,plan,rounds){
   const decision=checked.get(n.id);
   const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts):undefined;
   return {id:n.id,section:n.section,name:n.metric,status:confirmed(n,decision,facts,rivalHosts)&&(!marketMeasures||marketMeasures.length)?'confirmed':'open',
+   ...(plan.targetedEvidence?{displayName:salesMetricName(n),...(searched.has(n.id)||!interrupted?{searched:searched.has(n.id)}:{})}:{}),
    ...(marketMeasures?{marketMeasures}:{}),...(rivalHosts&&comparisonNeed(n)?{requiresPeer:true}:{}),
    proofs:facts.filter(f=>f.needId===n.id&&decision?.proofs.includes(f.id))};
  });

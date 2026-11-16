@@ -169,6 +169,28 @@
       box.replaceChildren();
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
+      function renderSections(sections){
+        const findings=new Map(data.findings.map(f=>[f.id,f]));
+        const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
+        const gapLabels={not_searched:'Aranmadı',insufficient_sources:'Kaynak yetersiz',missing_from_report:'Kanıt bulundu, rapora aktarılamadı'};
+        for(const section of sections){
+          heading(section.title);
+          if(section.openMetrics?.length){
+            for(const metric of section.openMetrics)paragraph(
+              metric.name+' — '+(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil')
+            );
+          }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
+          for(const id of section.findingIds){
+            const f=findings.get(id);if(!f)continue;
+            const article=document.createElement('article');box.append(article);
+            paragraph((f.bhsRank?f.bhsRank+'. ':'')+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,article);
+            paragraph(f.impact,article);
+            if(f.recommendation?.action)paragraph('Önerilen aksiyon: '+f.recommendation.action,article);
+            if(f.recommendation?.measurement)paragraph('Başarı ölçümü: '+f.recommendation.measurement,article);
+            paragraph('Kaynak: '+f.sourceIds.join(', '),article);
+          }
+        }
+      }
       paragraph(data.summary);
       if(data.researchReuse?.researchedAt)paragraph('Araştırma tarihi: '+data.researchReuse.researchedAt+' · Saklanan araştırma; yeni tarama yapılmadı.');
       if(data.researchReuse)paragraph('Mevcut marka araştırması korundu; teklif kapsamı güncel brief üzerinden seçilecek. '+(data.researchReuse.contextNeedsConfirmation?'Bulguların güncel hedef pazar ve görüşme bağlamına uygunluğunu kapsam onayında kontrol et.':''));
@@ -185,27 +207,8 @@
       paragraph('Ön BHS toplamı: '+(data.scoring.total===null?'Hesaplanmadı':data.scoring.total+'/100'));
       paragraph(data.scoring.note);
       heading('Rakip seti');data.competitors.forEach(p=>paragraph(p.name+' — '+p.scaleReason+' '+p.audienceReason+' '+p.geographyReason));
-      if(data.bhsSections){
-        const findings=new Map(data.findings.map(f=>[f.id,f]));
-        const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
-        for(const section of data.bhsSections){
-          heading(section.title);
-          if(section.openMetrics?.length){
-            for(const metric of section.openMetrics)paragraph(
-              (metric.status==='missing_from_report'?'Rapora aktarılamadı · ':'Ek kanıt gerekli · ')+metric.name
-            );
-          }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
-          for(const id of section.findingIds){
-            const f=findings.get(id);if(!f?.recommendation)continue;
-            const article=document.createElement('article');box.append(article);
-            paragraph(f.bhsRank+'. '+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,article);
-            paragraph(f.impact,article);
-            paragraph('Önerilen aksiyon: '+f.recommendation.action,article);
-            if(f.recommendation.measurement)paragraph('Başarı ölçümü: '+f.recommendation.measurement,article);
-            paragraph('Kaynak: '+f.sourceIds.join(', '),article);
-          }
-        }
-      }else{
+      if(data.bhsSections)renderSections(data.bhsSections);
+      else{
       heading('Öncelikli bulgular');data.findings.forEach(f=>paragraph((f.kind==='inference'?'Çıkarım: ':f.kind==='brief'?'Müşteri beyanı: ':'Gözlem: ')+f.statement+' '+f.impact+' ['+f.sourceIds.join(', ')+']'));
       heading('Hizmet hipotezleri');data.serviceRecommendations.forEach(s=>paragraph(s.name+' — '+s.hypothesis+' Ölçüm: '+s.measurement));
       }
@@ -214,7 +217,7 @@
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
-      }
+      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length));
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       if(data.researchContinuity){

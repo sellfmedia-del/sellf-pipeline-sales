@@ -7,6 +7,7 @@ import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
 import {marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
+import {salesGapStatus,salesMetricName,salesSectionTitle} from './sales-research-labels.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -79,9 +80,10 @@ export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false
    .sort((a,b)=>a.bhsRank-b.bhsRank);
   const relevant=metrics.filter(m=>(m.section||m.name)===id);
   const openNeeds=relevant.filter(m=>m.status==='open'||linked&&!findings.some(f=>!f.researchEvidenceOnly&&f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
-  const title=findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id);
+  const title=salesSectionTitle(id,findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id));
   return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!openNeeds.length,
-   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(({name,status})=>({name,status:status==='open'?'needs_evidence':'missing_from_report'}))}:{})};
+   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(metric=>({name:metric.displayName||salesMetricName(metric),
+    status:salesGapStatus(metric)}))}:{})};
  });
 }
 
