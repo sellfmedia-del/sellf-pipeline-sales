@@ -7,13 +7,15 @@ import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
-import {writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
+import {recoverManagedSectionSynthesis,scopedRounds,writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {quoteSearch} from '../src/budget/ledger.mjs';
 import {reserveStageQuote} from '../src/bhs/supervised-providers.mjs';
 import {sourceLinks} from '../src/bhs/evidence.mjs';
 import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
+import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
+import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -360,6 +362,87 @@ test('scoped transfer ties Claude’s headings and rivals to evidence and retain
  assert.match(report.findings[1].recommendation.action,/GA4/);
  assert.doesNotMatch(report.findings[1].recommendation.action,/2\.570/);
  assert.ok(result.data.supervision.acceptance.issues.includes('partial_model_document'));
+});
+
+test('verified rivals, sources and measurements survive clipped writing and no-model offer recovery',async t=>{
+ const {ledger,close}=await localBudget();t.after(close);
+ const market={...needs[0],id:'market',section:'PAZAR',metric:'2025 Türkiye mobilya ihracatı',first:'tavily'};
+ const rivals={...needs[0],id:'rivals',section:'RAKIP',metric:'Koltuk rakiplerinde ürün, fiyat ve satış kanalı',first:'tavily'};
+ const digital={...needs[1],id:'digital',section:'DİJİTAL',metric:'Tek gönderi beğenisi'};
+ const plan={scopedResearch:true,qualityReport:true,adaptiveResearch:true,targetedEvidence:true,orderedResearch:true,
+  reportOnlyAfterResearch:true,verifiedResults:true,needs:[rivals,market,digital]};
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const official='https://ticaret.gov.tr/ornek/mobilya.pdf';
+ const passage='2025 Türkiye mobilya ihracatı 4.500 milyon USD olarak kaydedildi.';
+ const other='2024 Türkiye yatak ihracatı 2.050 milyon USD olarak kaydedildi.';
+ const measure={proof:'m1',amount:'4.500',unit:'milyon USD',year:'2025',category:'mobilya ihracatı',passage};
+ const peer=(name,url,relationship)=>({name,url,relationship,product:'Modüler koltuk',market:'Türkiye',channel:'Kendi perakendesi',priceBand:''});
+ const peers=[peer('Alfemo','https://alfemo.com.tr/koltuk','direct'),peer('Vivense','https://vivense.com/koltuk','direct'),peer('Başka Mağaza','https://baska.example/koltuk','candidate')];
+ const fact=(id,url,quote,method='html')=>({id,url,quote,method,item:id,title:'Kaynak'});
+ const receipt=(need,facts)=>({id:need.id,query:need.query,urls:facts.map(f=>f.url),defaultAttempt:true,attempts:[{tool:'tavily'}],facts});
+ const terminal={scopedRound:true,closed:true,stopReason:'research_budget_exhausted',peers,receipts:[
+  receipt(rivals,peers.map(({name,url},i)=>fact('r'+i,url,`${name} modüler koltuk seçeneklerini kendi perakende kataloğunda listeliyor.`))),
+  receipt(market,[fact('m1',official,passage+' '+other,'pdf')]),receipt(digital,[fact('d1',post,postQuote)])],
+ decisions:[{id:rivals.id,sufficient:false,proofs:['r0','r1','r2']},{id:market.id,sufficient:true,proofs:['m1'],marketMeasures:[measure]},
+  {id:digital.id,sufficient:true,proofs:['d1']}]};
+ await ledger.once('synthetic-research-receipt',{},2169,async()=>terminal);
+ const stored=(await ledger.get('synthetic-research-receipt')).value;
+ const providers={manager:async(_stage,input)=>{
+  const alias=text=>Object.entries(input.sources).find(([,row])=>row[1].includes(text))[0];
+  assert.deepEqual(input.coverage.find(m=>m.id===market.id).marketMeasures[0].sources,[alias(passage)]);
+  const base={area:'',quadrant:'none',peerId:'',kind:'observation',analysis:'Mevcut kapsam görüşmede değerlendirilebilir.',action:'Satış kanallarını karşılaştır.',measurement:'',limitation:'',question:''};
+  return {model:'offline',partialOutput:true,data:{findings:[
+   {...base,rank:1,section:'Pazar',needIds:[market.id],observation:'2025 Türkiye yatak ihracatı 4.500 milyon USD olarak kaydedildi.',proof:[alias(passage)]},
+   {...base,rank:2,section:'Dijital',needIds:[digital.id],observation:'Gönderi 84 beğeni aldı.',proof:[alias(postQuote)]}
+  ],peers:[],benchmarks:[],questions:[]}};
+ }};
+ const written=await writeScopedSynthesis({brief,brand,plan,rounds:[stored],providers});
+ const recovered=await recoverManagedSectionSynthesis(brief,async phase=>{
+  if(phase==='sector_sources')return {managedPlan:plan};
+  if(phase==='brand')return brand;
+  if(phase===scopedRounds[0])return stored;
+  if(phase==='scoped-tail')return [];
+ },{manager:()=>assert.fail('no extra report purchase')});
+ for(const synthesis of [written,recovered]){
+  const audit=directAuditResult(brief,synthesis).data;
+  const proposal=selectProposalAudit(audit,brief);
+  assert.deepEqual(proposal.competitors.map(p=>p.name).sort(),['Alfemo','Vivense']);
+  assert.ok(proposal.competitors.every(p=>p.sourceIds.length&&p.sourceIds.every(id=>proposal.sources.some(s=>s.id===id))));
+  assert.equal(proposal.verifiedResearch.metrics.find(m=>m.id===rivals.id).status,'open');
+  assert.equal(proposal.verifiedResearch.metrics.find(m=>m.id===market.id).status,'confirmed');
+  assert.equal(proposal.bhsSections.find(s=>s.id==='PAZAR').complete,false);
+  assert.ok(proposal.findings.some(f=>f.statement===passage));
+  assert.ok(!proposal.findings.some(f=>f.statement.includes('2025 Türkiye yatak')));
+  assert.match(audit.rawReport,/Vivense/);
+ }
+ const counts=written.report.verifiedResearch.metrics.map(metric=>[metric.id,metric.status]);
+ const patch={...recovered.report,verifiedResearch:{metrics:recovered.report.verifiedResearch.metrics.map(metric=>({...metric,status:'open'}))}};
+ const merged=mergeManagedGapReport(written.report,patch,['PAZAR']);
+ assert.deepEqual(merged.verifiedResearch.metrics.map(metric=>[metric.id,metric.status]),counts.map(([id,status])=>[id,id===market.id?'open':status]));
+ assert.equal(merged.findings.filter(f=>f.statement===passage).length,1);
+ assert.equal(merged.competitors.length,2);
+ assert.equal((await ledger.status()).chargedKurus,2669);
+});
+
+test('market review keeps a metric open unless amount, unit, year and category share one read passage',async()=>{
+ const need={...needs[0],id:'market',section:'pazar',metric:'2025 mobilya ihracatı',first:'tavily'};
+ const plan={targetedEvidence:true,verifiedResults:true,qualityReport:true,orderedResearch:true,reportOnlyAfterResearch:true,needs:[need]};
+ const quote='2025 mobilya ihracatı 4.500 milyon USD olarak kaydedildi. 2024 yatak ihracatı 2.050 milyon EUR olarak kaydedildi.';
+ const fact={id:'m1',url:'https://ticaret.gov.tr/ornek.pdf',method:'pdf',quote,title:'Tablo',item:'Mobilya'};
+ const round={receipts:[{id:need.id,query:need.query,urls:[fact.url],defaultAttempt:true,attempts:[{tool:'tavily'}],facts:[fact]}]};
+ const measure={proof:fact.id,amount:'4.500',year:'2025',category:'mobilya ihracatı',unit:'milyon USD',passage:quote.split('. 2024')[0]+'.'};
+ for(const bad of [{...measure,year:'2024'},{...measure,amount:'2.050'},{...measure,unit:'milyon EUR'},
+  {...measure,category:'yatak ihracatı'},{...measure,passage:quote}]){
+  const providers={managedBudgetVersion:17,manager:async()=>({data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[fact.id],marketMeasures:[bad]}]})})};
+  const result=await reviewScopedResearch({identity,briefUnderstanding,plan,providers,brief,packet,rounds:[round]});
+  assert.equal(result.approved,false);
+  assert.deepEqual(result.decisions[0].marketMeasures,[]);
+  assert.deepEqual(result.decisions[0].proofs,[fact.id]);
+ }
+ const providers={managedBudgetVersion:17,manager:async()=>({data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[fact.id],marketMeasures:[measure]}]})})};
+ const accepted=await reviewScopedResearch({identity,briefUnderstanding,plan,providers,brief,packet,rounds:[round]});
+ assert.equal(accepted.stopReason,'evidence_confirmed');
+ assert.deepEqual(accepted.decisions[0].marketMeasures,[measure]);
 });
 
 test('Claude plans scoped research after brand and brief, then writes and transfers a partial report with the saved evidence',async()=>{

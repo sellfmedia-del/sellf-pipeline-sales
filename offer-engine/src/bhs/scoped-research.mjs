@@ -4,6 +4,7 @@ import {researchUrl,researchHost} from './research-url.mjs';
 import {arr,obj,str} from './sequential-contracts.mjs';
 import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
+import {marketMeasureInstruction,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -30,6 +31,9 @@ const orderedReviewSchema=obj({...reviewSchema.properties,newNeeds:arr(orderedNe
 const targetedReviewSchema=obj({...orderedReviewSchema.properties,peers:arr(obj({
  ...reviewSchema.properties.peers.items.properties,relationship:{type:'string',enum:['direct','candidate','related']}
 }),10)});
+const withMarketMeasures=schema=>obj({...schema.properties,decisions:arr(obj({
+ ...schema.properties.decisions.items.properties,marketMeasures:marketMeasuresSchema
+}),schema.properties.decisions.maxItems)});
 const compact=s=>String(s||'').replace(/\s+/g,' ').trim();
 const uniqueBy=(rows,key)=>[...new Map(rows.map(row=>[key(row),row])).values()];
 const siteLinks=s=>[...(s.technicalSignals?.identityLinks||[]),...(s.technicalSignals?.navigation||[])];
@@ -351,10 +355,12 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  if(!tasks.length)return {};
  const worker=providers.worker||providers.geminiWorker;
  if(!worker)return {issue:'not_configured'};
+ const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>marketMeasureNeed(n)&&tasks.some(t=>t.id===n.id));
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
   tasks:tasks.map(({incoming,...task})=>({...task,newProofs:incoming.map(f=>f.id)})),
-  instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'
- },evidenceReviewSchema,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
+  instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
+   (scopedMarket?' '+marketMeasureInstruction:'')
+ },scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000}));
  if(!result.value?.data)return {issue:result.issue||'research_clearance_unavailable'};
  const decisions=[];
@@ -368,12 +374,21 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
   const need=needs.find(n=>n.id===task.id);
-  const decision=confirmed(need,saved,facts,rivalHosts)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
+  const decision=providers.managedBudgetVersion>=17&&marketMeasureNeed(need)?
+   marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved):
+   confirmed(need,saved,facts,rivalHosts)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
   for(const f of task.incoming)seen.add(f.id);
   checked.set(decision.id,decision);
   decisions.push(decision);
  }
  return decisions.length?{decisions}:{issue:'research_clearance_unavailable'};
+}
+
+function marketDecision(need,decision,proposed,facts,saved){
+ const proofs=[...new Set([...(saved?.marketMeasures||[]).map(m=>m.proof),...decision.proofs])];
+ const marketMeasures=uniqueBy(verifyMarketMeasures(need,[...(saved?.marketMeasures||[]),...(proposed||[])],proofs,facts),
+  row=>JSON.stringify([row.proof,row.amount,row.unit,row.year,row.category]));
+ return {...decision,proofs,marketMeasures,sufficient:Boolean(marketMeasures.length&&decision.sufficient)};
 }
 
 export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
@@ -429,6 +444,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)])];
  const knownUrls=[...new Set(targeted?observedUrls.map(researchUrl):observedUrls)].filter(Boolean);
  const history=rounds.flatMap(r=>r.commandResults||[]);
+ const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&marketMeasureNeed(n));
+ const reviewContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
  const alreadyRead=(id,url)=>history.some(r=>r.id===id&&r.tool==='read'&&researchUrl(r.url)===researchUrl(url)&&r.status==='executed');
  const recoverReview=async issue=>{
   if(!incremental)return keepResearchOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted});
@@ -479,8 +496,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.qualityReport?' Bir rakip ihtiyacını ancak rakibin kendi sitesinden okunmuş ilgili ürün veya satış kanalı kanıtıyla yeterli say. Arama alıntısında aday bulunmuşsa gözlemlenen ürün sayfasını read ile aç. Adayı peers alanına ekle. Aynı metriğe tekrar dönmeden önce henüz çalışılmamış gerekli ihtiyaçları değerlendir.':'')+
    (targeted?' commands.id aynen needs veya bu turdaki newNeeds kimliği olmalı. commandHistory içindeki uygulanmış komutu tekrarlama. Aynı URL okunmuşsa yeni ilgili sayfa veya başka bir ihtiyaç seç. Rakip için ürün ve hedef pazar kadar bağımsızlığı, satış kanalını ve fiyat örtüşmesini değerlendir. peers.relationship değerini doğrudan kaynakla kıyaslanan bağımsız rakip için direct, belirsiz aday için candidate, bağlantılı marka için related yaz. Bir adayın ürünü görülünce bütün rakip planı bitmiş sayılmaz. Resmi tablo veya rapor bulunduysa ölçümün birimini, dönemini ve kapsamını başlıkla birlikte okumak için URL’yi read aracına ver. Zayıf sonuçta bir sonraki emri farklı kaynakla veya daha dar metrikle ver.':'')+
    (incremental?' Son aramadaki kanıtın hangi ihtiyacı karşıladığını bir sonraki sorgudan önce decisions alanında kaydet. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya tam varyantı iki gerçek kaynakta eşleştir. Para birimini, satış birimini ve dönemi doğrula. İlgili sayfa zaten bulunmuşsa önce read ile doğrudan kaynağı oku.':'')+
+   (scopedMarket?' '+marketMeasureInstruction:'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
- },targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema,last?1150:1700,targeted&&capacity?.minimumDefaultKurus?
+ },scopedMarket?withMarketMeasures(reviewContract):reviewContract,last?1150:1700,targeted&&capacity?.minimumDefaultKurus?
   {reserveForFollowingKurus:capacity.minimumDefaultKurus}:{});
  if(!result.value&&guarded)return recoverReview(result.issue||'research_clearance_unavailable');
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
@@ -492,7 +510,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   (!gap||!previouslyAsked.has(compact(n.query).toLocaleLowerCase('tr')))),n=>n.id);
  for(const row of data.decisions)if(ids.has(row.id)){
   const related=facts.filter(f=>f.needId===row.id);
-  checked.set(row.id,{...row,proofs:row.proofs.filter(id=>related.some(f=>f.id===id))});
+  const decision={id:row.id,sufficient:row.sufficient,proofs:row.proofs.filter(id=>related.some(f=>f.id===id))};
+  const need=priorNeeds.find(n=>n.id===row.id);
+  checked.set(row.id,scopedMarket&&marketMeasureNeed(need)?marketDecision(need,decision,row.marketMeasures,related,checked.get(row.id)):decision);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>researchHost(p.url));
@@ -599,20 +619,30 @@ export function scopedEvidence(brand,plan,rounds){
  const clearance=rounds.findLast(r=>typeof r.approved==='boolean')||{};
  const peers=uniqueBy(rounds.flatMap(r=>r.peers||[]),p=>researchHost(p.url));
  const rivalHosts=plan.qualityReport?peerHosts(peers,brand.packet.entities.find(e=>e.role==='brand')?.website,plan.targetedEvidence):undefined;
- const coverage=needs.map(n=>({id:n.id,section:n.section,name:n.metric,status:confirmed(n,checked.get(n.id),facts,rivalHosts)?'confirmed':'open',
-  ...(rivalHosts&&comparisonNeed(n)?{requiresPeer:true}:{}),
-  proofs:facts.filter(f=>f.needId===n.id&&checked.get(n.id)?.proofs.includes(f.id))}));
+ const coverage=needs.map(n=>{
+  const decision=checked.get(n.id);
+  const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts):undefined;
+  return {id:n.id,section:n.section,name:n.metric,status:confirmed(n,decision,facts,rivalHosts)&&(!marketMeasures||marketMeasures.length)?'confirmed':'open',
+   ...(marketMeasures?{marketMeasures}:{}),...(rivalHosts&&comparisonNeed(n)?{requiresPeer:true}:{}),
+   proofs:facts.filter(f=>f.needId===n.id&&decision?.proofs.includes(f.id))};
+ });
  const accepted=coverage.flatMap(c=>c.proofs.map(f=>({...f,section:c.section})));
+ const verifiedPeers=[];
  const entities=peers.flatMap(p=>{
   const url=researchUrl(p.url);
   const host=researchHost(url);
   if(rivalHosts&&!rivalHosts.has(host)||!facts.some(f=>researchHost(f.url)===host&&(rivalHosts?publisherRead(f):f.method!=='search-snippet')))return [];
-  return [{id:'peer_'+hash(researchHost(url)).slice(0,16),role:'competitor',name:p.name,website:url,scope:p.product,
+  const id='peer_'+hash(host).slice(0,16);
+  if(plan.verifiedResults&&p.relationship==='direct'){
+   const proofs=coverage.filter(metric=>metric.requiresPeer).flatMap(metric=>metric.proofs).filter(f=>researchHost(f.url)===host&&publisherRead(f));
+   if(proofs.length)verifiedPeers.push({entityId:id,relationship:'direct',reason:p.product,proofs});
+  }
+  return [{id,role:'competitor',name:p.name,website:url,scope:p.product,
    geographyReason:p.market,audienceReason:p.channel,scaleReason:p.priceBand}];
  });
  const sources=uniqueBy(facts,f=>f.url+' '+f.quote).map((f,i)=>({id:'ev'+(i+1),url:f.url,finalUrl:f.url,title:f.title||f.url,
   method:f.method,retrievedAt:brand.packet.asOf,scope:'Hedefli araştırma örneği.',...(f.metadataOnly?{metadataOnly:true}:{}),
   excerpts:[{id:'p0',text:f.quote,offset:0}],contentHash:hash(f.quote)}));
- return {packet:{...brand.packet,entities:[...brand.packet.entities,...entities],sources:[...brand.packet.sources,...sources]},accepted,coverage,needs,
+ return {packet:{...brand.packet,entities:[...brand.packet.entities,...entities],sources:[...brand.packet.sources,...sources]},accepted,coverage,needs,verifiedPeers,
   approved:clearance.approved===true&&(!rivalHosts||coverage.every(metric=>metric.status==='confirmed'))};
 }

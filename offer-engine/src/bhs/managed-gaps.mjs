@@ -97,7 +97,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
@@ -112,7 +112,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
    if(round.approved||round.closed)break;
   }
   const result=await writeScopedSynthesis({brief,brand,plan:priorPlan,rounds,providers,sections,existing});
-  if(!result.report.findings.some(f=>f.recommendation?.action))return {report:original,analysisPacket:result.analysisPacket,
+  if(!result.report.verifiedResearch&&!result.report.findings.some(f=>f.recommendation?.action))return {report:original,analysisPacket:result.analysisPacket,
    supervision:{...synthesis.supervision,reportIssue:result.supervision.reportIssue},evidenceCoverage:result.supervision.evidenceCoverage};
   const context=managedCollectionContext(brief,result.analysisPacket);
   const merged=mergeGapEvidence(synthesis,result.report,sections,context,result.supervision.evidenceCoverage);
@@ -213,6 +213,10 @@ function mergeGapEvidence(synthesis,patch,sections,context,evidenceCoverage){
 }
 
 export function mergeManagedGapReport(original,patch,sections){
+ const verified=Boolean(original.verifiedResearch&&patch.verifiedResearch);
+ const metrics=new Map((original.verifiedResearch?.metrics||[]).map(m=>[m.id,m]));
+ if(verified)for(const metric of patch.verifiedResearch.metrics)if(sections.includes(metric.section))metrics.set(metric.id,metric);
+ const evidenceRefs=new Set([...metrics.values()].flatMap(m=>[...m.sourceIds,...(m.marketMeasures||[]).flatMap(row=>row.sourceIds)]));
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
  const peerCandidates=new Map(patch.competitors.filter(peer=>!acceptedPeers.has(peer.website)).map(peer=>[peer.id,peer]));
  const statementKey=f=>[f.bhsSection,f.swotQuadrant||'',f.peerId||'',f.statement.trim().toLocaleLowerCase('tr')].join('\0');
@@ -221,16 +225,24 @@ export function mergeManagedGapReport(original,patch,sections){
  const competitors=[...original.competitors];
  for(const f of patch.findings){
   const key=statementKey(f),peer=peerCandidates.get(f.peerId);
-  if(!sections.includes(f.bhsSection)||existingStatements.has(key)||f.peerId&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
+  const existingPeer=verified&&competitors.some(p=>p.id===f.peerId);
+  if(!sections.includes(f.bhsSection)||existingStatements.has(key)||f.peerId&&!existingPeer&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
   const count=findings.filter(prior=>prior.bhsSection===f.bhsSection).length;
   if(count>=10)continue;
   findings.push({...f,bhsRank:count+1});
   existingStatements.add(key);
-  if(peer){competitors.push(peer);acceptedPeers.add(peer.website);}
+  if(peer&&!acceptedPeers.has(peer.website)){competitors.push(peer);acceptedPeers.add(peer.website);}
+ }
+ if(verified){
+  const competitionRefs=new Set(patch.verifiedResearch.metrics.filter(m=>m.requiresPeer&&sections.includes(m.section)).flatMap(m=>m.sourceIds));
+  for(const peer of peerCandidates.values())if(!acceptedPeers.has(peer.website)&&peer.sourceIds.some(id=>competitionRefs.has(id))){
+   competitors.push(peer);acceptedPeers.add(peer.website);
+  }
  }
  const addedIds=new Set(findings.slice(original.findings.length).map(f=>f.id));
- const sourceIds=new Set([...findings,...competitors].flatMap(f=>f.sourceIds));
+ const sourceIds=new Set([...evidenceRefs,...[...findings,...competitors].flatMap(f=>f.sourceIds)]);
  return {...original,findings,competitors,
+  ...(verified?{verifiedResearch:{metrics:[...metrics.values()]}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};
