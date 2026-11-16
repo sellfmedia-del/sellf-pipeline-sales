@@ -19,6 +19,7 @@ import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
 import {scopedCoverage} from '../src/bhs/managed-report.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
+import {assertSchema} from '../src/bhs/schema.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -38,6 +39,73 @@ const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peer
 const searchQuotes={tavily:62,gemini:1044};
 const openingCapacity=remainingKurus=>({remainingKurus,capKurus:3000,quotes:searchQuotes,
  defaults:Object.keys(searchQuotes).filter(t=>searchQuotes[t]<=remainingKurus),configuredDefaults:Object.keys(searchQuotes),actors:[],configuredActors:[]});
+
+const instagramScope={section:'digital',target:'Marque Instagram',market:'Fransa',country:'FR',language:'fr'};
+const engagement={id:'engagement',metric:'Son 30 günün etkileşimi',expected:'Son 30 günün gönderilerinde beğeni ve yorum toplamı',
+ query:'Marque Instagram interactions publications derniers 30 jours',first:'tavily',quantity:3,period:'Son 30 gün',since:'2026-10-16'};
+const frequency={...engagement,id:'frequency',metric:'Son 30 günün paylaşım sıklığı',expected:'Son 30 günün tarihli gönderi sayısı',
+ query:'Marque Instagram nombre publications derniers 30 jours',first:'gemini',quantity:8};
+const followers={...engagement,id:'followers',metric:'Güncel takipçi sayısı',expected:'Resmî hesaptaki takipçi sayısı',
+ query:'Marque Instagram nombre abonnés officiel',quantity:1,period:'',since:''};
+
+test('the compact plan keeps each measurement’s own action, sample size, timeframe and proof identity',async()=>{
+ const planStages=[];
+ const providers={managedBudgetVersion:19,manager:async(stage,input,schema,options)=>{
+  planStages.push(stage);
+  assert.match(input.instruction,/eczane kanalının payı ayrı ölçümlerdir/);
+  const response={needs:[{...instagramScope,measurements:stage.endsWith('compact')?[engagement,frequency,followers]:[]}]};
+  assertSchema(response,schema);
+  const data=options.normalizeData(response);
+  assertSchema(data,options.responseSchema);
+  return {data};
+ }};
+ const result=await planScopedResearch({brief,identity,briefUnderstanding,asOf:packet.asOf,providers,packet});
+ assert.deepEqual(planStages,['bhs-scoped-plan','bhs-scoped-plan-compact']);
+ assert.deepEqual(result.needs,[engagement,frequency,followers].map(metric=>({...instagramScope,...metric})));
+ const searches=[];
+ const example={url:instagram,title:'Marque',content:postQuote};
+ const receipts=await runScopedDefaults(result.needs,{...providers,
+  search:async (query,options)=>{searches.push(['tavily',query,options.maxResults,options.since]);return {results:[example]};},
+  searchGemini:async (need,options)=>{searches.push(['gemini',need.query,options.maxResults,options.since]);return {results:[]};}
+ },()=>assert.fail('no Gemini URLs were returned'));
+ assert.deepEqual(searches,[engagement,frequency,followers].map(metric=>[metric.first,metric.query,metric.quantity,metric.since]));
+ assert.equal(receipts[0].facts[0].url,receipts[2].facts[0].url);
+ assert.notEqual(receipts[0].facts[0].id,receipts[2].facts[0].id);
+});
+
+test('an engagement proof cannot clear the frequency task and follow-up needs get separate commands',async()=>{
+ const plan={needs:[engagement,frequency].map(metric=>({...instagramScope,...metric})),
+  orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true};
+ const saved={id:'eng-proof',url:instagram,title:'Marque',quote:postQuote,item:'Instagram post',method:'html'};
+ const rounds=[{openingSearch:true,receipts:[{id:engagement.id,query:engagement.query,urls:[instagram],facts:[saved],attempts:[{tool:'tavily'}],defaultAttempt:true}]}];
+ const priceScope={section:'FİYAT',target:'Marque aynı ürün varyantı',market:'Fransa',country:'FR',language:'fr'};
+ const price={...followers,id:'price',metric:'Kendi sitesinde ve pazaryerinde aynı varyantın birim fiyat farkı',
+  expected:'Aynı ürün kodu, aynı satış birimi ve para biriminde iki fiyat',query:'Marque produit référence prix boutique marketplace',quantity:2};
+ const queries=[];
+ const providers={managedBudgetVersion:19,researchCapacity:async()=>openingCapacity(1800),
+  manager:async(stage,input,schema,options)=>{
+   assert.equal(stage,'bhs-scoped-review');
+   assert.match(input.instruction,/Bir ölçümün kanıtıyla diğerini kapatma/);
+   assert.deepEqual(input.waitingNeeds,[frequency.id]);
+   const response=draft({approve:true,newNeeds:[{...priceScope,measurements:[price]}],
+    decisions:[engagement,frequency].map(metric=>({id:metric.id,sufficient:true,proofs:[saved.id]})),
+    commands:[{id:price.id,tool:'tavily',query:price.query,url:'',mode:'default',limit:price.quantity}]});
+   assertSchema(response,schema);
+   const data=options.normalizeData(response);
+   assertSchema(data,options.responseSchema);
+   return {data};
+  },
+  search:async(query,options)=>{queries.push([query,options.maxResults]);return {results:[]};}
+ };
+ const round=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages:()=>assert.fail()});
+ assert.equal(round.approved,false);
+ assert.deepEqual(round.newNeeds,[{...priceScope,...price}]);
+ assert.deepEqual(queries,[[price.query,price.quantity]]);
+ assert.equal(round.commandResults[0].status,'executed');
+ const result=scopedEvidence({packet},plan,[...rounds,round]);
+ assert.deepEqual(result.coverage.map(({id,status})=>[id,status]),[[engagement.id,'confirmed'],[frequency.id,'open'],[price.id,'open']]);
+ assert.deepEqual(result.coverage.find(row=>row.id===frequency.id).proofs,[]);
+});
 
 test('a source plan validation failure stays isolated and a different affordable need still runs',async()=>{
  const target={...needs[0],first:'tavily'};

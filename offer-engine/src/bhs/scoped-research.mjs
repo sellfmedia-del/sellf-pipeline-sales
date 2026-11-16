@@ -33,6 +33,14 @@ const orderedReviewSchema=obj({...reviewSchema.properties,newNeeds:arr(orderedNe
 const targetedReviewSchema=obj({...orderedReviewSchema.properties,peers:arr(obj({
  ...reviewSchema.properties.peers.items.properties,relationship:{type:'string',enum:['direct','candidate','related']}
 }),10)});
+const {section:reportSection,target,market,country,language,...measurementFields}=orderedNeedSchema.properties;
+const measurementScope={section:reportSection,target,market,country,language};
+const measurementSchema=obj(measurementFields);
+const withMeasurementGroups=(schema,key)=>{
+ const max=schema.properties[key].maxItems;
+ return obj({...schema.properties,[key]:arr(obj({...measurementScope,measurements:arr(measurementSchema,max)}),max)});
+};
+const measurementInstruction='İhtiyaçları bölüm, hedef, pazar ve dile göre gruplandırabilirsin. Her measurements satırı tek ölçüm veya tek somut karar sorusudur. Bir ölçümün sonucu diğerini doğrulamıyorsa ayrı kimlik, sorgu, beklenen kanıt, dönem ve örneklem ver. Pazar büyüklüğü, büyüme ve eczane kanalının payı ayrı ölçümlerdir. Instagram takipçi sayısı, paylaşım sıklığı ve etkileşim de ayrı ölçümlerdir. Geçerli bir ölçümün birimi, dönemi ve kapsamı o ölçümün parçasıdır. Aynı kararın birbirine bağlı doğrulamalarını tek soruda tutabilirsin. Örneğin iki fiyatın aynı ürün varyantına ait olduğunu doğrulamak tek kıyas kararıdır. Bir sonraki iş rakibin kimliğine bağlıysa önce kimliği doğrula, ardından gerekli fiyat veya sosyal medya ölçümlerini ayrı işler olarak aç.';
 const withMarketMeasures=schema=>obj({...schema.properties,decisions:arr(obj({
  ...schema.properties.decisions.items.properties,marketMeasures:marketMeasuresSchema
 }),schema.properties.decisions.maxItems)});
@@ -62,6 +70,30 @@ async function ask(providers,stage,request,schema,maxOutputTokens,options={}){
   ...controllerOptions,maxOutputTokens,minimumOutputTokens:Math.ceil(maxOutputTokens*.50),signal:providers.executionSignal,...options
  }));
  return result.value?.data?{value:result.value.data}:result;
+}
+
+function normalizeNeeds(rows,schema,useMeasurements){
+ if(!Array.isArray(rows))return rows;
+ const {items,maxItems}=schema;
+ const needs=rows.flatMap(row=>{
+  if(!row||typeof row!=='object')return [];
+  let candidates=[row];
+  if(useMeasurements&&Object.hasOwn(row,'measurements')){
+   if(!Array.isArray(row.measurements))return [];
+   const scope=Object.fromEntries(Object.keys(measurementScope).map(key=>[key,row[key]]));
+   candidates=row.measurements.filter(m=>m&&typeof m==='object').map(m=>({...m,...scope}));
+  }
+  return candidates.flatMap(need=>{
+   const fields=Object.fromEntries(Object.entries(items.properties).map(([key,field])=>{
+    const value=need[key];
+    if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
+    return [key,value];
+   }));
+   try{assertSchema(fields,items);return [fields];}catch{return [];}
+  });
+ });
+ if(!needs.length&&rows.length)throw new BudgetError('model_output_invalid','Araştırma emri doğrulanamadı.');
+ return (useMeasurements?uniqueBy(needs,n=>n.id):needs).slice(0,maxItems);
 }
 
 export async function understandScopedBrand({brief,packet,providers,prior,readPages,final=false}){
@@ -133,7 +165,7 @@ export async function understandScopedBrief({brief,identity,providers,compactRet
 export async function planScopedResearch({brief,identity,briefUnderstanding,asOf,providers,packet}){
  if(!identity||!briefUnderstanding)return {needs:[],issue:'brief_understanding_unavailable'};
  const guarded=providers.managedBudgetVersion>=12;
- const taskSchema=guarded?orderedNeedSchema:needSchema;
+ const useMeasurements=providers.managedBudgetVersion>=19;
  const contract=guarded?orderedPlanSchema:planSchema;
  const request={brand:brief.brandName,identity,briefUnderstanding,asOf,instruction:
   'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'+
@@ -145,23 +177,13 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
   request.instruction+=' Yayıncıdan gelen bağlantılar varsa ilgili hesabı ve kuruluşu doğrudan hedefle. Birden çok platform ve ölçümü tek genel sorguda toplama. Her işi somut bir metrik veya doğrulama olarak yaz.';
  }
  if(providers.managedBudgetVersion>=15)request.instruction+=' İlk planda teklif kararını etkileyen her bağımsız başlık için bir açılış sorgusu yaz ve başlıkları karar önceliğine göre sırala. Bu sorgular ilk turda çalıştırılabilir olmalı. Aynı başlık için farklı kaynak arama veya bir sonuca bağlı ayrıntı isteme işlerini, ilk kanıtlar geldikten sonra belirle.';
- const normalizeData=data=>{
-  if(!Array.isArray(data?.needs))return data;
-  const needs=data.needs.flatMap(need=>{
-   if(!need||typeof need!=='object')return [];
-   const fields=Object.fromEntries(Object.entries(taskSchema.properties).map(([key,field])=>{
-    const value=need[key];
-    if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
-    return [key,value];
-   }));
-   try{assertSchema(fields,taskSchema);return [fields];}catch{return [];}
-  });
-  if(!needs.length&&data.needs.length)throw new BudgetError('model_output_invalid','Claude’un araştırma emri doğrulanamadı.');
-  return {needs:needs.slice(0,planSchema.properties.needs.maxItems)};
- };
- let result=await ask(providers,'bhs-scoped-plan',request,contract,3800,{normalizeData});
+ if(useMeasurements)request.instruction+=' '+measurementInstruction;
+ const normalizeData=data=>Array.isArray(data?.needs)?{needs:normalizeNeeds(data.needs,contract.properties.needs,useMeasurements)}:data;
+ const outputContract=useMeasurements?withMeasurementGroups(contract,'needs'):contract;
+ const options={normalizeData,responseSchema:contract};
+ let result=await ask(providers,'bhs-scoped-plan',request,outputContract,3800,options);
  if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&(!result.value?.needs?.length))
-  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},contract,guarded?2400:3500,{normalizeData,plainJson:true});
+  result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},outputContract,guarded?2400:3500,{...options,plainJson:true});
  const needs=uniqueBy(result.value?.needs||[],n=>n.id);
  const issue=result.issue||(guarded&&!needs.length?'research_plan_empty':undefined);
  return {needs,...(issue?{issue}:{})};
@@ -402,6 +424,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
   tasks:tasks.map(({incoming,...task})=>({...task,newProofs:incoming.map(f=>f.id)})),
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
+   (providers.managedBudgetVersion>=19?' Aynı sayfada başka ölçümün bulunması, bu işte talep edilen ölçümü doğrulamaz. sufficient için bu işin beklenen kanıtını kontrol et.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')
  },scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
@@ -439,6 +462,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const ordered=plan.orderedResearch===true&&!gap;
  const targeted=plan.targetedEvidence===true;
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
+ const useMeasurements=providers.managedBudgetVersion>=19;
  const readerWasBlocked=guarded&&rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid');
  let readerBlocked=readerWasBlocked;
  const readPages=async (...args)=>{
@@ -505,7 +529,11 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const knownUrls=[...new Set(targeted?observedUrls.map(researchUrl):observedUrls)].filter(Boolean);
  const history=rounds.flatMap(r=>r.commandResults||[]);
  const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&marketMeasureNeed(n));
- const reviewContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
+ const baseContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
+ const reviewContract=scopedMarket?withMarketMeasures(baseContract):baseContract;
+ const normalizeData=data=>Array.isArray(data?.newNeeds)?
+  {...data,newNeeds:normalizeNeeds(data.newNeeds,reviewContract.properties.newNeeds,true)}:data;
+ const reviewOptions=targeted&&capacity?.minimumDefaultKurus?{reserveForFollowingKurus:capacity.minimumDefaultKurus}:{};
  const alreadyRead=(id,url)=>history.some(r=>r.id===id&&r.tool==='read'&&researchUrl(r.url)===researchUrl(url)&&r.status==='executed');
  const recoverReview=async issue=>{
   if(!incremental)return {...await keepOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted,focus:followUp()}),...proofCheckpoint()};
@@ -558,11 +586,12 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.qualityReport?' Bir rakip ihtiyacını ancak rakibin kendi sitesinden okunmuş ilgili ürün veya satış kanalı kanıtıyla yeterli say. Arama alıntısında aday bulunmuşsa gözlemlenen ürün sayfasını read ile aç. Adayı peers alanına ekle. Aynı metriğe tekrar dönmeden önce henüz çalışılmamış gerekli ihtiyaçları değerlendir.':'')+
    (targeted?' commands.id aynen needs veya bu turdaki newNeeds kimliği olmalı. commandHistory içindeki uygulanmış komutu tekrarlama. Aynı URL okunmuşsa yeni ilgili sayfa veya başka bir ihtiyaç seç. Rakip için ürün ve hedef pazar kadar bağımsızlığı, satış kanalını ve fiyat örtüşmesini değerlendir. peers.relationship değerini doğrudan kaynakla kıyaslanan bağımsız rakip için direct, belirsiz aday için candidate, bağlantılı marka için related yaz. Bir adayın ürünü görülünce bütün rakip planı bitmiş sayılmaz. Resmi tablo veya rapor bulunduysa ölçümün birimini, dönemini ve kapsamını başlıkla birlikte okumak için URL’yi read aracına ver. Zayıf sonuçta bir sonraki emri farklı kaynakla veya daha dar metrikle ver.':'')+
    (incremental?' Son aramadaki kanıtın hangi ihtiyacı karşıladığını bir sonraki sorgudan önce decisions alanında kaydet. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya tam varyantı iki gerçek kaynakta eşleştir. Para birimini, satış birimini ve dönemi doğrula. İlgili sayfa zaten bulunmuşsa önce read ile doğrudan kaynağı oku.':'')+
+   (useMeasurements?' '+measurementInstruction+' newNeeds içindeki her ölçümü ayrı kimlikle yaz. Bir komut yalnız kendi kimliğindeki ölçümü araştırmalı. Bir ölçümün kanıtıyla diğerini kapatma. İlgili yayıncı sayfası önceden bulunduysa aynı aramayı satın almadan read ile açık ölçümü o sayfada doğrula.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
- },scopedMarket?withMarketMeasures(reviewContract):reviewContract,last?1150:1700,targeted&&capacity?.minimumDefaultKurus?
-  {reserveForFollowingKurus:capacity.minimumDefaultKurus}:{});
+ },useMeasurements?withMeasurementGroups(reviewContract,'newNeeds'):reviewContract,last?1150:1700,
+ useMeasurements?{...reviewOptions,normalizeData,responseSchema:reviewContract}:reviewOptions);
  if(!result.value&&guarded)return recoverReview(result.issue||'research_clearance_unavailable');
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
   ...(['budget_limit','input_budget','provider_unavailable','claude_spend_limit','not_configured'].includes(result.issue)?{closed:true}:{})};
