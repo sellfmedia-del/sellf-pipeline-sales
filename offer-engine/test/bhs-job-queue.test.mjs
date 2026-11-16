@@ -14,7 +14,7 @@ import {createBhsJobStore,queuedBhsBrief} from '../src/bhs/job-store.mjs';
 import {createBhsGatewayActions} from '../../supabase/functions/_shared/bhs-jobs.mjs';
 import {runMeteredBhsPhase,createBhsWorkerHandler} from '../src/bhs/job-worker.mjs';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
-import {meteredBhsStage,workerInfraReservationKurus,workerMaxDurationSeconds} from '../src/bhs/job-infrastructure.mjs';
+import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus,workerMaxDurationSeconds} from '../src/bhs/job-infrastructure.mjs';
 import {inventoryOutputTokens,inventoryStages} from '../src/bhs/collection-first.mjs';
 import {managedInventoryCeilingKurus} from '../src/bhs/managed-budget.mjs';
 import {minimumV8GeminiReservation} from '../src/bhs/supervised-providers.mjs';
@@ -79,6 +79,66 @@ test('the existing private queue releases and reclaims a committed research phas
   assert.equal(claim.budgetId,job.budgetId);
   await f.queue.advance(claim,{nextPhase:'synthesis',checkpointKey:key});
   assert.equal((await f.queue.read(job)).phase,'synthesis');
+ }finally{await f.close();}
+});
+test('the compact queue advances to actual research in one lease and preserves the first paid round',async()=>{
+ const f=await fixture();try{
+  await f.db.exec('reset role;');
+  await f.db.exec(await readFile(new URL('../schema/bhs-compact-queue-advance.sql',import.meta.url),'utf8'));
+  await f.db.exec('set role service_role;');
+  const job=await f.enqueue(),need={id:'n1',section:'kanal',target:brief.brandName,market:'Türkiye',metric:'Mağaza satışı',
+   period:'',expected:'Mağaza kanalı',quantity:1,query:'Mağaza satış kanalı',country:'TR',language:'tr',first:'tavily',since:''};
+  const brand={collectionFirst:true,decision:'accepted',packet:packet(),facts:[],brandUnderstanding:{understanding:'Ürünleri paketli gıda.'},
+   briefUnderstanding:{understanding:'Türkiye’de fiziksel satış kanalı araştırılacak.'}};
+  await f.ledger.once('audit:managed-policy:'+hash,{hash},0,async()=>({version:18}));
+  await f.ledger.once(stageKey(brief,'brand','v8'),{},0,async()=>brand);
+  await f.db.query("update public.pipeline_bhs_jobs set phase='sector_sources' where id=$1",[job.id]);
+  let claim=await f.queue.claim(),searches=0;
+  assert.equal(claim.compactQueue,true);
+  const checkpointKey=stageKey(brief,'sector_sources','v8');
+  await assert.rejects(f.queue.advance(claim,{nextPhase:'report_draft',checkpointKey}),/not committed/);
+  const run=current=>runClaimedBhsStage({job:current,queue:f.queue,getLedger:f.queue.getLedger,getProviders:async opts=>({...opts,collectionFirst:true,
+   manager:async stage=>{assert.equal(stage,'bhs-scoped-plan');return {data:{needs:[need]}};},
+   search:async query=>{
+    assert.equal(query,need.query);searches++;
+    await opts.ledger.once('synthetic-one-targeted-search',query,62,async()=>({}));
+    return {results:[]};
+   },researchCapacity:async()=>({defaults:['tavily'],configuredDefaults:['tavily'],actors:[],quotes:{tavily:62},remainingKurus:2300,capKurus:3000})}),
+   runStage:opts=>runBoundedStage({...opts,collect:()=>assert.fail('unexpected source read')})});
+  assert.equal((await run(claim)).nextPhase,'report_draft');
+  assert.equal((await f.queue.read(job)).phase,'report_draft');
+  assert.equal(await f.ledger.get(stageKey(brief,'coverage','v8')),null);
+  claim=await f.queue.claim();
+  assert.equal((await run(claim)).status,'queued');
+  assert.equal(searches,1);
+  assert.equal((await f.ledger.get(stageKey(brief,'report_draft','v8'))).value.scopedTail,true);
+  assert.equal((await f.ledger.get('audit:scoped-round:'+hash+':0')).value.receipts[0].id,need.id);
+  const row=(await f.db.query('select claims,budget_id from public.pipeline_bhs_jobs where id=$1',[job.id])).rows[0];
+  assert.equal(row.claims,2);assert.equal(row.budget_id,job.budgetId);
+  assert.equal((await f.ledger.status()).chargedKurus,562);
+ }finally{await f.close();}
+});
+
+test('a compact research marker is free and a low-balance turn can still fund a short search',async()=>{
+ const f=await localBudget();try{
+  await f.ledger.once('synthetic-prior-research',{},2300,async()=>({}));
+  let time=1_000,searches=0,windows=0;
+  const job={id:other,phase:'report_draft',briefHash:hash,researchVersion:'v8'};
+  const options={ledger:f.ledger,phaseCeiling:3000,providers:{managedBudgetVersion:18,collectionFirst:true,now:()=>time,
+   withExecutionWindow(deadline,reserve){windows++;assert.equal(deadline-time,55000);assert.equal(reserve,shortResearchReservationKurus);return {infrastructureOffsetKurus:reserve};}}};
+  await runMeteredBhsPhase(job,options,{meter:()=>assert.fail('empty marker must not reserve'),runStage:async()=>{}});
+  const metered=await runMeteredBhsPhase(job,{...options,scopedRoundIndex:0},{
+   meter:args=>meteredBhsStage({...args,clock:()=>time,cpu:()=>({user:0,system:0}),region:'iad1'}),
+   runStage:async opts=>{
+    assert.equal(opts.providers.infrastructureOffsetKurus,shortResearchReservationKurus);
+    assert.ok((await f.ledger.status()).chargedKurus+62<=3000);
+    await opts.ledger.once('synthetic-short-tavily',{},62,async()=>{searches++;time+=8000;return {};});
+   }
+  });
+  assert.equal(windows,1);assert.equal(searches,1);
+  assert.equal(metered.reservedKurus,shortResearchReservationKurus);
+  assert.ok(metered.accountedKurus<shortResearchReservationKurus);
+  assert.equal((await f.ledger.status()).chargedKurus,2862+metered.accountedKurus);
  }finally{await f.close();}
 });
 test('production additional-run binding cannot read a Preview job or attach another owner budget',async()=>{

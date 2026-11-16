@@ -7,12 +7,17 @@ import {planScopedResearch,reviewScopedResearch,runScopedDefaults,scopedEvidence
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {actorInput} from '../src/bhs/apify-inputs.mjs';
 import {BudgetError} from '../src/budget/ledger.mjs';
-import {writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
+import {recoverManagedSectionSynthesis,scopedRounds,writeScopedSynthesis} from '../src/bhs/collection-first.mjs';
 import {createSequentialProviders} from '../src/bhs/sequential-providers.mjs';
 import {quoteSearch} from '../src/budget/ledger.mjs';
 import {reserveStageQuote} from '../src/bhs/supervised-providers.mjs';
 import {sourceLinks} from '../src/bhs/evidence.mjs';
 import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
+import {localBudget} from './fixtures/local-budget.mjs';
+import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
+import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
+import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
+import {scopedCoverage} from '../src/bhs/managed-report.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -29,6 +34,137 @@ const quote='Marque runs a direct wholesale catalogue for supermarket customers 
 const postQuote='PublishedAt 2026-11-10 likesCount 84 commentsCount 6.';
 const about='https://marque.fr/our-story';
 const draft=overrides=>({approve:false,newNeeds:[],decisions:[],commands:[],peers:[],...overrides});
+const searchQuotes={tavily:62,gemini:1044};
+const openingCapacity=remainingKurus=>({remainingKurus,capKurus:3000,quotes:searchQuotes,
+ defaults:Object.keys(searchQuotes).filter(t=>searchQuotes[t]<=remainingKurus),configuredDefaults:Object.keys(searchQuotes),actors:[],configuredActors:[]});
+
+test('sales gaps use human names and distinguish blocked searches, weak sources and saved facts without report analysis',async()=>{
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const targets=[{...needs[1],id:'ig',section:'DİJİTAL',metric:'instagram_marka'},
+  {...needs[1],id:'yt',section:'DİJİTAL',metric:'youtube_marka',period:''},
+  {...needs[1],id:'p',section:'FİYAT',metric:'E-ticaret sitesindeki liste fiyatları'},
+  {...needs[1],id:'c',section:'KANAL',metric:'pazaryeri'},
+  {...needs[1],id:'r',section:'PAZAR',metric:'influencer_pazar'}];
+ const plan={needs:targets,qualityReport:true,targetedEvidence:true,orderedResearch:true,adaptiveResearch:true,verifiedResults:true};
+ const fact={id:'recorded_price',url:about,quote,title:'Marque',method:'html',item:'Katalog'};
+ const round={closed:true,stopReason:'research_budget_exhausted',receipts:[
+  {id:'ig',facts:[],urls:[],attempts:[{tool:'tavily',issue:'budget_limit'}]},
+  {id:'yt',facts:[],urls:[],attempts:[{tool:'tavily'}]},
+  {id:'p',facts:[fact],urls:[fact.url]},
+  {id:'c',facts:[],urls:[],missingDefaults:['tavily'],issues:['scraper_requires_default_tools']},
+  {id:'r',facts:[],urls:[],actorStarted:true,issues:['actor_time_limit']}],
+  commandResults:[{id:'c',status:'not_dispatched'},{id:'r',status:'executed'}],
+  decisions:[{id:'p',sufficient:true,proofs:[fact.id]}]};
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds:[round],providers:{manager:()=>assert.fail('formatting saved research is free')},allowWrite:false});
+ const audit=continuationAudit(brief,{synthesis,reason:'budget_limit'}).data;
+ const digital=audit.bhsSections.find(s=>s.id==='DİJİTAL');
+ assert.equal(digital.title,'Dijital varlıklar');
+ assert.deepEqual(digital.openMetrics,[
+  {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
+  {name:'Markanın YouTube hesabı',status:'insufficient_sources'}]);
+ assert.deepEqual(audit.bhsSections.find(s=>s.id==='FİYAT').openMetrics,[{name:'E-ticaret sitesindeki liste fiyatları',status:'missing_from_report'}]);
+ assert.equal(audit.bhsSections.find(s=>s.id==='KANAL').openMetrics[0].status,'not_searched');
+ assert.equal(audit.bhsSections.find(s=>s.id==='PAZAR').openMetrics[0].status,'insufficient_sources');
+ assert.ok(audit.findings.some(f=>f.researchEvidenceOnly));
+ assert.doesNotMatch(audit.researchContinuity.notice,/Ek kanıt gereken|instagram_marka|youtube_marka/);
+ assert.ok(!audit.meetingQuestions.some(q=>q.question.includes('instagram_marka')));
+ const covered=scopedCoverage({competitors:[],findings:[{id:'finished',bhsSection:'FİYAT',researchNeedIds:['p'],sourceIds:['ev2']}]},
+  synthesis.supervision.metricCoverage,true,true);
+ assert.equal(covered.find(s=>s.id==='FİYAT').openMetrics,undefined);
+ const historical=scopedCoverage({findings:[]},[{id:'old',section:'pazar',name:'reklam_maliyet',status:'open'}],true,true)[0];
+ assert.deepEqual(historical.openMetrics,[{name:'Reklam maliyetleri',status:'unknown'}]);
+ const stale={data:{...audit,researchContinuity:{...audit.researchContinuity,notice:'Eski araştırma. Ek kanıt gereken bölümler: PAZAR.'},
+  bhsSections:[{id:'PAZAR',title:'PAZAR',complete:false,openMetrics:[{name:'reklam_maliyet',status:'needs_evidence'}]}]}};
+ const restored=(await restoreContinuation(brief,stale,{get:()=>assert.fail('saved statuses are formatted without launching research')})).data;
+ assert.equal(restored.bhsSections[0].title,'Pazar analizi');
+ assert.deepEqual(restored.bhsSections[0].openMetrics,historical.openMetrics);
+ assert.equal(restored.researchContinuity.notice,'Eski araştırma.');
+});
+
+test('the active worker covers all ten planned opening topics before a deeper review of any single topic',async()=>{
+ const topics=['rakipler','pazar','pazaryeri','fiyat','müşteri deneyimi','Instagram','YouTube','bilinirlik','influencer','reklam maliyeti'];
+ const opening=topics.map((section,i)=>({...needs[0],id:'N'+(i+1),section,query:'Açılış: '+section,first:'tavily'}));
+ const deeper={...opening[0],id:'D1',query:'Rakip ürün sayfasında ayrıntılı fiyat karşılaştırması'};
+ const planNeeds=[opening[0],deeper,...opening.slice(1)];
+ const saved=new Map([['brand',{decision:'accepted',collectionFirst:true,packet,facts:[],brandUnderstanding:identity,briefUnderstanding}]]);
+ let charged=1300,reviewed=0;
+ const dispatched=[],waves=[],checkpoints=[];
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:16,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(3000-charged),
+  worker:async(stage,{tasks},_schema,options)=>{
+   assert.equal(stage,'bhs-scoped-evidence-check');
+   assert.ok(charged+options.reserveForFollowingKurus+5<=3000,`${charged} spent, ${options.reserveForFollowingKurus} reserved`);
+   charged+=5;
+   checkpoints.push({prior:dispatched.length,ids:tasks.map(task=>task.id)});
+   return {data:{decisions:tasks.map(({id})=>({id,sufficient:false,proofs:[],read:'',nextQuery:''}))}};
+  },
+  manager:async(stage,input)=>{
+   if(stage==='bhs-scoped-plan')return {data:{needs:planNeeds}};
+   assert.equal(stage,'bhs-scoped-review');
+   assert.deepEqual(dispatched,opening.map(n=>n.query));
+   assert.deepEqual(input.waitingNeeds,[deeper.id]);
+   assert.ok(input.findings.some(f=>f.needId==='N10'));
+   reviewed++;
+   return {data:draft({commands:[{id:deeper.id,tool:'tavily',query:deeper.query,url:'',mode:'default',limit:3}]})};
+  },
+  search:async(query,options)=>{
+   assert.ok(charged+62<=3000);
+   charged+=51;
+   assert.equal(options.countryCode,'FR');
+   dispatched.push(query);
+   return {results:[{url:post,content:postQuote}]};
+  }};
+ for(const phase of sequentialPhases.slice(sequentialPhases.indexOf('sector_sources'))){
+  charged+=300;
+  const result=await runSequentialStage({phase,brief,providers,previous:async p=>saved.get(p),collect:()=>assert.fail('unrequested page read')});
+  charged-=275;
+  saved.set(phase,result);
+  if(result.openingSearch)waves.push(result.receipts.map(r=>r.id));
+  if(reviewed)break;
+ }
+ assert.deepEqual(waves,[['N1','N2','N3'],['N4','N5','N6'],['N7','N8','N9'],['N10']]);
+ assert.deepEqual(checkpoints,waves.map((ids,i)=>({prior:Math.min((i+1)*3,10),ids})));
+ assert.equal(reviewed,1);
+ assert.equal(dispatched.at(-1),deeper.query);
+ assert.ok(charged<3000);
+});
+
+test('an expensive opening preference is deferred when it would crowd out the other opening searches',async()=>{
+ const first={...needs[0],first:'gemini'};
+ const second={...needs[1],first:'tavily'};
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[first,second]};
+ const searches=[];
+ const providers={managedBudgetVersion:15,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(1100),
+  manager:()=>assert.fail('the opening search still fits'),
+  searchGemini:()=>assert.fail('retain funding for the two opening topics'),
+  search:async(query,{maxResults,since})=>{searches.push({query,maxResults,since});return {results:[]};}
+ };
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
+ const round=await reviewScopedResearch({...args,rounds:[]});
+ assert.equal(round.receipts[0].attempts[0].tool,'tavily');
+ assert.deepEqual(searches.map(s=>s.query),[first.query,second.query]);
+ const seenFirst={...round,receipts:[{...round.receipts[0],attempts:[{tool:'tavily',issue:'provider_timeout'}]}]};
+ const next=await reviewScopedResearch({...args,rounds:[seenFirst]});
+ assert.deepEqual(next.receipts.map(r=>r.id),[second.id]);
+ assert.deepEqual(searches.at(-1),{query:second.query,maxResults:second.quantity,since:second.since});
+});
+
+test('a funded Gemini preference retains a budget for the following opening topic',async()=>{
+ const first={...needs[0],first:'gemini'};
+ const plan={orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true,needs:[first,needs[1]]};
+ const providers={managedBudgetVersion:15,infrastructureOffsetKurus:300,
+  researchCapacity:async()=>openingCapacity(1500),
+  withCeiling:ceiling=>{
+   assert.equal(ceiling,3000-300-62);
+   return {...providers,searchGemini:async need=>{assert.deepEqual(need,first);return {results:[]};}};
+  },
+  manager:()=>assert.fail('the opening search still fits'),
+  search:()=>assert.fail('use the funded first tool')
+ };
+ const result=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[],providers,brief,packet,readPages:()=>assert.fail()});
+ assert.deepEqual(result.receipts.map(r=>[r.id,r.attempts[0].tool]),[[first.id,'gemini']]);
+});
 
 test('publisher identity and social links are usable after a catalogue with many product links',async()=>{
  const corporate='https://marque.com/contact',html='<a href="/product">Ürün</a>'.repeat(100)+
@@ -70,6 +206,113 @@ test('an unavailable controller can use the saved narrow query with the affordab
  assert.equal(used,1);assert.equal(recovered.closed,false);assert.equal(recovered.receipts[0].attempts[0].tool,'tavily');
  const final=await reviewScopedResearch({identity,briefUnderstanding,plan,rounds:[recovered],providers,brief,packet,readPages:()=>assert.fail()});
  assert.equal(used,1);assert.equal(final.closed,true);
+});
+
+test('after a controller budget rejection, a compact check reads the official source before the next paid search',async()=>{
+ const market={...needs[0],id:'N2',section:'pazar',first:'tavily',metric:'2025 mobilya ihracatı',target:'Mobilya',market:'Türkiye'};
+ const price={...needs[0],id:'N4',section:'fiyat',first:'tavily',metric:'YRP-210 iki kanalda fiyat kıyası',query:'YRP-210 site:magaza.example TL'};
+ const plan={targetedEvidence:true,qualityReport:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[market,price]};
+ const pdf='https://ticaret.gov.tr/raporlar/mobilya-2025.pdf';
+ const shop='https://magaza.example/yrp-210';
+ const marketplace='https://pazaryeri.example/yrp-210';
+ const variant='https://pazaryeri.example/yrp-211';
+ const source=(id,url,quote)=>({id,url,title:'Publisher',item:quote,method:'search-snippet',quote});
+ const prior={issue:'budget_limit',receipts:[
+  {id:market.id,query:market.query,urls:[pdf],facts:[source('reportLink',pdf,'Mobilya sektörü 2025 faaliyet raporu yayımlandı.')],defaultAttempt:true,attempts:[{tool:'tavily'}]},
+  {id:price.id,query:price.query,urls:[shop,variant],facts:[source('shopPrice',shop,'YRP-210 Üçlü koltuk. 24.900 TL / adet.'),
+   source('wrongSku',variant,'YRP-211 Köşe koltuk. 28.900 TL / adet.')],defaultAttempt:true,attempts:[{tool:'tavily'}]}
+ ]};
+ const events=[];
+ const matchQuery='YRP-210 üçlü koltuk site:pazaryeri.example';
+ const providers={managedBudgetVersion:16,researchCapacity:async()=>openingCapacity(350),
+  manager:()=>assert.fail('the unavailable full controller must not be retried for each new receipt'),
+  worker:async(stage,{tasks})=>{
+   assert.equal(stage,'bhs-scoped-evidence-check');
+   events.push('check '+tasks.map(t=>t.id).join('/'));
+   return {data:{decisions:tasks.map(task=>{
+    if(task.id===market.id){
+     const table=task.sources.find(s=>s.method==='pdf');
+     if(table){assert.match(table.quote,/milyon USD/);return {id:task.id,proofs:[table.id,'shopPrice'],sufficient:true,read:'',nextQuery:''};}
+     return {id:task.id,proofs:[],sufficient:false,read:'reportLink',nextQuery:''};
+    }
+    const comparable=task.sources.find(s=>s.url===marketplace);
+    return {id:task.id,proofs:['shopPrice',...(comparable?[comparable.id]:[])],sufficient:Boolean(comparable),
+     read:comparable?'':'unknown-source',nextQuery:comparable?'':matchQuery};
+   })}};
+  },
+  search:async(query,options)=>{
+   assert.equal(query,matchQuery);assert.equal(options.maxResults,price.quantity);
+   events.push('search '+query);
+   return {results:[{url:marketplace,content:'YRP-210 Üçlü koltuk. 26.400 TL / adet.'}]};
+  }};
+ const readPages=async(urls,focus)=>{
+  assert.deepEqual(urls,[pdf]);assert.ok(focus.includes('ihracatı'));events.push('read report');
+  return {sources:[{url:pdf,title:'2025 Mobilya',method:'pdf',excerpts:[{text:'2025 Türkiye mobilya ihracatı tablosu. Ticaret Bakanlığı. 4.500 milyon USD.'}]}]};
+ };
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages};
+ const first=await reviewScopedResearch({...args,rounds:[prior]});
+ assert.deepEqual(events,['check N2/N4','read report','check N2','search '+matchQuery]);
+ const verified=first.decisions.find(row=>row.id===market.id);
+ assert.deepEqual(verified.proofs,[first.receipts[0].facts[0].id]);
+ assert.equal(first.decisions.find(row=>row.id===price.id).sufficient,false);
+ const final=await reviewScopedResearch({...args,rounds:[prior,first]});
+ assert.deepEqual(events.slice(4),['check N4']);
+ assert.equal(final.stopReason,'evidence_confirmed');
+ const coverage=scopedEvidence({packet},plan,[prior,first,final]).coverage;
+ assert.deepEqual(coverage.find(c=>c.id===price.id).proofs.map(p=>p.url),[shop,marketplace]);
+});
+
+test('a compact check that cannot fit preserves receipts and allows another affordable exact query',async()=>{
+ const need={...needs[1],first:'gemini'};
+ const plan={targetedEvidence:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ const saved={issue:'budget_limit',receipts:[{id:need.id,query:need.query,urls:[post],defaultAttempt:true,attempts:[{tool:'gemini'}],
+  facts:[{id:'old',url:post,title:'Post',quote:postQuote,item:'Post',method:'html'}]}]};
+ let checked=0,searched=0;
+ const providers={managedBudgetVersion:16,researchCapacity:async()=>openingCapacity(searched?10:62),
+  manager:()=>assert.fail('full reviewer remains unaffordable'),
+  worker:async()=>{checked++;throw new BudgetError('budget_limit','compact request does not fit');},
+  search:async query=>{assert.equal(query,need.query);searched++;return {results:[]};}};
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail('no read selected')};
+ const first=await reviewScopedResearch({...args,rounds:[saved]});
+ assert.equal(first.closed,false);assert.equal(first.evidenceReviewIssue,'budget_limit');
+ const second=await reviewScopedResearch({...args,rounds:[saved,first]});
+ assert.equal(second.stopReason,'research_budget_exhausted');
+ assert.equal(checked,2);assert.equal(searched,1);
+ assert.equal(scopedEvidence({packet},plan,[saved,first,second]).coverage[0].status,'open');
+});
+
+test('the compact proof check uses the capped ledger and replays its saved provider response',async t=>{
+ const {ledger,close}=await localBudget();t.after(close);
+ await ledger.once('synthetic-research-spend',{},2380,async()=>({}));
+ const need={...needs[0],first:'tavily'};
+ const plan={targetedEvidence:true,reportOnlyAfterResearch:true,orderedResearch:true,needs:[need]};
+ const saved={issue:'budget_limit',receipts:[{id:need.id,query:need.query,urls:[about],defaultAttempt:true,attempts:[{tool:'tavily'}],
+  facts:[{id:'publisher',url:about,title:'Catalogue',quote,item:'Catalogue',method:'html'}]}]};
+ let generated=0;
+ const providers=createSequentialProviders({ledger,phase:'report_draft',phaseLimitKurus:3000,managedBudgetVersion:16,
+  anthropicKey:'fixture',geminiKey:'fixture',now:()=>Date.parse('2026-11-16T12:00:00Z'),researchFx:async()=>({usdTry:44}),
+  fetchImpl:async(url,{body})=>{
+   assert.match(url,/generativelanguage\.googleapis\.com/);
+   if(url.endsWith(':countTokens'))return Response.json({totalTokens:1150});
+   assert.ok(url.endsWith(':generateContent'));
+   const request=JSON.parse(body);
+   const input=JSON.parse(request.contents[0].parts[0].text);
+   assert.deepEqual(input.tasks.map(task=>[task.id,task.newProofs]),[[need.id,['publisher']]]);
+   assert.equal(request.generationConfig.thinkingConfig.thinkingLevel,'MINIMAL');
+   assert.ok(request.generationConfig.maxOutputTokens<=1224);
+   generated++;
+   const data={decisions:[{id:need.id,sufficient:true,proofs:['publisher'],read:'',nextQuery:''}]};
+   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(data)}]}}],
+    usageMetadata:{promptTokenCount:1150,candidatesTokenCount:100,totalTokenCount:1250}});
+  }});
+ const args={identity,briefUnderstanding,plan,providers,brief,packet,rounds:[saved],readPages:()=>assert.fail('unexpected source read')};
+ const first=await reviewScopedResearch(args);
+ assert.equal(first.stopReason,'evidence_confirmed');
+ const charge=(await ledger.status()).chargedKurus;
+ assert.ok(charge>2880&&charge<=3000);
+ assert.deepEqual(await reviewScopedResearch(args),first);
+ assert.equal((await ledger.status()).chargedKurus,charge);
+ assert.equal(generated,1);
 });
 
 test('an executed read and invalid external need ID are reported back without purchasing the command again',async()=>{
@@ -164,6 +407,87 @@ test('scoped transfer ties Claude’s headings and rivals to evidence and retain
  assert.match(report.findings[1].recommendation.action,/GA4/);
  assert.doesNotMatch(report.findings[1].recommendation.action,/2\.570/);
  assert.ok(result.data.supervision.acceptance.issues.includes('partial_model_document'));
+});
+
+test('verified rivals, sources and measurements survive clipped writing and no-model offer recovery',async t=>{
+ const {ledger,close}=await localBudget();t.after(close);
+ const market={...needs[0],id:'market',section:'PAZAR',metric:'2025 Türkiye mobilya ihracatı',first:'tavily'};
+ const rivals={...needs[0],id:'rivals',section:'RAKIP',metric:'Koltuk rakiplerinde ürün, fiyat ve satış kanalı',first:'tavily'};
+ const digital={...needs[1],id:'digital',section:'DİJİTAL',metric:'Tek gönderi beğenisi'};
+ const plan={scopedResearch:true,qualityReport:true,adaptiveResearch:true,targetedEvidence:true,orderedResearch:true,
+  reportOnlyAfterResearch:true,verifiedResults:true,needs:[rivals,market,digital]};
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const official='https://ticaret.gov.tr/ornek/mobilya.pdf';
+ const passage='2025 Türkiye mobilya ihracatı 4.500 milyon USD olarak kaydedildi.';
+ const other='2024 Türkiye yatak ihracatı 2.050 milyon USD olarak kaydedildi.';
+ const measure={proof:'m1',amount:'4.500',unit:'milyon USD',year:'2025',category:'mobilya ihracatı',passage};
+ const peer=(name,url,relationship)=>({name,url,relationship,product:'Modüler koltuk',market:'Türkiye',channel:'Kendi perakendesi',priceBand:''});
+ const peers=[peer('Alfemo','https://alfemo.com.tr/koltuk','direct'),peer('Vivense','https://vivense.com/koltuk','direct'),peer('Başka Mağaza','https://baska.example/koltuk','candidate')];
+ const fact=(id,url,quote,method='html')=>({id,url,quote,method,item:id,title:'Kaynak'});
+ const receipt=(need,facts)=>({id:need.id,query:need.query,urls:facts.map(f=>f.url),defaultAttempt:true,attempts:[{tool:'tavily'}],facts});
+ const terminal={scopedRound:true,closed:true,stopReason:'research_budget_exhausted',peers,receipts:[
+  receipt(rivals,peers.map(({name,url},i)=>fact('r'+i,url,`${name} modüler koltuk seçeneklerini kendi perakende kataloğunda listeliyor.`))),
+  receipt(market,[fact('m1',official,passage+' '+other,'pdf')]),receipt(digital,[fact('d1',post,postQuote)])],
+ decisions:[{id:rivals.id,sufficient:false,proofs:['r0','r1','r2']},{id:market.id,sufficient:true,proofs:['m1'],marketMeasures:[measure]},
+  {id:digital.id,sufficient:true,proofs:['d1']}]};
+ await ledger.once('synthetic-research-receipt',{},2169,async()=>terminal);
+ const stored=(await ledger.get('synthetic-research-receipt')).value;
+ const providers={manager:async(_stage,input)=>{
+  const alias=text=>Object.entries(input.sources).find(([,row])=>row[1].includes(text))[0];
+  assert.deepEqual(input.coverage.find(m=>m.id===market.id).marketMeasures[0].sources,[alias(passage)]);
+  const base={area:'',quadrant:'none',peerId:'',kind:'observation',analysis:'Mevcut kapsam görüşmede değerlendirilebilir.',action:'Satış kanallarını karşılaştır.',measurement:'',limitation:'',question:''};
+  return {model:'offline',partialOutput:true,data:{findings:[
+   {...base,rank:1,section:'Pazar',needIds:[market.id],observation:'2025 Türkiye yatak ihracatı 4.500 milyon USD olarak kaydedildi.',proof:[alias(passage)]},
+   {...base,rank:2,section:'Dijital',needIds:[digital.id],observation:'Gönderi 84 beğeni aldı.',proof:[alias(postQuote)]}
+  ],peers:[],benchmarks:[],questions:[]}};
+ }};
+ const written=await writeScopedSynthesis({brief,brand,plan,rounds:[stored],providers});
+ const recovered=await recoverManagedSectionSynthesis(brief,async phase=>{
+  if(phase==='sector_sources')return {managedPlan:plan};
+  if(phase==='brand')return brand;
+  if(phase===scopedRounds[0])return stored;
+  if(phase==='scoped-tail')return [];
+ },{manager:()=>assert.fail('no extra report purchase')});
+ for(const synthesis of [written,recovered]){
+  const audit=directAuditResult(brief,synthesis).data;
+  const proposal=selectProposalAudit(audit,brief);
+  assert.deepEqual(proposal.competitors.map(p=>p.name).sort(),['Alfemo','Vivense']);
+  assert.ok(proposal.competitors.every(p=>p.sourceIds.length&&p.sourceIds.every(id=>proposal.sources.some(s=>s.id===id))));
+  assert.equal(proposal.verifiedResearch.metrics.find(m=>m.id===rivals.id).status,'open');
+  assert.equal(proposal.verifiedResearch.metrics.find(m=>m.id===market.id).status,'confirmed');
+  assert.equal(proposal.bhsSections.find(s=>s.id==='PAZAR').complete,false);
+  assert.ok(proposal.findings.some(f=>f.statement===passage));
+  assert.ok(!proposal.findings.some(f=>f.statement.includes('2025 Türkiye yatak')));
+  assert.match(audit.rawReport,/Vivense/);
+ }
+ const counts=written.report.verifiedResearch.metrics.map(metric=>[metric.id,metric.status]);
+ const patch={...recovered.report,verifiedResearch:{metrics:recovered.report.verifiedResearch.metrics.map(metric=>({...metric,status:'open'}))}};
+ const merged=mergeManagedGapReport(written.report,patch,['PAZAR']);
+ assert.deepEqual(merged.verifiedResearch.metrics.map(metric=>[metric.id,metric.status]),counts.map(([id,status])=>[id,id===market.id?'open':status]));
+ assert.equal(merged.findings.filter(f=>f.statement===passage).length,1);
+ assert.equal(merged.competitors.length,2);
+ assert.equal((await ledger.status()).chargedKurus,2669);
+});
+
+test('market review keeps a metric open unless amount, unit, year and category share one read passage',async()=>{
+ const need={...needs[0],id:'market',section:'pazar',metric:'2025 mobilya ihracatı',first:'tavily'};
+ const plan={targetedEvidence:true,verifiedResults:true,qualityReport:true,orderedResearch:true,reportOnlyAfterResearch:true,needs:[need]};
+ const quote='2025 mobilya ihracatı 4.500 milyon USD olarak kaydedildi. 2024 yatak ihracatı 2.050 milyon EUR olarak kaydedildi.';
+ const fact={id:'m1',url:'https://ticaret.gov.tr/ornek.pdf',method:'pdf',quote,title:'Tablo',item:'Mobilya'};
+ const round={receipts:[{id:need.id,query:need.query,urls:[fact.url],defaultAttempt:true,attempts:[{tool:'tavily'}],facts:[fact]}]};
+ const measure={proof:fact.id,amount:'4.500',year:'2025',category:'mobilya ihracatı',unit:'milyon USD',passage:quote.split('. 2024')[0]+'.'};
+ for(const bad of [{...measure,year:'2024'},{...measure,amount:'2.050'},{...measure,unit:'milyon EUR'},
+  {...measure,category:'yatak ihracatı'},{...measure,passage:quote}]){
+  const providers={managedBudgetVersion:17,manager:async()=>({data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[fact.id],marketMeasures:[bad]}]})})};
+  const result=await reviewScopedResearch({identity,briefUnderstanding,plan,providers,brief,packet,rounds:[round]});
+  assert.equal(result.approved,false);
+  assert.deepEqual(result.decisions[0].marketMeasures,[]);
+  assert.deepEqual(result.decisions[0].proofs,[fact.id]);
+ }
+ const providers={managedBudgetVersion:17,manager:async()=>({data:draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:[fact.id],marketMeasures:[measure]}]})})};
+ const accepted=await reviewScopedResearch({identity,briefUnderstanding,plan,providers,brief,packet,rounds:[round]});
+ assert.equal(accepted.stopReason,'evidence_confirmed');
+ assert.deepEqual(accepted.decisions[0].marketMeasures,[measure]);
 });
 
 test('Claude plans scoped research after brand and brief, then writes and transfers a partial report with the saved evidence',async()=>{

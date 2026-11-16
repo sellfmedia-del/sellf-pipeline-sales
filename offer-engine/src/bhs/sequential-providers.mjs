@@ -31,32 +31,47 @@ export function stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus=0,phas
   },{...options,limitKurus:limit});
  }};
 }
-export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date.now,apify,infrastructureOffsetKurus=0,phaseLimitKurus,collectionFirst=collectionFirstEnabled(),researchFx=collectionFirst?createResearchFx({ledger,fetchImpl,now}):undefined,...options}={}){
+export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date.now,apify,infrastructureOffsetKurus=0,phaseLimitKurus,collectionFirst=collectionFirstEnabled(),researchFx,executionDeadline,...options}={}){
  const rawFetch=fetchImpl;
+ const explicitFx=researchFx;
+ const signal=executionDeadline?AbortSignal.timeout(Math.max(0,executionDeadline-now())):undefined;
+ if(signal)fetchImpl=(url,init={})=>rawFetch(url,{...init,signal:init.signal?AbortSignal.any([init.signal,signal]):signal});
+ const timedFetch=fetchImpl;
  if(options.managedAudit&&!options.monitoring){
   fetchImpl=async(url,init)=>{
-   try{const response=await rawFetch(url,init);if(!response.ok)ledger.issues?.add('provider_error');return response;}
+   try{const response=await timedFetch(url,init);if(!response.ok)ledger.issues?.add('provider_error');return response;}
    catch(error){ledger.issues?.add('provider_error');throw error;}
   };
   options={...options,monitoring:true};
  }
+ researchFx??=collectionFirst?createResearchFx({ledger,fetchImpl,now}):undefined;
+ if(signal){
+  const original=ledger;
+  ledger={...original,once:(key,input,amount,run,opts)=>{
+   if(amount&&(signal.aborted||now()>=executionDeadline))throw new BudgetError('model_deadline','Araştırma turunun çalışma süresi doldu.');
+   return original.once(key,input,amount,run,opts);
+  }};
+ }
  const scoped=stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus,phaseLimitKurus}),base=createRuntimeProviders({...options,ledger:scoped,fetchImpl,now,pricing:researchTariff,researchFx});
  // At coverage only the gap extraction, draft and final audit remain.
  const followingKurus=options.managedBudgetVersion>=2?40:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):600;
- const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,retainDataset:collectionFirst&&phaseLimitKurus!==undefined&&options.managedBudgetVersion<9,followingKurus});
+ const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,executionDeadline,retainDataset:collectionFirst&&phaseLimitKurus!==undefined&&options.managedBudgetVersion<9,followingKurus});
  const checkpointKey=(name,input)=>'audit:v8:checkpoint:'+name+':'+hash(input);
  return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8',pricing:researchTariff,researchFx,allowWorkerFallback:!(collectionFirst&&phaseLimitKurus!==undefined&&sequentialPhases.indexOf(phase)>sequentialPhases.indexOf('brand'))}),collectionFirst,managedAudit:options.managedAudit===true,infrastructureOffsetKurus,now,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once(checkpointKey(name,input),input,0,run),readCheckpoint:async(name,input)=>{
   const receipt=await scoped.get(checkpointKey(name,input));
   return receipt?.state==='complete'?receipt.value:undefined;
  },availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
-  researchCapacity:async()=>{
+  researchCapacity:async({includeActors=true}={})=>{
    const status=await scoped.status(),remainingKurus=status.capKurus-status.chargedKurus;
-   const quotes=base.searchReservations();
-   const defaults=Object.keys(quotes).filter(tool=>reserveStageQuote(quotes[tool])<=remainingKurus);
+   const quotes=Object.fromEntries(Object.entries(base.searchReservations()).map(([tool,amount])=>[tool,reserveStageQuote(amount)]));
+   const defaults=Object.keys(quotes).filter(tool=>quotes[tool]<=remainingKurus);
+   if(!includeActors)return {remainingKurus,capKurus:status.capKurus,quotes,defaults,configuredDefaults:Object.keys(quotes)};
    const actorsThatFit=remainingKurus>0?await actors.availableActors({affordable:true}):[];
    const configuredActors=actorsThatFit.length?actorsThatFit:await actors.availableActors();
    return {remainingKurus,defaults,configuredDefaults:Object.keys(quotes),actors:actorsThatFit,configuredActors,
-    minimumDefaultKurus:defaults.length?Math.min(...defaults.map(tool=>reserveStageQuote(quotes[tool]))):0};
+    minimumDefaultKurus:defaults.length?Math.min(...defaults.map(tool=>quotes[tool])):0};
   },
-  withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,researchFx,...options})};
+  executionSignal:signal,
+  withExecutionWindow:(deadline,reservation)=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus:reservation,phaseLimitKurus,collectionFirst,researchFx:explicitFx,executionDeadline:deadline,...options}),
+  withCeiling:limit=>createSequentialProviders({ledger,phase,fetchImpl,now,apify,infrastructureOffsetKurus,phaseLimitKurus:limit,collectionFirst,researchFx,executionDeadline,...options})};
 }

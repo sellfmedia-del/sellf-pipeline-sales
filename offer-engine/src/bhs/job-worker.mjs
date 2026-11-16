@@ -3,7 +3,8 @@ import {backgroundBhsEnabled,createBhsJobStore} from './job-store.mjs';
 import {createSequentialProviders} from './sequential-providers.mjs';
 import {runClaimedBhsStage} from './background-runner.mjs';
 import {runBoundedStage,stageKey} from './direct-research.mjs';
-import {meteredBhsStage,workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {createEvidenceCollector} from './evidence.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {managedFocusedInventoryCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases} from './managed-budget.mjs';
@@ -13,6 +14,22 @@ import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
+ const {providers}=options;
+ const scopedJob={...job,...(options.scopedRoundIndex===undefined?{}:{scopedRoundIndex:options.scopedRoundIndex})};
+ if(job.phase==='report_draft'&&providers.managedBudgetVersion>=18&&providers.collectionFirst){
+  if(options.scopedRoundIndex===undefined)return runStage(options);
+  const {chargedKurus}=await options.ledger.status();
+  const remaining=options.phaseCeiling-chargedKurus;
+  if(remaining>=shortResearchReservationKurus&&remaining<workerInfraReservationKurus&&providers.withExecutionWindow){
+   // The network window leaves time for PDF parsing and durable receipts
+   // inside the smaller worker envelope. Renderer work stays in full turns.
+   const now=providers.now||Date.now,deadline=now()+55000;
+   const short=providers.withExecutionWindow(deadline,shortResearchReservationKurus);
+   const collect=options.collect||((...args)=>createEvidenceCollector({hardDeadline:true,render:async()=>[],
+    timeout:Math.max(0,deadline-now()-16000)})(...args));
+   return meter({job:scopedJob,ledger:options.ledger,shortResearch:true,run:()=>runStage({...options,providers:short,collect})});
+  }
+ }
  if(job.phase==='synthesis'&&options.phaseCeiling){
   const cost=await options.ledger.status();
   if(options.phaseCeiling-cost.chargedKurus<workerInfraReservationKurus){
@@ -104,8 +121,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   }
  }
  if(options.phaseCeiling&&job.phase==='coverage_plan')return runStage(options);
- return meter({job:options.scopedRoundIndex===undefined?job:{...job,scopedRoundIndex:options.scopedRoundIndex},
-  ledger:options.ledger,run:()=>runStage(options)});
+ return meter({job:scopedJob,ledger:options.ledger,run:()=>runStage(options)});
 }
 
 export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>process.env.BHS_WORKER_SECRET,getQueue=()=>createBhsJobStore(),getProviders=createSequentialProviders,run=runClaimedBhsStage,readiness=()=>createSupervisedReadiness({env:{...process.env,VERCEL_ENV:'preview'}}),logger=console}={}){

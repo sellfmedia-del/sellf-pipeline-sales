@@ -76,13 +76,13 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
     if(!section.complete)add('p',english?'This section has findings still to verify.':'Bu bölümde doğrulanacak bulgu eksiği var.',grouped);
     const list=add('ol','',grouped);
     for(const id of section.findingIds){
-     const f=byId.get(id);if(!f?.recommendation)continue;
+     const f=byId.get(id);if(!f)continue;
      const row=add('li','',list);
      const label=quadrants[f.swotQuadrant]?.[english?1:0];
      add('strong',(label?label+' · ':'')+f.statement,row);
      add('p',f.impact,row);
-     add('p',(english?'Recommended action: ':'Önerilen aksiyon: ')+f.recommendation.action,row);
-     add('p',(english?'Success measure: ':'Başarı ölçümü: ')+f.recommendation.measurement,row);
+     if(f.recommendation?.action)add('p',(english?'Recommended action: ':'Önerilen aksiyon: ')+f.recommendation.action,row);
+     if(f.recommendation?.measurement)add('p',(english?'Success measure: ':'Başarı ölçümü: ')+f.recommendation.measurement,row);
      add('small',f.sourceIds.join(' · '),row);
     }
    }
@@ -114,6 +114,14 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const ids=[...new Set(data.bhs.benchmarks.flatMap(b=>b.entries.map(e=>e.entityId)))],peerNames=new Map((data.bhs.competitors||[]).map(p=>[p.id,p.name]));
    const head=add('tr','',add('thead','',table));add('th',t('Metrik'),head);ids.forEach(id=>add('th',peerNames.get(id)||data.brand.name,head));const body=add('tbody','',table);
    for(const row of data.bhs.benchmarks){const tr=add('tr','',body);add('th',t(benchmarkNames[row.metric]||row.metric),tr);for(const id of ids){const e=row.entries.find(e=>e.entityId===id);const td=add('td',e?.value==null?t('Veri bulunamadı'):(e.verification==='unverified'?t('Doğrulanacak: '):'')+[e.value,e.unit,e.period].filter(Boolean).join(' · '),tr);td.title=(e?.sourceIds||[]).join(' · ');}}
+  }else{
+   const peers=(data.bhs.competitors||[]).filter(p=>p.sourceIds?.length);
+   if(peers.length){
+    const details=add('details','',$('#so-analysis'),'so-benchmark');
+    add('summary',english?'Verified competitors':'Doğrulanan rakipler',details);
+    const list=add('ul','',details);
+    for(const peer of peers)add('li',peer.name+' · '+peer.sourceIds.join(' · '),list);
+   }
   }
   const full=add('details','',$('#so-analysis'));add('summary',t('Seçili bulguların kaynakları'),full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}

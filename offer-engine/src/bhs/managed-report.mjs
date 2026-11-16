@@ -6,6 +6,8 @@ import {projectExpertReport,unsafeExpertClaim} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
+import {marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
+import {salesGapStatus,salesMetricName,salesSectionTitle} from './sales-research-labels.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -77,10 +79,11 @@ export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false
   const findings=report.findings.filter(f=>f.bhsSection===id&&f.sourceIds.length)
    .sort((a,b)=>a.bhsRank-b.bhsRank);
   const relevant=metrics.filter(m=>(m.section||m.name)===id);
-  const openNeeds=relevant.filter(m=>m.status==='open'||linked&&!findings.some(f=>f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
-  const title=findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id);
+  const openNeeds=relevant.filter(m=>m.status==='open'||linked&&!findings.some(f=>!f.researchEvidenceOnly&&f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
+  const title=salesSectionTitle(id,findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id));
   return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!openNeeds.length,
-   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(({name,status})=>({name,status:status==='open'?'needs_evidence':'missing_from_report'}))}:{})};
+   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(metric=>({name:metric.displayName||salesMetricName(metric),
+    status:salesGapStatus(metric)}))}:{})};
  });
 }
 
@@ -154,7 +157,7 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason}){
+export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason,verifiedPeers}){
  const adaptive=input.plan.adaptiveResearch===true;
  const linked=input.plan.qualityReport===true;
  const targeted=input.plan.targetedEvidence===true;
@@ -166,6 +169,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (adaptive?' Raporda yalnız bu brief için anlamlı başlıklar kullan. Bölüm adını her bulgunun section alanında kendin yaz. İlave başlık veya asgari bulgu kotası yoktur. area alanı teklif aktarımı için isteğe bağlı eşlemedir.':'')+
   (linked?' Bulgunun karşılık geldiği gerçek ihtiyaç kimliklerini needIds alanına yaz. Araştırma dışı bulgular için boş liste ver. Doğrulanan rakiplerin entities içindeki kimliğini kullan ve kendi sitelerinden okunan kanıtla ilişkilendir. Trafik tahminini tahmin olarak yaz. Toplam ziyaret, oturum ve doğrudan kanal birbirinden farklıdır. Kanıt yalnız toplam ziyaret veriyorsa aksiyonda veya ölçümde o sayıyı oturuma ya da bir kanala bağlama. JSON içinde önce bulguları ver ve her alanı öz tut.':'')+
   (targeted?' sources satırı [belgeKimliği, alıntı], documents satırı [URL, başlık, okuma yöntemi] biçiminde. Proof için alıntının sources kimliğini kullan. Her bulguda tek ölçüm veya tek somut olgu ver. Tabloda sayı, birim, yıl ve kategori aynı kanıtla desteklenmeli. Farklı platformları, tarihleri, tahminleri ve gerçekleşen ölçümleri ayrı tut. Kanıtı hazır ama ölçümü kısmi olan bir ihtiyaçta doğrulanan kısmı kendi bulgusu olarak yaz. En önemli kararları ve açık soruları önce ver.':'')+
+  (input.plan.verifiedResults?' Araştırmada doğrulanan rakipler ve ölçümler korunur. Bunları brief açısından analiz et ve hangi aksiyonu desteklediklerini yaz. Sayısal pazar bulgusunda coverage.marketMeasures içindeki doğrulanmış tutarı, birimi, yılı ve kategori ifadesini aynen ve aynı kaynağa bağlı kullan.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  if(adaptive&&!sections)delete request.sections;
  if(linked){
@@ -182,6 +186,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   request.documents=Object.fromEntries([...documents].map(([key,id])=>[id,JSON.parse(key)]));
  }
  const needsById=new Map(needs.map(need=>[need.id,need]));
+ const marketCoverage=input.plan.verifiedResults?coverage.filter(m=>m.marketMeasures):undefined;
  const signal=AbortSignal.timeout(110000);
  const normalizeData=data=>Object.fromEntries(Object.entries(outputSchema.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
@@ -200,7 +205,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   return [key,rows.slice(0,field.maxItems)];
  }));
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined});
+  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
@@ -396,7 +401,7 @@ function recoverDraftProofs(row,proofs,context){
   action:'Bulguyu aynı dönem ve aynı kapsamda birinci taraf verisiyle karşılaştır.',measurement:''},proofs};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false}){
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
  const peerId=value=>{
@@ -423,6 +428,12 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
   if(targeted)({row,proofs}=recoverDraftProofs(row,proofs,context));
+  if(marketCoverage?.length){
+   const sources=proofs.flatMap(id=>context.proofGroups.get(id)||[id]);
+   const cited=links=>decoded(links).some(id=>sources.includes(id));
+   const metrics=marketCoverage.filter(m=>row.needIds?.includes(m.id)||cited(m.sources)&&marketMeasureNeed({section:row.section,metric:row.observation}));
+   if(metrics.length&&!marketObservationSupported(row.observation,metrics.flatMap(m=>m.marketMeasures).filter(m=>cited(m.sources))))continue;
+  }
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
   if(needsById){
    row=qualifyTraffic(row,sourceCards,targeted);
@@ -456,9 +467,10 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   const ids=selected.filter(f=>f.area===a.key).map(f=>f.id);
   return [a.key,{status:ids.length?'observed':'unavailable',findingIds:ids,note:'Bu konu görüşmede doğrulanacak.'}];
  }));
+ const reportPeers=verifiedPeers??((!accepted||accepted.has('competition')||needsById&&selected.some(row=>row.peerId))?list(data.peers).map(p=>({...p,entityId:peerId(p.entityId),sourceIds:decoded(p.sourceIds)})):[]);
  const report=projectExpertReport({findings,coverage,overviewIds:findings.slice(0,4).map(f=>f.id),
   dimensions:dimensions.map(d=>({...d,score:null,findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id)})),
-  peers:(!accepted||accepted.has('competition')||needsById&&selected.some(row=>row.peerId))?list(data.peers).map(p=>({...p,entityId:peerId(p.entityId),sourceIds:decoded(p.sourceIds)})):[],
+  peers:reportPeers,
   benchmarks:list(data.benchmarks).map(b=>({...b,sourceIds:decoded(b.sourceIds)}))
  },context,{explicitComparisons:true,modelSelectedPeers});
  const rows=new Map(selected.map(row=>[row.id,row]));
@@ -470,7 +482,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    ...((row.section==='competition'||needsById)&&linkedPeers.has(row.peerId)?{peerId:row.peerId}:{}),recommendation:{action:row.action.trim(),measurement:row.measurement.trim()},decisionQuestion:row.question.trim()};
  });
  const peersWithFindings=new Set(report.findings.map(f=>f.peerId).filter(Boolean));
- report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);
+ if(!verifiedPeers)report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);
  report.meetingQuestions=unique([...report.findings.map(f=>f.decisionQuestion).filter(Boolean),...list(data.questions)]).map(question=>({dimension:'operations',question,findingIds:report.findings.filter(f=>f.decisionQuestion===question).map(f=>f.id)}));
  if(modelSelectedPeers)report.directedResearch=true;
  report.bhsSections=adaptive?scopedCoverage(report):managedCoverage(report);

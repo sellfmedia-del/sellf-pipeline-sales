@@ -116,7 +116,7 @@ function recordsForEvidence(actor,rows,target,context){
  }
  return result;
 }
-export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,validateUrl=resolveTarget,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fetchImpl=fetch,now=Date.now,getTaskPolicies,followingKurus=1400,retainDataset=false,validateUrl=resolveTarget,delay=ms=>new Promise(resolve=>setTimeout(resolve,ms)),executionDeadline=Infinity}={}){
  let policies;const metadata=new Map();
  async function json(path,{body,maxBytes=1000000,deadline=Infinity}={}){
   const remaining=Math.min(12000,deadline-now());if(remaining<=0)throw new BudgetError('actor_time_limit','Apify aşamasının süre sınırına ulaşıldı.');
@@ -160,7 +160,8 @@ export function createApifyAdapter({ledger,token=process.env.APIFY_API_TOKEN,fet
   },
   async enrich(request,context){
    if(!token)return {actor:request.actor,status:'not_configured'};
-   const deadline=now()+75000;
+   const deadline=Math.min(now()+75000,executionDeadline-5000);
+   if(Number.isFinite(executionDeadline)&&deadline-now()<12000)return {actor:request.actor,status:'unavailable',reason:'actor_time_limit'};
    const target=actorInput(request,context),actorId=actorIds[request.actor];
    const step='apify:v8:start:'+hash({actorId,input:target.input,maxItems:target.maxItems});
    const existing=await ledger.get(step);
