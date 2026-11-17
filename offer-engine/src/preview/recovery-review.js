@@ -22,8 +22,10 @@
  window.PipelinePricingRequest=async()=>({phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.pricing:['continuity','english','empty'].includes(scenario)?continuity.pricing:data.pricing.TRY),proposalProof:'synthetic-only'});
  window.PipelineProposalRequest=async payload=>{
   window.reviewComposeCalls.push(structuredClone(payload));
-  if(scenario==='english'&&payload.brief.language==='en')throw Object.assign(Error('İngilizce teklif çevirisi tamamlanamadı. BHS ve fiyatlar korundu.'),{code:'model_temporarily_unavailable'});
-  return {phase:'complete',result:structuredClone(scenario==='restored'?continuity.restored.proposal:['continuity','english','empty'].includes(scenario)?continuity.proposal:data.proposal.TRY),saveProof:'synthetic-only'};
+  if(scenario==='english'&&window.reviewComposeCalls.length===1)throw Object.assign(Error('İngilizce teklif çevirisi tamamlanamadı. BHS ve fiyatlar korundu.'),{code:'model_temporarily_unavailable',draftCost:{chargedKurus:172,capKurus:1000}});
+  const result=structuredClone(scenario==='restored'?continuity.restored.proposal:['continuity','english','empty'].includes(scenario)?continuity.proposal:data.proposal.TRY);
+  if(scenario==='english')result.data.language='en';
+  return {phase:'complete',result,saveProof:'synthetic-only',...(scenario==='english'?{draftCost:{chargedKurus:213,capKurus:1000}}:{})};
  };
  window.PipelineOfferRequest=async()=>{throw Error('Bu örnek kaydedilmez. Gerçek veriler değiştirilmedi.');};
  function open(kind){

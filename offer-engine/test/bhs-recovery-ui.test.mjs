@@ -94,7 +94,7 @@ test('desktop/mobile expose budget detail and require one explicit recovery, pre
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });
-test('desktop/mobile continue without completed research or extra paid retries, and explicitly change a failed English draft to Turkish',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+test('desktop/mobile continue without completed research or extra paid retries, and retry a failed English draft in English',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(a=>!['--single-process','--disable-web-security'].includes(a)),headless:true});
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -113,15 +113,18 @@ test('desktop/mobile continue without completed research or extra paid retries, 
    await chooseBoth(page,'meta');await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();assert.equal(await page.locator('.ob-pricing article').count(),2);
    await page.locator('.ob-compose').click();
    if(kind==='english'){
-    await page.locator('.ob-turkish:not([hidden])').waitFor();await page.locator('.ob-compose:not([disabled])').waitFor();
+    await page.locator('.ob-draft-cost:not([hidden])').waitFor();await page.locator('.ob-compose:not([disabled])').waitFor();
+    assert.match(await page.locator('.ob-draft-cost').textContent(),/1,72.*10,00/);
+    assert.match(await page.locator('.ob-footer>p').textContent(),/22,32 \/ 50,00/);
+    assert.equal(await page.locator('.ob-pricing').isVisible(),true);
     assert.equal(await page.locator('#ob-language').inputValue(),'en');
-    await page.locator('.ob-turkish').evaluate(button=>{button.click();button.click();});
+    await page.locator('.ob-compose').click();
    }
    try{await page.locator('.ob-proposal:not([hidden])').waitFor({timeout:8000});}catch(error){throw Error(JSON.stringify({width,kind,errors,notice:await page.locator('.ob-review-notice').textContent(),composeCalls:await page.evaluate(()=>reviewComposeCalls.length)}));}
    assert.match(await page.locator('.so-bhs-brief').textContent(),/doğrulanmış bulgu bulunmuyor/);
    assert.equal(await page.locator('.ob-scope-approved').isChecked(),false);assert.equal(await page.locator('.ob-publish').isVisible(),false);
    const calls=await page.evaluate(()=>reviewComposeCalls.map(c=>({language:c.brief.language,audit:c.audit,pricing:c.pricing})));
-   assert.deepEqual(calls.map(c=>c.language),kind==='english'?['en','tr']:['tr']);
+   assert.deepEqual(calls.map(c=>c.language),kind==='english'?['en','en']:['tr']);
    if(calls.length===2){assert.deepEqual(calls[0].audit,calls[1].audit);assert.deepEqual(calls[0].pricing,calls[1].pricing);}
    assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),expected);
    assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
