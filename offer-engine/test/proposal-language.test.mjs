@@ -43,6 +43,10 @@ test('missing strings, HTML, added/changed numbers or signs are rejected; valid 
  assert.doesNotThrow(()=>validateTranslations({translations:['Within 2–4 weeks.']},['2–4 hafta içinde.']));
  for(const translations of [[],['Within 3–4 weeks.'],['<script>2–4</script>'],[''],['Within 2–4 weeks.','extra']])assert.throws(()=>validateTranslations({translations},['2–4 hafta içinde.']));
  assert.throws(()=>validateTranslations({translations:['5%']},['-5%']));
+ const source='Ana Sayfa > Nursery Management · 2s';
+ assert.doesNotThrow(()=>validateTranslations({translations:['Home > Nursery Management · 2s']},[source]));
+ for(const invalid of ['Home Nursery Management · 2s','Home >> Nursery Management · 2s','<img src=x> Nursery Management · 2s','Home > Nursery Management · 3s'])
+  assert.throws(()=>validateTranslations({translations:[invalid]},[source]));
 });
 test('API signs the English snapshot and charges only the independent draft budget',async()=>{
  const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
@@ -95,6 +99,7 @@ test('a registered teammate with a fully used BHS budget can produce an English 
   const ledger=createLedger(draft);
   assert.deepEqual(await ledger.begin(),{chargedKurus:0,capKurus:1000});
   const f=await fixture(),original=(await proposalEngine.run({brief:f.brief},f)).data;
+  original.bhs.summary='Ana Sayfa > Nursery Management · 2s';
   let generations=0;
   const providers=createBoundedProviders({ledger,geminiKey:'test',defaultModel:'gemini-2.5-flash',pricing:researchTariff,
    now:()=>Date.parse('2026-11-17T14:21:00Z'),researchFx:async()=>({usdTry:44,publishedAt:'2026-11-17'}),
