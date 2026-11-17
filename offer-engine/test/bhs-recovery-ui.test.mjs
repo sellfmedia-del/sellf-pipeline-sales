@@ -29,6 +29,11 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
       {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
       {name:'Reklam maliyetleri',status:'missing_from_report'}]},
+      {id:'T_ROYAL',title:'Royal set ürün deneyimi',complete:false,findingIds:[],openMetrics:[
+       {id:'price',name:'Royal set fiyatı',status:'source_unreadable',statusLabel:'Kaynak okunamadı'},
+       {id:'buyer',name:'Royal set alıcı davranışı',status:'searched',statusLabel:'Arama yapıldı, yeterli kanıt bulunamadı'},
+       {id:'partial',name:'Royal set kullanım koşulları',status:'partially_verified',statusLabel:'Ölçüm kısmen doğrulandı'},
+       {id:'report',name:'Royal set kullanım kılavuzu',status:'missing_from_report',statusLabel:'Doğrulandı, rapora aktarılamadı'}]},
       {id:'swot',title:'SWOT',complete:false,findingIds:[],missingQuadrants:['weakness','threat']}]});
     return response;
    };
@@ -43,6 +48,8 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   assert.equal(await page.locator('.ob-research-report h3').filter({hasText:'Doğrulanacak rakip adayları'}).count(),1);
   assert.match(text,/Örnek Aday · https:\/\/candidate\.example\/catalogue/);
   assert.match(text,/Kanıt bekleyen SWOT kolları · Zayıf yön, Tehdit/);
+  for(const status of ['Kaynak okunamadı','Arama yapıldı, yeterli kanıt bulunamadı','Ölçüm kısmen doğrulandı','Doğrulandı, rapora aktarılamadı'])assert.ok(text.includes(status),status);
+  assert.match(text,/Royal set ürün deneyimi/);
   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   assert.deepEqual(errors,[]);await page.close();

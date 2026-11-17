@@ -177,7 +177,7 @@
           heading(section.title);
           if(section.openMetrics?.length){
             for(const metric of section.openMetrics)paragraph(
-              metric.name+' — '+(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil')
+              metric.name+' — '+(metric.statusLabel||(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil'))
             );
           }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
           if(section.missingQuadrants?.length)paragraph('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));

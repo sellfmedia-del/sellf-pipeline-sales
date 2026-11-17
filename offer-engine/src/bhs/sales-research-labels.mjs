@@ -10,7 +10,9 @@ const topics={
  pazar:'Pazar analizi',fiyat:'Ürün ve rakip fiyatları',pazaryeri:'Pazaryeri satış kanalları',bilinirlik:'Marka bilinirliği',
  dijital:'Dijital varlıklar',instagram_marka:'Markanın Instagram hesabı',youtube_marka:'Markanın YouTube hesabı',
  influencer_pazar:'Pazardaki içerik üreticileri',reklam_maliyet:'Reklam maliyetleri',musteri_memnuniyeti:'Müşteri memnuniyeti',
- ga4:'Google Analytics 4 ölçümü',seo:'Arama motoru görünürlüğü',swot:'SWOT'
+ ga4:'Google Analytics 4 ölçümü',seo:'Arama motoru görünürlüğü',swot:'SWOT',
+ competition:'Rakip araştırması',financial:'Finansal sağlık',operations:'Operasyonel verimlilik',
+ funnel:'Satış hunisi',digital:'Dijital varlıklar',perception:'Marka algısı ve müşteri memnuniyeti',readiness:'Hedefler için gereklilikler ve eksikler'
 };
 const topic=value=>Object.hasOwn(topics,keyOf(value))?topics[keyOf(value)]:'';
 
@@ -27,8 +29,24 @@ export function salesMetricName({name,metric,period,expected,section}){
  return topic(label)||human(label)||human(expected)||topic(section)||'Doğrulanacak ölçüm';
 }
 
+export function salesTaskSectionTitle(section,title,metric){
+ return (keyOf(title)==='arastirma konusu'?'':topic(title)||human(title))||
+  (keyOf(section)==='arastirma konusu'?'':topic(section)||human(section))||metric;
+}
+
 export function salesGapStatus(metric){
  if(metric.status==='confirmed')return 'missing_from_report';
+ if(metric.researchStatus)return metric.researchStatus;
  if(metric.searched===false)return 'not_searched';
  return metric.searched||metric.proofIds?.length||metric.sources?.length?'insufficient_sources':'unknown';
 }
+
+export const salesGapLabels=Object.freeze({
+ not_searched:'Aranmadı',
+ searched:'Arama yapıldı, yeterli kanıt bulunamadı',
+ search_incomplete:'Arama tamamlanamadı',
+ source_unreadable:'Kaynak okunamadı',
+ partially_verified:'Ölçüm kısmen doğrulandı',
+ missing_from_report:'Doğrulandı, rapora aktarılamadı',
+ interrupted:'Araştırma kaydı kesintide tamamlanamadı'
+});

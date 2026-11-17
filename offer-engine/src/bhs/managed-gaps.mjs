@@ -110,9 +110,11 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.taskReporting?22:priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
- const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
+ const scopedNeeds=new Set((original.verifiedResearch?.metrics||[]).filter(m=>sections.includes(m.section)).map(m=>m.id));
+ const existing=original.findings.filter(f=>(sections.includes(f.bhsSection)||priorPlan.taskReporting&&f.researchNeedIds?.some(id=>scopedNeeds.has(id)))&&
+  f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);
  if(version>=9){
   const rounds=priorPlan.compactQueue?[]:(await Promise.all(scopedRounds.map(phase=>previous(phase)))).filter(r=>r?.scopedRound);
@@ -217,7 +219,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
 }
 
 function mergeGapEvidence(synthesis,patch,sections,context,evidenceCoverage){
- const report=mergeManagedGapReport(synthesis.report,patch,sections);
+ const report=mergeManagedGapReport(synthesis.report,patch,sections,{taskReporting:synthesis.supervision?.researchPlan?.taskReporting});
  const cited=new Set(report.sources.map(s=>s.url));
  const priorPacket=synthesis.analysisPacket;
  return {report,evidenceCoverage,supervision:{...synthesis.supervision,gapEvidenceCoverage:evidenceCoverage},analysisPacket:{...context.packet,
@@ -225,23 +227,25 @@ function mergeGapEvidence(synthesis,patch,sections,context,evidenceCoverage){
   citationCards:[...new Map([...(priorPacket.citationCards||[]),...context.packet.citationCards].filter(s=>cited.has(s.url)).map(s=>[s.id,s])).values()]}};
 }
 
-export function mergeManagedGapReport(original,patch,sections){
+export function mergeManagedGapReport(original,patch,sections,{taskReporting=false}={}){
  const verified=Boolean(original.verifiedResearch&&patch.verifiedResearch);
  const metrics=new Map((original.verifiedResearch?.metrics||[]).map(m=>[m.id,m]));
  if(verified)for(const metric of patch.verifiedResearch.metrics)if(sections.includes(metric.section))metrics.set(metric.id,metric);
  const evidenceRefs=new Set([...metrics.values()].flatMap(m=>[...m.sourceIds,...(m.marketMeasures||[]).flatMap(row=>row.sourceIds)]));
+ const eligibleNeeds=new Set((patch.verifiedResearch?.metrics||[]).filter(m=>sections.includes(m.section)).map(m=>m.id));
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
  const peerCandidates=new Map(patch.competitors.filter(peer=>!acceptedPeers.has(peer.website)).map(peer=>[peer.id,peer]));
- const statementKey=f=>[f.bhsSection,f.swotQuadrant||'',f.peerId||'',f.statement.trim().toLocaleLowerCase('tr')].join('\0');
+ const statementKey=f=>[taskReporting?'':f.bhsSection,f.swotQuadrant||'',f.peerId||'',f.statement.trim().toLocaleLowerCase('tr')].join('\0');
  const existingStatements=new Set(original.findings.map(statementKey));
  const findings=[...original.findings];
  const competitors=[...original.competitors];
  for(const f of patch.findings){
   const key=statementKey(f),peer=peerCandidates.get(f.peerId);
   const existingPeer=verified&&competitors.some(p=>p.id===f.peerId);
-  if(!sections.includes(f.bhsSection)||existingStatements.has(key)||f.peerId&&!existingPeer&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
+  const inScope=sections.includes(f.bhsSection)||taskReporting&&f.researchNeedIds?.some(id=>eligibleNeeds.has(id));
+  if(!inScope||existingStatements.has(key)||f.peerId&&!existingPeer&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
   const count=findings.filter(prior=>prior.bhsSection===f.bhsSection).length;
-  if(count>=10)continue;
+  if(!taskReporting&&count>=10)continue;
   findings.push({...f,bhsRank:count+1});
   existingStatements.add(key);
   if(peer&&!acceptedPeers.has(peer.website)){competitors.push(peer);acceptedPeers.add(peer.website);}

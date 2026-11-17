@@ -1153,7 +1153,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    const headings=new Map(retained.map(row=>['scoped_'+row.id,row]));
    report.findings=report.findings.map((finding,index)=>{
     const heading=headings.get(finding.id);
-    return {...finding,bhsSection:heading.section,bhsRank:index+1,...(plan.qualityReport?{researchNeedIds:[heading.needId]}:{}),
+    const sectionTitle=plan.taskReporting?coverage.find(m=>m.id===heading.needId)?.sectionTitle:undefined;
+    return {...finding,bhsSection:heading.section,bhsRank:index+1,...(sectionTitle?{bhsSectionTitle:sectionTitle}:{}),...(plan.qualityReport?{researchNeedIds:[heading.needId]}:{}),
      ...(plan.verifiedResults?{researchEvidenceOnly:true}:{})};
    });
   }
@@ -1162,7 +1163,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse);
   if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
-  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis);
+  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis,plan.taskReporting);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
  if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
@@ -1197,7 +1198,8 @@ function retainScopedResults(report,context,coverage,reverse){
   if(report.findings.some(f=>f.id===id))continue;
   report.findings.push({id,dimension:'financial',kind:'observation',statement:row.passage,reportExcerpt:row.passage,sourceIds,
    impact:'Ticari etkisi görüşmede değerlendirilecek.',goalConnection:'Bu ölçüm hedef ürün ve pazarla nasıl karşılaştırılabilir?',
-   priority:'medium',bhsSection:metric.section,bhsRank:report.findings.length+1,researchNeedIds:[metric.id],researchEvidenceOnly:true});
+   priority:'medium',bhsSection:metric.section,...(metric.sectionTitle?{bhsSectionTitle:metric.sectionTitle}:{}),
+   bhsRank:report.findings.length+1,researchNeedIds:[metric.id],researchEvidenceOnly:true});
  }
  const measured=report.findings.filter(f=>f.dimension==='financial'&&f.researchEvidenceOnly);
  if(measured.length){
@@ -1228,6 +1230,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
