@@ -110,7 +110,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const existing=original.findings.filter(f=>sections.includes(f.bhsSection)&&f.recommendation?.action&&(version>=7||f.recommendation?.measurement))
   .map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null,f.peerId||null]);

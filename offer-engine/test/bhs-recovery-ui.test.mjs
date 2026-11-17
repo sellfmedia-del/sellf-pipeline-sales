@@ -28,7 +28,8 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
      bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
       {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
-      {name:'Reklam maliyetleri',status:'missing_from_report'}]}]});
+      {name:'Reklam maliyetleri',status:'missing_from_report'}]},
+      {id:'swot',title:'SWOT',complete:false,findingIds:[],missingQuadrants:['weakness','threat']}]});
     return response;
    };
   },width);
@@ -41,6 +42,7 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   assert.equal(await page.locator('.ob-research-report article').count(),0);
   assert.equal(await page.locator('.ob-research-report h3').filter({hasText:'Doğrulanacak rakip adayları'}).count(),1);
   assert.match(text,/Örnek Aday · https:\/\/candidate\.example\/catalogue/);
+  assert.match(text,/Kanıt bekleyen SWOT kolları · Zayıf yön, Tehdit/);
   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   assert.deepEqual(errors,[]);await page.close();

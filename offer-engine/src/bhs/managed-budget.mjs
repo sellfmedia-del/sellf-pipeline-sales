@@ -37,8 +37,8 @@ export async function managedPhaseBudget({ledger,brief,phase,existingBrandPlan,e
  const hash=briefHash(brief),policyKey='audit:managed-policy:'+hash;
  const saved=await ledger.get(policyKey);
  if(saved?.state!=='complete'&&(!enabled||phase!=='brand_plan'||existingBrandPlan))return {ledger,managedAudit:false};
- const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:20}));
- const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].includes(policy.version)?policy.version:1;
+ const policy=saved?.state==='complete'?saved.value:await ledger.once(policyKey,{hash},0,async()=>({version:21}));
+ const managedBudgetVersion=[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21].includes(policy.version)?policy.version:1;
  const reportPhases=managedBudgetVersion>=2?['synthesis','scope']:[...managedReviewPhases,'synthesis','scope'];
  const reviewCap=managedBudgetVersion===3?evidenceReviewCapKurus:researchCapKurus;
  if(!reportPhases.includes(phase))return {ledger:capBhsLedger(ledger,managedReviewPhases.includes(phase)?reviewCap:researchCapKurus),managedAudit:true,managedBudgetVersion,phaseCeiling:managedReviewPhases.includes(phase)?reviewCap:researchCapKurus};

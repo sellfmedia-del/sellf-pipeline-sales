@@ -1134,12 +1134,13 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const verifiedPeers=plan.verifiedResults?projectExpertReport({peers:evidence.verifiedPeers.map(({proofs,...peer})=>
   ({...peer,sourceIds:unique(proofs.flatMap(cite))}))},context).competitors.map(peer=>
   ({entityId:peer.id,relationship:'direct',reason:peer.scope,sourceIds:peer.sourceIds})):undefined;
- const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,
+ const written=allowWrite||plan.sectionedSynthesis&&providers.readCheckpoint?await synthesizeScopedReport({providers,context,input,reverse,
   coverage:coverage.map(({displayName,searched,...metric})=>metric),needs:evidence.needs,approved:evidence.approved,sections,
-  verifiedPeers,
+  verifiedPeers,savedPartsOnly:!allowWrite,
   ...(plan.orderedResearch&&terminal?{stopReason:terminal.stopReason}:{})}):{};
  let {report}=written;
  const useSavedEvidence=!report||plan.qualityReport&&!report.findings.length;
+ const writtenQuestions=plan.sectionedSynthesis&&useSavedEvidence?report?.meetingQuestions||[]:[];
  if(useSavedEvidence){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
   const retained=reviewed.filter(row=>!plan.verifiedResults||!coverage.some(m=>m.id===row.needId&&m.marketMeasures)).slice(0,18);
@@ -1161,10 +1162,11 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse);
   if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
-  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence);
+  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
- if(useSavedEvidence)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))];
+ if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
+  ...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))].map(q=>[q.question,q])).values()];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
@@ -1225,6 +1227,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=17?{verifiedResults:true}:{}),
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
+   ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

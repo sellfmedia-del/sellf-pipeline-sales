@@ -180,6 +180,7 @@
               metric.name+' — '+(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil')
             );
           }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
+          if(section.missingQuadrants?.length)paragraph('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));
           for(const id of section.findingIds){
             const f=findings.get(id);if(!f)continue;
             const article=document.createElement('article');box.append(article);
@@ -217,7 +218,7 @@
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
-      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length));
+      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length||section.missingQuadrants?.length));
       if(data.verifiedResearch?.competitorCandidates?.length){
         heading('Doğrulanacak rakip adayları');
         data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));

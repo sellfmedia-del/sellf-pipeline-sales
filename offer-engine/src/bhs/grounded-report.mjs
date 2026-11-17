@@ -34,6 +34,7 @@ export function renderGroundedReport(report){
   for(const section of report.bhsSections){
    rows.push('## '+section.title);
    if(!section.complete)rows.push('Bu bölümde doğrulanacak bulgular var.');
+   if(section.missingQuadrants?.length)rows.push('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));
    for(const id of section.findingIds){
     const f=byId.get(id);
     rows.push('### '+(quadrants[f.swotQuadrant]?quadrants[f.swotQuadrant]+' · ':'')+f.statement,

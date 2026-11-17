@@ -48,6 +48,111 @@ const frequency={...engagement,id:'frequency',metric:'Son 30 günün paylaşım 
 const followers={...engagement,id:'followers',metric:'Güncel takipçi sayısı',expected:'Resmî hesaptaki takipçi sayısı',
  query:'Marque Instagram nombre abonnés officiel',quantity:1,period:'',since:''};
 
+test('sectioned synthesis connects each brief to its own sales workflow and retains verified parts after a clipped answer',async()=>{
+ const fixtures=[
+  {name:'NBT İlaç',goals:'Bayi satış takibi kurmak',needs:'Bayi kimliği, dönem ve satış çıktısı',quote:'Bayi sipariş formu bayi kodu, ürün kodu ve sipariş tarihini kaydediyor.',
+   action:'Bayi kodu ve sipariş tarihini satış raporuna bağla.',measurement:'Bayi bazında aylık sipariş ve satış toplamı.',
+   question:'Bayi kodu sipariş ve gerçekleşen satış kayıtlarında nasıl eşleştiriliyor?'},
+  {name:'Muffik',goals:'Başvuru → teklif → sipariş dönüşümünü izlemek',needs:'Her aşamanın zaman damgası ve kaynağı',quote:'Başvuru formu talep kaydı açıyor ve onaydan sonra teklif gönderiliyor.',
+   action:'Başvuruyu, teklif kaydını ve sipariş olayını talep kimliğiyle eşleştir.',measurement:'Başvuru → teklif ve teklif → sipariş dönüşüm oranı.',
+   question:'Teklif ve gerçekleşen sipariş aynı talep kimliğiyle eşleşiyor mu?'}
+ ];
+ for(const fixture of fixtures){
+  const scopedBrief=snapshotBrief({...brief,brandName:fixture.name,goals:fixture.goals,needs:fixture.needs});
+  const scopedBrand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding:{understanding:fixture.goals+' için ölçüm tasarımı.'}};
+  const metrics=Array.from({length:6},(_,i)=>({...needs[1],id:'m'+i,section:i<3?'SATIŞ':'KAPSAM',metric:i===0?fixture.needs:'Araştırma '+i}));
+  const plan={needs:metrics,scopedResearch:true,qualityReport:true,verifiedResults:true,readEvidenceOnly:true,sectionedSynthesis:true,
+   adaptiveResearch:true,targetedEvidence:true,orderedResearch:true,reportOnlyAfterResearch:true};
+  const primary={id:'first',url:about,title:fixture.name,item:'Süreç',method:'html',quote:fixture.quote};
+  const missingField={id:'second',url:brief.website+'form',title:'Başvuru formu',item:'Süreç alanı',method:'html',
+   quote:'Form, talep alanını zorunlu tutuyor ve sipariş durumunu bu ekranda göstermiyor.'};
+  const marketReport={id:'third',url:'https://chamber.fr/market',title:'Kanal araştırması',item:'Pazar',method:'pdf',
+   quote:'Fransa perakende araştırması, mevcut üyeler için toplu sipariş talebini belgeliyor.'};
+  const snippet={id:'unread',url:'https://not-opened.example/',title:'Arama',item:'Arama',method:'search-snippet',
+   quote:'Dönüşümün yüzde 47 olduğu iddia ediliyor.'};
+  const last={id:'last',url:'https://commerce.fr/registry',title:'Kanal kaydı',item:'Kanal',method:'html',
+   quote:'Kanal rehberi tedarikçilerin sipariş onaylarını çevrimiçi kullandığını belirtiyor.'};
+  const receipts=[[primary],[missingField],[marketReport],[last],[snippet]].map((facts,i)=>({id:metrics[i].id,urls:facts.map(f=>f.url),facts}));
+  const round={closed:true,stopReason:'research_budget_exhausted',receipts,decisions:receipts.map(r=>({id:r.id,sufficient:true,proofs:r.facts.map(f=>f.id)}))};
+  const args={brief:scopedBrief,brand:scopedBrand,plan,rounds:[round]};
+  const requests=[],saved=new Map();
+  const readCheckpoint=async(name,key)=>saved.get(name+JSON.stringify(key));
+  const providers={readCheckpoint,checkpoint:async(name,key,run)=>{
+   const result=await run();saved.set(name+JSON.stringify(key),result);return result;
+  },manager:async(stage,input,contract,options)=>{
+   requests.push(stage);
+   assert.equal(input.brief.goals,fixture.goals);
+   assert.equal(input.brief.needs,fixture.needs);
+   assert.equal(options.maxOutputTokens,2600);
+   assert.ok(contract.properties.findings.maxItems<=7);
+   assert.ok(!Object.values(input.sources).some(row=>row[1].includes(snippet.quote)));
+   const proof=fact=>Object.entries(input.sources).find(([,row])=>row[1].includes(fact.quote))?.[0];
+   const base={section:'SATIŞ',area:'',rank:1,quadrant:'none',peerId:'',kind:'observation',needIds:[],
+    analysis:'Süreç verileri satış kararındaki belirsizliği azaltabilir.',action:fixture.action,measurement:fixture.measurement,limitation:'İç kayıtlarla doğrulanacak.',question:''};
+   const found=(fact,index,overrides={})=>({...base,observation:fact.quote,proof:[proof(fact)],needIds:[metrics[index].id],...overrides});
+   let data;
+   if(stage.endsWith('-brief')){
+    assert.deepEqual(input.needs.map(n=>n.id),['m0','m1','m2']);
+    assert.equal(input.needs[0].metric,fixture.needs);
+    assert.match(input.instruction,/başvuru → teklif → sipariş/);
+    data={findings:[found(primary,0),{...base,observation:snippet.quote,proof:['not-sent']}],benchmarks:[],questions:[fixture.question]};
+   }else if(stage.endsWith('-swot')){
+    assert.deepEqual(input.scope.quadrants,['strength','weakness','opportunity','threat']);
+    assert.ok(input.existing.some(row=>row.includes(primary.quote)));
+    data={findings:[
+     found(missingField,1,{quadrant:'weakness'}),
+     found(marketReport,2,{quadrant:'opportunity'}),
+     found(primary,0,{quadrant:'strength',observation:primary.quote.replace(/\.$/,' ve ekip bu alanları eşleştirebilir.'),kind:'inference'}),
+     found(missingField,1,{quadrant:'threat',observation:'Formda talep alanı zorunludur.'})
+    ],benchmarks:[],questions:['Rakiplerin teslimat süresi hedef pazarda nasıl doğrulanabilir?']};
+   }else{
+    assert.deepEqual(input.needs.map(n=>n.id),['m3','m4','m5']);
+    assert.ok(input.existing.some(row=>row.includes(marketReport.quote)));
+    data={findings:[found(last,3,{section:'KAPSAM'})],benchmarks:[],questions:[]};
+   }
+   const normalized=options.normalizeData(data);
+   assertSchema(normalized,contract);
+   if(stage.endsWith('-topics'))assert.equal(options.acceptPartialData(normalized),true);
+   return {data:normalized,model:'offline',usage:{input_tokens:100},partialOutput:stage.endsWith('-topics')};
+  }};
+  const synthesis=await writeScopedSynthesis({...args,providers});
+  assert.deepEqual(requests,['bhs-scoped-report-brief','bhs-scoped-report-swot','bhs-scoped-report-topics']);
+  assert.equal(synthesis.supervision.reportIssue,'partial_model_document');
+  assert.equal(synthesis.usage.parts.length,3);
+  const restored=await writeScopedSynthesis({...args,allowWrite:false,providers:{readCheckpoint,manager:()=>assert.fail('read only recovery')}});
+  assert.deepEqual(restored.report,synthesis.report);
+  const result=directAuditResult(scopedBrief,restored).data;
+  const finding=result.findings.find(f=>f.statement===primary.quote);
+  assert.equal(finding.recommendation.action,fixture.action);
+  assert.equal(finding.recommendation.measurement,fixture.measurement);
+  assert.ok(result.meetingQuestions.some(q=>q.question===fixture.question));
+  const swot=result.bhsSections.find(section=>section.id==='swot');
+  assert.equal(swot.complete,false);
+  assert.ok(swot.missingQuadrants.includes('threat'));
+  assert.ok(!swot.missingQuadrants.includes('weakness'));
+  assert.ok(result.findings.some(f=>f.statement===last.quote));
+  assert.ok(!result.findings.some(f=>f.statement===snippet.quote));
+  assert.match(result.rawReport,/Kanıt bekleyen SWOT kolları · .*Tehdit/);
+ }
+});
+
+test('a sectioned report keeps the brief questions when the evidence supports no finding',async()=>{
+ const need={...needs[1],section:'SATIŞ',metric:'Başvuru → teklif geçişi'};
+ const plan={needs:[need],scopedResearch:true,qualityReport:true,verifiedResults:true,readEvidenceOnly:true,sectionedSynthesis:true,
+  adaptiveResearch:true,targetedEvidence:true,orderedResearch:true,reportOnlyAfterResearch:true};
+ const scopedBrand={packet:{...packet,sources:[]},facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const question='Başvurudan teklife geçen kayıtlar hangi sistemde ve hangi tarih alanıyla izleniyor?';
+ const result=await writeScopedSynthesis({brief,brand:scopedBrand,plan,rounds:[{closed:true,stopReason:'research_budget_exhausted'}],
+  providers:{manager:async(stage,input)=>{
+   assert.equal(stage,'bhs-scoped-report-brief');
+   assert.equal(input.needs[0].metric,need.metric);
+   return {data:{findings:[],benchmarks:[],questions:[question]}};
+  }}});
+ assert.deepEqual(result.report.findings,[]);
+ assert.ok(result.report.meetingQuestions.some(q=>q.question===question));
+ assert.equal(result.report.bhsSections.find(s=>s.id==='swot').missingQuadrants.length,4);
+});
+
 test('the compact plan keeps each measurement’s own action, sample size, timeframe and proof identity',async()=>{
  const planStages=[];
  const providers={managedBudgetVersion:19,manager:async(stage,input,schema,options)=>{

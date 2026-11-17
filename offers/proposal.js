@@ -74,6 +74,10 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    for(const section of data.bhs.bhsSections){
     add('h3',section.title,grouped);
     if(!section.complete)add('p',english?'This section has findings still to verify.':'Bu bölümde doğrulanacak bulgu eksiği var.',grouped);
+    if(section.missingQuadrants?.length){
+     const missing=section.missingQuadrants.map(q=>quadrants[q]?.[english?1:0]).filter(Boolean);
+     if(missing.length)add('p',(english?'SWOT areas awaiting evidence · ':'Kanıt bekleyen SWOT kolları · ')+missing.join(', '),grouped);
+    }
     const list=add('ol','',grouped);
     for(const id of section.findingIds){
      const f=byId.get(id);if(!f)continue;
