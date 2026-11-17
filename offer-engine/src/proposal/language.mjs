@@ -27,12 +27,19 @@ export function presentationSlots(doc){
  return slots;
 }
 const numbers=text=>(text.match(/[-+−]?\d+(?:[.,]\d+)*/g)||[]).sort().join('|');
+const closingAngles=text=>(text.match(/>/g)||[]).length;
 export function translationContract(texts){
  return {type:'object',additionalProperties:false,required:['translations'],properties:{translations:{type:'array',minItems:texts.length,maxItems:texts.length,items:{type:'string',minLength:1,maxLength:12000}}}};
 }
 export function validateTranslations(value,texts){
  if(!value||Object.keys(value).join(',')!=='translations'||!Array.isArray(value.translations)||value.translations.length!==texts.length)throw Error('Çeviri alanları eksik.');
- value.translations.forEach((text,i)=>{if(typeof text!=='string'||!text.trim()||text.length>12000||/[<>]/.test(text)||numbers(text)!==numbers(texts[i]))throw Error('Çeviride içerik veya sayılar değişti.');});
+ value.translations.forEach((text,i)=>{
+  // Source excerpts can contain literal navigation separators, e.g. "Home > Category".
+  // Block markup openings and any added or removed closing-angle characters.
+  if(typeof text!=='string'||!text.trim()||text.length>12000||text.includes('<')||
+     closingAngles(text)!==closingAngles(texts[i])||numbers(text)!==numbers(texts[i]))
+   throw Error('Çeviride içerik veya sayılar değişti.');
+ });
  return value;
 }
 export async function localizeProposal(document,language,{providers}={}){
