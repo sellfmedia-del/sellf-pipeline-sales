@@ -10,9 +10,9 @@ export async function mountServicePicker(container,{getSegment,onChange=()=>{},i
  for(const key of groups){
   const project=key==='projects',title=project?'Tek seferlik projeler':'Aylık hizmetler · Retainer';
   const group=add('fieldset','',container,'ob-service-group');group.dataset.costGroup=key;add('legend',title,group);
-  const trigger=button('',group,()=>open(),'ob-service-trigger');trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');
+  const trigger=button('',group,open,'ob-service-trigger');trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');
   const selected=add('div','',group,'ob-service-selected');
-  const menu=add('div','',group,'ob-service-menu');menu.setAttribute('popover','auto');menu.setAttribute('role','dialog');menu.setAttribute('aria-label',project?'Proje kalemlerini seç':'Aylık maliyet kalemlerini seç');
+  const menu=add('div','',group,'ob-service-menu');menu.setAttribute('popover','auto');menu.setAttribute('role','dialog');menu.setAttribute('aria-label',project?'Proje kalemlerini seç':'Aylık maliyet kalemlerini seç');menu.tabIndex=-1;
   const native=typeof menu.showPopover==='function';if(!native)menu.hidden=true;
   const header=add('div','',menu,'ob-service-menu-header');add('strong',title,header);button('Tamam',header,()=>hide(true),'ob-monthly-button');
   const search=add('input','',menu,'ob-service-search');search.type='search';search.placeholder='Kalem adıyla ara…';search.setAttribute('aria-label',project?'Projelerde ara':'Aylık maliyetlerde ara');
@@ -28,14 +28,31 @@ export async function mountServicePicker(container,{getSegment,onChange=()=>{},i
   }
   search.addEventListener('input',()=>{const terms=normalize(search.value).split(/\s+/).filter(Boolean);let count=0;for(const {label,service}of checks.values()){const text=normalize(service.name+' '+service.id);label.hidden=!terms.every(term=>text.includes(term));if(!label.hidden)count++;}empty.hidden=count>0;});
   function position(){
-   const rect=trigger.getBoundingClientRect(),height=window.visualViewport?.height||window.innerHeight,width=Math.min(520,window.innerWidth-24),maxHeight=Math.min(460,height-24);
-   Object.assign(menu.style,{width:width+'px',maxHeight:maxHeight+'px',left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px',top:(rect.bottom+8+maxHeight<=height?rect.bottom+8:Math.max(12,Math.min(rect.top-maxHeight-8,height-maxHeight-12)))+'px'});
+   const rect=trigger.getBoundingClientRect(),viewport=window.visualViewport;
+   const {offsetLeft=0,offsetTop=0,width:visibleWidth=window.innerWidth,height:visibleHeight=window.innerHeight}=viewport??{};
+   const width=Math.min(520,Math.max(0,visibleWidth-24)),maxHeight=Math.min(460,Math.max(0,visibleHeight-24));
+   const right=offsetLeft+visibleWidth,bottom=offsetTop+visibleHeight;
+   const left=Math.max(offsetLeft+12,Math.min(rect.left,right-width-12));
+   const preferredTop=rect.bottom+8+maxHeight<=bottom-12?rect.bottom+8:rect.top-maxHeight-8;
+   const top=Math.max(offsetTop+12,Math.min(preferredTop,bottom-maxHeight-12));
+   Object.assign(menu.style,{width:width+'px',maxHeight:maxHeight+'px',left:left+'px',top:top+'px'});
+   menu.toggleAttribute('data-compact-viewport',maxHeight<220);
   }
-  function stopPosition(){window.removeEventListener('resize',position);window.visualViewport?.removeEventListener('resize',position);}
+  function stopPosition(){
+   window.removeEventListener('resize',position);
+   window.visualViewport?.removeEventListener('resize',position);
+   window.visualViewport?.removeEventListener('scroll',position);
+  }
   function hide(focus=false){stopPosition();if(native){if(menu.matches(':popover-open'))menu.hidePopover();}else{menu.hidden=true;delete menu.dataset.fallbackOpen;}trigger.setAttribute('aria-expanded','false');if(focus&&trigger.isConnected)trigger.focus({preventScroll:true});}
-  function open(){
+  function open(event){
    if(native&&menu.matches(':popover-open')||!native&&!menu.hidden){hide();return;}
-   position();if(native)menu.showPopover();else{menu.hidden=false;menu.dataset.fallbackOpen='true';}trigger.setAttribute('aria-expanded','true');search.focus({preventScroll:true});window.addEventListener('resize',position);window.visualViewport?.addEventListener('resize',position);
+   position();if(native)menu.showPopover();else{menu.hidden=false;menu.dataset.fallbackOpen='true';}
+   trigger.setAttribute('aria-expanded','true');
+   window.addEventListener('resize',position);
+   window.visualViewport?.addEventListener('resize',position);
+   window.visualViewport?.addEventListener('scroll',position);
+   const touch=event.pointerType==='touch'||event.pointerType==='pen'||(!event.pointerType&&window.matchMedia('(pointer: coarse)').matches);
+   (touch?menu:search).focus({preventScroll:true});
   }
   menu.addEventListener('toggle',e=>{trigger.setAttribute('aria-expanded',String(e.newState==='open'));if(e.newState==='closed')stopPosition();});
   menu.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();hide(true);}});

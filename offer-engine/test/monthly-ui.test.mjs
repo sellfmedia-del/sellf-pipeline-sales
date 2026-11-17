@@ -7,8 +7,8 @@ import chromium from '@sparticuz/chromium';
 import {chooseCost} from './helpers/cost-picker.mjs';
 const launch=()=>playwright.launch({args:chromium.args.filter(a=>!['--disable-web-security','--single-process'].includes(a)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
 const screenshotDir=path.resolve('../qa/all-costs');
-async function setup(browser,width,currency='TRY'){
- const page=await browser.newPage({viewport:{width,height:960}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+async function setup(browser,width,currency='TRY',{height=960,hasTouch=false}={}){
+ const page=await browser.newPage({viewport:{width,height},hasTouch}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'),'no real API calls in synthetic preview');try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.json':'application/json','.png':'image/png'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:'Missing review file'});}});
  await page.goto('https://preview.vercel.app/offers/monthly-review.html');await page.waitForFunction(()=>window.monthlyReviewReady===true);
  page.setDefaultTimeout(10000);
@@ -28,6 +28,7 @@ test('desktop/mobile: all sheet rows in compact searchable popups; independent c
   assert.equal(await page.locator('.ob-standard-editor .ob-service-trigger').count(),3);assert.equal(await page.locator('.ob-standard-editor .ob-service-menu:visible').count(),0);assert.ok(await page.locator('.ob-standard-editor').evaluate(el=>el.getBoundingClientRect().height)<570);
   await page.locator('.ob-price').click();await page.locator('.ob-monthly-error').filter({hasText:'En az bir hizmet veya proje seç'}).waitFor();assert.equal(await page.locator('.ob-pricing').isVisible(),false);
   const group=page.locator(growth).locator('[data-cost-group=services]');await group.locator('.ob-service-trigger').click();assert.equal(await group.locator('input[type=checkbox]').count(),28);
+  assert.equal(await group.locator('.ob-service-search').evaluate(el=>el===document.activeElement),true);
   await group.locator('.ob-service-search').fill('GROWTH');assert.equal(await group.locator('.ob-service-check:visible').count(),3);await group.locator('input[value=growth_initial]').check();
   const menu=group.locator('.ob-service-menu');assert.ok(await menu.evaluate(el=>el.scrollWidth<=el.clientWidth+1));assert.ok(await menu.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;}));
   await menu.screenshot({path:path.join(screenshotDir,'popup-'+width+'.png')});if(width===390){await page.setViewportSize({width,height:620});await page.waitForFunction(()=>{const el=document.querySelector('.ob-service-menu:popover-open');if(!el)return false;const r=el.getBoundingClientRect();return r.bottom<=innerHeight&&r.top>=0;});await page.setViewportSize({width,height:960});}await group.locator('.ob-service-search').fill('account manager');assert.equal(await group.locator('.ob-service-check:visible').count(),1);await group.locator('.ob-service-search').press('Escape');assert.equal(await menu.isVisible(),false);assert.equal(await page.locator('#offer-brief-dialog').isVisible(),true);
@@ -53,6 +54,61 @@ test('desktop/mobile: monthly includes all 36 rows, only selected team/account/p
   const rows=await page.locator('.so-monthly-table tbody tr').allTextContents();assert.match(rows[0],/Growth/);assert.ok(!rows[1].includes('Growth'));assert.ok(!rows[1].includes('Account'));assert.equal(await page.locator('.so-monthly-table tbody tr').nth(1).locator('.so-project-amount').textContent(),'—');
   assert.equal(await page.locator('.ob-proposal').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await page.locator('.so-monthly-options').screenshot({path:path.join(screenshotDir,'monthly-'+width+'.png')});await save(page);await page.locator('.ob-close').click();await page.locator('.offer-view').click();await page.locator('.so-monthly-table tbody tr').nth(1).waitFor();assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
+});
+
+test('tablet touch: monthly services and projects stay selectable with and without the software keyboard',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await launch();
+ try{
+  const {page,errors}=await setup(browser,1180,'TRY',{height:780,hasTouch:true});
+  await page.locator('.ob-monthly-toggle').tap();
+  const month=page.locator('[data-month="1"]');
+  const services=month.locator('[data-cost-group=services]');
+  await services.locator('.ob-service-trigger').tap();
+  const menu=services.locator('.ob-service-menu');
+  const search=services.locator('.ob-service-search');
+  assert.equal(await menu.evaluate(el=>el===document.activeElement),true);
+  await services.locator('input[value=account]').tap();
+  assert.equal(await services.locator('[data-service-id=account].ob-service-row').count(),1);
+  await search.tap();
+  assert.equal(await search.evaluate(el=>el===document.activeElement),true);
+
+  await page.evaluate(()=>{
+   Object.defineProperty(visualViewport,'height',{configurable:true,value:152});
+   visualViewport.dispatchEvent(new Event('resize'));
+   Object.defineProperty(visualViewport,'offsetTop',{configurable:true,value:60});
+   visualViewport.dispatchEvent(new Event('scroll'));
+  });
+  assert.equal(await menu.evaluate(el=>{
+   const bounds=el.getBoundingClientRect();
+   return bounds.top>=visualViewport.offsetTop&&bounds.bottom<=visualViewport.offsetTop+visualViewport.height&&el.scrollHeight>el.clientHeight;
+  }),true);
+  const list=services.locator('.ob-service-options');
+  assert.ok(await list.evaluate(el=>el.clientHeight>320));
+  await search.fill('GROWTH');
+  assert.equal(await services.locator('.ob-service-check:visible').count(),3);
+  await services.locator('input[value=growth_initial]').tap();
+  assert.equal(await services.locator('[data-service-id=growth_initial].ob-service-row').count(),1);
+  await menu.getByRole('button',{name:'Tamam',exact:true}).tap();
+  assert.equal(await menu.isVisible(),false);
+
+  await page.evaluate(()=>{
+   delete visualViewport.height;
+   delete visualViewport.offsetTop;
+   visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await page.setViewportSize({width:820,height:1080});
+  const projects=month.locator('[data-cost-group=projects]');
+  await projects.locator('.ob-service-trigger').tap();
+  assert.equal(await projects.locator('.ob-service-menu').evaluate(el=>el===document.activeElement),true);
+  await projects.locator('input[value=project_brandbook]').tap();
+  await projects.getByRole('button',{name:'Tamam',exact:true}).tap();
+  assert.equal(await projects.locator('[data-service-id=project_brandbook].ob-service-row').count(),1);
+  await compose(page);
+  const result=await page.evaluate(()=>reviewCalls.find(c=>c.pricingMode==='monthly').monthlyPlan.months[0]);
+  assert.deepEqual(result.services.map(item=>item.serviceId),['account','growth_initial']);
+  assert.deepEqual(result.projects.map(item=>item.serviceId),['project_brandbook']);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
 });
 
 test('desktop/mobile: first alternative copy is explicit, custom costs remain editable, and no-cost alternatives cannot be selected as free offers',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
