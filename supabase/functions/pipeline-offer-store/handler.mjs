@@ -45,6 +45,16 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
     const who=await user(body.jwt);if(body.leadId)await teamLead(body.leadId);
     return reply({ownerId:who.id});
    }
+   if(action==='draft_budget'){
+    const who=await user(body.jwt);
+    if(!/^[A-Za-z0-9_-]{1,100}$/.test(body.leadId||'')||!/^[a-f0-9]{64}$/.test(body.scope||'')||
+       !['begin','status','get','reserve','complete','uncertain'].includes(body.op)||
+       body.step!==undefined&&!/^model:proposal_translation:[a-f0-9]{64}$/.test(body.step)||
+       body.hash!==undefined&&!/^[a-f0-9]{64}$/.test(body.hash)||
+       body.token!==undefined&&!uuid.test(body.token)||
+       body.amount!==undefined&&(!Number.isSafeInteger(body.amount)||body.amount<0||body.amount>4500))throw Error('Taslak bütçesi bilgileri geçersiz.');
+    return reply(await db('/rest/v1/rpc/pipeline_offer_draft_budget_op',{method:'POST',body:{p_owner:who.id,p_lead:body.leadId,p_scope:body.scope,p_op:body.op,p_step:body.step??null,p_hash:body.hash??null,p_amount:body.amount??0,p_token:body.token??null,p_value:body.value??null}}));
+   }
    if(action==='budget'){
     const who=await user(body.jwt);await teamLead(body.leadId);
     if(!['begin','status','get','reserve','complete','uncertain'].includes(body.op)||!text(body.leadId,100)||

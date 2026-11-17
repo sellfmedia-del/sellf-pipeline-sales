@@ -19,7 +19,7 @@ export async function teamDatabase(){
  // Exact deployed definitions, including the additional budget worker.
  await db.exec(await schema('shared-team-offers-rollback.sql'));
  await db.query('insert into pipeline_offer_gateway_config(key_hash) values($1)',[createHash('sha256').update(gatewayKey).digest('hex')]);
- const rpcNames=new Set(['save_pipeline_offer_production','save_pipeline_offer_variant','publish_pipeline_offer_link','update_pipeline_offer_prices','pipeline_offer_production_budget_op','pipeline_offer_additional_budget_op']);
+ const rpcNames=new Set(['save_pipeline_offer_production','save_pipeline_offer_variant','publish_pipeline_offer_link','update_pipeline_offer_prices','pipeline_offer_production_budget_op','pipeline_offer_additional_budget_op','pipeline_offer_draft_budget_op']);
  async function rpc(name,args){
   if(!rpcNames.has(name))throw Error('Unexpected RPC');
   const entries=Object.entries(args);if(entries.some(([k])=>!/^p_[a-z_]+$/.test(k)))throw Error('Invalid test argument');

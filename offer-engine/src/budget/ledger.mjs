@@ -50,6 +50,14 @@ export async function budgetFor(req,res,leadId,{store=runtimeStore(),secret=proc
  const call=(op,args={})=>store.call('budget',{jwt:session.accessToken,leadId,...(researchRunId?{researchRunId}:{}),op,...args});
  return createLedger(call);
 }
+export const draftBudgetCapKurus=1000;
+export async function draftBudgetFor(req,res,leadId,{scope,store=runtimeStore(),secret=process.env.OFFER_PORTAL_SECRET}={}){
+ if(typeof leadId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(leadId)||!/^[a-f0-9]{64}$/.test(scope||''))
+  throw new BudgetError('budget_context','Teklif taslağının bütçe bilgisi geçersiz.');
+ const accessToken=productionOffers()?bearer(req):(await sessionFor(req,res,store,secret))?.accessToken;
+ if(!accessToken)throw new BudgetError('budget_session','Pipeline oturumu gerekli.');
+ return createLedger((op,args={})=>store.call('draft_budget',{jwt:accessToken,leadId,scope,op,...args}));
+}
 export function createLedger(call,{reuseCompleted=false}={}){
  const observed=new Map();
  let claims=Promise.resolve();
