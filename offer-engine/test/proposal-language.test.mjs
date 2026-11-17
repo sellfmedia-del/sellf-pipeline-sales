@@ -73,17 +73,25 @@ test('English contract email uses the saved quote and localised labels without c
  }
 });
 
-test('a fully used BHS budget can produce an English draft, and PostgreSQL caps separate draft reservations at 10 TL',async()=>{
- const {db,rpc,gateway}=await teamDatabase();
+test('a registered teammate with a fully used BHS budget can produce an English draft, and PostgreSQL caps separate draft reservations at 10 TL',async()=>{
+ const {db,rpc,gateway,apply}=await teamDatabase();
  try{
   await db.exec(await readFile(new URL('../../supabase/migrations/20261117150000_independent_offer_draft_budget.sql',import.meta.url),'utf8'));
-  const research=(p_op,extra={})=>rpc('pipeline_offer_production_budget_op',{p_owner:users[0],p_lead:'lead-1',p_op,...extra});
+  await apply();
+  const scope='a'.repeat(64);
+  const draftRequest=(op,args={})=>gateway(new Request('https://fixture.example',{
+   method:'POST',headers:{'x-offer-store-key':gatewayKey},
+   body:JSON.stringify({action:'draft_budget',jwt:tokens[1],leadId:'lead-1',scope,op,...args})
+  }));
+  assert.equal((await draftRequest('begin')).status,422);
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261117163000_offer_draft_team_access.sql',import.meta.url),'utf8'));
+  await assert.rejects(rpc('pipeline_offer_draft_budget_op',{
+   p_owner:randomUUID(),p_lead:'lead-1',p_scope:scope,p_op:'begin'
+  }),/team lead required/);
+  const research=(p_op,extra={})=>rpc('pipeline_offer_production_budget_op',{p_owner:users[1],p_lead:'lead-1',p_op,...extra});
   await research('begin');
   await research('reserve',{p_step:'research:test',p_hash:'f'.repeat(64),p_token:randomUUID(),p_amount:4500});
-  const scope='a'.repeat(64),draft=(op,args={})=>gateway(new Request('https://fixture.example',{
-   method:'POST',headers:{'x-offer-store-key':gatewayKey},
-   body:JSON.stringify({action:'draft_budget',jwt:tokens[0],leadId:'lead-1',scope,op,...args})
-  })).then(async response=>{assert.equal(response.status,200);return response.json();});
+  const draft=(op,args={})=>draftRequest(op,args).then(async response=>{assert.equal(response.status,200);return response.json();});
   const ledger=createLedger(draft);
   assert.deepEqual(await ledger.begin(),{chargedKurus:0,capKurus:1000});
   const f=await fixture(),original=(await proposalEngine.run({brief:f.brief},f)).data;
