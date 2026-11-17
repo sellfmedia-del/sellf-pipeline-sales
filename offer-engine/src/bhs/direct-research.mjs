@@ -32,16 +32,24 @@ export const stageKey=(brief,phase,version='v4',checkpointHash=hash(brief))=>'au
 const scopedRoundKey=(checkpointHash,index)=>'audit:scoped-round:'+checkpointHash+':'+index;
 export async function scopedResearchProgress(ledger,checkpointHash,{guarded=false,skipReserved=false,before=Infinity}={}){
  const rounds=[];
+ let previousFailure;
  for(let index=0;index<before;index++){
   const step=await ledger.get(scopedRoundKey(checkpointHash,index));
   if(step?.state!=='complete'){
    if(guarded&&(step?.state==='uncertain'||step?.state==='reserved'&&
     (typeof skipReserved==='function'?skipReserved(step):skipReserved))){
+    const failure=step.state==='uncertain'&&step.charge_kurus===0?step.value?.scopedFailureFingerprint:undefined;
+    if(failure&&failure===previousFailure){
+     rounds.push({issue:'research_round_interrupted',closed:true,stopReason:'research_engine_failure'});
+     return {rounds,index,done:true};
+    }
+    previousFailure=failure;
     rounds.push({issue:'research_round_interrupted'});
     continue;
    }
    return {rounds,index,done:!guarded&&Boolean(step),step};
   }
+  previousFailure=undefined;
   rounds.push(step.value);
   if(scopedResearchClosed(step.value,guarded))return {rounds,index,done:true};
  }
@@ -57,7 +65,8 @@ export function seedQueries(brief){const brand='"'+brief.brandName.replace(/"/g,
  `${brand} Similarweb Semrush Ahrefs traffic authority social followers engagement`,
  `${brand} website PageSpeed SEO Meta Ad Library advertising content`
  ].map(q=>q.slice(0,500));}
-const collector=()=>createEvidenceCollector({timeout:75000,onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))});
+const collector=({allowPartialPlan=false}={})=>createEvidenceCollector({allowPartialPlan,timeout:75000,
+ onDiagnostic:value=>console.info(JSON.stringify({event:'bhs_evidence_read',...value}))});
 function legacyFollowupQueries(brief,plan){
  const peers=plan.entities.filter(e=>e.role==='competitor').slice(0,5);
  const peerQueries=peers.map(e=>`${e.name} ${researchHost(e.website)?'site:'+researchHost(e.website)+' ':''}products prices subscription reviews social followers revenue growth`);
@@ -106,7 +115,7 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
    }));
    return receipts.get(name);
   };
-  if(scopedRoundIndex!==undefined)return continueScopedCollection({brief,providers,previous,collect:collect||collector()});
+  if(scopedRoundIndex!==undefined)return continueScopedCollection({brief,providers,previous,collect:collect||collector({allowPartialPlan:true})});
   if(skipManagedCollection){
    const prior=await previous(sequentialPhases[sequentialPhases.indexOf(phase)-1]);
    return {collectionFirst:true,phase,decision:'accepted',methodologyVersion:prior.methodologyVersion,

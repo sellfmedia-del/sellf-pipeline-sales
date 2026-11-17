@@ -7,7 +7,7 @@ import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
 import {marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
-import {salesGapStatus,salesMetricName,salesSectionTitle} from './sales-research-labels.mjs';
+import {salesGapLabels,salesGapStatus,salesMetricName,salesSectionTitle,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -17,6 +17,8 @@ export const managedSections=Object.freeze({
 });
 const sectionKeys=Object.keys(managedSections);
 const quadrants=['strength','weakness','opportunity','threat'];
+const isSwotSection=id=>/^swot\b/iu.test(id||'');
+const reportHeadings=new Map(dimensions.flatMap(d=>[d.id,d.name,salesSectionTitle(d.id)].map(title=>[customerQuoteKey(title),d.id])));
 const areas=new Map(methodologyAreas.map(a=>[a.key,a]));
 const list=value=>Array.isArray(value)?value:[];
 const unique=value=>[...new Set(value)];
@@ -72,18 +74,29 @@ export function managedCoverage(report){
  });
 }
 
-export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false){
+export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false,includeSwot=false,taskReporting=false){
  const peers=new Set((report.competitors||[]).map(peer=>peer.id));
- const ids=unique([...report.findings.map(f=>f.bhsSection).filter(Boolean),...metrics.filter(m=>linked||m.status==='open').map(m=>m.section||m.name)]);
+ const swotId=metrics.find(m=>isSwotSection(m.section))?.section||report.findings.find(f=>isSwotSection(f.bhsSection))?.bhsSection||'swot';
+ const sectionId=id=>includeSwot&&isSwotSection(id)?swotId:id;
+ const isOpen=(metric,findings)=>metric.status==='open'||linked&&!findings.some(f=>f.sourceIds.length&&!f.researchEvidenceOnly&&
+  f.researchNeedIds?.includes(metric.id)&&(!metric.requiresPeer||peers.has(f.peerId)));
+ const openMetrics=taskReporting?metrics.filter(m=>isOpen(m,report.findings)):null;
+ const ids=unique([...report.findings.map(f=>sectionId(f.bhsSection)).filter(Boolean),
+  ...(openMetrics||metrics.filter(m=>linked||m.status==='open')).map(m=>sectionId(m.section||m.name)),...(includeSwot?[swotId]:[])]);
  return ids.map(id=>{
-  const findings=report.findings.filter(f=>f.bhsSection===id&&f.sourceIds.length)
+  const findings=report.findings.filter(f=>sectionId(f.bhsSection)===id&&f.sourceIds.length)
    .sort((a,b)=>a.bhsRank-b.bhsRank);
-  const relevant=metrics.filter(m=>(m.section||m.name)===id);
-  const openNeeds=relevant.filter(m=>m.status==='open'||linked&&!findings.some(f=>!f.researchEvidenceOnly&&f.researchNeedIds?.includes(m.id)&&(!m.requiresPeer||peers.has(f.peerId))));
-  const title=salesSectionTitle(id,findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id));
-  return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants:[],complete:!openNeeds.length,
-   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(metric=>({name:metric.displayName||salesMetricName(metric),
-    status:salesGapStatus(metric)}))}:{})};
+  const relevant=metrics.filter(m=>sectionId(m.section||m.name)===id);
+  const openNeeds=taskReporting?openMetrics.filter(m=>sectionId(m.section||m.name)===id):relevant.filter(m=>isOpen(m,findings));
+  const title=taskReporting&&openNeeds.length?salesTaskSectionTitle(id,openNeeds[0].sectionTitle,openNeeds[0].displayName||salesMetricName(openNeeds[0])):
+   salesSectionTitle(id,findings[0]?.bhsSectionTitle||(Object.hasOwn(managedSections,id)?managedSections[id]:id));
+  const missingQuadrants=includeSwot&&id===swotId?quadrants.filter(q=>!findings.some(f=>f.swotQuadrant===q)):[];
+  return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants,complete:!openNeeds.length&&!missingQuadrants.length,
+   ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(metric=>{
+    const status=salesGapStatus(metric);
+    return {name:metric.displayName||salesMetricName(metric),status,
+     ...(taskReporting?{id:metric.id,...(salesGapLabels[status]?{statusLabel:salesGapLabels[status]}:{})}:{})};
+   })}:{})};
  });
 }
 
@@ -157,7 +170,7 @@ export function managedReportInput({brief,brand,plan,context,inventory,sections=
  return {input,reverse:new Map([...aliases].map(([id,alias])=>[alias,id]))};
 }
 
-export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason,verifiedPeers}){
+export async function synthesizeScopedReport({providers,context,input,reverse,coverage,needs,approved,sections,stopReason,verifiedPeers,savedPartsOnly=false}){
  const adaptive=input.plan.adaptiveResearch===true;
  const linked=input.plan.qualityReport===true;
  const targeted=input.plan.targetedEvidence===true;
@@ -170,11 +183,15 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (linked?' Bulgunun karşılık geldiği gerçek ihtiyaç kimliklerini needIds alanına yaz. Araştırma dışı bulgular için boş liste ver. Doğrulanan rakiplerin entities içindeki kimliğini kullan ve kendi sitelerinden okunan kanıtla ilişkilendir. Trafik tahminini tahmin olarak yaz. Toplam ziyaret, oturum ve doğrudan kanal birbirinden farklıdır. Kanıt yalnız toplam ziyaret veriyorsa aksiyonda veya ölçümde o sayıyı oturuma ya da bir kanala bağlama. JSON içinde önce bulguları ver ve her alanı öz tut.':'')+
   (targeted?' sources satırı [belgeKimliği, alıntı], documents satırı [URL, başlık, okuma yöntemi] biçiminde. Proof için alıntının sources kimliğini kullan. Her bulguda tek ölçüm veya tek somut olgu ver. Tabloda sayı, birim, yıl ve kategori aynı kanıtla desteklenmeli. Farklı platformları, tarihleri, tahminleri ve gerçekleşen ölçümleri ayrı tut. Kanıtı hazır ama ölçümü kısmi olan bir ihtiyaçta doğrulanan kısmı kendi bulgusu olarak yaz. En önemli kararları ve açık soruları önce ver.':'')+
   (input.plan.verifiedResults?' Araştırmada doğrulanan rakipler ve ölçümler korunur. Bunları brief açısından analiz et ve hangi aksiyonu desteklediklerini yaz. Sayısal pazar bulgusunda coverage.marketMeasures içindeki doğrulanmış tutarı, birimi, yılı ve kategori ifadesini aynen ve aynı kaynağa bağlı kullan.':'')+
+  (input.plan.readEvidenceOnly?' Araştırma ihtiyacına bağlı bulguda coverage.sources içindeki okunmuş kanıtı kullan. Fiyat, doz, mevzuat, pazar, rakip ve sosyal ölçüm için ilgili ürün veya hesap, coğrafya, veri dönemi ve birimi kanıtın izin verdiği kapsamda açıkça yaz. Yayın veya erişim tarihini veri dönemi yerine koyma. Kanıt yalnız örneklem veriyorsa ölçümü o örneklemle sınırla. Rakip adayını kesin rakip olarak kullanma.':'')+
+  (input.plan.taskReporting?' Önemli, doğrulanmış ve brief hedefini etkileyen bulguları, araştırma görevinin başlığına veya hazır BHS başlıklarına birebir sığmasa da rapora al. section alanına bulgunun raporda en iyi anlaşılacağı başlığı yaz. Örneğin kullanıcıyı satış noktasına yönlendiren, mevzuattan da etkilenen bir eczane bulucu, etkisi operasyonelse Operasyonel verimlilik altında yer alabilir. Görevin needIds ve proof bağlantılarını aynen koru.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+ if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
   request.plan={understanding:input.plan.understanding,briefUnderstanding:input.plan.briefUnderstanding};
-  request.needs=needs.map(({id,section,target,market,period})=>({id,section,target,market,period}));
+  request.needs=needs.map(({id,section,sectionTitle,target,market,period,metric,expected})=>({id,section,target,market,period,
+   ...(input.plan.sectionedSynthesis?{metric,expected}:{}),...(input.plan.taskReporting?{sectionTitle}:{})}));
  }
  if(targeted){
   const documents=new Map();
@@ -187,8 +204,9 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  }
  const needsById=new Map(needs.map(need=>[need.id,need]));
  const marketCoverage=input.plan.verifiedResults?coverage.filter(m=>m.marketMeasures):undefined;
+ const metricCoverage=input.plan.readEvidenceOnly?new Map(coverage.map(metric=>[metric.id,metric.sources])):undefined;
  const signal=AbortSignal.timeout(110000);
- const normalizeData=data=>Object.fromEntries(Object.entries(outputSchema.properties).map(([key,field])=>{
+ const normalizeData=(data,sources=request.sources,contract=outputSchema)=>Object.fromEntries(Object.entries(contract.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
    let value=row;
    if(key==='findings'&&row&&typeof row==='object')value=Object.fromEntries(Object.entries(field.items.properties).map(([name,rule])=>{
@@ -197,15 +215,17 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
     if(name==='kind'&&v==null)return [name,'inference'];
     if(name==='quadrant'&&v==null&&(adaptive||row.section!=='swot'))return [name,'none'];
     if(name==='needIds')return [name,unique(list(v).filter(id=>needsById.has(id))).slice(0,rule.maxItems)];
-    if(name==='proof'&&Array.isArray(v))return [name,unique(v.filter(id=>Object.hasOwn(request.sources,id))).slice(0,rule.maxItems)];
+    if(name==='proof'&&Array.isArray(v))return [name,unique(v.filter(id=>Object.hasOwn(sources,id))).slice(0,rule.maxItems)];
     return [name,typeof v==='string'&&rule.maxLength?v.trim().slice(0,rule.maxLength).toWellFormed():v];
    }));
    try{assertSchema(value,field.items);return [value];}catch{return [];}
   });
   return [key,rows.slice(0,field.maxItems)];
  }));
+ const swotId=input.plan.sectionedSynthesis?(coverage.find(m=>isSwotSection(m.section))?.section||sections?.find(isSwotSection)||'swot'):undefined;
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage});
+  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,swotId,taskReporting:input.plan.taskReporting});
+ if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
@@ -221,6 +241,102 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
   return {reportIssue:issue,reportDiagnostic:error.budgetDiagnostic||error.validationDetail};
  }
+}
+
+function scopedPartRequests(request,coverage,sections){
+ const eligible=sections?coverage.filter(m=>sections.includes(m.section)):coverage;
+ const topics=eligible.filter(m=>!isSwotSection(m.section));
+ const assigned=new Set(coverage.flatMap(m=>m.sources));
+ const unassigned=Object.keys(request.sources).filter(id=>!assigned.has(id));
+ const brandHost=researchHost(request.brief.website);
+ const brandProofs=Object.entries(request.sources).filter(([,row])=>
+  researchHost(request.documents?.[row[0]]?.[0]||row[0])===brandHost).map(([id])=>id).slice(0,4);
+ const split=topics.length>5||new Set([...topics.flatMap(m=>m.sources),...unassigned]).size>18;
+ const middle=Math.ceil(topics.length/2);
+ const groups=split?[topics.slice(0,middle),topics.slice(middle)]:[topics];
+ const parts=groups.map((metrics,index)=>({stage:index===0?'brief':'topics',metrics,
+  aliases:unique([...metrics.flatMap(m=>m.sources),...unassigned.filter((_,i)=>i%groups.length===index),...brandProofs])}));
+ if(!sections||sections.some(isSwotSection)){
+  const metrics=eligible.filter(m=>isSwotSection(m.section));
+  const support=coverage.filter(m=>!isSwotSection(m.section));
+  parts.splice(1,0,{stage:'swot',metrics:[...metrics,...support],
+   aliases:unique([...metrics.flatMap(m=>m.sources),...brandProofs,...support.flatMap(m=>m.sources.slice(0,2)),...unassigned.slice(0,8)])});
+ }
+ return parts.filter(part=>part.aliases.length||part.stage==='brief'&&part.metrics.length);
+}
+
+async function writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly}){
+ const parts=scopedPartRequests(request,coverage,sections);
+ const data={findings:[],benchmarks:[],questions:[]};
+ const completions=[];
+ const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
+ let reportIssue,reportDiagnostic;
+ for(const [index,part] of parts.entries()){
+  const swot=part.stage==='swot';
+  const sources=Object.fromEntries(part.aliases.map(id=>[id,request.sources[id]]).filter(([,value])=>value));
+  const docIds=new Set(Object.values(sources).map(row=>row[0]));
+  const needIds=new Set(part.metrics.map(m=>m.id));
+  const prior=project(data).findings.map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null]);
+  const partRequest={...request,sources,
+   ...(request.documents?{documents:Object.fromEntries(Object.entries(request.documents).filter(([id])=>docIds.has(id)))}:{}),
+   ...(request.brandProofs?{brandProofs:request.brandProofs.filter(id=>Object.hasOwn(sources,id))}:{}),
+   entities:request.entities.map(([id,role,name,url,proofs])=>[id,role,name,url,proofs.filter(proof=>Object.hasOwn(sources,proof))]),
+   needs:request.needs.filter(n=>needIds.has(n.id)),
+   coverage:part.metrics.map(m=>({...m,sources:m.sources.filter(id=>Object.hasOwn(sources,id)),
+    ...(m.marketMeasures?{marketMeasures:m.marketMeasures.map(row=>({...row,sources:row.sources.filter(id=>Object.hasOwn(sources,id))})).filter(row=>row.sources.length)}:{})})),
+   scope:swot?{section:swotId,quadrants}:unique(part.metrics.map(m=>m.section)),existing:[...request.existing,...prior]};
+  partRequest.instruction+=' Yalnız bu yazım parçasını tamamla. Önce karar açısından en önemli bulguları eksiksiz yaz. Her bulguda gözlem, brief açısından neden önemli olduğu, uygulanabilir aksiyon ve ölçüm yöntemini birer kısa cümleyle tamamla. Tek bir kapalı JSON nesnesi ver. existing içindeki önceki tespitleri tekrarlama.';
+  partRequest.instruction+=swot?
+   ' Bu parça SWOT. Dört kolu ayrı ayrı değerlendir. Güçlü ve zayıf yönler markanın kaynakla görülen iç koşullarına, fırsat ve tehdit hedef pazardaki dış koşullara dayanır. Eksik kaynaktan zayıflık çıkarma. Kanıtı olmayan kol için bulgu üretme; toplantıda bakılacak somut bir soru yaz.':
+   ' Briefte geçen özgün hedefi, iş modelini ve varsa satış sürecini koru. Örneğin brief bunu gerektiriyorsa bayi satış takibinde veri kaynağı, bayi kimliği, satış dönemi ve ölçülecek çıktıyı; başvuru → teklif → sipariş akışında her aşama geçişini, gereken olay verisini ve ölçülecek dönüşümü ayrı ele al. Bunlar bu briefte yoksa kendi akışını kullan. İç verisi bulunmayan aşamayı olmuş bir teşhis gibi yazma; eksik kaydı ve toplantıda hangi geçişin nasıl doğrulanacağını sor. SWOT bu parçanın dışında.';
+  const partRow=obj({...outputSchema.properties.findings.items.properties,observation:field(220),analysis:field(210),
+   action:field(175),measurement:str(140),limitation:str(120),question:str(160)});
+  const partSchema=obj({findings:arr(partRow,swot?6:7),
+   benchmarks:arr(outputSchema.properties.benchmarks.items,swot?0:4),questions:arr(outputSchema.properties.questions.items,8)});
+  const normalize=raw=>{
+   const checked=normalizeData(raw,sources);
+   const findings=checked.findings.filter(f=>f.proof.length&&
+    (swot?quadrants.includes(f.quadrant):f.quadrant==='none'&&!isSwotSection(f.section)));
+   const first=swot?quadrants.map(q=>findings.find(f=>f.quadrant===q)).filter(Boolean):[];
+   return normalizeData({findings:unique([...first,...findings]).map(f=>swot?{...f,section:swotId}:f),
+    benchmarks:checked.benchmarks.filter(b=>b.sourceIds.every(id=>Object.hasOwn(sources,id))),questions:checked.questions},sources,partSchema);
+  };
+  const stable=JSON.stringify(partRequest,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?
+   Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
+  const key={part:part.stage,requestHash:hash(stable)};
+  try{
+   const saved=await providers.readCheckpoint?.('scoped-report-part',key);
+   const generate=async()=>{
+    const response=await manager('bhs-scoped-report-'+part.stage,partRequest,partSchema,{
+     signal,compactReview:true,lowEffort:true,plainJson:true,maxOutputTokens:2600,minimumOutputTokens:1600,
+     reserveForFollowingKurus:(parts.length-index-1)*reportSectionReserveKurus,generationTimeoutMs:30000,
+     normalizeData:normalize,acceptPartialData:partial=>project(partial).findings.length>0
+    });
+    return {data:normalize(response.data),model:response.model??null,usage:response.usage??null,
+     ...(response.partialOutput?{partialOutput:true}:{}),...(response.providerHandoff?{providerHandoff:response.providerHandoff}:{})};
+   };
+   if(!saved&&savedPartsOnly)continue;
+   const written=saved||(providers.checkpoint?await providers.checkpoint('scoped-report-part',key,generate):await generate());
+   // Re-apply the same proof and scope gate when restoring a saved part.
+   const checked=normalize(written.data);
+   data.findings.push(...checked.findings);
+   data.benchmarks.push(...checked.benchmarks);
+   data.questions.push(...checked.questions);
+   completions.push(written);
+   if(written.partialOutput)reportIssue='partial_model_document';
+  }catch(error){
+   const issue=managedModelIssue(error,signal);
+   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
+   reportIssue??=issue;
+   reportDiagnostic??=error.budgetDiagnostic||error.validationDetail;
+  }
+ }
+ const exactBenchmarks=new Map(data.benchmarks.map(row=>[JSON.stringify(row),row]));
+ const report=project({...data,benchmarks:[...exactBenchmarks.values()]});
+ const handoff=completions.find(row=>row.providerHandoff)?.providerHandoff;
+ const usage=completions.filter(row=>row.usage).map(({model,usage})=>({model,usage}));
+ const completion=completions.length?{model:completions[0].model,usage:usage.length?{parts:usage}:null,...(handoff?{providerHandoff:handoff}:{})}:undefined;
+ return {report,completion,...(reportIssue?{reportIssue}:{}),...(reportDiagnostic?{reportDiagnostic}:{})};
 }
 
 export async function synthesizeManagedReport({brief,brand,plan,context,inventory,providers,sections=sectionKeys,existing=[],batchReviews,evidenceUrls,retainedProofs,coverageEvidence,metricCoverage,allowPartial=false,sectional=false,savedSectionsOnly=false}){
@@ -401,7 +517,7 @@ function recoverDraftProofs(row,proofs,context){
   action:'Bulguyu aynı dönem ve aynı kapsamda birinci taraf verisiyle karşılaştır.',measurement:''},proofs};
 }
 
-function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage}){
+function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage,metricCoverage,swotId,taskReporting=false}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
  const peerId=value=>{
@@ -418,15 +534,20 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   let row=proposed;
   if(needsById){
    const needIds=list(row.needIds).filter(id=>needsById.has(id));
-   const section=needsById.get(needIds[0])?.section||row.section;
-   row={...row,section,sectionTitle:row.section,needIds,peerId:peerId(row.peerId)};
+   const section=swotId&&quadrants.includes(row.quadrant)?swotId:taskReporting?
+    reportHeadings.get(customerQuoteKey(row.section))||row.section:needsById.get(needIds[0])?.section||row.section;
+   const resolvedPeerId=peerId(row.peerId);
+   if(metricCoverage&&row.peerId&&!verifiedPeers?.some(peer=>peer.entityId===resolvedPeerId))continue;
+   row={...row,section,sectionTitle:row.section,needIds,peerId:resolvedPeerId};
   }
   let proofs=decoded(row.proof);
   const key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
   const observationKey=customerQuoteKey(row.observation);
-  if((accepted&&!accepted.has(row.section))||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
+  const inScope=!accepted||accepted.has(row.section)||taskReporting&&list(row.needIds).some(id=>accepted.has(needsById?.get(id)?.section));
+  if(!inScope||!row.section.trim()||!row.action.trim()||(!modelSelectedPeers&&!row.measurement.trim())||!row.analysis.trim()||!proofs.length||proofs.length!==new Set(row.proof).size||seenFindings.has(key))continue;
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&seenObservations.has(observationKey))continue;
+  if(metricCoverage&&list(row.needIds).some(id=>!metricCoverage.get(id)?.some(alias=>row.proof.includes(alias))))continue;
   if(targeted)({row,proofs}=recoverDraftProofs(row,proofs,context));
   if(marketCoverage?.length){
    const sources=proofs.flatMap(id=>context.proofGroups.get(id)||[id]);
@@ -435,6 +556,8 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    if(metrics.length&&!marketObservationSupported(row.observation,metrics.flatMap(m=>m.marketMeasures).filter(m=>cited(m.sources))))continue;
   }
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
+  if(swotId&&row.section===swotId&&['opportunity','threat'].includes(row.quadrant)&&
+   !sourceCards.some(card=>researchHost(card.url)!==researchHost(context.input.brief.website)))continue;
   if(needsById){
    row=qualifyTraffic(row,sourceCards,targeted);
    if(!row)continue;
@@ -446,7 +569,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    const action=/doğrula|kontrol|test|ölç|incele|verify|check|measure/iu;
    if(!action.test(row.action)||/görünür şekilde|kullanıcılar.{0,70}gör|işlev çalışmıyor|ham kod olarak basıl|visible to users/iu.test(row.observation))continue;
   }
-  if(row.section==='competition'){
+  if(row.section==='competition'&&!taskReporting){
    if(!row.peerId||seenPeers.has(row.peerId)||!context.input.entities.some(e=>e.role==='competitor'&&e.id===row.peerId))continue;
    seenPeers.add(row.peerId);
   }
@@ -459,8 +582,9 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   }
   seenFindings.add(key);seenObservations.add(observationKey);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
- const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||(needsById&&row.peerId?'competition':'operations'),kind:row.kind,
-  ...(row.section==='competition'||needsById&&row.peerId?{comparisonPeerId:row.peerId}:{}),
+ const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||
+  (needsById&&row.peerId?'competition':taskReporting&&dimensions.some(d=>d.id===row.section)?row.section:'operations'),kind:row.kind,
+  ...((!taskReporting&&row.section==='competition'||needsById&&row.peerId)?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));
  const coverage=Object.fromEntries(methodologyAreas.map(a=>{

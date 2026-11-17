@@ -18,24 +18,38 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   });
   await page.goto('https://preview.vercel.app/offers/recovery-review.html');
   await page.waitForFunction(()=>typeof window.PipelineAuditRequest==='function');
-  await page.evaluate(()=>{
+  await page.evaluate(width=>{
    const original=window.PipelineAuditRequest;
    window.PipelineAuditRequest=async payload=>{
     const response=await original(payload);
     Object.assign(response.result.data,{findings:[],researchContinuity:{status:'unavailable',notice:'Görüşme bilgileriyle teklife devam edebilirsin.'},
+     verifiedResearch:{metrics:[],competitorCandidates:[{name:'Örnek Aday',url:'https://candidate.example/catalogue'}]},
+     supervision:{researchStopReason:width===1280?'research_engine_failure':'research_source_plan_invalid'},
      bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
       {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
-      {name:'Reklam maliyetleri',status:'missing_from_report'}]}]});
+      {name:'Reklam maliyetleri',status:'missing_from_report'}]},
+      {id:'T_ROYAL',title:'Royal set ürün deneyimi',complete:false,findingIds:[],openMetrics:[
+       {id:'price',name:'Royal set fiyatı',status:'source_unreadable',statusLabel:'Kaynak okunamadı'},
+       {id:'buyer',name:'Royal set alıcı davranışı',status:'searched',statusLabel:'Arama yapıldı, yeterli kanıt bulunamadı'},
+       {id:'partial',name:'Royal set kullanım koşulları',status:'partially_verified',statusLabel:'Ölçüm kısmen doğrulandı'},
+       {id:'report',name:'Royal set kullanım kılavuzu',status:'missing_from_report',statusLabel:'Doğrulandı, rapora aktarılamadı'}]},
+      {id:'swot',title:'SWOT',complete:false,findingIds:[],missingQuadrants:['weakness','threat']}]});
     return response;
    };
-  });
+  },width);
   await page.locator('#review-restored').click();
   await page.locator('.ob-price:not([hidden])').waitFor();
   const text=await page.locator('.ob-research-report').innerText();
+  assert.match(await page.locator('.ob-review-notice').textContent(),width===1280?/aynı işlem hatası/:/Kaynak planı doğrulanamadı/);
   for(const row of ['Instagram’da son 30 günün etkileşimi — Aranmadı','Markanın YouTube hesabı — Kaynak yetersiz','Reklam maliyetleri — Kanıt bulundu, rapora aktarılamadı'])assert.ok(text.includes(row),row);
   assert.doesNotMatch(text,/instagram_marka|youtube_marka|reklam_maliyet/);
   assert.equal(await page.locator('.ob-research-report article').count(),0);
+  assert.equal(await page.locator('.ob-research-report h3').filter({hasText:'Doğrulanacak rakip adayları'}).count(),1);
+  assert.match(text,/Örnek Aday · https:\/\/candidate\.example\/catalogue/);
+  assert.match(text,/Kanıt bekleyen SWOT kolları · Zayıf yön, Tehdit/);
+  for(const status of ['Kaynak okunamadı','Arama yapıldı, yeterli kanıt bulunamadı','Ölçüm kısmen doğrulandı','Doğrulandı, rapora aktarılamadı'])assert.ok(text.includes(status),status);
+  assert.match(text,/Royal set ürün deneyimi/);
   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   assert.deepEqual(errors,[]);await page.close();

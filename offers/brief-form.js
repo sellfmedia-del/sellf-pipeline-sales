@@ -177,9 +177,10 @@
           heading(section.title);
           if(section.openMetrics?.length){
             for(const metric of section.openMetrics)paragraph(
-              metric.name+' — '+(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil')
+              metric.name+' — '+(metric.statusLabel||(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil'))
             );
           }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
+          if(section.missingQuadrants?.length)paragraph('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));
           for(const id of section.findingIds){
             const f=findings.get(id);if(!f)continue;
             const article=document.createElement('article');box.append(article);
@@ -217,14 +218,21 @@
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
-      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length));
+      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length||section.missingQuadrants?.length));
+      if(data.verifiedResearch?.competitorCandidates?.length){
+        heading('Doğrulanacak rakip adayları');
+        data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));
+      }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       if(data.researchContinuity){
         dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';
         const stop=data.supervision?.researchStopReason;
         const reason=stop==='research_budget_exhausted'?'Kalan araştırma bütçesi yeni bir çağrıyı karşılamadı. ':
-          stop==='research_tools_unavailable'?'Bu araştırma turunda kullanılabilir bir sonraki araç çağrısı bulunamadı. ':'';
+          stop==='research_tools_unavailable'?'Bu araştırma turunda kullanılabilir bir sonraki araç çağrısı bulunamadı. ':
+          stop==='research_engine_failure'?'Araştırma aynı işlem hatası tekrar ettiği için durdu. ':
+          stop==='research_source_plan_invalid'?'Kaynak planı doğrulanamadı ve kalan araştırma bağımsız bir araçla sürdürülemedi. ':
+          data.supervision?.sourceReaderIssue==='source_plan_invalid'?'Kaynak planı doğrulanamadığı için bazı sayfalar okunamadı. ':'';
         dialog.querySelector('.ob-review-notice').textContent=reason+data.researchContinuity.notice;
       }
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';

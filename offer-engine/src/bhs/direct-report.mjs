@@ -53,7 +53,7 @@ export function directAuditResult(brief,synthesis){
  const managed=synthesis.supervision?.reviewMode==='managed-audit';
  const adaptive=managed&&synthesis.supervision?.researchPlan?.adaptiveResearch===true;
  if(managed)report.bhsSections=adaptive?scopedCoverage(report,synthesis.supervision.metricCoverage,synthesis.supervision.researchPlan.qualityReport===true,
-  synthesis.supervision.researchPlan.targetedEvidence===true):managedCoverage(report);
+  synthesis.supervision.researchPlan.targetedEvidence===true,synthesis.supervision.researchPlan.sectionedSynthesis===true,synthesis.supervision.researchPlan.taskReporting===true):managedCoverage(report);
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
  const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];

@@ -10,7 +10,7 @@ import {actorInput,observedActorTargets,searchActors} from './apify-inputs.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {arr,finalSchema,obj,peerSchema,qualityAcceptance,sequentialContext,sequentialPhases,sequentialVersion,stageModelInput,str} from './sequential-contracts.mjs';
-import {requireGroundedResearch} from './research-content.mjs';
+import {isReadEvidence,requireGroundedResearch} from './research-content.mjs';
 import {quoteSupervised,reserveStageQuote} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
@@ -569,16 +569,18 @@ function comparisonEntities(context,inventory){
  return entities;
 }
 
-export function managedCollectionContext(brief,packet,{complete=false}={}){
+export function managedCollectionContext(brief,packet,{complete=false,readEvidenceOnly=false}={}){
  const peerHosts=new Set(packet.entities.filter(entity=>entity.role==='competitor').map(entity=>researchHost(entity.website)));
  const brandHost=researchHost(brief.website);
  const primary=[],other=[];
  for(const source of packet.sources){
+  if(readEvidenceOnly&&!isReadEvidence(source))continue;
   const host=researchHost(source.finalUrl||source.url);
   const isPrimary=host===brandHost||peerHosts.has(host);
   (isPrimary&&!source.metadataOnly&&source.method!=='search-snippet'?primary:other).push(source);
  }
- const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},{includeTechnicalSignals:true,completeEvidence:complete});
+ const context=sequentialContext(brief,{packet:{...packet,sources:[...primary,...other]},searches:[],peerDiscoveryVersion:'product-v2'},
+  {includeTechnicalSignals:!readEvidenceOnly,completeEvidence:complete});
  context.collectionFirst=true;
  return context;
 }
@@ -1110,7 +1112,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(plan.reportOnlyAfterResearch&&allowWrite&&!sections&&(plan.orderedResearch||evidence.coverage.some(metric=>metric.status==='open'))&&
   (!terminal||!plan.orderedResearch&&!terminal.closed))
   throw new BudgetError('research_needs_open','Açık BHS araştırması kapanmadan rapor yazımı başlatılamaz.');
- const context=managedCollectionContext(brief,evidence.packet,{complete:true});
+ const context=managedCollectionContext(brief,evidence.packet,{complete:true,readEvidenceOnly:plan.readEvidenceOnly});
  const reportPlan={...plan,understanding:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
   directedResearch:true,coveragePolicy:2,assets:evidence.coverage.filter(c=>c.section==='digital').flatMap(c=>c.proofs.map(p=>({url:p.url,purpose:c.name,state:'examined'})))};
  const args={brief,brand,plan:reportPlan,context,inventory:[],...(sections?{sections}:{}),existing};
@@ -1132,12 +1134,13 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const verifiedPeers=plan.verifiedResults?projectExpertReport({peers:evidence.verifiedPeers.map(({proofs,...peer})=>
   ({...peer,sourceIds:unique(proofs.flatMap(cite))}))},context).competitors.map(peer=>
   ({entityId:peer.id,relationship:'direct',reason:peer.scope,sourceIds:peer.sourceIds})):undefined;
- const written=allowWrite?await synthesizeScopedReport({providers,context,input,reverse,
+ const written=allowWrite||plan.sectionedSynthesis&&providers.readCheckpoint?await synthesizeScopedReport({providers,context,input,reverse,
   coverage:coverage.map(({displayName,searched,...metric})=>metric),needs:evidence.needs,approved:evidence.approved,sections,
-  verifiedPeers,
+  verifiedPeers,savedPartsOnly:!allowWrite,
   ...(plan.orderedResearch&&terminal?{stopReason:terminal.stopReason}:{})}):{};
  let {report}=written;
  const useSavedEvidence=!report||plan.qualityReport&&!report.findings.length;
+ const writtenQuestions=plan.sectionedSynthesis&&useSavedEvidence?report?.meetingQuestions||[]:[];
  if(useSavedEvidence){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
   const retained=reviewed.filter(row=>!plan.verifiedResults||!coverage.some(m=>m.id===row.needId&&m.marketMeasures)).slice(0,18);
@@ -1150,7 +1153,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    const headings=new Map(retained.map(row=>['scoped_'+row.id,row]));
    report.findings=report.findings.map((finding,index)=>{
     const heading=headings.get(finding.id);
-    return {...finding,bhsSection:heading.section,bhsRank:index+1,...(plan.qualityReport?{researchNeedIds:[heading.needId]}:{}),
+    const sectionTitle=plan.taskReporting?coverage.find(m=>m.id===heading.needId)?.sectionTitle:undefined;
+    return {...finding,bhsSection:heading.section,bhsRank:index+1,...(sectionTitle?{bhsSectionTitle:sectionTitle}:{}),...(plan.qualityReport?{researchNeedIds:[heading.needId]}:{}),
      ...(plan.verifiedResults?{researchEvidenceOnly:true}:{})};
    });
   }
@@ -1158,15 +1162,18 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  }
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse);
-  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence);
+  if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
+  report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis,plan.taskReporting);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
- if(useSavedEvidence)report.meetingQuestions=[...(report.meetingQuestions||[]),...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))];
+ if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
+  ...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))].map(q=>[q.question,q])).values()];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
- return {report,analysisPacket:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
+ return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
    ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
    ...(plan.targetedEvidence&&terminal?.stopReason?{researchStopReason:terminal.stopReason}:{}),
+   ...(rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid')?{sourceReaderIssue:'source_plan_invalid'}:{}),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
    ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
@@ -1191,7 +1198,8 @@ function retainScopedResults(report,context,coverage,reverse){
   if(report.findings.some(f=>f.id===id))continue;
   report.findings.push({id,dimension:'financial',kind:'observation',statement:row.passage,reportExcerpt:row.passage,sourceIds,
    impact:'Ticari etkisi görüşmede değerlendirilecek.',goalConnection:'Bu ölçüm hedef ürün ve pazarla nasıl karşılaştırılabilir?',
-   priority:'medium',bhsSection:metric.section,bhsRank:report.findings.length+1,researchNeedIds:[metric.id],researchEvidenceOnly:true});
+   priority:'medium',bhsSection:metric.section,...(metric.sectionTitle?{bhsSectionTitle:metric.sectionTitle}:{}),
+   bhsRank:report.findings.length+1,researchNeedIds:[metric.id],researchEvidenceOnly:true});
  }
  const measured=report.findings.filter(f=>f.dimension==='financial'&&f.researchEvidenceOnly);
  if(measured.length){
@@ -1220,6 +1228,9 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=14?{targetedEvidence:true}:{}),
    ...(providers.managedBudgetVersion>=17?{verifiedResults:true}:{}),
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
+   ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
+   ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
@@ -1256,8 +1267,19 @@ export async function continueScopedCollection({brief,providers,previous,collect
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
  const rounds=stage.managedPlan.compactQueue?[]:await savedScopedRounds(previous);
  const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
- return reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
-  plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
+ try{
+  return await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
+   plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
+ }catch(error){
+  // Compare opaque identifiers across consecutive failed turns. Provider
+  // errors and transport timeouts continue through their existing paths.
+  if(error instanceof Error&&!error.code&&(['TypeError','ReferenceError','RangeError','SyntaxError'].includes(error.name)&&error.message!=='fetch failed'||
+   /^BHS (veri |liste sınırı:|metin sınırı:)/.test(error.message))){
+   error.scopedFailureFingerprint=hash([error.name,error.message,error.stack?.split('\n')[1]]);
+   error.code='research_engine_failure';
+  }
+  throw error;
+ }
 }
 
 export async function recoverManagedSectionSynthesis(brief,previous,providers){
