@@ -11,6 +11,7 @@ import {isReadEvidence} from './research-content.mjs';
 import {supportsBuyerDemand} from './scoped-findings.mjs';
 import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
+import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,checkedBriefScope,briefTradeEvidence,initialNeedMatchesBrief} from './brief-research-scope.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -38,9 +39,8 @@ const orderedReviewSchema=obj({...reviewSchema.properties,newNeeds:arr(orderedNe
 const targetedReviewSchema=obj({...orderedReviewSchema.properties,peers:arr(obj({
  ...reviewSchema.properties.peers.items.properties,relationship:{type:'string',enum:['direct','candidate','related']}
 }),10)});
-const {section:reportSection,target,market,country,language,...measurementFields}=orderedNeedSchema.properties;
+const {section:reportSection,target,market,country,language}=orderedNeedSchema.properties;
 const measurementScope={section:reportSection,target,market,country,language};
-const measurementSchema=obj(measurementFields);
 const withTaskTitles=(schema,key)=>obj({...schema.properties,[key]:arr(obj({
  ...schema.properties[key].items.properties,sectionTitle:text(100)
 }),schema.properties[key].maxItems)});
@@ -60,11 +60,9 @@ const withProductPeers=schema=>obj({...schema.properties,peers:arr(obj({
 }),schema.properties.peers.maxItems)});
 const withMeasurementGroups=(schema,key)=>{
  const {maxItems,items}=schema.properties[key];
- const title=items.properties.sectionTitle;
- const {comparisonProduct,comparisonRole,buyerSegment,buyerSourceSegment,buyingDimension}=items.properties;
- const measurements=obj({...measurementSchema.properties,...(comparisonProduct?{comparisonProduct,comparisonRole}:{}),
-  ...(buyerSegment?{buyerSegment,buyerSourceSegment,buyingDimension}:{})});
- return obj({...schema.properties,[key]:arr(obj({...measurementScope,...(title?{sectionTitle:title}:{}),measurements:arr(measurements,maxItems)}),maxItems)});
+ const {sectionTitle,...fields}=items.properties;
+ const measurements=obj(Object.fromEntries(Object.entries(fields).filter(([field])=>!Object.hasOwn(measurementScope,field))));
+ return obj({...schema.properties,[key]:arr(obj({...measurementScope,...(sectionTitle?{sectionTitle}:{}),measurements:arr(measurements,maxItems)}),maxItems)});
 };
 const measurementInstruction='İhtiyaçları bölüm, hedef, pazar ve dile göre gruplandırabilirsin. Her measurements satırı tek ölçüm veya tek somut karar sorusudur. Bir ölçümün sonucu diğerini doğrulamıyorsa ayrı kimlik, sorgu, beklenen kanıt, dönem ve örneklem ver. Pazar büyüklüğü, büyüme ve eczane kanalının payı ayrı ölçümlerdir. Instagram takipçi sayısı, paylaşım sıklığı ve etkileşim de ayrı ölçümlerdir. Geçerli bir ölçümün birimi, dönemi ve kapsamı o ölçümün parçasıdır. Aynı kararın birbirine bağlı doğrulamalarını tek soruda tutabilirsin. Örneğin iki fiyatın aynı ürün varyantına ait olduğunu doğrulamak tek kıyas kararıdır. Bir sonraki iş rakibin kimliğine bağlıysa önce kimliği doğrula, ardından gerekli fiyat veya sosyal medya ölçümlerini ayrı işler olarak aç.';
 const taskTitleInstruction='sectionTitle görevin satış ekranındaki başlığıdır. Araştırılan konuyu anlaşılır ve somut adlandır. İlgisiz ölçümleri aynı section kodunda toplama. Mevcut bir başlıkla tam eşleşme gerekmiyorsa görevin gerçek konusu için kısa bir başlık yaz. Genel “Araştırma konusu” etiketini ve sadece teknik kodu kullanma. metric alanında ölçümün ekranda görülecek adını yaz.';
@@ -213,10 +211,16 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
 export async function understandScopedBrief({brief,identity,providers,compactRetry=false}){
  if(!identity)return {issue:'brand_understanding_unavailable'};
  const {brandName,website,...card}=brief;
- return ask(providers,compactRetry?'bhs-scoped-brief-compact':'bhs-scoped-brief',{identity,card,instruction:
+ const linkScope=providers.managedBudgetVersion>=23;
+ const contract=linkScope?obj({...understandingSchema.properties,scope:briefScopeSchema}):understandingSchema;
+ const result=await ask(providers,compactRetry?'bhs-scoped-brief-compact':'bhs-scoped-brief',{identity,card,instruction:
   'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'+
   (identity.sourceStatus==='no_readable_sources'?' Marka adımında okunabilir kaynak bulunamadı. Marka hakkındaki doğrulanmamış bilgileri açık bırak ve briefte açıkça verilen bilgilerle devam et.':'')+
-  (compactRetry?' Hedefi ve teklif kapsamını kısa ve eksiksiz bir paragrafta belirt.':'')},understandingSchema,compactRetry?850:1500);
+  (linkScope?' '+interpretBriefScope:'')+
+  (compactRetry?' Hedefi ve teklif kapsamını kısa ve eksiksiz bir paragrafta belirt.':'')},contract,compactRetry?850:1500);
+ if(!linkScope||!result.value)return result;
+ const scope=result.value.scope&&checkedBriefScope(result.value.scope,brief);
+ return scope?.decisions.length?{...result,value:{...result.value,scope}}:{issue:'brief_scope_unavailable'};
 }
 
 export async function planScopedResearch({brief,identity,briefUnderstanding,asOf,providers,packet}){
@@ -224,10 +228,19 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  const guarded=providers.managedBudgetVersion>=12;
  const useMeasurements=providers.managedBudgetVersion>=19;
  const taskReporting=providers.managedBudgetVersion>=22;
+ const linkScope=providers.managedBudgetVersion>=23;
+ const scope=linkScope?briefUnderstanding.scope:undefined;
+ if(linkScope&&!scope?.decisions.length)return {needs:[],issue:'brief_scope_unavailable'};
+ const tradeEvidence=scope?briefTradeEvidence(scope,brief,packet):[];
  const baseContract=guarded?orderedPlanSchema:planSchema;
- const contract=taskReporting?withBuyerScope(withProductScope(withTaskTitles(baseContract,'needs'),'needs'),'needs'):baseContract;
- const request={brand:brief.brandName,identity,briefUnderstanding,asOf,instruction:
-  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir. Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'+
+ const titled=taskReporting?withBuyerScope(withProductScope(withTaskTitles(baseContract,'needs'),'needs'),'needs'):baseContract;
+ const {items,maxItems}=titled.properties.needs;
+ const contract=scope?obj({needs:arr(obj({...items.properties,...scopedNeedFields}),maxItems)}):titled;
+ const request={brand:brief.brandName,identity,briefUnderstanding:scope?{understanding:briefUnderstanding.understanding}:briefUnderstanding,asOf,
+  ...(scope?{briefScope:scope,tradeEvidence}:{}),instruction:
+  'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. '+
+  (scope?planWithinBrief:'Hedef Avrupa pazarına girmekse gümrük süreçleri, aktif distribütörler ve pazar doygunluğu gibi karar sorularını seç. Hedef ciro artırmaksa fiyat, rakip satışı, müşteri memnuniyeti ve erişilebilir pazarlama ve satış verimine odaklan. Bunlar örnektir.')+
+  ' Konu ve görev sayısına sen karar ver. İlk gönderimde teklif kararını en çok değiştiren ve doğrudan çalışılabilir ihtiyaçlara öncelik ver. Bir önceki aramanın sonucuna bağlı sonraki işleri sonuç geldiğinde belirle. Örneğin önce doğru rakipleri bul, sonra onların metriklerini iste. Her işe tek bir net emir yaz. Hedefi, platformu, dönemi, metriği ve gereken en küçük örneklemi ver. On aktif distribütör isteniyorsa quantity 10. Instagram son bir ay isteniyorsa since alanı YYYY-MM-DD, quantity gerekli gönderi sayısı olsun. Gerekli olmayan tarih boş olsun. Pazar ve dili sorguda koru. Bölüm kodları rapor aktarımı içindir.'+
   (guarded?'':' Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç.')};
  if(guarded)request.instruction+=' Görevleri yapılma sırasına koy. Bir görev, bir metrik veya tek somut karar sorusu içersin. Her görev için ilk aracı tek başına seç. Başlangıçta yalnız sonucu başka bir sorguya bağlı olmayan, hemen çalıştırılabilecek görevler ver. Sonuç gelince devamını belirle. Bölüm veya bulgu kotası yoktur.';
  if(providers.managedBudgetVersion>=14){
@@ -244,12 +257,13 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  const normalizeData=data=>Array.isArray(data?.needs)?{needs:normalizeNeeds(data.needs,contract.properties.needs,useMeasurements)}:data;
  const outputContract=useMeasurements?withMeasurementGroups(contract,'needs'):contract;
  const options={normalizeData,responseSchema:contract};
+ const scopedNeeds=result=>(result.value?.needs||[]).filter(need=>!scope||initialNeedMatchesBrief(need,scope,tradeEvidence));
  let result=await ask(providers,'bhs-scoped-plan',request,outputContract,3800,options);
- if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&(!result.value?.needs?.length))
+ if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&!scopedNeeds(result).length)
   result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},outputContract,guarded?2400:3500,{...options,plainJson:true});
- const needs=uniqueBy(result.value?.needs||[],n=>n.id);
+ const needs=uniqueBy(scopedNeeds(result),n=>n.id);
  const issue=result.issue||(guarded&&!needs.length?'research_plan_empty':undefined);
- return {needs,...(issue?{issue}:{})};
+ return {needs,...(scope?{briefScope:scope,tradeEvidence:tradeEvidence.filter(row=>needs.some(need=>need.tradeEvidenceId===row.id))}:{}),...(issue?{issue}:{})};
 }
 
 function evidenceRows(result,limit,method){
