@@ -199,7 +199,8 @@ export function createBoundedProviders({ledger,geminiKey=offerGeminiKey(),tavily
     const usage=result.usageMetadata||{},output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
     if(!Number.isSafeInteger(usage.promptTokenCount)||usage.promptTokenCount<1||!Number.isSafeInteger(usage.candidatesTokenCount)||usage.candidatesTokenCount<1||usage.thoughtsTokenCount!==undefined&&(!Number.isSafeInteger(usage.thoughtsTokenCount)||usage.thoughtsTokenCount<0)||usage.promptTokenCount>upper||output>maxOutputTokens||!Number.isSafeInteger(usage.totalTokenCount)||usage.totalTokenCount!==usage.promptTokenCount+output)throw new BudgetError('provider_accounting','Model tüketimi ayrılan üst sınırla eşleşmiyor. Sonuç kullanıma açılmadı.');
     const candidate=result.candidates?.[0];
-    const offerContent=['synthesis','methodology_areas','scope'].includes(stage);
+    const offerContent=['synthesis','methodology_areas','scope','proposal_implementation'].includes(stage)||
+     stage==='proposal_translation'&&Boolean(input.implementation);
     // A fully verified usage response is settled even when its content is bad.
     // Transport/HTTP failures without verified usage keep their full reservation.
     const rejectedOutput=code=>({rejectedOutput:code,usage,model,fx:fxSnapshot,accountedKurus:consumed(model,usage.promptTokenCount,output,usage.cachedContentTokenCount||0)});

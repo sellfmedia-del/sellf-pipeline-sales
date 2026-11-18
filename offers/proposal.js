@@ -139,6 +139,7 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const full=add('details','',$('#so-analysis'));add('summary',t('Seçili bulguların kaynakları'),full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
   const monthly=data.pricingMode==='monthly',options=$('.so-options');options.replaceChildren();let selected;
+  const planSources=new Map((data.bhs.sources||[]).map(source=>[source.id,source]));
   const form=$('#so-request-form'),status=$('.so-request-status');
   function select(id){
    if(monthly&&id!=='operations_bundle')return;
@@ -148,7 +149,15 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const list=$('#so-service-list');list.replaceChildren();
    selected.services.forEach((s,i)=>{const box=add('div','',list,'so-service'),b=add('button','✓ '+s.name+' +',box);b.type='button';b.setAttribute('aria-expanded','false');const p=add('p',s.description,box);p.hidden=true;p.id='so-service-'+i;b.setAttribute('aria-controls',p.id);b.addEventListener('click',()=>{p.hidden=!p.hidden;b.setAttribute('aria-expanded',String(!p.hidden));});});
    const track=$('#so-track');track.replaceChildren();
-   data.plans[id].steps.forEach(s=>{const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);});
+   data.plans[id].steps.forEach(s=>{
+    const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);
+    if(s.measurement)add('small',(english?'Measure · ':'Ölçüm · ')+s.measurement,item);
+    for(const sourceId of s.sourceIds||[]){
+     const source=planSources.get(sourceId);
+     if(!source||!/^https?:\/\//i.test(source.url))continue;
+     const link=add('a',source.title,item);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+    }
+   });
    let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent=t('Çalışma odağı: ')+data.plans[id].focus;
    $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+t(' ile ilerleyelim.');
    $('#so-request-model').textContent=monthly?(english?'Monthly operations plan · Fees as shown above':'Ay bazlı operasyon planı · Yukarıdaki aylık bedeller geçerlidir'):selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+t(' / ay');

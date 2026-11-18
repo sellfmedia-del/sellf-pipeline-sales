@@ -31,6 +31,11 @@ test('desktop/mobile show both proposal languages independently of currency, inc
       value:en?'Approval by the manager':'Yönetici onayı',sourceIds:['buyer-fixture']},
      hypothesis:en?'Test the approvals in a pilot.':'Onay sürecini pilotta sınayın.'
     }]};
+    doc.bhs.sources.push({id:'plan-fixture',title:en?'Product specification':'Ürün özellikleri',url:'https://synthetic.example/specification'});
+    doc.plans[doc.recommendedAlternativeId].steps=[{time:en?'Step 1':'Adım 1',
+     title:en?'Prepare the nursery enquiry page.':'Kreş talep sayfasını hazırla.',
+     measurement:en?'Check that a trial enquiry is recorded.':'Deneme talebinin kayda geçtiğini kontrol et.',
+     sourceIds:['plan-fixture']}];
     PipelineProposal.mount(document.querySelector('#offer'),doc,{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'offer1'});
     document.querySelector('#sellf-two-option-offer').addEventListener('click',event=>{if(event.target.closest('a[href^="mailto:"]'))event.preventDefault();});
    },{language,currency});
@@ -38,6 +43,9 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    await page.getByText(en?'Pilot hypothesis · Test the approvals in a pilot.':'Pilot hipotezi · Onay sürecini pilotta sınayın.',{exact:true}).waitFor();
    await page.getByText(en?'Source-backed observation · Independent buyers · England · Approval by the manager · buyer-fixture':
     'Kaynaklı gözlem · Bağımsız alıcılar · İngiltere · Yönetici onayı · buyer-fixture',{exact:true}).waitFor();
+   await page.locator('#so-track').getByText(en?'Measure · Check that a trial enquiry is recorded.':'Ölçüm · Deneme talebinin kayda geçtiğini kontrol et.',{exact:true}).waitFor();
+   assert.equal(await page.locator('#so-track a').getAttribute('href'),'https://synthetic.example/specification');
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
    await page.locator('#so-request-open').click();
    await page.locator('[name=name]').fill('Jane Smith');await page.locator('[name=email]').fill('jane@example.com');
    await page.locator('#so-request-form').evaluate(form=>form.requestSubmit());

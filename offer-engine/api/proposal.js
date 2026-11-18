@@ -10,6 +10,7 @@ import {interactionId,modelText} from '../src/bhs/provider.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
 import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {normalizePlan,compositionHash} from '../src/proposal/composition.mjs';
+import {implementationContext,writeImplementation} from '../src/proposal/implementation-plan.mjs';
 import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {offerGeminiKey} from '../src/config.mjs';
@@ -41,8 +42,9 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    if(!getProvider){
     if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
     let result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
-    let draftCost;
-    if(language==='en'){
+    const implementation=implementationContext(result.data,brief,body.audit.data,body.pricing.data,plan.mode);
+    let draftCost,draftPlanStatus;
+    if(language==='en'||implementation){
      let ledger;
      try{
       // Only signed workflow IDs choose the budget. Repricing, retries and
@@ -51,18 +53,28 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
       ledger=await getLedger(req,res,context.leadId,{scope});
       draftCost=await ledger.begin();
       if(draftCost.capKurus!==draftBudgetCapKurus)throw new BudgetError('draft_budget_unavailable','Bağımsız teklif taslağı bütçesi doğrulanamadı.');
-      result={...result,data:await localizeProposal(result.data,language,{providers:getProviders({ledger,pricing:researchTariff})})};
+      const providers=getProviders({ledger,pricing:researchTariff});
+      const data=language==='en'?await localizeProposal(result.data,language,{providers,implementation}):
+       await writeImplementation(result.data,implementation,providers);
+      result={...result,data};
+      if(implementation){
+       const completed=data.pricingMode==='monthly'?data.plans.operations_bundle.steps.filter(s=>s.measurement).length:
+        implementation.groups.filter(group=>data.plans[group.id].steps.every(s=>s.measurement)).length;
+       draftPlanStatus=completed===implementation.groups.length?'brief_linked':completed?'partial':'standard';
+      }
       draftCost=await ledger.status();
      }
      catch(error){
       try{if(ledger)draftCost=await ledger.status();}catch{}
       const message=error.code==='budget_limit'?'İngilizce taslak, taslak için ayrılan 10 TL’lik bütçenin kalan tutarına sığmadı. BHS ve fiyatlar hazır.':
        error instanceof BudgetError?error.message:'İngilizce teklif taslağı hazırlanamadı. BHS ve fiyatlar hazır.';
-      return res.status(422).json({code:error.code||'translation_unavailable',error:message,...(draftCost?.capKurus===draftBudgetCapKurus?{draftCost}:{})});
+      if(language==='en')return res.status(422).json({code:error.code||'translation_unavailable',error:message,...(draftCost?.capKurus===draftBudgetCapKurus?{draftCost}:{})});
+      draftPlanStatus??='standard';
      }
     }
     const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
-    return res.status(200).json({phase:'complete',result:envelope,...(draftCost?{draftCost}:{}),saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
+    return res.status(200).json({phase:'complete',result:envelope,...(draftCost?.capKurus===draftBudgetCapKurus?{draftCost}:{}),
+     ...(draftPlanStatus?{draftPlanStatus}:{}),saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
    }
    if(language!=='tr')throw Error('İngilizce teklif için bütçeli çeviri gerekli.');
    const provider=getProvider();
