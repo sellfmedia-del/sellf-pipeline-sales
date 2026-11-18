@@ -31,7 +31,7 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
  const coverage=array(audit.researchCoverage).filter(c=>typeof c?.observation==='string'&&c.observation.trim()&&c.observation!=='Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.');
  const sourceIds=new Set([...selected.flatMap(f=>array(f.sourceIds)),...coverage.flatMap(c=>c.sourceIds),...benchmarks.flatMap(b=>b.entries.flatMap(e=>e.sourceIds))]);
  const keepSources=ids=>array(ids).filter(id=>knownSources.has(id)).map(id=>{sourceIds.add(id);return id;});
- const verifiedResearch=audit.verifiedResearch&&!contextPending?{metrics:array(audit.verifiedResearch.metrics).map(({marketMeasures,sourceIds,...metric})=>
+ const verifiedResearch=audit.verifiedResearch&&!contextPending?{metrics:array(audit.verifiedResearch.metrics).map(({evidence,additionalEvidence,requestedMarket,requestedPeriod,marketMeasures,sourceIds,...metric})=>
   ({...metric,sourceIds:keepSources(sourceIds),...(marketMeasures?{marketMeasures:marketMeasures.map(row=>
    ({...row,sourceIds:keepSources(row.sourceIds)})).filter(row=>row.sourceIds.length)}:{})}))}:undefined;
  const competitors=array(audit.competitors).map(p=>({id:p.id,name:p.name,...(verifiedResearch?{sourceIds:keepSources(p.sourceIds)}:{})}));

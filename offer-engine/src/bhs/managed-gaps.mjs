@@ -11,6 +11,7 @@ import {createEvidenceCollector} from './evidence.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {arr,obj,stageModelInput,str} from './sequential-contracts.mjs';
 import {salesSectionTitle} from './sales-research-labels.mjs';
+import {boundScopedEvidence,mergeScopedEvidence} from './scoped-evidence-index.mjs';
 
 const receiptKey='audit:managed-gap-result';
 
@@ -229,8 +230,12 @@ function mergeGapEvidence(synthesis,patch,sections,context,evidenceCoverage){
 
 export function mergeManagedGapReport(original,patch,sections,{taskReporting=false}={}){
  const verified=Boolean(original.verifiedResearch&&patch.verifiedResearch);
- const metrics=new Map((original.verifiedResearch?.metrics||[]).map(m=>[m.id,m]));
- if(verified)for(const metric of patch.verifiedResearch.metrics)if(sections.includes(metric.section))metrics.set(metric.id,metric);
+ const metrics=new Map((original.verifiedResearch?.metrics||[]).map(m=>[m.id,{...m}]));
+ if(verified)for(const metric of patch.verifiedResearch.metrics)if(sections.includes(metric.section)){
+  const prior=metrics.get(metric.id);
+  const evidence=mergeScopedEvidence(prior?.evidence,metric.evidence);
+  metrics.set(metric.id,evidence.length||prior?.additionalEvidence?{...metric,evidence,...(prior?.additionalEvidence?{additionalEvidence:true}:{})}:metric);
+ }
  const evidenceRefs=new Set([...metrics.values()].flatMap(m=>[...m.sourceIds,...(m.marketMeasures||[]).flatMap(row=>row.sourceIds)]));
  const eligibleNeeds=new Set((patch.verifiedResearch?.metrics||[]).filter(m=>sections.includes(m.section)).map(m=>m.id));
  const acceptedPeers=new Set(original.competitors.map(peer=>peer.website));
@@ -262,7 +267,7 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
  const candidates=[...new Map([...(original.verifiedResearch?.competitorCandidates||[]),...(patch.verifiedResearch?.competitorCandidates||[])]
   .filter(candidate=>!acceptedHosts.has(researchHost(candidate.url))).map(candidate=>[researchHost(candidate.url),candidate])).values()];
  return {...original,findings,competitors,
-  ...(verified?{verifiedResearch:{metrics:[...metrics.values()],...(candidates.length?{competitorCandidates:candidates}:{})}}:{}),
+  ...(verified?{verifiedResearch:{metrics:boundScopedEvidence([...metrics.values()]),...(candidates.length?{competitorCandidates:candidates}:{})}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};

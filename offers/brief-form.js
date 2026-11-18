@@ -231,6 +231,29 @@
         heading('Doğrulanacak rakip adayları');
         data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));
       }
+      const evidenceTasks=(data.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
+      if(evidenceTasks.length){
+        heading('Araştırma sorularının kaynakları');
+        const statuses={verified:'Kanıt olarak kabul edildi',read:'Okundu, bu soru için doğrulama bekliyor',discovered:'Aramada bulundu, okunmadı'};
+        for(const task of evidenceTasks){
+          const details=document.createElement('details'),summary=document.createElement('summary');
+          summary.textContent=(task.displayName||task.name)+(task.evidence?.length?' · '+task.evidence.length+' kaynak':'');details.append(summary);
+          const scope=[task.requestedMarket&&'Hedef pazar '+task.requestedMarket,task.requestedPeriod&&'Aranan dönem '+task.requestedPeriod].filter(Boolean);
+          if(scope.length)paragraph(scope.join(' · '),details);
+          const list=document.createElement('ul');details.append(list);
+          for(const source of task.evidence||[]){
+            let url;
+            try{url=new URL(source.url);}catch{continue;}
+            if(!['http:','https:'].includes(url.protocol)||url.username||url.password)continue;
+            const item=document.createElement('li'),link=document.createElement('a');
+            link.href=url.href;link.textContent=source.title||url.hostname;link.target='_blank';link.rel='noopener noreferrer';
+            item.append(link,document.createTextNode([statuses[source.status],source.geography&&'Metinde geçen coğrafya '+source.geography,source.accessed&&'Erişim '+source.accessed].filter(Boolean).map(value=>' · '+value).join('')));
+            list.append(item);
+          }
+          if(task.additionalEvidence)paragraph('Ek bağlantılar araştırma kayıtlarında saklandı.',details);
+          box.append(details);
+        }
+      }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
       if(data.researchContinuity){

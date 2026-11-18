@@ -4,7 +4,7 @@ import {researchUrl,researchHost} from './research-url.mjs';
 import {arr,obj,str} from './sequential-contracts.mjs';
 import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
-import {marketMeasureInstruction,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
+import {marketMeasureInstruction,marketMeasureMatchesScope,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
 import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
@@ -434,7 +434,7 @@ function receiptFacts(receipts,readEvidenceOnly=false){
  return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,reserveForFollowingKurus=0}){
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,reserveForFollowingKurus=0}){
  const tasks=needs.map(({id,target,market,metric,period,expected,quantity})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
@@ -448,7 +448,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  if(!tasks.length)return {};
  const worker=providers.worker||providers.geminiWorker;
  if(!worker)return {issue:'not_configured'};
- const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>marketMeasureNeed(n)&&tasks.some(t=>t.id===n.id));
+ const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>marketMeasureNeed(n,scopeMarketCounts)&&tasks.some(t=>t.id===n.id));
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
   tasks:tasks.map(({incoming,...task})=>({...task,newProofs:incoming.map(f=>f.id)})),
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
@@ -469,8 +469,8 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
   const need=needs.find(n=>n.id===task.id);
-  const decision=providers.managedBudgetVersion>=17&&marketMeasureNeed(need)?
-   marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved):
+  const decision=providers.managedBudgetVersion>=17&&marketMeasureNeed(need,scopeMarketCounts)?
+   marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
    confirmed(need,saved,facts,rivalHosts,readEvidenceOnly)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
   for(const f of task.incoming)seen.add(f.id);
   checked.set(decision.id,decision);
@@ -479,11 +479,11 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  return decisions.length?{decisions}:{issue:'research_clearance_unavailable'};
 }
 
-function marketDecision(need,decision,proposed,facts,saved){
+function marketDecision(need,decision,proposed,facts,saved,scopeMarketCounts){
  const proofs=[...new Set([...(saved?.marketMeasures||[]).map(m=>m.proof),...decision.proofs])];
- const marketMeasures=uniqueBy(verifyMarketMeasures(need,[...(saved?.marketMeasures||[]),...(proposed||[])],proofs,facts),
+ const marketMeasures=uniqueBy(verifyMarketMeasures(need,[...(saved?.marketMeasures||[]),...(proposed||[])],proofs,facts,scopeMarketCounts),
   row=>JSON.stringify([row.proof,row.amount,row.unit,row.year,row.category]));
- return {...decision,proofs,marketMeasures,sufficient:Boolean(marketMeasures.length&&decision.sufficient)};
+ return {...decision,proofs,marketMeasures,sufficient:Boolean(decision.sufficient&&marketMeasures.some(row=>!scopeMarketCounts||marketMeasureMatchesScope(need,row)))};
 }
 
 export async function reviewScopedResearch({identity,briefUnderstanding,plan,rounds,providers,brief,packet,readPages:readPublisherPages,last=false,eligibleSections=sections,existing=[],gap=false,acquisition=providers}){
@@ -512,7 +512,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  let rivalHosts=plan.qualityReport?peerHosts(rounds.flatMap(r=>r.peers||[]),brief.website,targeted):undefined;
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly);
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
@@ -558,7 +558,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)])];
  const knownUrls=[...new Set(targeted?observedUrls.map(researchUrl):observedUrls)].filter(Boolean);
  const history=rounds.flatMap(r=>r.commandResults||[]);
- const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&marketMeasureNeed(n));
+ const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&marketMeasureNeed(n,plan.scopeMarketCounts));
  const baseContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
  const titledContract=plan.taskReporting?withTaskTitles(baseContract,'newNeeds'):baseContract;
  const reviewContract=scopedMarket?withMarketMeasures(titledContract):titledContract;
@@ -639,7 +639,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const decision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!unread),proofs,
    ...(unread?{read:unread}:{})};
   const need=priorNeeds.find(n=>n.id===row.id);
-  checked.set(row.id,scopedMarket&&marketMeasureNeed(need)?marketDecision(need,decision,row.marketMeasures,related,checked.get(row.id)):decision);
+  checked.set(row.id,scopedMarket&&marketMeasureNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,checked.get(row.id),plan.scopeMarketCounts):decision);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>researchHost(p.url));
@@ -807,10 +807,10 @@ export function scopedEvidence(brand,plan,rounds){
  const rivalHosts=plan.qualityReport?peerHosts(peers,brand.packet.entities.find(e=>e.role==='brand')?.website,plan.targetedEvidence):undefined;
  const coverage=needs.map(n=>{
   const decision=checked.get(n.id);
-  const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts):undefined;
+  const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n,plan.scopeMarketCounts)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts,plan.scopeMarketCounts):undefined;
   const proofs=facts.filter(f=>f.needId===n.id&&decision?.proofs.includes(f.id)&&(!readEvidenceOnly||isReadEvidence(f)));
   const displayName=salesMetricName(n);
-  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly)&&(!marketMeasures||marketMeasures.length)?'confirmed':'open';
+  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly)&&(!marketMeasures||marketMeasures.some(row=>!plan.scopeMarketCounts||marketMeasureMatchesScope(n,row)))?'confirmed':'open';
   const researchStatus=taskReporting&&status==='open'?(proofs.length?'partially_verified':
    [...(sourceReads.get(n.id)?.values()||[])].includes(false)?'source_unreadable':
    completedLookups.has(n.id)?'searched':searched.has(n.id)?'search_incomplete':interrupted?'interrupted':'not_searched'):undefined;

@@ -51,6 +51,17 @@ export function renderGroundedReport(report){
  if(report.verifiedResearch?.competitorCandidates?.length){
   rows.push('### Doğrulanacak rakip adayları',...report.verifiedResearch.competitorCandidates.map(p=>p.name+' · '+p.url));
  }
+ const tasks=(report.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
+ if(tasks.length){
+  rows.push('## Araştırma sorularının kaynakları');
+  const statuses={verified:'Kanıt olarak kabul edildi',read:'Okundu, bu soru için doğrulama bekliyor',discovered:'Aramada bulundu, okunmadı'};
+  for(const task of tasks){
+   rows.push('### '+(task.displayName||task.name));
+   if(task.requestedMarket||task.requestedPeriod)rows.push([task.requestedMarket&&'Hedef pazar '+task.requestedMarket,task.requestedPeriod&&'Aranan dönem '+task.requestedPeriod].filter(Boolean).join(' · '));
+   for(const source of task.evidence||[])rows.push([source.title,source.url,statuses[source.status],source.geography&&'Metinde geçen coğrafya '+source.geography,source.accessed&&'Erişim '+source.accessed].filter(Boolean).join(' · '));
+   if(task.additionalEvidence)rows.push('Ek bağlantılar araştırma kayıtlarında saklandı.');
+  }
+ }
  report.benchmarks.forEach(b=>rows.push(b.metric,...b.entries.map(e=>e.entityId+': '+(e.value===null?'Veri bulunamadı — onboarding’de tamamlanacak':e.value+' · Birim: '+(e.unit||'Nitel gözlem')+' · Dönem: '+(e.period||'Belirtilmemiş')+' · Kaynaklar: '+e.sourceIds.join(', ')))));
  rows.push('## 9. Kaynaklar');report.sources.forEach(s=>rows.push(s.id+' '+s.title+' '+s.url,s.quote,'Yayın tarihi: '+(s.publishedAt||'Belirtilmemiş'),'Kapsam: '+s.scope,'Veri dönemi: '+(s.period||'Belirtilmemiş')));
  rows.push('## Hizmet hipotezleri');report.serviceRecommendations.forEach(s=>rows.push(s.name,s.hypothesis,'Ölçüm: '+s.measurement));

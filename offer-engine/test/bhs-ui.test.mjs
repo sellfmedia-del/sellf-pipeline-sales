@@ -96,7 +96,11 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   const {context:fixture}=await import('./fixtures/evidence.mjs');
   const {renderGroundedReport}=await import('../src/bhs/grounded-report.mjs');
   page.setDefaultTimeout(10000);
-  const data=fixture().report;data.sources.forEach(s=>s.verification={status:'quote_matched'});data.rawReport=renderGroundedReport(data);data.scoring={total:null};data.quality={checksPassed:true,issues:[],semanticBenchmark:'passed'};
+  const data=fixture().report;data.sources.forEach(s=>s.verification={status:'quote_matched'});
+  data.verifiedResearch={metrics:[{id:'test-market',section:'market_demand',name:'Kreş sayısı',sourceIds:[],status:'open',requestedMarket:'Birleşik Krallık',requestedPeriod:'2025',
+   evidence:[{url:'https://statistics.example/england',title:'İstatistik kaydı',status:'read',geography:'İngiltere',accessed:'2026-11-17'},
+    {url:'https://supplier.example/catalogue',title:'Tedarikçi kataloğu',status:'discovered'}]}]};
+  data.rawReport=renderGroundedReport(data);data.scoring={total:null};data.quality={checksPassed:true,issues:[],semanticBenchmark:'passed'};
   await context.addInitScript(()=>{const original=setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,[10000,1500,3000].includes(ms)?0:ms,...args);});
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
@@ -145,12 +149,18 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/www\.brand\.example\/products/);
   assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/catalog\.brand\.example\/products/);
   assert.ok((await frame.locator('.ob-research-website').textContent()).includes(starts[0][1]));
+  await frame.getByText('Kreş sayısı · 2 kaynak',{exact:true}).click();
+  const evidence=frame.locator('details[open]').filter({has:frame.getByRole('link',{name:'İstatistik kaydı'})});
+  assert.equal(await evidence.getByRole('link',{name:'İstatistik kaydı'}).getAttribute('href'),'https://statistics.example/england');
+  assert.match(await evidence.textContent(),/Hedef pazar Birleşik Krallık.*Aranan dönem 2025.*İngiltere.*Erişim 2026-11-17/u);
+  assert.match(await evidence.textContent(),/Tedarikçi kataloğu · Aramada bulundu, okunmadı/u);
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.equal(priceActions.includes('status'),false);
   assert.match(await frame.locator('.ob-pricing').textContent(),/30.000/);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.deepEqual(errors,[]);
   assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   await frame.locator('.ob-compose').click();await frame.getByText('Teklif taslağı hazır',{exact:true}).waitFor();
+  assert.doesNotMatch(await frame.locator('.ob-proposal').textContent(),/Tedarikçi kataloğu|supplier\.example/u);
   assert.equal(await frame.locator('.ob-proposal .so-option').count(),2);assert.match(await frame.locator('.so-option').first().textContent(),viewport.currency==='USD'?/USD \/ ay/:/TL \/ ay/);if(viewport.currency==='USD'){assert.match(await frame.locator('.so-exchange-rate').textContent(),/44,1234/);assert.equal(actions.filter(a=>a==='start').length,1);}
   assert.match(await frame.locator('.so-docmeta').textContent(),/Marka özel teklifi/);
   assert.equal(await frame.locator('.so-client').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(23, 23, 23)');

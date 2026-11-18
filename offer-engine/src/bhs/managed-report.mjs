@@ -6,7 +6,7 @@ import {projectExpertReport,unsafeExpertClaim} from './expert-report.mjs';
 import {researchHost} from './research-url.mjs';
 import {assertSchema} from './schema.mjs';
 import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
-import {marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
+import {evidenceGeographySupported,marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
 import {salesGapLabels,salesGapStatus,salesMetricName,salesSectionTitle,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -556,6 +556,11 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    if(metrics.length&&!marketObservationSupported(row.observation,metrics.flatMap(m=>m.marketMeasures).filter(m=>cited(m.sources))))continue;
   }
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
+  if(taskReporting&&row.needIds?.some(id=>{
+   const need=needsById.get(id);
+   return /market|pazar|sekt[oö]r|industry/iu.test([need.section,need.metric,need.expected].join(' '));
+  })&&numericEvidence(row.observation,{locale:'tr',claims:true}).length&&
+   !evidenceGeographySupported(row.observation,sourceCards.map(card=>card.quote)))continue;
   if(swotId&&row.section===swotId&&['opportunity','threat'].includes(row.quadrant)&&
    !sourceCards.some(card=>researchHost(card.url)!==researchHost(context.input.brief.website)))continue;
   if(needsById){

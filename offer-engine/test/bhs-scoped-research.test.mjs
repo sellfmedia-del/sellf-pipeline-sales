@@ -18,6 +18,7 @@ import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
 import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
 import {scopedCoverage} from '../src/bhs/managed-report.mjs';
+import {boundScopedEvidence} from '../src/bhs/scoped-evidence-index.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {assertSchema} from '../src/bhs/schema.mjs';
 
@@ -982,6 +983,62 @@ test('market review keeps a metric open unless amount, unit, year and category s
  const accepted=await reviewScopedResearch({identity,briefUnderstanding,plan,providers,brief,packet,rounds:[round]});
  assert.equal(accepted.stopReason,'evidence_confirmed');
  assert.deepEqual(accepted.decisions[0].marketMeasures,[measure]);
+});
+
+test('a partial report carries each question’s sources and preserves England’s count without closing the UK question',async()=>{
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const market={...needs[0],id:'market',section:'market_demand',market:'Birleşik Krallık',period:'2025',
+  metric:'Aktif kreş sayısı',expected:'Kreş sayısı ve istatistiğin kapsadığı bölge'};
+ const play={...needs[0],id:'play',section:'nursery_demand',market:'Birleşik Krallık',metric:'Duyusal oyun talebi'};
+ const regulations={...needs[0],id:'safety',section:'compliance',market:'Birleşik Krallık',metric:'Ürün güvenliği'};
+ const prices={...needs[0],id:'prices',section:'pricing',market:'Birleşik Krallık',metric:'GBP liste fiyatları'};
+ const source=(id,url,quote,method='html')=>({id,url,quote,method,title:id,item:id,retrievedAt:'2026-11-17T15:56:18.374Z'});
+ const passage='In 2025, England had 59,700 registered childcare providers.';
+ const census=source('census','https://statistics.example/childcare',passage);
+ const guide=source('guide','https://safety.example/guidance','Great Britain guidance for placing toys on the market. Skip to main content.');
+ const price=source('price','https://catalogue.example/sets','Sensory play set costs £149.00 per pack.','search-snippet');
+ const pages=Array.from({length:20},(_,i)=>source('approved'+i,'https://nurseries.example/activity','Activities for nursery sensory play differ by room size and supported age group. Section '+(i+1)+'.'));
+ const receipt=(need,facts)=>({id:need.id,urls:facts.map(f=>f.url),facts,attempts:[{tool:'tavily'}]});
+ const measure={proof:census.id,amount:'59,700',year:'2025',unit:'providers',category:'registered childcare providers',passage};
+ const round={closed:true,stopReason:'research_budget_exhausted',receipts:[receipt(play,pages),receipt(market,[census]),receipt(regulations,[guide]),receipt(prices,[price])],
+  decisions:[{id:play.id,sufficient:true,proofs:pages.map(f=>f.id)},{id:market.id,sufficient:true,proofs:[census.id],marketMeasures:[measure]}]};
+ const plan={needs:[play,market,regulations,prices],adaptiveResearch:true,verifiedResults:true,taskReporting:true,
+  readEvidenceOnly:true,qualityReport:true,targetedEvidence:true,orderedResearch:true,scopeMarketCounts:true};
+ const saved=await writeScopedSynthesis({brief,brand,plan,rounds:[round],allowWrite:false,providers:{manager:()=>assert.fail('must not call a model')}});
+ const audit=directAuditResult(brief,saved).data;
+ const metric=id=>audit.verifiedResearch.metrics.find(m=>m.id===id);
+ assert.equal(metric(market.id).status,'open');
+ assert.equal(metric(market.id).marketMeasures[0].geography,'İngiltere');
+ assert.equal(metric(market.id).marketMeasures[0].year,'2025');
+ assert.ok(audit.findings.some(f=>f.statement===passage));
+ assert.equal(audit.findings.filter(f=>f.researchNeedIds?.includes(play.id)).length,1);
+ assert.deepEqual(metric(regulations.id).evidence,[{url:guide.url,title:guide.title,status:'read',geography:'Büyük Britanya',accessed:'2026-11-17'}]);
+ assert.deepEqual(metric(prices.id).evidence,[{url:price.url,title:price.title,status:'discovered'}]);
+ assert.match(audit.rawReport,/Hedef pazar Birleşik Krallık · Aranan dönem 2025/);
+ assert.match(audit.rawReport,/Metinde geçen coğrafya İngiltere/);
+ assert.doesNotMatch(audit.rawReport,/£149/);
+ assert.doesNotMatch(JSON.stringify(selectProposalAudit(audit,brief)),/catalogue\.example|safety\.example/);
+ const patch=structuredClone(saved.report);
+ patch.verifiedResearch.metrics.find(m=>m.id===prices.id).evidence=[{url:'https://other-catalogue.example/product',status:'discovered'}];
+ const merged=mergeManagedGapReport(saved.report,patch,['pricing']);
+ assert.deepEqual(merged.verifiedResearch.metrics.find(m=>m.id===prices.id).evidence.map(s=>s.url),[price.url,'https://other-catalogue.example/product']);
+ const edited=await writeScopedSynthesis({brief,brand,plan,rounds:[round],providers:{manager:async(_stage,input)=>{
+  const alias=Object.entries(input.sources).find(([,row])=>row[1]===passage)[0];
+  const base={area:'',rank:1,section:'Pazar',needIds:[market.id],quadrant:'none',peerId:'',kind:'observation',analysis:'Hedef kitleye yönelik başlangıç bilgisi sağlar.',
+   action:'Dağıtıcı erişimini pazarla karşılaştır.',measurement:'',limitation:'',question:'',proof:[alias]};
+  return {data:{findings:[{...base,observation:'In 2025, the United Kingdom had 59,700 registered childcare providers.'}],benchmarks:[],questions:[],peers:[]}};
+ }}});
+ const revised=directAuditResult(brief,edited).data;
+ assert.ok(revised.findings.some(f=>f.statement===passage));
+ assert.ok(!revised.findings.some(f=>/United Kingdom had/.test(f.statement)));
+});
+
+test('large source lists fit the offer transport while preserving access to the first source in every question',()=>{
+ const metrics=Array.from({length:12},(_,i)=>({evidence:Array.from({length:20},(_,j)=>({
+  url:'https://publisher.example/'+i+'/'+j+'/'+('x'.repeat(1500)),status:j?'discovered':'verified'}))}));
+ boundScopedEvidence(metrics);
+ assert.ok(JSON.stringify(metrics).length<46000);
+ assert.ok(metrics.every(metric=>metric.evidence[0].status==='verified'&&metric.additionalEvidence===true));
 });
 
 test('Claude plans scoped research after brand and brief, then writes and transfers a partial report with the saved evidence',async()=>{

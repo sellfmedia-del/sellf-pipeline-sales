@@ -16,7 +16,8 @@ import {researchTariff} from './research-tariff.mjs';
 import {groundedManagedResearchPlan,managedActors,managedCoverageSearches,managedEvidenceQuery,managedEvidenceQuestions,planManagedResearch} from './managed-research.mjs';
 import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
 import {managedReportInput,scopedCoverage,synthesizeManagedReport,synthesizeScopedReport} from './managed-report.mjs';
-import {marketObservationSupported} from './scoped-market.mjs';
+import {balancedScopedProofs,boundScopedEvidence,indexScopedEvidence} from './scoped-evidence-index.mjs';
+import {evidenceGeographies,marketObservationSupported} from './scoped-market.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -1143,7 +1144,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const writtenQuestions=plan.sectionedSynthesis&&useSavedEvidence?report?.meetingQuestions||[]:[];
  if(useSavedEvidence){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
-  const retained=reviewed.filter(row=>!plan.verifiedResults||!coverage.some(m=>m.id===row.needId&&m.marketMeasures)).slice(0,18);
+  const candidates=reviewed.filter(row=>!plan.verifiedResults||!coverage.some(m=>m.id===row.needId&&m.marketMeasures?.length));
+  const retained=plan.readEvidenceOnly?balancedScopedProofs(candidates,id=>context.known.get(reverse.get(id))):candidates.slice(0,18);
   report=projectExpertReport({peers:verifiedPeers,findings:retained.map(({id,section})=>{
    const sourceId=reverse.get(id),source=context.known.get(sourceId);
    return {id:'scoped_'+id,kind:'observation',dimension:Object.hasOwn(dimensionFor,section)?dimensionFor[section]:'operations',observation:source.quote,sourceIds:[sourceId],
@@ -1162,6 +1164,17 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  }
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse);
+  if(plan.readEvidenceOnly){
+   const sources=indexScopedEvidence(rounds.flatMap(round=>round.receipts||[]),evidence.coverage);
+   const needs=new Map(evidence.needs.map(need=>[need.id,need]));
+   for(const metric of report.verifiedResearch.metrics){
+    const need=needs.get(metric.id);
+    if(need?.market)metric.requestedMarket=need.market;
+    if(need?.period)metric.requestedPeriod=need.period;
+    if(sources.get(metric.id)?.length)metric.evidence=sources.get(metric.id);
+   }
+   boundScopedEvidence(report.verifiedResearch.metrics);
+  }
   if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
   report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis,plan.taskReporting);
  }
@@ -1182,7 +1195,10 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
 function retainScopedResults(report,context,coverage,reverse){
  const resolved=aliases=>unique(aliases.map(id=>reverse.get(id)).filter(id=>context.known.has(id)));
  const metrics=coverage.map(({sources,marketMeasures,...metric})=>({...metric,sourceIds:resolved(sources),
-  ...(marketMeasures?{marketMeasures:marketMeasures.map(({sources:links,passage,...measure})=>({...measure,sourceIds:resolved(links)}))}:{})}));
+  ...(marketMeasures?{marketMeasures:marketMeasures.map(({sources:links,passage,...measure})=>{
+   const geographies=evidenceGeographies(passage);
+   return {...measure,sourceIds:resolved(links),...(geographies.length===1?{geography:geographies[0]}:{})};
+  })}:{})}));
  const used=new Map(report.sources.map(s=>[s.id,s]));
  for(const id of unique(metrics.flatMap(m=>[...m.sourceIds,...(m.marketMeasures||[]).flatMap(row=>row.sourceIds)]))){
   if(!used.has(id))used.set(id,{...context.known.get(id),publishedAt:null,period:null,sourceType:'secondary'});
@@ -1230,7 +1246,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
-   ...(providers.managedBudgetVersion>=22?{taskReporting:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
