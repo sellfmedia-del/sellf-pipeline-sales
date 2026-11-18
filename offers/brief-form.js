@@ -177,9 +177,9 @@
       box.replaceChildren();
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
+      const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
       function renderSections(sections){
         const findings=new Map(data.findings.map(f=>[f.id,f]));
-        const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
         const gapLabels={not_searched:'Aranmadı',insufficient_sources:'Kaynak yetersiz',missing_from_report:'Kanıt bulundu, rapora aktarılamadı'};
         for(const section of sections){
           heading(section.title);
@@ -226,7 +226,35 @@
       if(data.quality.issues.length){heading('Tamamlanması gereken kontroller');paragraph('Verisi eksik veya güncel görüşme bağlamında doğrulanması gereken konular teklif hazırlamayı engellemez; kaynak ve kapsam kontrolünde tamamlanır.');}
       const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');
       summary.textContent='Araştırmanın tamamı ve doğrulanacak konular';text.className='ob-audit-raw';text.textContent=data.rawReport;details.append(summary,text);box.appendChild(details);
-      }else renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length||section.missingQuadrants?.length));
+      }else{
+        renderSections((data.bhsSections||[]).filter(section=>section.openMetrics?.length||section.missingQuadrants?.length));
+        if(data.supervision?.researchPlan?.reportRecovery&&data.meetingQuestions.length){
+          heading('Doğrulanacak sorular');data.meetingQuestions.forEach(q=>paragraph(q.question));
+        }
+      }
+      const recovery=data.verifiedResearch?.reportRecovery;
+      if(recovery?.evidence?.length||recovery?.hypotheses?.length){
+        const metrics=new Map(data.verifiedResearch.metrics.map(metric=>[metric.id,metric.displayName||metric.name]));
+        const sources=new Map(data.sources.map(source=>[source.id,source]));
+        function recoveryLine(text,ids){
+          const p=document.createElement('p');p.textContent=text;
+          for(const id of ids){
+            const source=sources.get(id);
+            if(!source||!/^https?:\/\//i.test(source.url))continue;
+            const link=document.createElement('a');link.href=source.url;link.textContent=source.title;link.target='_blank';link.rel='noopener noreferrer';
+            p.append(' · ',link);
+          }
+          box.append(p);
+        }
+        if(recovery.evidence?.length){
+          heading('Kısmi raporda korunan kanıtlar');
+          for(const row of recovery.evidence)recoveryLine(metrics.get(row.needId),row.sourceIds);
+        }
+        if(recovery.hypotheses?.length){
+          heading('Görüşmede sınanacak ticari ve SWOT hipotezleri');
+          for(const row of recovery.hypotheses)recoveryLine((quadrants[row.quadrant]||'Ticari karar')+' · '+row.question,row.sourceIds);
+        }
+      }
       if(data.verifiedResearch?.competitorCandidates?.length){
         heading('Doğrulanacak rakip adayları');
         data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));

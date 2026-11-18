@@ -118,7 +118,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.briefScope?23:priorPlan.taskReporting?22:priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.reportRecovery?24:priorPlan.briefScope?23:priorPlan.taskReporting?22:priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const scopedNeeds=new Set((original.verifiedResearch?.metrics||[]).filter(m=>sections.includes(m.section)).map(m=>m.id));
  const existing=original.findings.filter(f=>(sections.includes(f.bhsSection)||priorPlan.taskReporting&&f.researchNeedIds?.some(id=>scopedNeeds.has(id)))&&
@@ -303,9 +303,17 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
  const directProducts=new Set([...comparisons.values()].map(row=>row.candidate.url));
  const indirect=[...new Map([...(original.verifiedResearch?.indirectAlternatives||[]),...(patch.verifiedResearch?.indirectAlternatives||[])]
   .filter(item=>!directProducts.has(item.url)).map(item=>[item.url,item])).values()];
+ const recovery=original.verifiedResearch?.reportRecovery,patchRecovery=patch.verifiedResearch?.reportRecovery;
+ const reportedNeeds=new Set(findings.filter(f=>!f.researchEvidenceOnly).flatMap(f=>f.researchNeedIds||[]));
+ const reportedQuadrants=new Set(findings.map(f=>f.swotQuadrant).filter(Boolean));
+ const recoveryRows=(field,key)=>[...new Map([...(recovery?.[field]||[]),...(patchRecovery?.[field]||[]).filter(row=>eligibleNeeds.has(row.needId))]
+  .filter(row=>row.quadrant?!reportedQuadrants.has(row.quadrant):!reportedNeeds.has(row.needId)).map(row=>[key(row),row])).values()];
+ const recoveredEvidence=recoveryRows('evidence',row=>row.needId);
+ const recoveredHypotheses=recoveryRows('hypotheses',row=>row.question);
  return {...original,findings,competitors,
   ...(verified?{verifiedResearch:{metrics:boundScopedEvidence([...metrics.values()]),...(candidates.length?{competitorCandidates:candidates}:{}),
    ...(comparisons.size?{productComparisons:[...comparisons.values()]}:{}),...(indirect.length?{indirectAlternatives:indirect}:{}),
+   ...(recoveredEvidence.length||recoveredHypotheses.length?{reportRecovery:{evidence:recoveredEvidence,hypotheses:recoveredHypotheses}}:{}),
    ...(procurement.size?{buyerProcurement:[...procurement.values()]}:{})}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],

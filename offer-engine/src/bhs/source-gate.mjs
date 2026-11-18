@@ -34,12 +34,13 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  for(const proof of trusted.values())records.push({url:proof.url,aliases:[proof.url],title:proof.title,text:proof.quote,segments:[proof.quote],method:proof.method});
  const hydrated=hydrateCitationSources(value,trusted);
  const projected=offerReport(hydrated),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
- const buyerContexts=new Map();
+ const buyerContexts=new Map(),readableIds=new Set();
  const sources=(raw.sources||[]).filter(s=>{
   const url=publicUrl(s.url),quote=normalized(s.quote),buyer=s.id.startsWith('buyer_');
   const matches=r=>(!buyer||isReadEvidence(r))&&r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote));
   const record=records.find(matches);
   if(!record){issues.push({path:'sources.'+s.id,reason:'unread_source_or_unmatched_quote'});return false;}
+  if(isReadEvidence(record))readableIds.add(s.id);
   if(buyer){
    const context=records.filter(matches).flatMap(r=>r.segments).filter(text=>normalized(text).includes(quote))
     .reduce((longest,text)=>text.length>longest.length?text:longest,'');
@@ -79,6 +80,22 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
    const acceptedUrls=new Set(metric.sourceIds.map(id=>byId.get(id)?.url));
    for(const row of metric.evidence||[])if(row.status==='verified'&&!acceptedUrls.has(row.url))row.status='read';
   }
+ }
+ if(raw.verifiedResearch?.reportRecovery){
+  const recovery=raw.verifiedResearch.reportRecovery;
+  const verifiedByNeed=new Map((raw.verifiedResearch.metrics||[]).map(metric=>[metric.id,new Set(metric.sourceIds)]));
+  const checkRow=row=>{
+   const permitted=verifiedByNeed.get(row?.needId);
+   const sourceIds=Array.isArray(row?.sourceIds)?[...new Set(row.sourceIds.filter(id=>
+    permitted?.has(id)&&readableIds.has(id)))]:[];
+   return sourceIds.length?[{needId:row.needId,sourceIds}]:[];
+  };
+  const evidence=(Array.isArray(recovery.evidence)?recovery.evidence:[]).flatMap(checkRow);
+  const hypotheses=(Array.isArray(recovery.hypotheses)?recovery.hypotheses:[]).flatMap(row=>
+   typeof row?.question==='string'&&row.question.trim().endsWith('?')?checkRow(row).map(checked=>({...checked,question:row.question,
+    ...(['strength','weakness','opportunity','threat'].includes(row.quadrant)?{quadrant:row.quadrant}:{})})):[]);
+  if(evidence.length||hypotheses.length)raw.verifiedResearch.reportRecovery={evidence,hypotheses};
+  else delete raw.verifiedResearch.reportRecovery;
  }
  const needs=scopedFindings?new Map((raw.verifiedResearch?.metrics||[]).map(m=>[m.id,{metric:m.name,sectionTitle:m.sectionTitle}])):null;
  const selected=[];

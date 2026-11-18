@@ -245,7 +245,8 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
   usedInput:input,data:buyerIds.size?{...data,findings:list(data.findings).filter(row=>!row.needIds?.some(id=>buyerIds.has(id))&&
    !row.proof.some(proof=>structuredProofs.has(proof)))}:data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
- if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly});
+ if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,
+  independentParts:input.plan.reportRecovery===true});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
   const completion=await manager('bhs-scoped-report',request,outputSchema,{signal,maxOutputTokens:5400,minimumOutputTokens:1024,
@@ -285,7 +286,7 @@ function scopedPartRequests(request,coverage,sections){
  return parts.filter(part=>part.aliases.length||part.stage==='brief'&&part.metrics.length);
 }
 
-async function writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly}){
+async function writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,independentParts}){
  const parts=scopedPartRequests(request,coverage,sections);
  const data={findings:[],benchmarks:[],questions:[]};
  const completions=[];
@@ -296,7 +297,8 @@ async function writeScopedParts({providers,request,coverage,sections,swotId,outp
   const sources=Object.fromEntries(part.aliases.map(id=>[id,request.sources[id]]).filter(([,value])=>value));
   const docIds=new Set(Object.values(sources).map(row=>row[0]));
   const needIds=new Set(part.metrics.map(m=>m.id));
-  const prior=project(data).findings.map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null]);
+  // A completed part must use the same checkpoint key even if an earlier part is missing.
+  const prior=independentParts?[]:project(data).findings.map(f=>[f.bhsSection,f.statement,f.swotQuadrant||null]);
   const partRequest={...request,sources,
    ...(request.documents?{documents:Object.fromEntries(Object.entries(request.documents).filter(([id])=>docIds.has(id)))}:{}),
    ...(request.brandProofs?{brandProofs:request.brandProofs.filter(id=>Object.hasOwn(sources,id))}:{}),
@@ -328,14 +330,18 @@ async function writeScopedParts({providers,request,coverage,sections,swotId,outp
    const saved=await providers.readCheckpoint?.('scoped-report-part',key);
    const generate=async()=>{
     const response=await manager('bhs-scoped-report-'+part.stage,partRequest,partSchema,{
-     signal,compactReview:true,lowEffort:true,plainJson:true,maxOutputTokens:2600,minimumOutputTokens:1600,
-     reserveForFollowingKurus:(parts.length-index-1)*reportSectionReserveKurus,generationTimeoutMs:30000,
+     signal,compactReview:true,lowEffort:true,plainJson:true,maxOutputTokens:2600,minimumOutputTokens:independentParts?1050:1600,
+     reserveForFollowingKurus:(parts.length-index-1)*reportSectionReserveKurus+
+      (independentParts&&parts.slice(index+1).some(next=>next.stage==='swot')?reportSectionReserveKurus:0),generationTimeoutMs:30000,
      normalizeData:normalize,acceptPartialData:partial=>project(partial).findings.length>0
     });
     return {data:normalize(response.data),model:response.model??null,usage:response.usage??null,
      ...(response.partialOutput?{partialOutput:true}:{}),...(response.providerHandoff?{providerHandoff:response.providerHandoff}:{})};
    };
-   if(!saved&&savedPartsOnly)continue;
+   if(!saved&&savedPartsOnly){
+    if(independentParts)reportIssue??='report_checkpoint_missing';
+    continue;
+   }
    const written=saved||(providers.checkpoint?await providers.checkpoint('scoped-report-part',key,generate):await generate());
    // Re-apply the same proof and scope gate when restoring a saved part.
    const checked=normalize(written.data);
@@ -346,13 +352,15 @@ async function writeScopedParts({providers,request,coverage,sections,swotId,outp
    if(written.partialOutput)reportIssue='partial_model_document';
   }catch(error){
    const issue=managedModelIssue(error,signal);
-   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted)throw error;
+   if(!(error instanceof BudgetError)&&!reportFailures.has(issue)&&!signal.aborted&&
+    !(independentParts&&['model_deadline','model_network','input_budget'].includes(issue)))throw error;
    reportIssue??=issue;
    reportDiagnostic??=error.budgetDiagnostic||error.validationDetail;
   }
  }
  const exactBenchmarks=new Map(data.benchmarks.map(row=>[JSON.stringify(row),row]));
  const report=project({...data,benchmarks:[...exactBenchmarks.values()]});
+ if(independentParts&&!report.findings.length&&Object.keys(request.sources).length)reportIssue??='no_source_backed_findings';
  const handoff=completions.find(row=>row.providerHandoff)?.providerHandoff;
  const usage=completions.filter(row=>row.usage).map(({model,usage})=>({model,usage}));
  const completion=completions.length?{model:completions[0].model,usage:usage.length?{parts:usage}:null,...(handoff?{providerHandoff:handoff}:{})}:undefined;
