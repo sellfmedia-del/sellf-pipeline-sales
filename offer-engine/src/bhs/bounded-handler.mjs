@@ -62,6 +62,8 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    let session=(req.headers.cookie||'').match(/(?:^|;\s*)__Host-offer-research=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1],job;
    if(action==='start'){
     if(!/^[A-Za-z0-9_-]{16,80}$/.test(body.requestId||''))throw Error();
+    if(body.websiteInput!==undefined&&body.websiteInput!==body.brief.website)
+     throw new BudgetError('website_input_mismatch','Formdaki web sitesi ile araştırmaya gönderilen adres farklı. Web sitesi alanını kontrol et.');
     job={kind:'bounded_audit',createdAt:now(),briefHash:hash,auditHash:hash,leadId:body.context?.leadId,spaceId:body.context?.spaceId,researchVersion:getResearchVersion(),researchModel:getResearchModel()};
     if(body.context?.researchRunId!==undefined){
      if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(body.context.researchRunId))throw new BudgetError('budget_context','Teklif çalışması geçersiz.');
@@ -107,8 +109,20 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      log('bhs_website_lookup_deferred',{code:error.code});
     }
     phase='budget_init';await ledger.begin();
+    if(body.websiteInput!==undefined){
+     const entry={runId:job.researchRunId||body.requestId,requestId:body.requestId,submittedWebsite:body.websiteInput,acceptedWebsite:brief.website};
+     try{
+      await ledger.once('audit:website-input:'+ledgerHash(body.requestId),entry,0,async()=>entry);
+     }catch(error){
+      // An observability failure must not consume or reset research budget.
+      log('bhs_website_trace_unavailable',{runId:entry.runId,code:error.code||'store_error'});
+     }
+    }
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
    }
+   res.setHeader('X-Offer-BHS-Website',brief.website);
+   if(job.researchRunId)res.setHeader('X-Offer-BHS-Run-Id',job.researchRunId);
+   else if(action==='start')res.setHeader('X-Offer-BHS-Run-Id',body.requestId);
    // Display baseline only: never reset the durable ledger or its reservations.
    if(action==='start')job.attemptStartKurus=(await ledger.status()).chargedKurus;
    const ticket=codec.encode(job,session,host),cost=async()=>{

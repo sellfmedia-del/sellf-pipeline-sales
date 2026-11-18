@@ -43,6 +43,28 @@ test('reserved or uncertain stages cannot launch another paid worker',async()=>{
   }
  }finally{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;}
 });
+test('website submission is traced within the run at zero cost and cannot disagree with the brief',async()=>{
+ const prior=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  let begins=0;const trace=new Map();
+  const deps={getResearchVersion:()=>'v5',getSecret:()=>secret,validateWebsite:async()=>{},logger:{},
+   getProviders:()=>({configured:()=>true}),getLedger:async()=>({
+    begin:async()=>{begins++;},get:async()=>null,status:async()=>({chargedKurus:500,capKurus:5000}),
+    once:async(key,input,amount,run)=>{assert.equal(amount,0);if(!trace.has(key))trace.set(key,await run());else assert.deepEqual(input,trace.get(key));}
+   })};
+  const researchRunId='1bc8aecc-e51d-4627-994b-7a83db1a0001',website='www.brand.example/catalog';
+  const start={action:'start',requestId:'request_1234567890',websiteInput:website,brief:{...brief,website},context:{leadId:'lead1',researchRunId}};
+  for(let i=0;i<2;i++){
+   const res=response();await createBoundedAuditHandler(deps)(request(start),res);
+   assert.equal(res.code,200);assert.equal(res.headers['X-Offer-BHS-Website'],'https://www.brand.example/catalog');
+   assert.equal(res.headers['X-Offer-BHS-Run-Id'],researchRunId);
+  }
+  assert.deepEqual([...trace.values()],[{runId:researchRunId,requestId:start.requestId,submittedWebsite:website,acceptedWebsite:'https://www.brand.example/catalog'}]);
+  const res=response();await createBoundedAuditHandler(deps)(request({...start,websiteInput:'unrelated.example'}),res);
+  assert.equal(res.code,422);assert.equal(res.body.code,'website_input_mismatch');
+  assert.equal(begins,2);assert.equal(trace.size,1);
+ }finally{if(prior===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=prior;}
+});
 test('seed discovery covers company, competitors, finance, market, reputation, and channels',()=>{
  const queries=seedQueries(brief);assert.equal(queries.length,8);assert.ok(queries.every(x=>x.includes(brief.brandName)));
  assert.ok(queries.some(x=>x.includes('finansal')));assert.ok(queries.some(x=>x.includes('yorum')));

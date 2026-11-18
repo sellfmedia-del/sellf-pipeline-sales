@@ -169,6 +169,8 @@
       try{
         const response=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body});
         const result=await response.json();
+        const website=response.headers.get('X-Offer-BHS-Website');
+        if(website){result.acceptedWebsite=website;result.researchRunId=response.headers.get('X-Offer-BHS-Run-Id');}
         frame.contentWindow.postMessage({type:'offer-audit-result',requestId,...(response.ok?{result}:{error:result.error||'BHS araştırması tamamlanamadı.'})},'*');
       }catch{frame.contentWindow.postMessage({type:'offer-audit-result',requestId,error:'BHS araştırma servisine bağlanılamadı.'},'*');}
     });

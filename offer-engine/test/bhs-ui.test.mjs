@@ -100,6 +100,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
    if(url.pathname==='/api/audit'){
     const body=req.postDataJSON();actions.push(body.action);
     if(body.action==='start'){
+     assert.equal(body.websiteInput,'www.brand.example/products');assert.equal(body.brief.website,body.websiteInput);
      starts.push([body.requestId,body.context.researchRunId]);
      if(reconnectStart&&starts.length===1)return route.abort('failed');
     }
@@ -113,17 +114,19 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
      completeAudit={stage:'audit',status:'ready',data};
      response={phase:'complete',result:completeAudit,pricingProof:createPricingProof(secret).encode({kind:'audit_ready',createdAt:Date.now(),briefHash:data.briefHash,auditHash:digest(completeAudit)},session,url.host)};
     }else response={phase:phases[Number(body.ticket)]+'_complete',ticket:body.ticket,nextAction:'advance'};
-    return route.fulfill({headers:{'Set-Cookie':'__Host-offer-research='+session+'; Path=/; Secure; HttpOnly; SameSite=Strict'},contentType:'application/json',body:JSON.stringify(response)});
+    return route.fulfill({headers:{'Set-Cookie':'__Host-offer-research='+session+'; Path=/; Secure; HttpOnly; SameSite=Strict','X-Offer-BHS-Website':snapshotBrief(body.brief).website,'X-Offer-BHS-Run-Id':body.context.researchRunId},contentType:'application/json',body:JSON.stringify(response)});
    }
    if(url.pathname==='/api/logo-upload'){const logo=await prepareUploadedLogo(req.postDataJSON().image);return route.fulfill({contentType:'application/json',body:JSON.stringify({...logo,logoProof:logoProof(secret,url.host,logo)})});}
    try{const file=path.join(process.cwd(),'public',url.pathname==='/'?'index.html':url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
   });
   await page.goto('https://preview.vercel.app/');const frame=page;await frame.locator('.card').first().click();await frame.locator('.offer-create').click();const before=await page.evaluate(()=>JSON.stringify(db));
-  await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-currency').selectOption(viewport.currency);await frame.locator('#ob-website').fill('brand.example');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
+  await frame.locator('#ob-segment').selectOption('corporate');await frame.locator('#ob-currency').selectOption(viewport.currency);await frame.locator('#ob-website').fill('previous.example');await frame.locator('#ob-website').fill('www.brand.example/products');await frame.locator('#ob-goals').fill('Bayi büyümesi');await frame.locator('#ob-needs').fill('Servis');await frame.locator('#ob-services').fill('Growth');
   await frame.locator('#ob-logo-screenshot').setInputFiles(path.join(process.cwd(),'public/examples/logo-white.png'));await frame.locator('.ol-result:not([hidden])').waitFor();await frame.locator('.ob-next').click();
   if(viewport.width===390&&viewport.currency==='TRY'){await frame.getByText('BHS bağlantısı kesildi',{exact:true}).waitFor();assert.equal(disconnected,3);assert.equal(actions.filter(a=>a==='start').length,1);await frame.locator('.ob-resume').click();}
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(starts.length,reconnectStart?2:1);if(reconnectStart)assert.deepEqual(starts[0],starts[1]);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   if(viewport.width===390&&viewport.currency==='USD'){assert.equal(disconnected,3);assert.equal(await frame.locator('.ob-resume').isVisible(),false);}
+  assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/www\.brand\.example\/products/);
+  assert.ok((await frame.locator('.ob-research-website').textContent()).includes(starts[0][1]));
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.equal(priceActions.includes('status'),false);
