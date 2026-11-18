@@ -236,3 +236,16 @@ test('paid completion dispatches only linked open work in its approved section',
  assert.deepEqual(searches,[newPrices.query]);
  assert.deepEqual(result.newNeeds.map(need=>need.id),[newPrices.id]);
 });
+
+test('rejected follow-ups cannot keep research open after all approved tasks are confirmed',async()=>{
+ const proof={id:'f1',url:'https://publisher.example/safety',title:'Toy safety',quote:'The UK sets toy safety requirements for products sold to UK nurseries.',
+  item:'toy safety',method:'html'};
+ const providers={managedBudgetVersion:23,researchCapacity:async()=>availableTools,
+  manager:async()=>({data:reviewed({newNeeds:[{...group,...importTax}],commands:[command(importTax.query)]})}),
+  search:()=>assert.fail('Completed research cannot pay for a rejected task')};
+ const result=await scopedReview(providers,{rounds:[{receipts:[{...receipt,facts:[proof],urls:[proof.url]}],
+  decisions:[{id:initial.id,sufficient:true,proofs:[proof.id]}],reviewedProofIds:[proof.id]}]});
+ assert.equal(result.approved,true);
+ assert.equal(result.stopReason,'evidence_confirmed');
+ assert.deepEqual(result.openNeeds,[]);
+});

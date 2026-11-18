@@ -778,7 +778,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   if(attempted.has(commandKey(c))||targeted&&c.tool==='read'&&alreadyRead(c.id,c.url))return 'duplicate';
   return c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
  };
- const approved=data.approve&&(scope?!newNeeds.length&&!data.commands.some(c=>!commandState(c)):!data.commands.length&&!data.newNeeds.length)&&
+ const proposedWork=data.commands.length>0||data.newNeeds.length>0;
+ const pendingWork=scope?newNeeds.length>0||data.commands.some(c=>!commandState(c)):proposedWork;
+ const approved=(data.approve||Boolean(scope&&proposedWork&&!pendingWork))&&!pendingWork&&
   (readEvidenceOnly?!openNeeds.some(inScope):!guarded||!openNeeds.length);
  if(last||approved)return {approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),...proofCheckpoint(),
   ...(approved&&guarded?{stopReason:'evidence_confirmed'}:{}),...(!approved?{issue:'research_needs_open'}:{})};
