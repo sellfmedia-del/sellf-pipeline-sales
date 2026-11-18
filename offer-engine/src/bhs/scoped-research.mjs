@@ -8,6 +8,7 @@ import {marketMeasureInstruction,marketMeasureMatchesScope,marketMeasureNeed,ver
 import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
+import {supportsBuyerDemand} from './scoped-findings.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -435,7 +436,7 @@ function receiptFacts(receipts,readEvidenceOnly=false){
  return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,reserveForFollowingKurus=0}){
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,reserveForFollowingKurus=0}){
  const tasks=needs.map(({id,target,market,metric,period,expected,quantity})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
@@ -455,6 +456,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
    (providers.managedBudgetVersion>=19?' Aynı sayfada başka ölçümün bulunması, bu işte talep edilen ölçümü doğrulamaz. sufficient için bu işin beklenen kanıtını kontrol et.':'')+
    (readEvidenceOnly?' '+readEvidenceInstruction:'')+
+   (qualifyReportFindings?' Kullanım kılavuzu ve ürün özelliği talebi doğrulamaz. Talep için alıcı davranışı, sipariş, bütçe veya alıcının bildirdiği tercih gibi gözlenmiş kanıt ara.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')
  },scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
@@ -472,7 +474,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   const need=needs.find(n=>n.id===task.id);
   const decision=providers.managedBudgetVersion>=17&&marketMeasureNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
-   confirmed(need,saved,facts,rivalHosts,readEvidenceOnly)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
+   confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
   for(const f of task.incoming)seen.add(f.id);
   checked.set(decision.id,decision);
   decisions.push(decision);
@@ -511,9 +513,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const seen=new Set(rounds.flatMap(round=>round.reviewedProofIds||[]));
  const reviewedBefore=new Set(seen);
  let rivalHosts=plan.qualityReport?peerHosts(rounds.flatMap(r=>r.peers||[]),brief.website,targeted):undefined;
- const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly);
+ const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings);
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
@@ -621,6 +623,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (useMeasurements?' '+measurementInstruction+' newNeeds içindeki her ölçümü ayrı kimlikle yaz. Bir komut yalnız kendi kimliğindeki ölçümü araştırmalı. Bir ölçümün kanıtıyla diğerini kapatma. İlgili yayıncı sayfası önceden bulunduysa aynı aramayı satın almadan read ile açık ölçümü o sayfada doğrula.':'')+
    (plan.taskReporting?' '+taskTitleInstruction:'')+
    (readEvidenceOnly?' '+readEvidenceInstruction+' Adayı ancak kendi kaynağındaki ürün/hizmet ve hedef pazardaki ikame örtüşmesi doğrulanmışsa direct yaz. İlişkili marka veya doğrulanamamış adayı ayrı tut.':'')+
+   (plan.qualifyReportFindings?' Kullanım bilgisi, özellik ve faydayı talep kanıtı sayma. Talep için alıcı davranışı, sipariş, bütçe veya alıcı araştırmasına doğrudan dayanan kanıt iste.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
@@ -765,10 +768,11 @@ function countProofs(need,proofs=[],facts){
  const ids=new Set(proofs);
  return new Set(facts.filter(f=>f.needId===need.id&&ids.has(f.id)).map(f=>f.item.toLocaleLowerCase('tr'))).size;
 }
-function confirmed(need,decision,facts,rivalHosts,readEvidenceOnly=false){
+function confirmed(need,decision,facts,rivalHosts,readEvidenceOnly=false,qualifyReportFindings=false){
  const supportsNeed=f=>f.needId===need.id&&decision?.proofs?.includes(f.id)&&(!readEvidenceOnly||isReadEvidence(f));
  if(rivalHosts&&comparisonNeed(need)&&!facts.some(f=>supportsNeed(f)&&rivalHosts.has(researchHost(f.url))&&publisherRead(f)))return false;
  if(readEvidenceOnly&&!facts.some(supportsNeed))return false;
+ if(qualifyReportFindings&&!supportsBuyerDemand(need,facts.filter(supportsNeed).map(fact=>fact.quote)))return false;
  if(typeof decision?.sufficient==='boolean')return decision.sufficient&&decision.proofs.length>0;
  return countProofs(need,decision?.proofs,facts)>=need.quantity;
 }
@@ -811,7 +815,7 @@ export function scopedEvidence(brand,plan,rounds){
   const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n,plan.scopeMarketCounts)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts,plan.scopeMarketCounts):undefined;
   const proofs=facts.filter(f=>f.needId===n.id&&decision?.proofs.includes(f.id)&&(!readEvidenceOnly||isReadEvidence(f)));
   const displayName=salesMetricName(n);
-  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly)&&(!marketMeasures||marketMeasures.some(row=>!plan.scopeMarketCounts||marketMeasureMatchesScope(n,row)))?'confirmed':'open';
+  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)&&(!marketMeasures||marketMeasures.some(row=>!plan.scopeMarketCounts||marketMeasureMatchesScope(n,row)))?'confirmed':'open';
   const researchStatus=taskReporting&&status==='open'?(proofs.length?'partially_verified':
    [...(sourceReads.get(n.id)?.values()||[])].includes(false)?'source_unreadable':
    completedLookups.has(n.id)?'searched':searched.has(n.id)?'search_incomplete':interrupted?'interrupted':'not_searched'):undefined;

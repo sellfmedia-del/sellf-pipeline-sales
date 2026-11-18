@@ -1048,7 +1048,7 @@ test('the scoped writer keeps usage, requires buyer evidence for demand, and dro
  const plan={needs:[usage,buying],qualifyReportFindings:true,taskReporting:true,readEvidenceOnly:true,adaptiveResearch:true,
   targetedEvidence:true,qualityReport:true,verifiedResults:true,sectionedSynthesis:true,orderedResearch:true};
  const round={closed:true,stopReason:'research_budget_exhausted',receipts:[{id:usage.id,facts:[features,menu],urls:[features.url,menu.url]},
-  {id:buying.id,facts:[survey],urls:[survey.url]}],decisions:[{id:usage.id,sufficient:false,proofs:[features.id,menu.id]},
+  {id:buying.id,facts:[survey],urls:[survey.url]}],decisions:[{id:usage.id,sufficient:true,proofs:[features.id,menu.id]},
   {id:buying.id,sufficient:true,proofs:[survey.id]}]};
  const use='Kılavuz, duyusal odaların kreşlerde gözetimli duyusal oyun etkinliklerini desteklediğini açıklıyor.';
  const demand='Fransa’daki ankette kreş yöneticileri, duyusal oyun setlerine taleplerini sınıfları için verdikleri siparişlerle gösterdi.';
@@ -1067,6 +1067,7 @@ test('the scoped writer keeps usage, requires buyer evidence for demand, and dro
  assert.deepEqual(audit.findings.map(f=>f.statement),[use,demand]);
  assert.equal(audit.findings[0].bhsSectionTitle,'Kullanım ve uygulama');
  assert.deepEqual(audit.findings[0].researchNeedIds,[]);
+ assert.equal(audit.verifiedResearch.metrics.find(m=>m.id===usage.id).status,'open');
  assert.deepEqual(audit.bhsSections.find(s=>s.id===usage.section).openMetrics.map(m=>m.id),[usage.id]);
  assert.deepEqual(selectProposalAudit(audit,brief).findings.map(f=>f.statement),[use,demand]);
 });

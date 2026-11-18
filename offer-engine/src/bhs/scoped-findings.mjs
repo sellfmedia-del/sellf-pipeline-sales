@@ -28,6 +28,14 @@ const hasBuyerEvidence=text=>[...sentences.segment(text)].some(({segment})=>{
 });
 const demandQuestion=need=>demand.test(fold([need?.metric,need?.sectionTitle].join(' ')));
 
+export function supportsBuyerDemand(need,quotes){
+ const metric=fold(need.metric);
+ // A title can group population, usage and demand. The metric decides
+ // whether the purchasing-evidence requirement applies to this question.
+ const intent=demand.test(metric)&&(!/\bbeklenti\p{L}*\b/u.test(metric)||demand.test(fold(need.sectionTitle)));
+ return !intent||quotes.some(hasBuyerEvidence);
+}
+
 export function qualifyScopedFinding(row,cards,needs,{excludeLiteral=false}={}){
  if(!readableFinding(row.observation)||excludeLiteral&&cards.some(card=>key(card.quote)===key(row.observation)))return null;
  const linkedDemand=(row.needIds||[]).filter(id=>demandQuestion(needs?.get(id)));
