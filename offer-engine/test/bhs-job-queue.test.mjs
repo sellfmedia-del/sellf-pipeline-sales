@@ -385,6 +385,37 @@ test('existing audit endpoint queues v8 and reconnects to the original budget wi
   r=res();await h(request,r);assert.equal(r.code,202);assert.equal(enqueues,1);assert.equal(r.body.phase,'sector_sources');
  }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
 });
+test('a brand mismatch cannot open a budget or queue a job, and an uncertain address requires exact confirmation',async()=>{
+ const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const checkedWebsite='https://official-catalog.example/',job={id:other,leadId:'lead1',budgetId:token,briefHash:hash,state:'queued',phase:'brand_sources'};
+  let status='mismatch',begins=0,enqueues=0,checks=0,trace;
+  const queue={find:async()=>enqueues?job:null,enqueue:async()=>{enqueues++;return job;},read:async()=>job};
+  const ledger={begin:async()=>{begins++;},status:async()=>({id:token,capKurus:5000,chargedKurus:500}),
+   once:async(_key,_input,amount,save)=>{assert.equal(amount,0);trace ||= await save();return trace;}};
+  const h=createBoundedAuditHandler({getQueue:async()=>queue,isBackgroundEnabled:()=>true,getResearchVersion:()=>'v8',getResearchModel:()=>'claude-sonnet-5-5',getSecret:()=>secret,getLedger:async()=>ledger,
+   validateWebsite:async()=>{checks++;return {status,website:checkedWebsite};},getProviders:()=>assert.fail('no billable provider'),logger:{}});
+  const body={action:'start',brief,websiteInput:brief.website,requestId:'synthetic_request_12345',context:{leadId:'lead1'}};
+  async function post(confirmedWebsite){
+   const result=res();await h({method:'POST',headers:{host:'preview.vercel.app',origin:'https://preview.vercel.app'},body:{...body,confirmedWebsite}},result);return result;
+  }
+  for(const confirmation of [undefined,checkedWebsite]){
+   const result=await post(confirmation);
+   assert.equal(result.code,422);assert.equal(result.body.code,'website_brand_mismatch');
+   assert.deepEqual(result.body.websiteIdentity,{submittedWebsite:brief.website,checkedWebsite});
+  }
+  status='unconfirmed';
+  const pending=await post('https://another.example/');
+  assert.equal(pending.body.code,'website_confirmation_required');assert.equal(begins,0);assert.equal(enqueues,0);
+  const accepted=await post(checkedWebsite);
+  assert.equal(accepted.code,202);assert.equal(accepted.headers['X-Offer-BHS-Resolved-Website'],checkedWebsite);
+  assert.equal(trace.checkedWebsite,checkedWebsite);assert.equal(trace.acceptedWebsite,brief.website);
+  status='mismatch';
+  const reconnected=await post();
+  assert.equal(reconnected.code,202);assert.equal(reconnected.headers['X-Offer-BHS-Resolved-Website'],checkedWebsite);
+  assert.equal(checks,4);assert.equal(enqueues,1);
+ }finally{if(env===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=env;}
+});
 test('a paused background job automatically keeps the offer open without misrepresenting incomplete research',async()=>{
  const env=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
  try{

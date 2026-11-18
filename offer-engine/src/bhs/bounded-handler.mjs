@@ -1,7 +1,8 @@
 import {hasGroundedResearch} from './research-content.mjs';
 import {offersEnabled,productionOffers} from '../runtime.mjs';
 import {randomBytes,randomUUID} from 'node:crypto';
-import {snapshotBrief,briefHash,validatePublicBrief} from './brief.mjs';
+import {snapshotBrief,briefHash} from './brief.mjs';
+import {validateResearchWebsite} from './website-identity.mjs';
 import {createPricingProof,digest} from '../pricing/proof.mjs';
 import {budgetFor,hash as ledgerHash,tariff,tariffReadiness,BudgetError} from '../budget/ledger.mjs';
 import {createRuntimeProviders as createBoundedProviders} from '../budget/providers.mjs';
@@ -33,6 +34,12 @@ const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedMo
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
 const backgroundDeadlineMs=10*60000;
+const websiteErrors={
+ mismatch:{code:'website_brand_mismatch',error:'Bu adresin sayfası başka bir marka adı gösteriyor. BHS başlatılmadı. Brief’teki web sitesi adresini düzelt.'},
+ unconfirmed:{code:'website_confirmation_required',error:'Bu adresin markaya ait olduğunu doğrulayamadık. BHS başlatılmadı. Adresi düzelt veya aşağıdaki adresi kontrol edip onayla.'},
+ unreachable:{code:'website_unreachable',error:'Girdiğin web sitesi adresine ulaşılamadı. BHS başlatılmadı. Brief’teki site adresini kontrol et.'},
+ invalid_redirect:{code:'website_invalid_redirect',error:'Web sitesinin yönlendirmesi doğrulanamadı. BHS başlatılmadı. Açılan doğru adresi doğrudan brief’e gir.'}
+};
 
 function backgroundHandoffReason(job,now){
  if(job.cancelRequested)return 'research_cancelled';
@@ -42,7 +49,7 @@ function backgroundHandoffReason(job,now){
  return null;
 }
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validatePublicBrief,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validateResearchWebsite,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
@@ -97,22 +104,33 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const checkpointHash=job.queueBriefHash||hash;activeCheckpointHash=checkpointHash;
    const key=name=>stageKey(brief,name,researchVersion,checkpointHash);
    let ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
-   let websiteUnavailable=false;
+   let websiteUnavailable=false,checkedWebsite;
    if(action==='start'){
     phase='website_check';
-    try{await validateWebsite(brief);}
-    catch(error){
-     if(!queue||!temporaryDnsError(error))throw error;
-     // A transient DNS lookup cannot authorize research. An existing job can
-     // still be read, and a new offer can use the signed zero-cost handoff.
-     websiteUnavailable=!job.backgroundJobId;
-     log('bhs_website_lookup_deferred',{code:error.code});
+    if(!job.backgroundJobId){
+     let identity;
+     try{identity=await validateWebsite(brief);}
+     catch(error){
+      if(!queue||!temporaryDnsError(error))throw error;
+      // A transient DNS lookup cannot authorize research. The new offer can
+      // still use the signed zero-cost handoff.
+      websiteUnavailable=true;
+      log('bhs_website_lookup_deferred',{code:error.code});
+     }
+     const issue=Object.hasOwn(websiteErrors,identity?.status)?websiteErrors[identity.status]:null;
+     const confirmed=identity?.status==='unconfirmed'&&body.confirmedWebsite===identity.website;
+     if(issue&&!confirmed){
+      log('bhs_website_check_blocked',{code:issue.code,redirected:identity.website!==brief.website});
+      return res.status(422).json({...issue,websiteIdentity:{submittedWebsite:brief.website,checkedWebsite:identity.website}});
+     }
+     if(identity?.website&&identity.website!==brief.website)checkedWebsite=identity.website;
     }
     phase='budget_init';await ledger.begin();
     if(body.websiteInput!==undefined){
      const entry={runId:job.researchRunId||body.requestId,requestId:body.requestId,submittedWebsite:body.websiteInput,acceptedWebsite:brief.website};
      try{
-      await ledger.once('audit:website-input:'+ledgerHash(body.requestId),entry,0,async()=>entry);
+      const saved=await ledger.once('audit:website-input:'+ledgerHash(body.requestId),entry,0,async()=>({...entry,...(checkedWebsite?{checkedWebsite}:{})}));
+      checkedWebsite=saved?.checkedWebsite||checkedWebsite;
      }catch(error){
       // An observability failure must not consume or reset research budget.
       log('bhs_website_trace_unavailable',{runId:entry.runId,code:error.code||'store_error'});
@@ -121,6 +139,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
     if(!session){session=randomBytes(32).toString('base64url');const existing=res.getHeader?.('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),'__Host-offer-research='+session+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200']);}
    }
    res.setHeader('X-Offer-BHS-Website',brief.website);
+   if(checkedWebsite)res.setHeader('X-Offer-BHS-Resolved-Website',checkedWebsite);
    if(job.researchRunId)res.setHeader('X-Offer-BHS-Run-Id',job.researchRunId);
    else if(action==='start')res.setHeader('X-Offer-BHS-Run-Id',body.requestId);
    // Display baseline only: never reset the durable ledger or its reservations.

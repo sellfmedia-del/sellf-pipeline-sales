@@ -96,6 +96,8 @@
 #offer-brief-dialog .ob-continuation{margin:16px 0;padding:12px;border:1px solid var(--border,#e2e0d8);border-radius:7px}
 #offer-brief-dialog .ob-continuation p{margin:0 0 12px;font-size:12px;line-height:1.6}
 #offer-brief-dialog .ob-continue{max-width:100%;white-space:normal;border:1px solid var(--text,#1a1917);border-radius:7px;padding:8px 12px;background:var(--text,#1a1917);color:white}
+#offer-brief-dialog .ob-confirm-website{min-height:44px;max-width:100%;padding:8px 12px;border:1px solid var(--border2);border-radius:7px;background:var(--surface);color:var(--text)}
+#offer-brief-dialog .ob-research-website{overflow-wrap:anywhere}
 
 #offer-brief-dialog .ob-monthly-choice{display:flex;align-items:center;gap:9px;font-size:13px}
 #offer-brief-dialog .ob-monthly-choice input{width:auto}

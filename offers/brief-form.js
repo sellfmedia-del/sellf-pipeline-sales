@@ -46,7 +46,7 @@
           </fieldset>
         </form>
         <section class="ob-review" aria-labelledby="ob-review-title" hidden>
-          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><p class="ob-research-website ob-hint" hidden></p><p class="ob-draft-cost ob-hint" hidden></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Normal maliyet hedefi 30–40 TL’dir; toplam 50 TL üst sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-continuation" hidden><p>Doğrulanan bulgular ve görüşme bilgileriyle teklif hazırlığına geçebilirsin.</p><button type="button" class="ob-continue">Mevcut bilgilerle teklife devam et</button></section><section class="ob-gap-completion" hidden><p></p><button type="button" class="ob-complete-gaps">Sadece eksik kalan kısımları tamamla</button></section><section class="ob-service-selection" hidden><h3>Teklife dahil edilecek hizmetleri seç</h3><p class="ob-hint">Her alternatifte veya ayda yalnızca seçtiğin maliyetler hesaplanır. Account ve Growth otomatik eklenmez. Proje bedelleri retainer’dan ayrı gösterilir.</p><fieldset class="ob-monthly-fieldset"><legend>Fiyatlandırma</legend><label class="ob-monthly-choice"><input type="checkbox" class="ob-monthly-toggle"> Ay bazlı fiyatlandır</label><p class="ob-hint">Seçili değilse mevcut iki alternatif hesaplanır. Seçildiğinde hizmet ve projeleri ilgili aylara ekleyebilirsin.</p><div class="ob-standard-editor"></div><div class="ob-monthly-editor" hidden></div><p class="ob-monthly-error ob-error" role="alert"></p></fieldset></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
+          <span class="ob-review-tag">ÖN BHS ARAŞTIRMASI</span><h2 id="ob-review-title" tabindex="-1">Araştırma hazırlanıyor</h2><p class="ob-review-notice" role="status"></p><p class="ob-research-website ob-hint" hidden></p><button type="button" class="ob-confirm-website" hidden>Adresi doğruladım, BHS’yi başlat</button><p class="ob-draft-cost ob-hint" hidden></p><details class="ob-cost-detail" hidden><summary>Maliyet ayrıntısı</summary><p class="ob-cost-copy"></p></details><section class="ob-recovery" hidden><p>Önceki sonuçlar ve ayrılmış maliyetler korunur. Yalnızca durmuş aşama için bir ek deneme yapılır. Normal maliyet hedefi 30–40 TL’dir; toplam 50 TL üst sınırı korunur. Kalan tutar araştırmanın tamamlanmasına yetmeyebilir.</p><button type="button" class="ob-retry">Kalan bütçeyle yeniden dene</button></section><section class="ob-continuation" hidden><p>Doğrulanan bulgular ve görüşme bilgileriyle teklif hazırlığına geçebilirsin.</p><button type="button" class="ob-continue">Mevcut bilgilerle teklife devam et</button></section><section class="ob-gap-completion" hidden><p></p><button type="button" class="ob-complete-gaps">Sadece eksik kalan kısımları tamamla</button></section><section class="ob-service-selection" hidden><h3>Teklife dahil edilecek hizmetleri seç</h3><p class="ob-hint">Her alternatifte veya ayda yalnızca seçtiğin maliyetler hesaplanır. Account ve Growth otomatik eklenmez. Proje bedelleri retainer’dan ayrı gösterilir.</p><fieldset class="ob-monthly-fieldset"><legend>Fiyatlandırma</legend><label class="ob-monthly-choice"><input type="checkbox" class="ob-monthly-toggle"> Ay bazlı fiyatlandır</label><p class="ob-hint">Seçili değilse mevcut iki alternatif hesaplanır. Seçildiğinde hizmet ve projeleri ilgili aylara ekleyebilirsin.</p><div class="ob-standard-editor"></div><div class="ob-monthly-editor" hidden></div><p class="ob-monthly-error ob-error" role="alert"></p></fieldset></section><section class="ob-proposal-controls" hidden><h3>Başlangıç planı</h3><label>Çalışma modu <select class="ob-plan-mode"><option value="growth">Growth</option><option value="operations">Operasyon</option><option value="manual">Manuel</option></select></label><p>Growth, ilk alternatifte tam BHS ve strateji planını kullanır. Operasyon alternatifi sadece seçili hizmetleri kapsar. Manuel adımlar değiştirilmeden aktarılır.</p><label class="ob-manual-label" hidden>Manuel adımlar: her satırda zaman | adım<textarea class="ob-manual-steps" maxlength="2500" placeholder="İlk hafta | Erişimlerin alınması"></textarea></label></section><section class="ob-proposal" hidden></section><div class="ob-approval" hidden><label><input type="checkbox" class="ob-logo-approved"> Logoyu teklif üzerinde kontrol ettim; görünümü ve yerleşimi uygun.</label><label><input type="checkbox" class="ob-scope-approved"> Kapsamı, iki alternatifin aylık bedellerini ve başlangıç planını kontrol ettim.</label><p class="ob-save-status" role="status"></p></div><section class="ob-pricing ob-audit-report" aria-label="Fiyat alternatifleri" hidden></section><div class="ob-audit-report ob-research-report"></div><details class="ob-brief-details"><summary>Analize iletilen brief</summary><dl class="ob-review-data"></dl></details>
         </section>
       </div>
       <footer class="ob-footer"><p>${window.PipelineOfferPersistence?'Kalıcı test alanı · Gerçek Pipeline verileri kullanılmaz.':'Önizleme: Düzenlemeler kaydedilmez.'}</p><div><button type="button" class="ob-back">Karta dön</button><button type="submit" form="offer-brief-form" class="ob-next">BHS Analizini Hazırla</button><button type="button" class="ob-price" hidden>Fiyat Alternatiflerini Hesapla</button><button type="button" class="ob-services-edit" hidden>Hizmet seçimlerini düzenle</button><button type="button" class="ob-compose" hidden>Teklif Taslağını Oluştur</button><button type="button" class="ob-save" hidden>Teklifi Kaydet</button><button type="button" class="ob-publish" hidden>${window.PipelineOfferPersistence?'Test müşteri bağlantısını oluştur':'Müşteri Bağlantısını Yayınla'}</button><button type="button" class="ob-resume" hidden>Araştırmaya devam et</button><button type="button" class="ob-edit" hidden>Bilgileri düzenle</button></div></footer>`;
@@ -149,8 +149,16 @@
       dialog.querySelector(value ? '#ob-review-title' : '#ob-brandName').focus();
     }
     const gapBox=dialog.querySelector('.ob-gap-completion');
-    let gapAudit=null;
+    const confirmWebsiteButton=dialog.querySelector('.ob-confirm-website');
+    let gapAudit=null,websiteConfirmation=null;
+    confirmWebsiteButton.addEventListener('click',()=>{
+      if(!websiteConfirmation||task)return;
+      const {current,checkedWebsite}=websiteConfirmation;
+      current.confirmedWebsite=checkedWebsite;
+      runAudit(current,'start');
+    });
     function stopTask(){
+      websiteConfirmation=null;confirmWebsiteButton.hidden=true;
       gapAudit=null;gapBox.hidden=true;
       pausedAudit=null;recoverableAudit=null;continuableAudit=null;dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('.ob-recovery').hidden=true;dialog.querySelector('.ob-continuation').hidden=true;
       if(!task)return;
@@ -433,20 +441,20 @@
         notice.textContent='Bu önizlemede araştırma servisi bağlı değil. Teklif veya araştırma sonucu oluşturulmadı.';return;
       }
       recoverableAudit=null;continuableAudit=null;dialog.querySelector('.ob-recovery').hidden=true;dialog.querySelector('.ob-continuation').hidden=true;
-      const current=resume||{kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]]))};task=current;
+      const current=resume||{kind:'audit',stopped:false,ticket:null,brief:Object.fromEntries(fields.map(key=>[key,draft[key]])),startRequestId:crypto.randomUUID(),websiteInput:form.elements.website.value};task=current;
+      websiteConfirmation=null;confirmWebsiteButton.hidden=true;
       dialog.querySelector('.ob-resume').hidden=true;dialog.querySelector('#ob-review-title').textContent='Araştırma hazırlanıyor';
       dialog.querySelector('.ob-edit').textContent='Araştırmayı durdur ve düzenle';
       const researchWebsite=dialog.querySelector('.ob-research-website');
       if(!resume){researchWebsite.hidden=true;showDraftCost(null);showAuditCost({attemptChargedKurus:0});}
       let action=initialAction||(resume?'status':'start');
-      const startRequestId=action==='start'?crypto.randomUUID():null;
-      const websiteInput=action==='start'?form.elements.website.value:null;
       let reconnects=0;
       try{
         for(;;){
-          notice.textContent=action==='complete_gaps'?'Yalnız eksik BHS bölümleri araştırılıyor…':action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'Marka, hedefler ve toplantı bağlamıyla derin araştırma başlatılıyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
+          notice.textContent=action==='complete_gaps'?'Yalnız eksik BHS bölümleri araştırılıyor…':action==='continue'?'Mevcut bilgilerle teklif hazırlığına geçiliyor; yeni ücretli araştırma başlatılmıyor…':action==='start'?'BHS başlamadan önce web sitesi kontrol ediliyor…':['advance','structure'].includes(action)?'Kaynaklar okunuyor ve kanıta dayalı BHS hazırlanıyor…':'Araştırma sürüyor; kaynaklar, rakipler ve altı BHS boyutu inceleniyor…';
           let response;
-          try{response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...(action==='start'?{requestId:startRequestId,websiteInput}:{} )});}
+          const start=action==='start'?{requestId:current.startRequestId,websiteInput:current.websiteInput,...(current.confirmedWebsite?{confirmedWebsite:current.confirmedWebsite}:{})}:{};
+          try{response=await window.PipelineAuditRequest({action,brief:current.brief,context:{leadId:source.leadId,spaceId:source.spaceId,researchRunId:researchRuns.new,...(variant?{sourceOfferId:variant.sourceOfferId}:{})},...(current.ticket?{ticket:current.ticket}:{}),...start});}
           catch(error){
             const canReconnect=action==='start'?reconnects<1:action==='status'&&current.background&&current.ticket&&reconnects<2;
             if(error.code!=='audit_transport'||!canReconnect)throw error;
@@ -461,7 +469,9 @@
           if(response.execution==='background')current.background=true;
           if(current.stopped){if(current.ticket&&!current.handedOff)window.PipelineAuditRequest({action:'cancel',brief:current.brief,ticket:current.ticket}).catch(()=>{});return;}
           if(response.acceptedWebsite){
+            if(response.checkedWebsite)current.checkedWebsite=response.checkedWebsite;
             researchWebsite.textContent='BHS’ye iletilen web sitesi: '+response.acceptedWebsite;
+            if(current.checkedWebsite)researchWebsite.textContent+=' · Site kontrolünde ulaşılan adres: '+current.checkedWebsite;
             if(response.researchRunId)researchWebsite.textContent+=' · Araştırma kimliği: '+response.researchRunId;
             researchWebsite.hidden=false;
           }
@@ -487,6 +497,18 @@
         }
       }catch(error){
         if(current.stopped)return;
+        if(action==='start'&&error.websiteIdentity){
+          const {submittedWebsite,checkedWebsite}=error.websiteIdentity;
+          dialog.querySelector('#ob-review-title').textContent='Web sitesini kontrol et';
+          notice.textContent=error.message;
+          researchWebsite.textContent='Brief’teki web sitesi: '+submittedWebsite;
+          if(checkedWebsite&&checkedWebsite!==submittedWebsite)researchWebsite.textContent+=' · Site kontrolünde ulaşılan adres: '+checkedWebsite;
+          researchWebsite.hidden=false;
+          if(error.code==='website_confirmation_required'&&checkedWebsite){
+            websiteConfirmation={current,checkedWebsite};confirmWebsiteButton.hidden=false;
+          }
+          return;
+        }
         if(initialAction==='complete_gaps'&&draft.audit){
           renderAudit(draft.audit);
           if(current.ticket){

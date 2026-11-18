@@ -26,9 +26,9 @@
     const failure=Error('BHS servisiyle bağlantı kesildi; isteğin yanıtı alınamadı.');
     failure.code='audit_transport';failure.canResume=readOnly;failure.requestId=headers['X-Offer-Request-Id'];throw failure;
    }
-   if(!response.ok){const failure=Error(result.error||'Teklif işlemi tamamlanamadı.');failure.code=result.code;failure.cost=result.cost;failure.draftCost=result.draftCost;if(audit){failure.budgetDetail=result.budgetDetail;failure.recoveryAvailable=result.recoveryAvailable===true;failure.continuationAvailable=result.continuationAvailable===true;failure.ticket=result.ticket;failure.requestId=response.headers.get('X-Offer-Request-Id')||headers['X-Offer-Request-Id'];}throw failure;}
+   if(!response.ok){const failure=Error(result.error||'Teklif işlemi tamamlanamadı.');failure.code=result.code;failure.cost=result.cost;failure.draftCost=result.draftCost;if(audit){failure.websiteIdentity=result.websiteIdentity;failure.budgetDetail=result.budgetDetail;failure.recoveryAvailable=result.recoveryAvailable===true;failure.continuationAvailable=result.continuationAvailable===true;failure.ticket=result.ticket;failure.requestId=response.headers.get('X-Offer-Request-Id')||headers['X-Offer-Request-Id'];}throw failure;}
    const website=audit&&response.headers.get('X-Offer-BHS-Website');
-   return website?{...result,acceptedWebsite:website,researchRunId:response.headers.get('X-Offer-BHS-Run-Id')}:result;
+   return website?{...result,acceptedWebsite:website,checkedWebsite:response.headers.get('X-Offer-BHS-Resolved-Website'),researchRunId:response.headers.get('X-Offer-BHS-Run-Id')}:result;
   }
  }
  window.PipelineLogoRequest ||= payload=>request(payload.mode==='upload'?'logo-upload':'logo',payload);

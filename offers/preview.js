@@ -22,7 +22,8 @@
         function receive(event){
           if(event.source!==parent||event.data?.type!=='offer-audit-result'||event.data?.requestId!==requestId)return;
           clearTimeout(timer);window.removeEventListener('message',receive);
-          if(event.data.error)reject(new Error(event.data.error));else resolve(event.data.result);
+          const {error,code,websiteIdentity,result}=event.data;
+          if(error)reject(Object.assign(new Error(error),{code,websiteIdentity}));else resolve(result);
         }
         window.addEventListener('message',receive);
         parent.postMessage({type:'offer-audit-request',requestId,payload},'*');
@@ -170,8 +171,8 @@
         const response=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body});
         const result=await response.json();
         const website=response.headers.get('X-Offer-BHS-Website');
-        if(website){result.acceptedWebsite=website;result.researchRunId=response.headers.get('X-Offer-BHS-Run-Id');}
-        frame.contentWindow.postMessage({type:'offer-audit-result',requestId,...(response.ok?{result}:{error:result.error||'BHS araştırması tamamlanamadı.'})},'*');
+        if(website){result.acceptedWebsite=website;result.checkedWebsite=response.headers.get('X-Offer-BHS-Resolved-Website');result.researchRunId=response.headers.get('X-Offer-BHS-Run-Id');}
+        frame.contentWindow.postMessage({type:'offer-audit-result',requestId,...(response.ok?{result}:{error:result.error||'BHS araştırması tamamlanamadı.',code:result.code,websiteIdentity:result.websiteIdentity})},'*');
       }catch{frame.contentWindow.postMessage({type:'offer-audit-result',requestId,error:'BHS araştırma servisine bağlanılamadı.'},'*');}
     });
     frame.hidden = false;

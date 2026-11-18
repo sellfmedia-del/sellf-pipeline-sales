@@ -30,6 +30,10 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
     }
     if(url.pathname==='/api/audit'){
      const body=request.postDataJSON();auditBodies.push(body);
+     if(auditBodies.length===1){
+      const code=viewport.width===390?'website_confirmation_required':'website_brand_mismatch';
+      return route.fulfill({status:422,contentType:'application/json',json:{code,error:'BHS başlatılmadı.',websiteIdentity:{submittedWebsite:'https://brand.example/',checkedWebsite:'https://catalog.example/'}}});
+     }
      const result={statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v;},status(code){this.statusCode=code;return this;},json(data){this.data=data;return this;}};
      await handler({method:request.method(),headers:{...await request.allHeaders(),host:url.host},body},result);
      return route.fulfill({status:result.statusCode,headers:result.headers,contentType:'application/json',body:JSON.stringify(result.data)});
@@ -53,9 +57,22 @@ test('desktop and mobile brief accept unreviewed transparent upload, preserve CR
    await frame.locator('.ol-result:not([hidden])').waitFor();
    assert.equal(await frame.locator('.ol-review input').count(),0,'No premature logo approval');
    await frame.locator('.ob-next').click();
+   await frame.getByText('Web sitesini kontrol et',{exact:true}).waitFor();
+   assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/brand\.example\/.*https:\/\/catalog\.example\//);
+   const confirm=frame.locator('.ob-confirm-website');
+   if(viewport.width===390)await confirm.click();
+   else{
+    assert.equal(await confirm.isVisible(),false);
+    await frame.locator('.ob-edit').click();
+    await frame.locator('#ob-website').fill('correct-brand.example');
+    await frame.locator('.ol-result:not([hidden])').waitFor();
+    await frame.locator('.ob-next').click();
+   }
    await frame.getByText('Araştırma durumu',{exact:true}).waitFor();
    assert.match(await frame.locator('.ob-review-notice').textContent(),/bağlantısı henüz tanımlı değil/);
-   assert.equal(auditBodies.length,1);assert.equal(auditBodies[0].brief.goals,'Bayi büyümesi');
+   assert.equal(auditBodies.length,2);assert.equal(auditBodies[0].brief.goals,'Bayi büyümesi');
+   if(viewport.width===390){assert.equal(auditBodies[1].confirmedWebsite,'https://catalog.example/');assert.equal(auditBodies[1].requestId,auditBodies[0].requestId);}
+   else{assert.equal(auditBodies[1].websiteInput,'correct-brand.example');assert.equal(auditBodies[1].confirmedWebsite,undefined);}
    assert.equal(auditBodies[0].brief.logo,undefined);assert.equal(auditBodies[0].brief.source,undefined);
    assert.equal(await page.frames()[1].evaluate(()=>JSON.stringify(db)),before);
    assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
@@ -114,7 +131,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
      completeAudit={stage:'audit',status:'ready',data};
      response={phase:'complete',result:completeAudit,pricingProof:createPricingProof(secret).encode({kind:'audit_ready',createdAt:Date.now(),briefHash:data.briefHash,auditHash:digest(completeAudit)},session,url.host)};
     }else response={phase:phases[Number(body.ticket)]+'_complete',ticket:body.ticket,nextAction:'advance'};
-    return route.fulfill({headers:{'Set-Cookie':'__Host-offer-research='+session+'; Path=/; Secure; HttpOnly; SameSite=Strict','X-Offer-BHS-Website':snapshotBrief(body.brief).website,'X-Offer-BHS-Run-Id':body.context.researchRunId},contentType:'application/json',body:JSON.stringify(response)});
+    return route.fulfill({headers:{'Set-Cookie':'__Host-offer-research='+session+'; Path=/; Secure; HttpOnly; SameSite=Strict','X-Offer-BHS-Website':snapshotBrief(body.brief).website,'X-Offer-BHS-Run-Id':body.context.researchRunId,...(body.action==='start'?{'X-Offer-BHS-Resolved-Website':'https://catalog.brand.example/products'}:{})},contentType:'application/json',body:JSON.stringify(response)});
    }
    if(url.pathname==='/api/logo-upload'){const logo=await prepareUploadedLogo(req.postDataJSON().image);return route.fulfill({contentType:'application/json',body:JSON.stringify({...logo,logoProof:logoProof(secret,url.host,logo)})});}
    try{const file=path.join(process.cwd(),'public',url.pathname==='/'?'index.html':url.pathname),body=await readFile(file);return route.fulfill({contentType:{'.html':'text/html; charset=utf-8','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.png':'image/png'}[path.extname(file)],body});}catch{return route.fulfill({status:404,body:'Not found'});}
@@ -126,6 +143,7 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   await frame.locator('.ob-audit-report').getByText(data.summary,{exact:true}).waitFor();assert.equal(completionReads,2);assert.equal(starts.length,reconnectStart?2:1);if(reconnectStart)assert.deepEqual(starts[0],starts[1]);assert.equal(actions.filter(a=>a==='advance').length,4);assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>JSON.stringify(db)),before);assert.equal(await frame.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   if(viewport.width===390&&viewport.currency==='USD'){assert.equal(disconnected,3);assert.equal(await frame.locator('.ob-resume').isVisible(),false);}
   assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/www\.brand\.example\/products/);
+  assert.match(await frame.locator('.ob-research-website').textContent(),/https:\/\/catalog\.brand\.example\/products/);
   assert.ok((await frame.locator('.ob-research-website').textContent()).includes(starts[0][1]));
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
