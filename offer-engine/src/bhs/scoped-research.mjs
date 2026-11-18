@@ -4,7 +4,7 @@ import {researchUrl,researchHost} from './research-url.mjs';
 import {arr,obj,str} from './sequential-contracts.mjs';
 import {assertSchema} from './schema.mjs';
 import {managedSections} from './managed-report.mjs';
-import {marketMeasureInstruction,marketMeasureMatchesScope,marketMeasureNeed,marketMeasuresSchema,verifyMarketMeasures} from './scoped-market.mjs';
+import {marketMeasureInstruction,marketMeasureMatchesScope,marketMeasureNeed,verifyMarketMeasures} from './scoped-market.mjs';
 import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
@@ -13,6 +13,7 @@ const sections=Object.keys(managedSections);
 const section=str(100);
 const queryActors=new Set([...searchActors,'damilo/google-shopping-apify','harvestapi/linkedin-company-search']);
 const text=n=>({...str(n),minLength:1});
+const marketMeasuresSchema=arr(obj({proof:str(28),amount:str(32),unit:str(48),year:str(4),category:str(110),passage:str(240)}),4);
 const number=(min,max)=>({type:'integer',minimum:min,maximum:max});
 const understandingSchema=obj({understanding:text(2200)});
 const brandSchema=obj({understanding:text(2200),pages:arr(text(2048),6),

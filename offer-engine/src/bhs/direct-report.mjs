@@ -35,7 +35,9 @@ reportExcerpt statement ile aynı olsun. Kaynak URL ve başlıklarını JSON iç
 
 // This is a format/transport adapter, not a second content reviewer.
 export function directAuditResult(brief,synthesis){
- const report=groundOfferReport(synthesis.report,{packet:synthesis.analysisPacket,searchEvidence:synthesis.searchEvidence||[],brief,preserveQualifiedImpacts:isExpertMethodology(synthesis.methodologyVersion)});
+ const plan=synthesis.supervision?.researchPlan;
+ const report=groundOfferReport(synthesis.report,{packet:synthesis.analysisPacket,searchEvidence:synthesis.searchEvidence||[],brief,
+  preserveQualifiedImpacts:isExpertMethodology(synthesis.methodologyVersion),scopedFindings:plan?.taskReporting===true&&plan.readEvidenceOnly===true});
  // The original compact model output and complete evidence already stay in
  // their paid stage records. Do not duplicate the entire filtered report as
  // originalReport inside both public report copies; rich BHS evidence can

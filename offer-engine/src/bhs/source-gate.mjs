@@ -3,6 +3,7 @@ import {requireGroundedResearch} from './research-content.mjs';
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
 import {supportedNumbers,numericEvidence} from './numeric-evidence.mjs';
+import {customerFinding,qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
 
 const readSegments=source=>{const chunks=[];for(const e of [...(source.excerpts||[])].sort((a,b)=>(a.offset??Infinity)-(b.offset??Infinity))){const last=chunks.at(-1);if(last&&Number.isInteger(last.offset)&&Number.isInteger(e.offset)&&last.offset+last.text.length===e.offset)last.text+=e.text;else chunks.push({...e});}return chunks.map(e=>e.text);};
 const unsafeReasons=new Set(['invalid_source','unresolved_source','unverified','unread_source_or_unmatched_quote','unsupported_finding','unsupported_benchmark','unsupported_coverage','unsupported_summary_number']);
@@ -24,7 +25,7 @@ function completedForecast(finding,evidence){
 // Deterministic provenance gate: never fetch model-invented URLs or treat a
 // syntactically valid citation as proof that its quote was actually read.
 // Quote matches do not prove semantic entailment; inference stays labelled.
-export function groundOfferReport(value,{packet,searchEvidence=[],brief={},preserveQualifiedImpacts=false}={}){
+export function groundOfferReport(value,{packet,searchEvidence=[],brief={},preserveQualifiedImpacts=false,scopedFindings=false}={}){
  const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method}));
  for(const search of searchEvidence)for(const s of search.results||[])records.push({url:s.url,aliases:[s.url],title:s.title,text:s.content||'',segments:[s.content||''],method:'search-snippet'});
  for(const source of packet?.sources||[])for(const quote of technicalCitations(source))records.push({url:source.finalUrl||source.url,aliases:[source.url,source.finalUrl],title:source.title,text:quote,segments:[quote],method:'html-signals'});
@@ -43,12 +44,28 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const byId=new Map(sources.map(s=>[s.id,s]));
  const supported=ids=>Array.isArray(ids)&&ids.length>0&&ids.every(id=>byId.has(id));
  const quotes=ids=>(ids||[]).map(id=>byId.get(id)?.quote||'').join('\n');
- const findings=(raw.findings||[]).filter(f=>{
+ const needs=scopedFindings?new Map((raw.verifiedResearch?.metrics||[]).map(m=>[m.id,{metric:m.name,sectionTitle:m.sectionTitle}])):null;
+ const selected=[];
+ for(let f of raw.findings||[]){
   // Meeting context remains in the brief; never promote it into research facts.
-  if(f.kind==='brief')return false;
+  if(f.kind==='brief')continue;
+  if(needs){
+   const cards=f.sourceIds.map(id=>byId.get(id)).filter(Boolean);
+   const row=f.researchEvidenceOnly?customerFinding(f,raw):qualifyScopedFinding({observation:f.statement,analysis:f.impact,
+    section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs);
+   if(!row||selected.some(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement))){
+    issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;
+   }
+   if(!f.researchEvidenceOnly){
+    if(row.analysis!==f.impact)issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+    f={...f,...(row.section?{bhsSection:row.section}:{}),...(row.sectionTitle?{bhsSectionTitle:row.sectionTitle}:{}),
+     ...(row.needIds?{researchNeedIds:row.needIds}:{}),impact:row.analysis};
+   }
+  }
   const ok=supported(f.sourceIds)&&!completedForecast(f,quotes(f.sourceIds))&&!reversedPercentage([f.statement,f.reportExcerpt,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
-  if(!ok)issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});return ok;
- }).map(f=>{
+  if(ok)selected.push(f);else issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+ }
+ const findings=selected.map(f=>{
   if(preserveQualifiedImpacts&&f.impact.startsWith('Hipotez: ')&&f.impact.includes(' Sınır: '))return f;
   if(!unmeasuredJudgement([f.statement,f.impact,f.goalConnection].join(' ')))return f;
   issues.push({path:'findings.'+f.id,reason:'unmeasured_impact_qualified'});
@@ -67,8 +84,8 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
    const evidence=findings.filter(f=>kept.includes(f.id)),text=evidence.map(f=>quotes(f.sourceIds)).join('\n');
    return {...d,score:null,dataStatus:kept.length?'partial':'insufficient',findingIds:kept,comparisonCompetitorIds:peers,
     rationale:kept.length?evidence.map(f=>f.statement).join(' ').slice(0,3000):missing,
-    strengths:kept.length?(d.strengths||[]).filter(value=>supportedNumbers(value,text)&&!unmeasuredJudgement(value)):[],
-    gaps:kept.length?[...(d.gaps||[]).filter(value=>supportedNumbers(value,text)),'Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak.']:[missing]};
+    strengths:kept.length&&!scopedFindings?(d.strengths||[]).filter(value=>supportedNumbers(value,text)&&!unmeasuredJudgement(value)):[],
+    gaps:kept.length?[...(!scopedFindings?(d.gaps||[]).filter(value=>supportedNumbers(value,text)):[]),'Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak.']:[missing]};
   }
   return {...d,strengths:(d.strengths||[]).filter(value=>!unmeasuredJudgement(value)),score:peers.length&&d.dataStatus!=='insufficient'?d.score:null};
  });
@@ -79,6 +96,10 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const coverage=(areas)=>{
   const result=structuredClone(areas||{});
   for(const a of Array.isArray(result)?result:Object.values(result)){
+   if(scopedFindings&&a.status!=='unavailable'){
+    const matching=findings.filter(f=>f.dimension===a.dimension&&f.sourceIds.some(id=>a.sourceIds?.includes(id))&&a.observation.includes(f.statement));
+    a.observation=matching.map(f=>f.statement).join(' ');a.sourceIds=[...new Set(matching.flatMap(f=>f.sourceIds))];
+   }
    if(a.status==='unavailable'||!supported(a.sourceIds)||reversedPercentage(a.observation,quotes(a.sourceIds))||!supportedNumbers(a.observation,quotes(a.sourceIds))){
     if(a.status!=='unavailable')issues.push({path:'researchCoverage',reason:'unsupported_coverage'});
     a.status='unavailable';a.observation=missing;a.sourceIds=[];

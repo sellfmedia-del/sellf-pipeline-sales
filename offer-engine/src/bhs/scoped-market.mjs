@@ -1,7 +1,5 @@
-import {arr,obj,str} from './sequential-contracts.mjs';
 import {numericEvidence} from './numeric-evidence.mjs';
 
-export const marketMeasuresSchema=arr(obj({proof:str(28),amount:str(32),unit:str(48),year:str(4),category:str(110),passage:str(240)}),4);
 export const marketMeasureInstruction='Sayısal pazar verisi istediğin işlerde marketMeasures alanına yalnız doğrudan okunmuş kaynaktaki tutarı, birimi, veri yılını, tam kategoriyi ve bunları aynı tablo satırına veya cümleye bağlayan KESİNTİSİZ özgün alıntıyı yaz. Yayımlanma tarihini veri yılı sayma. Başka kategorinin, başka yılın veya toplam satırının tutarını kullanma. Dört öğe tek alıntıda ilişkilendirilemiyorsa ölçümü açık bırak ve uygun kaynağı iste. Diğer işler için marketMeasures boş olsun.';
 
 const normalize=value=>String(value||'').normalize('NFKC').replace(/\s+/gu,' ').trim();

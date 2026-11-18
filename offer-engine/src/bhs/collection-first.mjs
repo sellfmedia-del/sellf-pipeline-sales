@@ -1145,7 +1145,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(useSavedEvidence){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
   const candidates=reviewed.filter(row=>!plan.verifiedResults||!coverage.some(m=>m.id===row.needId&&m.marketMeasures?.length));
-  const retained=plan.readEvidenceOnly?balancedScopedProofs(candidates,id=>context.known.get(reverse.get(id))):candidates.slice(0,18);
+  const retained=plan.readEvidenceOnly&&plan.taskReporting?[]:plan.readEvidenceOnly?
+   balancedScopedProofs(candidates,id=>context.known.get(reverse.get(id))):candidates.slice(0,18);
   report=projectExpertReport({peers:verifiedPeers,findings:retained.map(({id,section})=>{
    const sourceId=reverse.get(id),source=context.known.get(sourceId);
    return {id:'scoped_'+id,kind:'observation',dimension:Object.hasOwn(dimensionFor,section)?dimensionFor[section]:'operations',observation:source.quote,sourceIds:[sourceId],
@@ -1163,7 +1164,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   report.directedResearch=true;
  }
  if(plan.verifiedResults){
-  retainScopedResults(report,context,coverage,reverse);
+  retainScopedResults(report,context,coverage,reverse,plan.qualifyReportFindings);
   if(plan.readEvidenceOnly){
    const sources=indexScopedEvidence(rounds.flatMap(round=>round.receipts||[]),evidence.coverage);
    const needs=new Map(evidence.needs.map(need=>[need.id,need]));
@@ -1192,7 +1193,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
 }
 
-function retainScopedResults(report,context,coverage,reverse){
+function retainScopedResults(report,context,coverage,reverse,qualifyReportFindings){
  const resolved=aliases=>unique(aliases.map(id=>reverse.get(id)).filter(id=>context.known.has(id)));
  const metrics=coverage.map(({sources,marketMeasures,...metric})=>({...metric,sourceIds:resolved(sources),
   ...(marketMeasures?{marketMeasures:marketMeasures.map(({sources:links,passage,...measure})=>{
@@ -1212,7 +1213,11 @@ function retainScopedResults(report,context,coverage,reverse){
    f.sourceIds.some(id=>sourceIds.includes(id))&&marketObservationSupported(f.statement,[row])))continue;
   const id='market_'+hash([metric.id,row.year,row.category,row.unit,row.amount,sourceIds]).slice(0,18);
   if(report.findings.some(f=>f.id===id))continue;
-  report.findings.push({id,dimension:'financial',kind:'observation',statement:row.passage,reportExcerpt:row.passage,sourceIds,
+  const geographies=evidenceGeographies(row.passage);
+  if(qualifyReportFindings&&geographies.length>1)continue;
+  const statement=qualifyReportFindings?
+   (geographies[0]?geographies[0]+' için ':'')+row.year+' verisinde “'+row.category+'” kategorisi için '+row.amount+' '+row.unit+' kaydedildi.':row.passage;
+  report.findings.push({id,dimension:'financial',kind:'observation',statement,reportExcerpt:statement,sourceIds,
    impact:'Ticari etkisi görüşmede değerlendirilecek.',goalConnection:'Bu ölçüm hedef ürün ve pazarla nasıl karşılaştırılabilir?',
    priority:'medium',bhsSection:metric.section,...(metric.sectionTitle?{bhsSectionTitle:metric.sectionTitle}:{}),
    bhsRank:report.findings.length+1,researchNeedIds:[metric.id],researchEvidenceOnly:true});
@@ -1246,7 +1251,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
-   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

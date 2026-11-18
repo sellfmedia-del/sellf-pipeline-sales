@@ -15,6 +15,7 @@ import {sourceLinks} from '../src/bhs/evidence.mjs';
 import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
+import {compositionEnvelope,offerCopy} from '../src/proposal/composition.mjs';
 import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
 import {scopedCoverage} from '../src/bhs/managed-report.mjs';
@@ -1003,15 +1004,18 @@ test('a partial report carries each question’s sources and preserves England�
  const round={closed:true,stopReason:'research_budget_exhausted',receipts:[receipt(play,pages),receipt(market,[census]),receipt(regulations,[guide]),receipt(prices,[price])],
   decisions:[{id:play.id,sufficient:true,proofs:pages.map(f=>f.id)},{id:market.id,sufficient:true,proofs:[census.id],marketMeasures:[measure]}]};
  const plan={needs:[play,market,regulations,prices],adaptiveResearch:true,verifiedResults:true,taskReporting:true,
-  readEvidenceOnly:true,qualityReport:true,targetedEvidence:true,orderedResearch:true,scopeMarketCounts:true};
+  readEvidenceOnly:true,qualityReport:true,targetedEvidence:true,orderedResearch:true,scopeMarketCounts:true,qualifyReportFindings:true};
  const saved=await writeScopedSynthesis({brief,brand,plan,rounds:[round],allowWrite:false,providers:{manager:()=>assert.fail('must not call a model')}});
  const audit=directAuditResult(brief,saved).data;
  const metric=id=>audit.verifiedResearch.metrics.find(m=>m.id===id);
  assert.equal(metric(market.id).status,'open');
  assert.equal(metric(market.id).marketMeasures[0].geography,'İngiltere');
  assert.equal(metric(market.id).marketMeasures[0].year,'2025');
- assert.ok(audit.findings.some(f=>f.statement===passage));
- assert.equal(audit.findings.filter(f=>f.researchNeedIds?.includes(play.id)).length,1);
+ const measurement=audit.findings.find(f=>f.researchNeedIds?.includes(market.id));
+ assert.match(measurement.statement,/İngiltere için 2025 verisinde .* 59,700 providers kaydedildi\.$/u);
+ assert.ok(selectProposalAudit(audit,brief).findings.some(f=>f.id===measurement.id));
+ assert.equal(audit.findings.filter(f=>f.researchNeedIds?.includes(play.id)).length,0);
+ assert.ok(metric(play.id).evidence.some(s=>s.status==='verified'));
  assert.deepEqual(metric(regulations.id).evidence,[{url:guide.url,title:guide.title,status:'read',geography:'Büyük Britanya',accessed:'2026-11-17'}]);
  assert.deepEqual(metric(prices.id).evidence,[{url:price.url,title:price.title,status:'discovered'}]);
  assert.match(audit.rawReport,/Hedef pazar Birleşik Krallık · Aranan dönem 2025/);
@@ -1029,8 +1033,59 @@ test('a partial report carries each question’s sources and preserves England�
   return {data:{findings:[{...base,observation:'In 2025, the United Kingdom had 59,700 registered childcare providers.'}],benchmarks:[],questions:[],peers:[]}};
  }}});
  const revised=directAuditResult(brief,edited).data;
- assert.ok(revised.findings.some(f=>f.statement===passage));
+ assert.ok(revised.findings.some(f=>f.statement===measurement.statement));
  assert.ok(!revised.findings.some(f=>/United Kingdom had/.test(f.statement)));
+});
+
+test('the scoped writer keeps usage, requires buyer evidence for demand, and drops copied and duplicate text',async()=>{
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const usage={...needs[0],id:'usage',section:'market_demand',sectionTitle:'Duyusal oyun talebi',metric:'Kreşlerde duyusal oyun talebi'};
+ const buying={...usage,id:'demand',section:'buyer_demand',sectionTitle:'Duyusal setlerin talebi',metric:'Kreşlerde raporlanan duyusal set siparişleri'};
+ const source=(id,quote)=>({id,url:'https://publisher.example/'+id,title:id,quote,method:'html',item:id});
+ const features=source('features','Supplier guidance describes a sensory room as supporting supervised sensory activities and says nursery managers can purchase kits.');
+ const menu=source('menus','Nursery Management | Contact Us | Privacy Policy.');
+ const survey=source('survey','Surveyed nursery managers in France reported ordering sensory play kits for classrooms.');
+ const plan={needs:[usage,buying],qualifyReportFindings:true,taskReporting:true,readEvidenceOnly:true,adaptiveResearch:true,
+  targetedEvidence:true,qualityReport:true,verifiedResults:true,sectionedSynthesis:true,orderedResearch:true};
+ const round={closed:true,stopReason:'research_budget_exhausted',receipts:[{id:usage.id,facts:[features,menu],urls:[features.url,menu.url]},
+  {id:buying.id,facts:[survey],urls:[survey.url]}],decisions:[{id:usage.id,sufficient:false,proofs:[features.id,menu.id]},
+  {id:buying.id,sufficient:true,proofs:[survey.id]}]};
+ const use='Kılavuz, duyusal odaların kreşlerde gözetimli duyusal oyun etkinliklerini desteklediğini açıklıyor.';
+ const demand='Fransa’daki ankette kreş yöneticileri, duyusal oyun setlerine taleplerini sınıfları için verdikleri siparişlerle gösterdi.';
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds:[round],providers:{manager:async(stage,input)=>{
+  if(stage.endsWith('-swot'))return {data:{findings:[],benchmarks:[],questions:[]}};
+  assert.match(input.instruction,/Talep için hedef kitlenin gözlenen satın alma davranışı/);
+  const proof=f=>Object.entries(input.sources).find(([,row])=>row[1]===f.quote)[0];
+  const base={rank:1,section:'Duyusal oyun talebi',area:'',quadrant:'none',peerId:'',kind:'observation',needIds:[usage.id],proof:[proof(features)],
+   analysis:'Bu kullanım biçimi, kurulum senaryosunu değerlendirmeye yardımcı olur.',action:'Örnek kurulum koşullarını incele.',measurement:'',limitation:'',question:''};
+  return {data:{findings:[{...base,observation:use},{...base,rank:2,observation:'Kılavuz, kreşlerde duyusal odaların gözetimli duyusal oyun etkinliklerini desteklediğini açıklıyor.'},
+   {...base,rank:3,observation:'Kreşlerde duyusal oyun setlerine güçlü talep var.'},{...base,rank:4,observation:features.quote},
+   {...base,rank:5,observation:'ivities, or guided sensory play sessions.'},{...base,rank:6,observation:menu.quote,proof:[proof(menu)]},
+   {...base,rank:7,section:'Satın alma davranışı',observation:demand,proof:[proof(survey)],needIds:[buying.id]}],benchmarks:[],questions:[]}};
+ }}});
+ const audit=directAuditResult(brief,synthesis).data;
+ assert.deepEqual(audit.findings.map(f=>f.statement),[use,demand]);
+ assert.equal(audit.findings[0].bhsSectionTitle,'Kullanım ve uygulama');
+ assert.deepEqual(audit.findings[0].researchNeedIds,[]);
+ assert.deepEqual(audit.bhsSections.find(s=>s.id===usage.section).openMetrics.map(m=>m.id),[usage.id]);
+ assert.deepEqual(selectProposalAudit(audit,brief).findings.map(f=>f.statement),[use,demand]);
+});
+
+test('a previously signed fallback cannot copy source fragments through offer sections, summary or intro',()=>{
+ const fragment='ivities, or guided sensory play sessions.';
+ const valid='Açık katalog, ürünleri yaş grubuna göre sınıflandırıyor.';
+ const raw={id:'raw',statement:fragment,kind:'observation',dimension:'perception',sourceIds:['one'],researchEvidenceOnly:true};
+ const authored={...raw,id:'authored',statement:valid,researchEvidenceOnly:false};
+ const audit={summary:fragment,findings:[raw,authored],sources:[{id:'one',url:about}],
+  dimensions:[{id:'perception',rationale:fragment,strengths:[fragment],gaps:[]}],
+  researchCoverage:[{dimension:'perception',observation:fragment,sourceIds:['one']}],
+  bhsSections:[{id:'usage',findingIds:['raw','authored'],count:2,complete:true}],meetingQuestions:[]};
+ const proposal=selectProposalAudit(audit,brief);
+ assert.deepEqual(proposal.findings.map(f=>f.id),['authored']);
+ assert.deepEqual(proposal.bhsSections[0].findingIds,['authored']);
+ assert.doesNotMatch(JSON.stringify(proposal),/guided sensory/);
+ assert.deepEqual(compositionEnvelope(brief,audit,{scope:{selected:[]}}).findings.map(f=>f.id),['authored']);
+ assert.deepEqual(offerCopy({headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Görüşmeye dayalı işbirliği.',findingIds:['raw']},audit).findingIds,[]);
 });
 
 test('large source lists fit the offer transport while preserving access to the first source in every question',()=>{
