@@ -99,7 +99,10 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   const data=fixture().report;data.sources.forEach(s=>s.verification={status:'quote_matched'});
   data.verifiedResearch={metrics:[{id:'test-market',section:'market_demand',name:'Kreş sayısı',sourceIds:[],status:'open',requestedMarket:'Birleşik Krallık',requestedPeriod:'2025',
    evidence:[{url:'https://statistics.example/england',title:'İstatistik kaydı',status:'read',geography:'İngiltere',accessed:'2026-11-17'},
-    {url:'https://supplier.example/catalogue',title:'Tedarikçi kataloğu',status:'discovered'}]}]};
+    {url:'https://supplier.example/catalogue',title:'Tedarikçi kataloğu',status:'discovered'}]}],
+   productComparisons:[{reference:{name:'Royal',category:'Mat set',url:'https://brand.example/products/royal'},
+    candidate:{name:'Texture Pack',category:'Mat kit',url:'https://supplier.example/products/texture'},
+    fields:[{key:'price',label:'Liste fiyatı',reference:{value:'£240'},candidate:{value:'GBP 180'}},{key:'vat',label:'KDV',reference:null,candidate:{value:'VAT excluded'}}]}]};
   data.rawReport=renderGroundedReport(data);data.scoring={total:null};data.quality={checksPassed:true,issues:[],semanticBenchmark:'passed'};
   await context.addInitScript(()=>{const original=setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,[10000,1500,3000].includes(ms)?0:ms,...args);});
   page.on('pageerror',e=>errors.push(e.message));
@@ -154,6 +157,10 @@ test('desktop and mobile finish BHS then two real deterministic price alternativ
   assert.equal(await evidence.getByRole('link',{name:'İstatistik kaydı'}).getAttribute('href'),'https://statistics.example/england');
   assert.match(await evidence.textContent(),/Hedef pazar Birleşik Krallık.*Aranan dönem 2025.*İngiltere.*Erişim 2026-11-17/u);
   assert.match(await evidence.textContent(),/Tedarikçi kataloğu · Aramada bulundu, okunmadı/u);
+  await frame.getByText('Royal ve Texture Pack',{exact:true}).click();
+  const comparison=frame.getByRole('table').filter({has:frame.getByRole('link',{name:'Texture Pack'})});
+  assert.match(await comparison.getByRole('row',{name:/Liste fiyatı/}).textContent(),/£240.*GBP 180/);
+  assert.match(await comparison.getByRole('row',{name:/KDV/}).textContent(),/Doğrulanmadı.*VAT excluded/);
   await chooseBoth(frame,'social');
   await frame.locator('.ob-price').click();await frame.getByText('Fiyat alternatifleri hazır',{exact:true}).waitFor();
   assert.equal(await frame.locator('.ob-pricing article').count(),2);assert.equal(priceActions.filter(a=>a==='start').length,1);assert.equal(priceActions.includes('status'),false);

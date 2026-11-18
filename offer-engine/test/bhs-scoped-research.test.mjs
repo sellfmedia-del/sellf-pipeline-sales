@@ -60,7 +60,7 @@ test('task titles survive planning and saved source reads determine the user-vis
   {id:'failed',section:'T_PAZAR',sectionTitle:'Hedef pazar',metric:'Hedef pazarda satış kanalları'}
  ];
  const grouped=fields.map(({id,section,sectionTitle,metric})=>({...instagramScope,section,sectionTitle,
-  measurements:[{...engagement,id,metric,first:'gemini'}]}));
+  measurements:[{...engagement,id,metric,first:'gemini',comparisonProduct:'',comparisonRole:'none'}]}));
  const version={managedBudgetVersion:22};
  const planned=await planScopedResearch({brief,identity,briefUnderstanding,asOf:packet.asOf,packet,providers:{...version,
   manager:async(stage,input,contract,{normalizeData,responseSchema})=>{
@@ -1087,6 +1087,79 @@ test('a previously signed fallback cannot copy source fragments through offer se
  assert.doesNotMatch(JSON.stringify(proposal),/guided sensory/);
  assert.deepEqual(compositionEnvelope(brief,audit,{scope:{selected:[]}}).findings.map(f=>f.id),['authored']);
  assert.deepEqual(offerCopy({headline:'Net hedefler.',accent:'Birlikte büyüme.',subtitle:'Görüşmeye dayalı işbirliği.',findingIds:['raw']},audit).findingIds,[]);
+});
+
+test('a product-specific search opens only after the brand product page has been reviewed',async()=>{
+ const focus={...needs[0],market:'United Kingdom',country:'GB',language:'en',comparisonProduct:'Royal',first:'tavily'};
+ const reference={...focus,id:'royal',section:'product',comparisonRole:'reference',query:'Marque Royal product class and use'};
+ const rivals={...focus,id:'peers',section:'competition',comparisonRole:'rivals',query:'UK nursery textured interlocking activity mat sets'};
+ const planned=await planScopedResearch({brief:{...brief,meetingNotes:'Royal kıyaslanacak.'},identity,briefUnderstanding,asOf:packet.asOf,packet,
+  providers:{managedBudgetVersion:22,manager:async(_stage,input,_contract,{normalizeData})=>{
+   assert.equal(input.commercialBrief.meetingNotes,'Royal kıyaslanacak.');
+   assert.match(input.instruction,/Önce reference göreviyle/);
+   return {data:normalizeData({needs:[rivals,reference]})};
+  }}});
+ assert.equal(planned.needs[0].comparisonProduct,'Royal');
+ const plan={...planned,focusedProductComparison:true,taskReporting:true,qualityReport:true,orderedResearch:true,targetedEvidence:true,
+  reportOnlyAfterResearch:true,readEvidenceOnly:true};
+ const requests=[];
+ const referencePage='https://marque.fr/products/royal';
+ const providers={managedBudgetVersion:22,researchCapacity:async()=>openingCapacity(2800),search:async query=>{
+  requests.push(query);return {results:[{url:referencePage,content:'Royal product page and mat set description.'}]};
+ }};
+ const execute=rounds=>reviewScopedResearch({brief,identity,briefUnderstanding,packet,plan,rounds,providers,readPages:()=>assert.fail('no real page read')});
+ const first=await execute([]);
+ assert.deepEqual(requests,[reference.query]);
+ const official={id:'page',url:referencePage,title:'Royal mat set',quote:'Royal tactile mat set for nursery movement games.',method:'html',item:'Royal'};
+ await execute([{...first,receipts:[{id:reference.id,facts:[official],urls:[official.url],attempts:[{tool:'tavily'}],defaultAttempt:true}],
+  decisions:[{id:reference.id,sufficient:true,proofs:[official.id]}]}]);
+ assert.deepEqual(requests,[reference.query,rivals.query]);
+});
+
+test('product comparison keeps same-page GBP and specs and stops broad or cross-variant offers from qualifying',async()=>{
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const scope={...needs[0],market:'United Kingdom',country:'GB',language:'en',comparisonProduct:'Royal',first:'tavily'};
+ const reference={...scope,id:'reference',section:'product',comparisonRole:'reference',metric:'Royal ürün sınıfı'};
+ const rivals={...scope,id:'rivals',section:'competition',comparisonRole:'rivals',metric:'Royal ile karşılaştırılabilir ürünler'};
+ const prices={...rivals,id:'prices',section:'pricing',metric:'Muadil ürünlerin GBP fiyatı'};
+ const source=(id,url,quote,method='html')=>({id,url,quote,method,title:id,item:id});
+ const owned=source('official','https://marque.fr/products/royal','Royal tactile mat set. SKU RY-1. 24 pieces. Covers 2 m² assembled. Ages 3–6 years. £240 including VAT. Delivery in 3 days.');
+ const close=source('close','https://play.example/products/texture','Texture Pack tactile mat kit. SKU TX-18. 18 pieces. Tile size 30 cm. Ages 4–7 years. VAT excluded.');
+ const listed=source('listed',close.url,'Texture Pack SKU TX-18 costs GBP 180. Delivery in 5 days.');
+ const different=source('different','https://play.example/products/texture-mini','Texture Mini costs £65 including VAT. Delivery in 2 days.');
+ const room=source('room','https://room.example/products/bubble-room','Bubble Room sensory room equipment includes lighting and a bubble tube. GBP 900.');
+ const catalogue=source('catalogue','https://catalogue.example/collections/sensory','General Cat tactile mat products are available by type.');
+ const snippet=source('snippet','https://other.example/products/tex','Other Tex tactile mat kit. GBP 96.','search-snippet');
+ const receipt=(need,facts)=>({id:need.id,urls:facts.map(f=>f.url),facts});
+ const selected=(need,proofs)=>({id:need.id,sufficient:true,proofs:proofs.map(f=>f.id)});
+ const entry=(field,value,fact)=>({field,value,proof:fact.id});
+ const peer=(fact,product,candidateClass)=>({name:fact.title,product,url:fact.url,market:'United Kingdom',channel:'Nursery supply',priceBand:'',relationship:'direct',
+  productMatch:{referenceProof:owned.id,candidateProof:fact.id,referenceClass:'tactile mat set',candidateClass,
+   referenceFields:[entry('sku','RY-1',owned),entry('pieces','24 pieces',owned),entry('footprint','Covers 2 m² assembled',owned),entry('age','Ages 3–6 years',owned),entry('price','£240',owned),entry('vat','including VAT',owned),entry('delivery','Delivery in 3 days',owned)],candidateFields:[]}});
+ const direct=peer(close,'Texture Pack','tactile mat kit');
+ direct.productMatch.candidateFields=[entry('sku','TX-18',close),entry('pieces','18 pieces',close),entry('footprint','Tile size 30 cm',close),
+  entry('age','Ages 4–7 years',close),entry('price','£65',different),entry('price','GBP 180',listed),entry('vat','VAT excluded',close),entry('delivery','Delivery in 5 days',listed)];
+ const peers=[peer(room,'Bubble Room','sensory room equipment'),peer(catalogue,'General Cat','tactile mat products'),peer(snippet,'Other Tex','tactile mat kit'),direct];
+ const rounds=[{closed:true,stopReason:'research_budget_exhausted',peers,receipts:[receipt(reference,[owned]),receipt(rivals,[close,room,catalogue,snippet]),receipt(prices,[different,listed])],
+  decisions:[selected(reference,[owned]),selected(rivals,[close,room,catalogue,snippet]),selected(prices,[different,listed])]}];
+ const plan={needs:[reference,rivals,prices],focusedProductComparison:true,qualityReport:true,taskReporting:true,verifiedResults:true,
+  readEvidenceOnly:true,targetedEvidence:true,adaptiveResearch:true,orderedResearch:true,qualifyReportFindings:true};
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds,allowWrite:false,providers:{manager:()=>assert.fail('saved comparison must be free')}});
+ const audit=directAuditResult(brief,synthesis).data;
+ const [row]=audit.verifiedResearch.productComparisons;
+ assert.deepEqual(audit.competitors.map(p=>p.name),['close']);
+ assert.deepEqual(audit.verifiedResearch.indirectAlternatives.map(p=>p.url),[room.url]);
+ assert.deepEqual(audit.verifiedResearch.competitorCandidates.map(p=>p.url),[catalogue.url,snippet.url]);
+ assert.deepEqual(audit.verifiedResearch.metrics.map(m=>m.status),['confirmed','confirmed','confirmed']);
+ assert.equal(row.reference.name,'Royal');
+ assert.equal(row.candidate.url,close.url);
+ assert.deepEqual(row.fields.map(f=>f.reference?.value),['RY-1','24 pieces','Covers 2 m² assembled','Ages 3–6 years','£240','including VAT','Delivery in 3 days']);
+ assert.deepEqual(row.fields.map(f=>f.candidate?.value),['TX-18','18 pieces',undefined,'Ages 4–7 years','GBP 180','VAT excluded','Delivery in 5 days']);
+ assert.doesNotMatch(audit.rawReport,/Liste fiyatı[^\n]*£65/);
+ assert.equal(continuationAudit(brief,{synthesis,reason:'budget_limit'}).data.researchContinuity.status,'partial');
+ const legacy={...synthesis.report,verifiedResearch:{...synthesis.report.verifiedResearch,productComparisons:[],indirectAlternatives:[]}};
+ const merged=mergeManagedGapReport(legacy,synthesis.report,['pricing']);
+ assert.equal(merged.verifiedResearch.productComparisons[0].fields.find(f=>f.key==='price').candidate.value,'GBP 180');
 });
 
 test('large source lists fit the offer transport while preserving access to the first source in every question',()=>{

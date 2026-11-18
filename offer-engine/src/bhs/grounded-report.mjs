@@ -51,6 +51,13 @@ export function renderGroundedReport(report){
  if(report.verifiedResearch?.competitorCandidates?.length){
   rows.push('### Doğrulanacak rakip adayları',...report.verifiedResearch.competitorCandidates.map(p=>p.name+' · '+p.url));
  }
+ for(const {reference,candidate,fields} of report.verifiedResearch?.productComparisons||[]){
+  rows.push('### '+reference.name+' ve '+candidate.name+' ürün karşılaştırması',reference.category+' · '+reference.url,candidate.category+' · '+candidate.url);
+  for(const field of fields)rows.push(field.label+' · '+(field.reference?.value||'Doğrulanmadı')+' / '+(field.candidate?.value||'Doğrulanmadı'));
+ }
+ if(report.verifiedResearch?.indirectAlternatives?.length){
+  rows.push('### Dolaylı alternatifler',...report.verifiedResearch.indirectAlternatives.map(p=>[p.name,p.product,p.url].filter(Boolean).join(' · ')));
+ }
  const tasks=(report.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
  if(tasks.length){
   rows.push('## Araştırma sorularının kaynakları');

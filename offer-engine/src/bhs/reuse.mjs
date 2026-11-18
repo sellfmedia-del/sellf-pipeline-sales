@@ -46,7 +46,8 @@ export async function saveReusableResearch(brief,ledger,value,now=Date.now()){
 export function reusableResearch(brief,rows,now=Date.now()){
  for(const row of rows||[]){
   const age=now-Date.parse(row.created_at),value=row.value,report=value?.originalModelData||value?.data||value?.report,context=value?.researchContext;
-  if(!Number.isFinite(age)||age<0||age>7*86400000||!report||!((Array.isArray(report.findings)&&report.findings.length)||(Array.isArray(report.researchCoverage)?report.researchCoverage:Object.values(report.researchCoverage||{})).some(a=>['observed','partial'].includes(a?.status)&&a.sourceIds?.length)))continue;
+  if(!Number.isFinite(age)||age<0||age>7*86400000||!report||!((Array.isArray(report.findings)&&report.findings.length)||
+   report.verifiedResearch?.productComparisons?.length||(Array.isArray(report.researchCoverage)?report.researchCoverage:Object.values(report.researchCoverage||{})).some(a=>['observed','partial'].includes(a?.status)&&a.sourceIds?.length)))continue;
   const name=fold(brief.brandName),host=site(brief.website);let compatible=false;
   if(context?.brief)compatible=fold(context.brief.brandName)===name&&site(context.brief.website)===host;
   else {

@@ -263,11 +263,28 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
  }
  const addedIds=new Set(findings.slice(original.findings.length).map(f=>f.id));
  const sourceIds=new Set([...evidenceRefs,...[...findings,...competitors].flatMap(f=>f.sourceIds)]);
+ const keyForComparison=row=>JSON.stringify([row.reference.url,row.candidate.url]);
+ const comparisons=new Map((original.verifiedResearch?.productComparisons||[]).map(row=>[keyForComparison(row),row]));
+ if(verified)for(const row of patch.verifiedResearch.productComparisons||[]){
+  if(!eligibleNeeds.has(row.referenceNeedId)&&!eligibleNeeds.has(row.candidateNeedId)&&
+   !row.fields.some(field=>eligibleNeeds.has(field.reference?.needId)||eligibleNeeds.has(field.candidate?.needId)))continue;
+  const prior=comparisons.get(keyForComparison(row));
+  if(!prior){comparisons.set(keyForComparison(row),row);continue;}
+  const priorFields=new Map(prior.fields.map(field=>[field.key,field]));
+  comparisons.set(keyForComparison(row),{...row,fields:row.fields.map(field=>({...field,
+   reference:field.reference??priorFields.get(field.key)?.reference??null,candidate:field.candidate??priorFields.get(field.key)?.candidate??null}))});
+ }
+ for(const row of comparisons.values())for(const item of [row.reference,row.candidate,...row.fields.flatMap(field=>[field.reference,field.candidate])])
+  for(const id of item?.sourceIds||[])sourceIds.add(id);
  const acceptedHosts=new Set(competitors.map(peer=>researchHost(peer.website)));
  const candidates=[...new Map([...(original.verifiedResearch?.competitorCandidates||[]),...(patch.verifiedResearch?.competitorCandidates||[])]
   .filter(candidate=>!acceptedHosts.has(researchHost(candidate.url))).map(candidate=>[researchHost(candidate.url),candidate])).values()];
+ const directProducts=new Set([...comparisons.values()].map(row=>row.candidate.url));
+ const indirect=[...new Map([...(original.verifiedResearch?.indirectAlternatives||[]),...(patch.verifiedResearch?.indirectAlternatives||[])]
+  .filter(item=>!directProducts.has(item.url)).map(item=>[item.url,item])).values()];
  return {...original,findings,competitors,
-  ...(verified?{verifiedResearch:{metrics:boundScopedEvidence([...metrics.values()]),...(candidates.length?{competitorCandidates:candidates}:{})}}:{}),
+  ...(verified?{verifiedResearch:{metrics:boundScopedEvidence([...metrics.values()]),...(candidates.length?{competitorCandidates:candidates}:{}),
+   ...(comparisons.size?{productComparisons:[...comparisons.values()]}:{}),...(indirect.length?{indirectAlternatives:indirect}:{})}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};

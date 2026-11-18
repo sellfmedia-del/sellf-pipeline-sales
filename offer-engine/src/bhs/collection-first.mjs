@@ -18,6 +18,7 @@ import {executeDirectedResearch,planDirectedResearch} from './directed-research.
 import {managedReportInput,scopedCoverage,synthesizeManagedReport,synthesizeScopedReport} from './managed-report.mjs';
 import {balancedScopedProofs,boundScopedEvidence,indexScopedEvidence} from './scoped-evidence-index.mjs';
 import {evidenceGeographies,marketObservationSupported} from './scoped-market.mjs';
+import {comparisonFields} from './product-comparison.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -1128,6 +1129,11 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const cite=fact=>context.cards.filter(card=>card.url===fact.url&&fact.quote.includes(card.quote)).map(card=>card.id);
  const coverage=evidence.coverage.map(({proofs,marketMeasures,...metric})=>({...metric,
   sources:unique(proofs.flatMap(cite).map(id=>aliases.get(id)).filter(Boolean)),
+  ...(plan.focusedProductComparison&&evidence.needs.some(need=>need.id===metric.id&&need.comparisonRole==='rivals')?{
+   verifiedProductProofs:unique(evidence.productComparisons.flatMap(({candidate})=>
+    (/fiyat|price|\bgbp\b/iu.test(metric.name)?[candidate.fields.price?.proof]:[candidate.proof,...Object.values(candidate.fields).map(field=>field.proof)])
+     .filter(fact=>fact?.needId===metric.id).flatMap(cite)).map(id=>aliases.get(id)).filter(Boolean))
+  }:{}),
   ...(marketMeasures?{marketMeasures:marketMeasures.flatMap(({proof,passage,...measure})=>{
    const sources=cite(proofs.find(f=>f.id===proof)).map(id=>aliases.get(id)).filter(Boolean);
    return sources.length?[{...measure,passage,sources}]:[];
@@ -1177,6 +1183,36 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    boundScopedEvidence(report.verifiedResearch.metrics);
   }
   if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
+  if(evidence.indirectAlternatives.length)report.verifiedResearch.indirectAlternatives=evidence.indirectAlternatives;
+  if(evidence.productComparisons.length){
+   const sources=new Map(report.sources.map(source=>[source.id,source]));
+   function comparisonRefs(fact,value){
+    let ids=cite(fact);
+    if(value){
+     const wanted=value.toLowerCase();
+     const exact=ids.filter(id=>context.known.get(id).quote.toLowerCase().includes(wanted));
+     if(exact.length)ids=exact;
+     else{
+      const start=fact.quote.toLowerCase().indexOf(wanted);
+      if(start<0)return [];
+      const offset=Math.max(0,start-40),quote=fact.quote.slice(offset,Math.min(fact.quote.length,offset+200)).trim();
+      if(quote.length<24)return [];
+      const id='product_'+hash([fact.url,quote]).slice(0,22);
+      sources.set(id,{id,url:fact.url,title:fact.title||fact.url,quote,scope:'Ürünün doğrudan okunan sayfasındaki karşılaştırma bilgisi.',publishedAt:null,period:null,sourceType:'primary'});
+      return [id];
+     }
+    }
+    for(const id of ids)if(!sources.has(id))sources.set(id,{...context.known.get(id),publishedAt:null,period:null,sourceType:'primary'});
+    return ids;
+   }
+   const value=field=>field?{value:field.value,needId:field.proof.needId,sourceIds:comparisonRefs(field.proof,field.value)}:null;
+   const product=({name,category,proof})=>({name,category,url:proof.url,sourceIds:comparisonRefs(proof)});
+   report.verifiedResearch.productComparisons=evidence.productComparisons.map(({reference,candidate,referenceNeedId,candidateNeedId})=>({
+    reference:product(reference),candidate:product(candidate),referenceNeedId,candidateNeedId,
+    fields:Object.entries(comparisonFields).map(([key,label])=>({key,label,reference:value(reference.fields[key]),candidate:value(candidate.fields[key])}))
+   }));
+   report.sources=[...sources.values()];
+  }
   report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis,plan.taskReporting);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
@@ -1195,7 +1231,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
 
 function retainScopedResults(report,context,coverage,reverse,qualifyReportFindings){
  const resolved=aliases=>unique(aliases.map(id=>reverse.get(id)).filter(id=>context.known.has(id)));
- const metrics=coverage.map(({sources,marketMeasures,...metric})=>({...metric,sourceIds:resolved(sources),
+ const metrics=coverage.map(({sources,marketMeasures,verifiedProductProofs,...metric})=>({...metric,sourceIds:resolved(sources),
   ...(marketMeasures?{marketMeasures:marketMeasures.map(({sources:links,passage,...measure})=>{
    const geographies=evidenceGeographies(passage);
    return {...measure,sourceIds:resolved(links),...(geographies.length===1?{geography:geographies[0]}:{})};
@@ -1251,7 +1287,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
-   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

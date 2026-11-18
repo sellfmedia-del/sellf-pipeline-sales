@@ -44,6 +44,14 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const byId=new Map(sources.map(s=>[s.id,s]));
  const supported=ids=>Array.isArray(ids)&&ids.length>0&&ids.every(id=>byId.has(id));
  const quotes=ids=>(ids||[]).map(id=>byId.get(id)?.quote||'').join('\n');
+ if(raw.verifiedResearch?.productComparisons){
+  const onProduct=(row,url)=>supported(row?.sourceIds)&&row.sourceIds.every(id=>publicUrl(byId.get(id).url)===publicUrl(url));
+  const value=(row,url)=>onProduct(row,url)&&typeof row.value==='string'&&row.value.trim()&&
+   row.sourceIds.some(id=>normalized(byId.get(id).quote).toLowerCase().includes(normalized(row.value).toLowerCase()))?row:null;
+  raw.verifiedResearch.productComparisons=raw.verifiedResearch.productComparisons.filter(row=>
+   onProduct(row.reference,row.reference?.url)&&onProduct(row.candidate,row.candidate?.url)).map(row=>({...row,
+    fields:row.fields.map(field=>({...field,reference:value(field.reference,row.reference.url),candidate:value(field.candidate,row.candidate.url)}))}));
+ }
  const needs=scopedFindings?new Map((raw.verifiedResearch?.metrics||[]).map(m=>[m.id,{metric:m.name,sectionTitle:m.sectionTitle}])):null;
  const selected=[];
  for(let f of raw.findings||[]){

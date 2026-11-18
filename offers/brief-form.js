@@ -231,6 +231,39 @@
         heading('Doğrulanacak rakip adayları');
         data.verifiedResearch.competitorCandidates.forEach(p=>paragraph(p.name+' · '+p.url));
       }
+      const comparisons=data.verifiedResearch?.productComparisons||[];
+      if(comparisons.length){
+        heading('Doğrudan ürün karşılaştırmaları');
+        for(const {reference,candidate,fields} of comparisons){
+          const details=document.createElement('details'),summary=document.createElement('summary');
+          summary.textContent=reference.name+' ve '+candidate.name;details.append(summary);
+          const table=document.createElement('table');table.className='ob-product-comparison';details.append(table);
+          const titles=table.createTHead().insertRow(),addHeading=(text,scope,row)=>{
+            const th=document.createElement('th');th.scope=scope;th.textContent=text;row.append(th);return th;
+          };
+          addHeading('Ölçüt','col',titles);
+          for(const product of [reference,candidate]){
+            const th=addHeading(product.name,'col',titles);
+            try{
+              const url=new URL(product.url);
+              if(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password){
+                const link=document.createElement('a');link.href=url.href;link.textContent=product.name;link.target='_blank';link.rel='noopener noreferrer';
+                th.replaceChildren(link);
+              }
+            }catch{/* Keep the product title if an old link is unavailable. */}
+          }
+          const body=table.createTBody();
+          for(const [label,left,right] of [['Ürün sınıfı',reference.category,candidate.category],...fields.map(field=>[field.label,field.reference?.value,field.candidate?.value])]){
+            const row=body.insertRow();addHeading(label,'row',row);
+            for(const value of [left,right])row.insertCell().textContent=value||'Doğrulanmadı';
+          }
+          box.append(details);
+        }
+      }
+      if(data.verifiedResearch?.indirectAlternatives?.length){
+        heading('Dolaylı alternatifler');
+        data.verifiedResearch.indirectAlternatives.forEach(p=>paragraph([p.name,p.product,p.url].filter(Boolean).join(' · ')));
+      }
       const evidenceTasks=(data.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
       if(evidenceTasks.length){
         heading('Araştırma sorularının kaynakları');

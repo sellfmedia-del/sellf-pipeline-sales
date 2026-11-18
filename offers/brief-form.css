@@ -98,6 +98,8 @@
 #offer-brief-dialog .ob-continue{max-width:100%;white-space:normal;border:1px solid var(--text,#1a1917);border-radius:7px;padding:8px 12px;background:var(--text,#1a1917);color:white}
 #offer-brief-dialog .ob-confirm-website{min-height:44px;max-width:100%;padding:8px 12px;border:1px solid var(--border2);border-radius:7px;background:var(--surface);color:var(--text)}
 #offer-brief-dialog .ob-research-website{overflow-wrap:anywhere}
+#offer-brief-dialog .ob-product-comparison{width:100%;table-layout:fixed;border-collapse:collapse;margin:8px 0 14px;text-align:left;overflow-wrap:anywhere}
+#offer-brief-dialog .ob-product-comparison th,#offer-brief-dialog .ob-product-comparison td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top}
 
 #offer-brief-dialog .ob-monthly-choice{display:flex;align-items:center;gap:9px;font-size:13px}
 #offer-brief-dialog .ob-monthly-choice input{width:auto}
