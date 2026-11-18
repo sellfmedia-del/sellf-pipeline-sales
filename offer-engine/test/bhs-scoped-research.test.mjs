@@ -1160,6 +1160,15 @@ test('product comparison keeps same-page GBP and specs and stops broad or cross-
  const legacy={...synthesis.report,verifiedResearch:{...synthesis.report.verifiedResearch,productComparisons:[],indirectAlternatives:[]}};
  const merged=mergeManagedGapReport(legacy,synthesis.report,['pricing']);
  assert.equal(merged.verifiedResearch.productComparisons[0].fields.find(f=>f.key==='price').candidate.value,'GBP 180');
+ const authored=await writeScopedSynthesis({brief,brand,plan,rounds,providers:{manager:async(_stage,input)=>{
+  const comparison=input.coverage.find(m=>m.id===prices.id).verifiedProductProofs[0];
+  const otherVariant=Object.entries(input.sources).find(([,row])=>row[1].includes('£65'))[0];
+  const base={rank:1,section:'Rakip fiyatları',area:'',quadrant:'none',peerId:comparison.peerId,kind:'observation',needIds:[prices.id],
+   analysis:'Bu fiyat, satış teklifini değerlendirmeye yardımcı olur.',action:'Vergi ve teslimatı karşılaştır.',measurement:'',limitation:'',question:''};
+  return {data:{findings:[{...base,observation:'Texture Pack için £65 liste fiyatı gösteriliyor.',proof:[comparison.required[0],otherVariant]},
+   {...base,rank:2,observation:'Texture Pack ürünü GBP 180 liste fiyatıyla sunuluyor.',proof:[comparison.required[0]]}],benchmarks:[],questions:[],peers:[]}};
+ }}});
+ assert.deepEqual(directAuditResult(brief,authored).data.findings.map(f=>f.statement),['Texture Pack ürünü GBP 180 liste fiyatıyla sunuluyor.']);
 });
 
 test('large source lists fit the offer transport while preserving access to the first source in every question',()=>{

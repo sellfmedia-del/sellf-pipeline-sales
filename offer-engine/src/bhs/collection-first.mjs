@@ -1127,12 +1127,18 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  });
  const aliases=new Map([...reverse].map(([alias,id])=>[id,alias]));
  const cite=fact=>context.cards.filter(card=>card.url===fact.url&&fact.quote.includes(card.quote)).map(card=>card.id);
+ const proofAliases=facts=>unique(facts.filter(Boolean).flatMap(cite).map(id=>aliases.get(id)).filter(Boolean));
  const coverage=evidence.coverage.map(({proofs,marketMeasures,...metric})=>({...metric,
-  sources:unique(proofs.flatMap(cite).map(id=>aliases.get(id)).filter(Boolean)),
+  sources:proofAliases(proofs),
   ...(plan.focusedProductComparison&&evidence.needs.some(need=>need.id===metric.id&&need.comparisonRole==='rivals')?{
-   verifiedProductProofs:unique(evidence.productComparisons.flatMap(({candidate})=>
-    (/fiyat|price|\bgbp\b/iu.test(metric.name)?[candidate.fields.price?.proof]:[candidate.proof,...Object.values(candidate.fields).map(field=>field.proof)])
-     .filter(fact=>fact?.needId===metric.id).flatMap(cite)).map(id=>aliases.get(id)).filter(Boolean))
+   verifiedProductProofs:evidence.productComparisons.flatMap(({reference,candidate})=>{
+    const candidateFacts=[candidate.proof,...Object.values(candidate.fields).map(field=>field.proof)];
+    const required=proofAliases((/fiyat|price|\bgbp\b/iu.test(metric.name)?[candidate.fields.price?.proof]:candidateFacts)
+     .filter(fact=>fact?.needId===metric.id));
+    if(!required.length)return [];
+    const peerId='peer_'+hash(researchHost(candidate.proof.url)).slice(0,16);
+    return [{peerId,required,allowed:proofAliases([...candidateFacts,reference.proof,...Object.values(reference.fields).map(field=>field.proof)])}];
+   })
   }:{}),
   ...(marketMeasures?{marketMeasures:marketMeasures.flatMap(({proof,passage,...measure})=>{
    const sources=cite(proofs.find(f=>f.id===proof)).map(id=>aliases.get(id)).filter(Boolean);

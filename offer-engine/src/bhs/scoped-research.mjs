@@ -869,7 +869,9 @@ export function scopedEvidence(brand,plan,rounds){
   if(rivalHosts&&!rivalHosts.has(host)||!facts.some(f=>researchHost(f.url)===host&&(readEvidenceOnly?isReadEvidence(f):rivalHosts?publisherRead(f):f.method!=='search-snippet')))return [];
   const id='peer_'+hash(host).slice(0,16);
   if(plan.verifiedResults&&p.relationship==='direct'){
-   const proofs=coverage.filter(metric=>metric.requiresPeer).flatMap(metric=>metric.proofs).filter(f=>researchHost(f.url)===host&&publisherRead(f));
+   const verifiedPages=p.verifiedProductMatch?new Set(peers.filter(peer=>peer.verifiedProductMatch&&researchHost(peer.url)===host).map(peer=>researchUrl(peer.url))):null;
+   const proofs=coverage.filter(metric=>metric.requiresPeer).flatMap(metric=>metric.proofs).filter(f=>researchHost(f.url)===host&&
+    (!verifiedPages||verifiedPages.has(researchUrl(f.url)))&&publisherRead(f));
    if(proofs.length)verifiedPeers.push({entityId:id,relationship:'direct',reason:p.product,proofs});
    else if(readEvidenceOnly)return [];
   }
