@@ -1180,7 +1180,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  if(plan.verifiedResults){
   retainScopedResults(report,context,coverage,reverse,plan.qualifyReportFindings);
   if(plan.readEvidenceOnly){
-   const sources=indexScopedEvidence(rounds.flatMap(round=>round.receipts||[]),evidence.coverage);
+   const sources=indexScopedEvidence(evidence.receipts,evidence.coverage);
    const needs=new Map(evidence.needs.map(need=>[need.id,need]));
    for(const metric of report.verifiedResearch.metrics){
     const need=needs.get(metric.id);

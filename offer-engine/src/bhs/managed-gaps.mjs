@@ -28,7 +28,12 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  if(synthesis.supervision?.reviewMode!=='managed-audit'||!allowance)return null;
  const researchPlan=synthesis.supervision.researchPlan;
  const separateCosts=researchPlan?.separateGapCosts===true;
- if(separateCosts){
+ if(researchPlan?.briefScope){
+  const measured=synthesis.supervision.metricCoverage||synthesis.report.verifiedResearch?.metrics||[];
+  const openSections=new Set(measured.filter(metric=>metric.status==='open').map(metric=>metric.section));
+  sections=sections.filter(section=>openSections.has(section));
+  if(!sections.length)return null;
+ }else if(separateCosts){
   const saved=synthesis.report.verifiedResearch?.metrics||[];
   // A clipped report can omit an already confirmed measurement. Its evidence
   // stays in the report and offer. Paid completion is for open research only.
@@ -51,9 +56,11 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  }
  const authorized=(authorization||await baseLedger.get(markerKey))?.value;
  if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
+ const authorizedSections=researchPlan?.briefScope?authorized.sections.filter(section=>sections.includes(section)):authorized.sections;
+ if(!authorizedSections.length)return null;
  if(authorized.directedResearch){
   // Only an explicit action can open the independent 30 TL account.
-  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return available(authorized.sections,gapCapKurus);
+  if(action!=='complete_gaps'&&!(await baseLedger.get(receiptKey+':opened:'+runId)))return available(authorizedSections,gapCapKurus);
   const ledger=await getGapLedger(runId);
   if(action==='complete_gaps'){
    await ledger.begin();
@@ -63,7 +70,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
   let receipt=await ledger.get(receiptKey);
   if(!receipt&&action==='complete_gaps'){
    try{
-    await scoped.once(receiptKey,{runId},0,async()=>completeSections({brief,synthesis,sections:authorized.sections,ledger:scoped,
+    await scoped.once(receiptKey,{runId},0,async()=>completeSections({brief,synthesis,sections:authorizedSections,ledger:scoped,
      getProviders,previous,collect,baseline:0,ceiling:gapCapKurus}));
    }catch(error){
     if(!recoverable(error))throw error;
@@ -91,7 +98,7 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  if(!receipt&&action==='complete_gaps'){
   try{
    await scoped.once(key,{runId},0,async()=>{
-    const result=await completeSections({brief,synthesis,sections:authorized.sections,ledger:scoped,getProviders,previous,collect,baseline,ceiling});
+    const result=await completeSections({brief,synthesis,sections:authorizedSections,ledger:scoped,getProviders,previous,collect,baseline,ceiling});
     return {report:result.report,analysisPacket:result.analysisPacket,
      supervision:{...synthesis.supervision,gapEvidenceCoverage:result.evidenceCoverage}};
    });
@@ -111,7 +118,7 @@ async function completeSections({brief,synthesis,sections,ledger,getProviders,pr
  const original=synthesis.report;
  const brand=await previous('brand');
  const priorPlan=synthesis.supervision.researchPlan;
- const version=priorPlan.taskReporting?22:priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
+ const version=priorPlan.briefScope?23:priorPlan.taskReporting?22:priorPlan.sectionedSynthesis?21:priorPlan.readEvidenceOnly?20:priorPlan.separateGapCosts?18:priorPlan.verifiedResults?17:priorPlan.adaptiveResearch?10:priorPlan.scopedResearch?9:priorPlan.directedResearch?7:priorPlan.tasks?.some(task=>task.tools)?6:5;
  const providers=getProviders({ledger,fetchImpl,phase:'synthesis',researchVersion:'v8',phaseLimitKurus:ceiling,managedAudit:true,managedBudgetVersion:version});
  const scopedNeeds=new Set((original.verifiedResearch?.metrics||[]).filter(m=>sections.includes(m.section)).map(m=>m.id));
  const existing=original.findings.filter(f=>(sections.includes(f.bhsSection)||priorPlan.taskReporting&&f.researchNeedIds?.some(id=>scopedNeeds.has(id)))&&
