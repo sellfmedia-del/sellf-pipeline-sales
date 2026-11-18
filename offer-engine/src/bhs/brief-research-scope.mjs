@@ -12,6 +12,7 @@ export const scopedNeedFields={decisionId:text(20),
 
 export const interpretBriefScope='scope alanında teklif için seçilen hedef pazarı, alıcı grubunu ve amacı ayrı kaydet. Pazar veya alıcı belirtilmemişse ilgili alan boş olsun. Brief teslimatı ülke içiyle veya çalışmayı açıkça yerel satışla sınırlıyorsa fulfilment local yaz. Bu çalışma için ülkeler arası satış veya sevkiyat açıkça belirtilmişse cross_border, diğer durumda unspecified yaz. Bir ülke pazarına satış hedefi tek başına sınır ötesi hareket göstermez. Briefteki önceki veya elenen seçenekleri seçilen kapsama alma. decisions ile teklifin içine girecek somut kararları kısa ve ayrı kaydet. Her kararın hangi brief alanına dayandığını ve o alandan aynen alınmış kısa quote değerini ver. Bu adımda sorgu, görev veya araç seçme.';
 export const planWithinBrief='Her ölçüm için briefScope.decisions içinden ilgili teklif kararının id değerini decisionId olarak yaz. Ölçümün hedefi, pazarı ve sorgusu o kararı yanıtlasın. Marka ülkesi, üretim yeri, sevkiyat çıkışı ve hedef pazar ayrı bilgilerdir. Hedef pazar veya üretim yerinden sevkiyat rotası çıkarma. İthalat, ihracat, gümrük veya uluslararası sevkiyat görevi için tradeResearch true yaz ve yalnız bu briefteki ticari işe uygulanan, rotayı destekleyen tradeEvidence kaydının id değerini tradeEvidenceId alanına koy. Böyle bir dayanak bulunmuyorsa veya çalışma yerel satışla sınırlıysa bu görevi açma. Genel gümrük bilgisi veya markanın başka ülkelere satış yapması dayanak oluşturmaz. Yerel ürün güvenliği, iç teslimat ve yerel satış görevleri için tradeResearch false ve tradeEvidenceId boş olsun.';
+export const followUpWithinBrief='Yeni işler için ilk plandaki briefScope kararlarını ve varsa tradeEvidence dayanağını kullan. Mevcut işi yeni bir müşteri, ürün, bölge veya ölçüme dönüştürme. Bir sorguyu değiştirirken özgün işin ayırt edici ürün, alıcı veya metrik terimini ve pazarını koru. Yalnız o işe, aynı karar ve pazardaki ilgili işe veya markanın kaynaklarına ait gözlemlenmiş bağlantıları oku.';
 
 const compact=value=>String(value||'').replace(/\s+/g,' ').trim();
 const fold=value=>compact(value).toLowerCase().normalize('NFKD').replace(/\p{M}/gu,'').replace(/ı/g,'i').replace(/[’‘]/g,"'");
@@ -64,9 +65,56 @@ export function briefTradeEvidence(scope,brief,packet){
  return [...declared,...sources.slice(0,6)];
 }
 
-export function initialNeedMatchesBrief(need,scope,tradeEvidence){
- if(!scope.decisions.some(row=>row.id===need.decisionId))return false;
- const task=fold([need.metric,need.query,need.expected,need.sectionTitle].join(' '));
- if(!need.tradeResearch&&!need.tradeEvidenceId&&!matchesTrade(task,tradePatterns))return true;
- return tradeEvidence.some(row=>row.id===need.tradeEvidenceId&&(!row.decisionId||row.decisionId===need.decisionId));
+const countryAliases={GB:['UK','Great Britain','Britain','England','Scotland','Wales','Northern Ireland','İngiltere','Büyük Britanya','İskoçya','Galler','Kuzey İrlanda','British','İngiliz'],
+ TR:['Turkey','Turkish','Türk'],FR:['French','Fransız'],DE:['German','Alman'],US:['USA','ABD'],AE:['UAE','BAE']};
+let countryIndex;
+function countriesIn(value){
+ if(!countryIndex){
+  // Use the runtime's translated country names rather than a fixed list of
+  // target markets. Regions such as the EU are not single-country targets.
+  const names=new Map();
+  const languages=['en','tr','fr','de','es','it'].map(language=>new Intl.DisplayNames(language,{type:'region',fallback:'none'}));
+  for(const a of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')for(const b of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){
+   const code=a+b;
+   if(['EU','EZ','QO','UN','ZZ'].includes(code)||!languages[0].of(code)||new Intl.Locale('und-'+code).region!==code)continue;
+   for(const name of [...languages.map(locale=>locale.of(code)),...(countryAliases[code]||[])]){
+    if(name)names.set(fold(name),code);
+   }
+  }
+  const pattern=new RegExp('(?<![\\p{L}\\p{N}])(?:'+[...names.keys()].sort((a,b)=>b.length-a.length).map(RegExp.escape).join('|')+')(?![\\p{L}\\p{N}])','gu');
+  countryIndex={names,pattern};
+ }
+ return [...fold(value).matchAll(countryIndex.pattern)].map(([name])=>countryIndex.names.get(name));
+}
+
+const searchCountry=value=>String(value||'').toUpperCase().replace(/^UK$/,'GB');
+const words=value=>fold(value).match(/[\p{L}\p{N}]{3,}/gu)||[];
+const genericQueryWords=new Set(['the','and','for','how','with','from','about','market','pazar','icin','which','what','other','only','most','have','pour','dans','avec','uber','nach']);
+
+export function needMatchesBrief(need,scope,tradeEvidence=[]){
+ const decision=scope.decisions.find(row=>row.id===need.decisionId);
+ if(!decision)return false;
+ const task=fold([need.target,need.metric,need.query,need.expected,need.sectionTitle,need.buyerSourceSegment].join(' '));
+ const trade=need.tradeResearch||need.tradeEvidenceId||matchesTrade(task,tradePatterns);
+ const basis=trade&&tradeEvidence.find(row=>row.id===need.tradeEvidenceId&&(!row.decisionId||row.decisionId===need.decisionId));
+ if(trade&&(scope.fulfilment==='local'||!basis))return false;
+ const basisCountries=countriesIn(basis?.quote);
+ const markets=new Set([...countriesIn(`${scope.market} ${decision.quote}`),...basisCountries]);
+ const taskMarkets=new Set(countriesIn(need.market));
+ const country=searchCountry(need.country);
+ if(country&&taskMarkets.size&&!taskMarkets.has(country)&&!basisCountries.includes(country))return false;
+ if(country)taskMarkets.add(country);
+ for(const code of basisCountries)taskMarkets.add(code);
+ if(markets.size&&[...taskMarkets].some(code=>!markets.has(code)))return false;
+ const allowed=taskMarkets.size?taskMarkets:markets;
+ return !allowed.size||countriesIn(task).every(code=>allowed.has(code));
+}
+
+export function refinedQueryMatchesBrief(need,query,scope,tradeEvidence){
+ if(!compact(query)||fold(query)===fold(need.query))return true;
+ if(!needMatchesBrief({...need,query},scope,tradeEvidence))return false;
+ const marketWords=new Set(words(`${need.market} ${scope.market}`));
+ const anchors=new Set(words(`${need.query} ${need.metric} ${need.target}`).filter(word=>
+  !marketWords.has(word)&&!genericQueryWords.has(word)&&!countriesIn(word).length&&!/^\d+$/u.test(word)));
+ return words(query).some(word=>anchors.has(word));
 }

@@ -11,7 +11,7 @@ import {isReadEvidence} from './research-content.mjs';
 import {supportsBuyerDemand} from './scoped-findings.mjs';
 import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
-import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,checkedBriefScope,briefTradeEvidence,initialNeedMatchesBrief} from './brief-research-scope.mjs';
+import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -44,6 +44,9 @@ const measurementScope={section:reportSection,target,market,country,language};
 const withTaskTitles=(schema,key)=>obj({...schema.properties,[key]:arr(obj({
  ...schema.properties[key].items.properties,sectionTitle:text(100)
 }),schema.properties[key].maxItems)});
+const withBriefDecision=(schema,key)=>obj({...schema.properties,[key]:arr(obj({
+ ...schema.properties[key].items.properties,...scopedNeedFields
+}),schema.properties[key].maxItems)});
 const withProductScope=(schema,key)=>obj({...schema.properties,[key]:arr(obj({
  ...schema.properties[key].items.properties,comparisonProduct:str(100),comparisonRole:{type:'string',enum:['none','reference','rivals']}
 }),schema.properties[key].maxItems)});
@@ -71,6 +74,16 @@ const withMarketMeasures=schema=>obj({...schema.properties,decisions:arr(obj({
 }),schema.properties.decisions.maxItems)});
 const compact=s=>String(s||'').replace(/\s+/g,' ').trim();
 const uniqueBy=(rows,key)=>[...new Map(rows.map(row=>[key(row),row])).values()];
+const withinBrief=(plan,need)=>!plan.briefScope||needMatchesBrief(need,plan.briefScope,plan.tradeEvidence);
+const scopedNeedsFrom=(plan,rounds)=>uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])]
+ .filter(need=>withinBrief(plan,need)),need=>need.id);
+const queryWithinBrief=(plan,need,query)=>!plan.briefScope||refinedQueryMatchesBrief(need,query,plan.briefScope,plan.tradeEvidence);
+const scopedReceiptsFrom=(plan,rounds,needs)=>{
+ const receipts=rounds.flatMap(round=>round.receipts||[]);
+ if(!plan.briefScope)return receipts;
+ const byId=new Map(needs.map(need=>[need.id,need]));
+ return receipts.filter(receipt=>byId.has(receipt.id)&&queryWithinBrief(plan,byId.get(receipt.id),receipt.query));
+};
 const siteLinks=s=>[...(s.technicalSignals?.identityLinks||[]),...(s.technicalSignals?.navigation||[])];
 const comparisonNeed=need=>/rakip|rekabet|competit/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '));
 const quantitativeMarketNeed=(need,counts)=>!buyerNeed(need)&&marketMeasureNeed(need,counts);
@@ -234,8 +247,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  const tradeEvidence=scope?briefTradeEvidence(scope,brief,packet):[];
  const baseContract=guarded?orderedPlanSchema:planSchema;
  const titled=taskReporting?withBuyerScope(withProductScope(withTaskTitles(baseContract,'needs'),'needs'),'needs'):baseContract;
- const {items,maxItems}=titled.properties.needs;
- const contract=scope?obj({needs:arr(obj({...items.properties,...scopedNeedFields}),maxItems)}):titled;
+ const contract=scope?withBriefDecision(titled,'needs'):titled;
  const request={brand:brief.brandName,identity,briefUnderstanding:scope?{understanding:briefUnderstanding.understanding}:briefUnderstanding,asOf,
   ...(scope?{briefScope:scope,tradeEvidence}:{}),instruction:
   'Üçüncü adım. Marka anlayışı ve brief değerlendirmesinden araştırma planını çıkar. '+
@@ -257,13 +269,13 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  const normalizeData=data=>Array.isArray(data?.needs)?{needs:normalizeNeeds(data.needs,contract.properties.needs,useMeasurements)}:data;
  const outputContract=useMeasurements?withMeasurementGroups(contract,'needs'):contract;
  const options={normalizeData,responseSchema:contract};
- const scopedNeeds=result=>(result.value?.needs||[]).filter(need=>!scope||initialNeedMatchesBrief(need,scope,tradeEvidence));
+ const scopedNeeds=result=>(result.value?.needs||[]).filter(need=>!scope||needMatchesBrief(need,scope,tradeEvidence));
  let result=await ask(providers,'bhs-scoped-plan',request,outputContract,3800,options);
  if(['incomplete','invalid_report','model_output_invalid'].includes(result.issue)||guarded&&!scopedNeeds(result).length)
   result=await ask(providers,'bhs-scoped-plan-compact',{...request,instruction:request.instruction+' Yalnız hemen başlayacağın en öncelikli ilk işleri kısa ifadelerle yaz. Tüm olası sorguları listeleme. Tek bir tamamlanmış JSON döndür.'},outputContract,guarded?2400:3500,{...options,plainJson:true});
  const needs=uniqueBy(scopedNeeds(result),n=>n.id);
  const issue=result.issue||(guarded&&!needs.length?'research_plan_empty':undefined);
- return {needs,...(scope?{briefScope:scope,tradeEvidence:tradeEvidence.filter(row=>needs.some(need=>need.tradeEvidenceId===row.id))}:{}),...(issue?{issue}:{})};
+ return {needs,...(scope?{briefScope:scope,tradeEvidence}:{}),...(issue?{issue}:{})};
 }
 
 function evidenceRows(result,limit,method){
@@ -442,7 +454,7 @@ async function openingSearchPlan({plan,receipts,providers,readerBlocked,dispatch
 
 // An empty or unusable controller response is not a budget decision. Reuse
 // Claude's open need and focused query while an independent search still fits.
-async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries,readerBlocked=false,readerWasBlocked=false,focus}){
+async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordered=false,allowDispatch=true,targeted=false,nextQueries,readerBlocked=false,readerWasBlocked=false,focus,queryAllowed}){
  const capacity=(await attempt(()=>providers.researchCapacity?.())).value;
  const blocked={closed:true,stopReason:'research_source_plan_invalid',issue:'source_plan_invalid'};
  if(!capacity)return readerBlocked&&allowDispatch?blocked:{closed:false,issue:issue||'research_capacity_unknown'};
@@ -466,7 +478,8 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordere
   const queries=uniqueBy([command?.query,nextQueries?.get(need.id)?.nextQuery,...(ordered?[]:saved.map(r=>r.nextQuery).reverse()),need.query].filter(Boolean),query=>compact(query).toLocaleLowerCase('tr'));
   const preferred=defaults.includes(requested)?[requested,...defaults.filter(tool=>tool!==requested)]:defaults;
   const tools=ordered&&!targeted?defaults.filter(tool=>tool===need.first):preferred;
-  for(const query of queries)for(const tool of tools){
+  const eligibleQueries=queryAllowed?queries.filter(query=>queryAllowed(need,query)):queries;
+  for(const query of eligibleQueries)for(const tool of tools){
    if(priorSearchAttempt(saved,need.id,query,tool))continue;
    const prior=priorSearchAttempt(saved,need.id,query,requested);
    const reason=defaultTools.includes(requested)?defaultBlocker(requested,{capacity,receipts,readerBlocked})||prior?.issue||previous?.issue||((prior||previous)?'insufficient_evidence':undefined):undefined;
@@ -493,7 +506,7 @@ function receiptFacts(receipts,readEvidenceOnly=false){
  return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,reserveForFollowingKurus=0}){
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,queryAllowed,reserveForFollowingKurus=0}){
  const tasks=needs.map(({id,target,market,metric,period,expected,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
@@ -517,6 +530,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
    (providers.managedBudgetVersion>=19?' Aynı sayfada başka ölçümün bulunması, bu işte talep edilen ölçümü doğrulamaz. sufficient için bu işin beklenen kanıtını kontrol et.':'')+
    (readEvidenceOnly?' '+readEvidenceInstruction:'')+
    (qualifyReportFindings?' Kullanım kılavuzu ve ürün özelliği talebi doğrulamaz. Talep için alıcı davranışı, sipariş, bütçe veya alıcının bildirdiği tercih gibi gözlenmiş kanıt ara.':'')+
+   (queryAllowed?' nextQuery içinde aynı pazar, ürün veya alıcı ve ölçümü koru. Mevcut sorgunun ayırt edici terimlerinden en az birini kullan. Kapsamı genişletme.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')
  },scopedBuyer?withBuyerProof(contract):contract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
@@ -528,10 +542,12 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   const {proofs,unread}=reviewProofs(row.proofs,task.sources,readEvidenceOnly);
   const read=task.sources.find(f=>f.id===row.read&&!publisherRead(f))?.url||unread;
   const saved=checked.get(task.id);
-  const candidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,nextQuery:compact(row.nextQuery),...(read?{read}:{})};
+  const need=needs.find(n=>n.id===task.id);
+  const nextQuery=compact(row.nextQuery);
+  const candidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,
+   nextQuery:!queryAllowed||queryAllowed(need,nextQuery)?nextQuery:'',...(read?{read}:{})};
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
-  const need=needs.find(n=>n.id===task.id);
   const decision=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
    providers.managedBudgetVersion>=17&&quantitativeMarketNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
@@ -557,6 +573,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
  const useMeasurements=providers.managedBudgetVersion>=19;
  const readEvidenceOnly=plan.readEvidenceOnly===true;
+ const scope=plan.briefScope;
  const readerWasBlocked=guarded&&rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid');
  let readerBlocked=readerWasBlocked;
  const readPages=async (...args)=>{
@@ -566,12 +583,13 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   }
   return {sources:[]};
  };
- const priorNeeds=uniqueBy([...plan.needs,...rounds.flatMap(round=>round.newNeeds||[])],n=>n.id);
- const receipts=rounds.flatMap(round=>round.receipts||[]);
+ const priorNeeds=scopedNeedsFrom(plan,rounds);
+ const receipts=scopedReceiptsFrom(plan,rounds,priorNeeds);
+ const queryAllowed=scope?(need,query)=>queryWithinBrief(plan,need,query):undefined;
  let facts=receiptFacts(receipts,readEvidenceOnly);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
- const dispatchable=need=>buyerNeed(need)||!plan.focusedProductComparison||comparisonCanStart(need,priorNeeds,facts,checked,brief.website,packet);
- const keepOpen=options=>keepResearchOpen({...options,needs:options.needs.filter(dispatchable),readerBlocked,readerWasBlocked});
+ const dispatchable=need=>withinBrief(plan,need)&&(buyerNeed(need)||!plan.focusedProductComparison||comparisonCanStart(need,priorNeeds,facts,checked,brief.website,packet));
+ const keepOpen=options=>keepResearchOpen({...options,needs:options.needs.filter(dispatchable),readerBlocked,readerWasBlocked,queryAllowed});
  const seen=new Set(rounds.flatMap(round=>round.reviewedProofIds||[]));
  const reviewedBefore=new Set(seen);
  const qualifyPeers=(peers,needs=priorNeeds)=>plan.focusedProductComparison?qualifyProductPeers(peers,needs,facts,checked,brief.website,packet):peers;
@@ -580,7 +598,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
   !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,queryAllowed,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
@@ -622,9 +640,23 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const followUp=()=>receipts.findLast(r=>r.defaultAttempt&&priorNeeds.some(n=>n.id===r.id&&open(n)));
  const attempted=new Set(rounds.flatMap(r=>r.commandKeys||[]));
  const waitingNeeds=priorNeeds.filter(n=>!receipts.some(receipt=>receipt.id===n.id&&receipt.defaultAttempt)).map(n=>n.id);
- const observedUrls=[...receipts.flatMap(r=>r.urls),...packet.sources.flatMap(s=>[s.finalUrl||s.url,
-  ...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)])];
+ const publisherUrls=packet.sources.flatMap(s=>[s.finalUrl||s.url,
+  ...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)]);
+ const observedUrls=[...receipts.flatMap(r=>r.urls),...publisherUrls];
  const knownUrls=[...new Set(targeted?observedUrls.map(researchUrl):observedUrls)].filter(Boolean);
+ const sourcesByDecisionMarket=new Map();
+ const readScopeKey=need=>JSON.stringify([need.decisionId,need.country,compact(need.market)]);
+ if(scope){
+  const owners=new Map(priorNeeds.map(need=>[need.id,need]));
+  for(const receipt of receipts){
+   const key=readScopeKey(owners.get(receipt.id));
+   const urls=sourcesByDecisionMarket.get(key)||new Set();
+   for(const url of receipt.urls||[]){const observed=researchUrl(url);if(observed)urls.add(observed);}
+   sourcesByDecisionMarket.set(key,urls);
+  }
+ }
+ const brandUrls=scope?new Set(publisherUrls.map(researchUrl).filter(Boolean)):null;
+ const urlAllowed=(need,url)=>!scope||brandUrls.has(researchUrl(url))||sourcesByDecisionMarket.get(readScopeKey(need))?.has(researchUrl(url));
  const history=rounds.flatMap(r=>r.commandResults||[]);
  const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&quantitativeMarketNeed(n,plan.scopeMarketCounts));
  const baseContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
@@ -633,7 +665,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const marketContract=scopedMarket?withMarketMeasures(comparisonContract):comparisonContract;
  const scopedBuyer=plan.procurementResearch&&priorNeeds.some(n=>inScope(n)&&buyerNeed(n));
  const buyerContract=plan.procurementResearch?withBuyerScope(marketContract,'newNeeds'):marketContract;
- const reviewContract=scopedBuyer?withBuyerProof(buyerContract):buyerContract;
+ const proofContract=scopedBuyer?withBuyerProof(buyerContract):buyerContract;
+ const reviewContract=scope?withBriefDecision(proofContract,'newNeeds'):proofContract;
  const normalizeData=data=>Array.isArray(data?.newNeeds)?
   {...data,newNeeds:normalizeNeeds(data.newNeeds,reviewContract.properties.newNeeds,true),
    ...(plan.focusedProductComparison&&Array.isArray(data.peers)?{peers:data.peers.map(peer=>({...peer,productMatch:peer.productMatch||
@@ -645,7 +678,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const added=[];
   const commandResults=[];
   let check=await checkNew();
-  const need=!last&&!readerBlocked&&!capacity?.workerBudgetExhausted&&priorNeeds.find(n=>dispatchable(n)&&open(n)&&checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read));
+  const need=!last&&!readerBlocked&&!capacity?.workerBudgetExhausted&&priorNeeds.find(n=>dispatchable(n)&&open(n)&&checked.get(n.id)?.read&&
+   urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read));
   if(need){
    const url=checked.get(need.id).read;
    const command={id:need.id,tool:'read',query:'',url,mode:'default',limit:1};
@@ -661,7 +695,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    ...(check.issue?{evidenceReviewIssue:check.issue}:{})});
   if(!openNeeds.length)return {...saved(),approved:true,stopReason:'evidence_confirmed',receipts:added};
   const moreChecks=seen.size>reviewedBefore.size&&!check.issue&&facts.some(f=>!seen.has(f.id));
-  const moreReads=commandResults.length&&openNeeds.some(n=>checked.get(n.id)?.read&&!alreadyRead(n.id,checked.get(n.id).read)&&!commandResults.some(c=>c.id===n.id&&c.url===checked.get(n.id).read));
+  const moreReads=commandResults.length&&openNeeds.some(n=>checked.get(n.id)?.read&&urlAllowed(n,checked.get(n.id).read)&&
+   !alreadyRead(n.id,checked.get(n.id).read)&&!commandResults.some(c=>c.id===n.id&&c.url===checked.get(n.id).read));
   if(!last&&(moreChecks||!readerBlocked&&moreReads))return {...saved(),closed:false,issue,receipts:added};
   const continuation=await keepOpen({needs:openNeeds,receipts:[...receipts,...added],providers:acquisition,readPages,issue,
    ordered,targeted,allowDispatch:!last,nextQueries:checked,focus:followUp()});
@@ -676,7 +711,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  if(targeted&&guarded&&!last&&!readerBlocked&&['budget_limit','input_budget','provider_unavailable','not_configured','tariff_expired'].includes(latest?.issue))
   return recoverReview(latest.issue);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
-  identity,briefUnderstanding,asOf:packet.asOf,needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
+  identity,briefUnderstanding:scope?{understanding:briefUnderstanding?.understanding}:briefUnderstanding,asOf:packet.asOf,
+  needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
+  ...(scope?{briefScope:scope,tradeEvidence:plan.tradeEvidence||[]}:{}),
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
   ...(readerBlocked?{publisherReadAvailable:false}:{}),
   ...(plan.focusedProductComparison?{waitingForReference:priorNeeds.filter(need=>!dispatchable(need)).map(need=>need.id)}:{}),
@@ -698,6 +735,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.qualifyReportFindings?' Kullanım bilgisi, özellik ve faydayı talep kanıtı sayma. Talep için alıcı davranışı, sipariş, bütçe veya alıcı araştırmasına doğrudan dayanan kanıt iste.':'')+
    (plan.focusedProductComparison?' '+productComparisonPlanInstruction+' '+productComparisonReviewInstruction:'')+
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
+   (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
@@ -709,8 +747,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const data=result.value;
  const ids=new Set(priorNeeds.map(n=>n.id));
  const previouslyAsked=new Set(priorNeeds.map(n=>compact(n.query).toLocaleLowerCase('tr')));
- const newNeeds=last?[]:uniqueBy(data.newNeeds.filter(n=>!ids.has(n.id)&&inScope(n)&&
-  (!gap||!previouslyAsked.has(compact(n.query).toLocaleLowerCase('tr')))),n=>n.id);
+ const newNeeds=last?[]:uniqueBy(data.newNeeds.filter(n=>!ids.has(n.id)&&inScope(n)&&withinBrief(plan,n)&&
+  (!gap||!previouslyAsked.has(compact(n.query).toLocaleLowerCase('tr'))&&(!scope||priorNeeds.some(saved=>
+   readScopeKey(saved)===readScopeKey(n)&&saved.section===n.section&&open(saved))))),n=>n.id);
  for(const row of data.decisions)if(ids.has(row.id)){
   const related=facts.filter(f=>f.needId===row.id);
   const {proofs,unread}=readEvidenceOnly?reviewProofs(row.proofs,related,true):{proofs:row.proofs.filter(id=>related.some(f=>f.id===id))};
@@ -730,23 +769,26 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const decisions=[...checked.values()];
  const openNeeds=priorNeeds.filter(open);
  const actionable=(ordered?[...openNeeds,...newNeeds]:openNeeds).filter(dispatchable);
- const approved=data.approve&&!data.commands.length&&!data.newNeeds.length&&
+ const commandKey=targeted?commandSignature:c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
+ const commandState=c=>{
+  const need=actionable.find(n=>n.id===c.id&&inScope(n));
+  if(!need)return 'need_unavailable';
+  if(scope&&(!queryAllowed(need,c.query)||c.url&&!urlAllowed(need,c.url)))return 'brief_scope_mismatch';
+  if(readerBlocked&&c.tool==='read')return 'source_plan_invalid';
+  if(attempted.has(commandKey(c))||targeted&&c.tool==='read'&&alreadyRead(c.id,c.url))return 'duplicate';
+  return c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
+ };
+ const approved=data.approve&&(scope?!newNeeds.length&&!data.commands.some(c=>!commandState(c)):!data.commands.length&&!data.newNeeds.length)&&
   (readEvidenceOnly?!openNeeds.some(inScope):!guarded||!openNeeds.length);
  if(last||approved)return {approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),...proofCheckpoint(),
   ...(approved&&guarded?{stopReason:'evidence_confirmed'}:{}),...(!approved?{issue:'research_needs_open'}:{})};
-
- const commandKey=targeted?commandSignature:c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
- const commandState=c=>!actionable.some(n=>n.id===c.id&&inScope(n))?'need_unavailable':
-  readerBlocked&&c.tool==='read'?'source_plan_invalid':
-  attempted.has(commandKey(c))||targeted&&c.tool==='read'&&alreadyRead(c.id,c.url)?'duplicate':
-  c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
  const suggestedRead=readEvidenceOnly&&!readerBlocked&&openNeeds.find(n=>dispatchable(n)&&inScope(n)&&checked.get(n.id)?.read&&
-  !alreadyRead(n.id,checked.get(n.id).read));
+  urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read));
  const readUrl=suggestedRead&&checked.get(suggestedRead.id).read;
  const readCommand=suggestedRead&&!data.commands.some(c=>c.id===suggestedRead.id&&c.tool==='read'&&researchUrl(c.url)===readUrl)?
   {id:suggestedRead.id,tool:'read',query:'',url:readUrl,mode:'default',limit:1}:null;
  const proposedCommands=readCommand?[...data.commands.filter(c=>c.tool==='read'),readCommand,...data.commands.filter(c=>c.tool!=='read')]:data.commands;
- const pendingCommands=uniqueBy(proposedCommands.filter(c=>targeted?!commandState(c):!attempted.has(commandKey(c))),commandKey);
+ const pendingCommands=uniqueBy(proposedCommands.filter(c=>targeted||scope?!commandState(c):!attempted.has(commandKey(c))),commandKey);
  const commands=ordered?pendingCommands.slice(0,1):pendingCommands;
  const requests=ordered?[]:newNeeds.filter(dispatchable);
  const used=[];
@@ -872,13 +914,14 @@ function researchAttempted(receipt,executed){
 export function scopedEvidence(brand,plan,rounds){
  const readEvidenceOnly=plan.readEvidenceOnly===true;
  const taskReporting=plan.taskReporting===true;
- const needs=uniqueBy([...plan.needs,...rounds.flatMap(r=>r.newNeeds||[])],n=>n.id);
- const receipts=rounds.flatMap(r=>r.receipts||[]);
+ const needs=scopedNeedsFrom(plan,rounds);
+ const receipts=scopedReceiptsFrom(plan,rounds,needs);
+ const retainedReceipts=new Set(receipts);
  const facts=receiptFacts(receipts,readEvidenceOnly);
  const interrupted=rounds.some(round=>round.issue==='research_round_interrupted');
  const searched=new Set(rounds.flatMap(round=>{
   const executed=new Set((round.commandResults||[]).filter(c=>c.status==='executed').map(c=>c.id));
-  return (round.receipts||[]).filter(r=>researchAttempted(r,executed.has(r.id))).map(r=>r.id);
+  return (round.receipts||[]).filter(r=>retainedReceipts.has(r)&&researchAttempted(r,executed.has(r.id))).map(r=>r.id);
  }));
  const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,row]));
  const sourceReads=new Map();
@@ -947,6 +990,6 @@ export function scopedEvidence(brand,plan,rounds){
  const sources=uniqueBy(facts,f=>f.url+' '+f.quote+(readEvidenceOnly?' '+f.method:'')).map((f,i)=>({id:'ev'+(i+1),url:f.url,finalUrl:f.url,title:f.title||f.url,
   method:f.method,retrievedAt:readEvidenceOnly?f.retrievedAt||brand.packet.asOf:brand.packet.asOf,scope:'Hedefli araştırma örneği.',...(f.metadataOnly?{metadataOnly:true}:{}),
   excerpts:[{id:'p0',text:f.quote,offset:0}],contentHash:hash(f.quote)}));
- return {packet:{...brand.packet,entities:[...brand.packet.entities,...entities],sources:[...brand.packet.sources,...sources]},accepted,coverage,needs,verifiedPeers,competitorCandidates,productComparisons,indirectAlternatives,buyerProcurement,
+ return {packet:{...brand.packet,entities:[...brand.packet.entities,...entities],sources:[...brand.packet.sources,...sources]},accepted,coverage,needs,receipts,verifiedPeers,competitorCandidates,productComparisons,indirectAlternatives,buyerProcurement,
   approved:clearance.approved===true&&(!rivalHosts&&!readEvidenceOnly||coverage.every(metric=>metric.status==='confirmed'))};
 }
