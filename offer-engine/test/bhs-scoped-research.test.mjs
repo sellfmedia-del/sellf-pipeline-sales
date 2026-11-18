@@ -23,6 +23,7 @@ import {scopedCoverage} from '../src/bhs/managed-report.mjs';
 import {boundScopedEvidence} from '../src/bhs/scoped-evidence-index.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {assertSchema} from '../src/bhs/schema.mjs';
+import {verifiedBuyerProcess} from '../src/bhs/buyer-procurement.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -82,7 +83,7 @@ test('procurement is planned, verified and transferred by buyer group and questi
  const wrongBuyer={...owner,id:'other-buyer',buyerProcess:{...owner.buyerProcess,proof:'other-buyer'}};
  const unread=record('unread','nursery chains','United Kingdom','central approval',
   'For nursery chains in the United Kingdom, orders require central approval.','search-snippet');
- const chain=record('chain','nursery chains','United Kingdom','approved supplier portal',
+ const chain=record('chain','nursery chains','United Kingdom','staff place orders through the approved supplier portal',
   'For nursery chains in the United Kingdom, staff place orders through the approved supplier portal.');
  const facts=[owner,limited,supplier,wrongBuyer,unread,chain];
  const receipts=facts.map(({buyerProcess,...fact},i)=>({id:measurements[i].id,facts:[fact],urls:[fact.url]}));
@@ -145,9 +146,128 @@ test('procurement is planned, verified and transferred by buyer group and questi
  const withoutOwner={...synthesis,analysisPacket:{...synthesis.analysisPacket,
   sources:synthesis.analysisPacket.sources.filter(source=>source.url!==owner.url),
   citationCards:synthesis.analysisPacket.citationCards.filter(source=>source.url!==owner.url)}};
- const regrounded=directAuditResult(brief,withoutOwner).data.verifiedResearch.buyerProcurement[0];
+ const savedAudit=directAuditResult(brief,withoutOwner).data;
+ const regrounded=savedAudit.verifiedResearch.buyerProcurement[0];
  assert.equal(regrounded.evidence,undefined);
  assert.match(regrounded.hypothesis,/pilotta/);
+ assert.equal(savedAudit.verifiedResearch.metrics.find(metric=>metric.id==='b00').status,'open');
+ assert.deepEqual(savedAudit.verifiedResearch.metrics.find(metric=>metric.id==='b00').sourceIds,[]);
+});
+
+test('buyer evidence verifies the action with its group and market in the full source sentence',()=>{
+ const en={segment:'independent pharmacies',market:'United Kingdom',country:'GB',language:'en'};
+ const tr={segment:'bağımsız eczaneler',market:'Türkiye',country:'TR',language:'tr'};
+ const fr={segment:'distributeurs indépendants',market:'France',target:'Fransa',country:'FR',language:'fr'};
+ const de={segment:'unabhängige Einzelhändler',market:'Deutschland',target:'Almanya',country:'DE',language:'de'};
+ const chain={...en,segment:'nursery chains'};
+ const confirm=(scope,dimension,value,quote)=>({scope,dimension,value,quote,expected:'target'});
+ const reject=(scope,dimension,value,quote,passage)=>({scope,dimension,value,quote,passage,expected:null});
+ const cases=[
+  confirm(en,'decisionMaker','owners decide on purchases','At independent pharmacies in the United Kingdom, owners decide on purchases.'),
+  confirm(fr,'decisionMaker','la responsable des achats décide','Chez les distributeurs indépendants en France, la responsable des achats décide.'),
+  confirm(en,'approval','must be approved by the head pharmacist','At independent pharmacies in the United Kingdom, purchase orders must be approved by the head pharmacist.'),
+  confirm(tr,'approval','yönetici onayına tabidir','Türkiye genelinde bağımsız eczaneler için satın alma talepleri yönetici onayına tabidir.'),
+  confirm(tr,'channel','siparişlerini bayi portalı üzerinden verir','Türkiye genelinde bağımsız eczaneler siparişlerini bayi portalı üzerinden verir.'),
+  confirm(fr,'approval','approuvées par la direction','En France, les commandes des distributeurs indépendants doivent être approuvées par la direction.'),
+  confirm(de,'approval','von der Einkaufsleitung genehmigen lassen','In Deutschland müssen unabhängige Einzelhändler Bestellungen von der Einkaufsleitung genehmigen lassen.'),
+  {...confirm({...en,market:'England',target:en.market},'approval','approval by the regional manager',
+   'For independent pharmacies in England, purchase orders require approval by the regional manager.'),expected:'limited'},
+  {...confirm({...fr,market:'Île-de-France'},'decisionMaker','la responsable des achats décide',
+   'Chez les distributeurs indépendants en Île-de-France, la responsable des achats décide.'),expected:'limited'},
+  {...confirm({segment:'independent clinics',market:'Ontario',target:'Kanada',country:'CA',language:'en'},'approval','approval by the clinic manager',
+   'For independent clinics in Ontario, Canada, orders require approval by the clinic manager.'),expected:'limited'},
+  reject(fr,'decisionMaker','la responsable des achats décide','Chez les distributeurs indépendants en Île-de-France, la responsable des achats décide.'),
+  reject(en,'decisionMaker','clerks provide price quotes',
+   'At independent pharmacies in the United Kingdom, owners decide on purchases and clerks provide price quotes.'),
+  reject(en,'decisionMaker','decide on purchases',
+   'At independent pharmacies in the United Kingdom, owners decide on purchases.'),
+  reject(en,'approval','must be approved by',
+   'At independent pharmacies in the United Kingdom, purchase orders must be approved by the head pharmacist.'),
+  reject(en,'channel','place orders through the supplier portal',
+   'Independent pharmacies in the United Kingdom display catalogues; wholesalers place orders through the supplier portal.'),
+  reject(chain,'channel','place orders through the approved supplier portal',
+   'In the United Kingdom, nursery chains do not place orders through the approved supplier portal.'),
+  reject(chain,'channel','place orders through the approved supplier portal',
+   'In the United Kingdom, nursery chains plan to place orders through the approved supplier portal next year.'),
+  reject(chain,'channel','place orders through the approved supplier portal',
+   'It is prohibited for United Kingdom nursery chains to place orders through the approved supplier portal.',
+   'United Kingdom nursery chains to place orders through the approved supplier portal.'),
+  reject({...fr,segment:'independent distributors'},'channel','place orders through the manufacturer supplier portal',
+   'This policy does not apply in France. Independent distributors in Belgium place orders through the manufacturer supplier portal.'),
+  reject(chain,'channel','approved supplier portal','In the United Kingdom, the approved supplier portal lists articles for nursery chains.'),
+  {...confirm(en,'decisionMaker','owners decide on purchases','At independent pharmacies in the United Kingdom, owners decide on purchases.'),method:'search-snippet',expected:null},
+  {...confirm(en,'decisionMaker','owners decide on purchases','At independent pharmacies in the United Kingdom, owners decide on purchases.'),factNeed:'another',expected:null}
+ ];
+ for(const {scope,dimension,value,quote,passage=quote,expected,method='pdf',factNeed='buyer'} of cases){
+  const {segment,market,target=market,country,language}=scope;
+  const need={id:'buyer',buyerSegment:segment,buyerSourceSegment:segment,buyingDimension:dimension,market:target,country,language};
+  const result=verifiedBuyerProcess(need,{proof:'q',segment,market,value,passage},['q'],[{id:'q',needId:factNeed,method,quote}]);
+  assert.equal(result?(result.coversTarget?'target':'limited'):null,expected,quote);
+ }
+});
+
+test('procurement does not inherit quantitative or peer requirements from its export heading',async()=>{
+ const need={...needs[0],id:'buyer',section:'İhracat pazarı',sectionTitle:'İhracat pazarındaki rakip alıcılar',
+  metric:'İhracat için satın alma kararı',buyerSegment:'Bağımsız distribütörler',buyerSourceSegment:'distributeurs indépendants',
+  buyingDimension:'decisionMaker',comparisonRole:'rivals',comparisonProduct:'Marque'};
+ const passage='Chez les distributeurs indépendants en France, la responsable des achats décide.';
+ const fact={id:'q',method:'pdf',url:'https://buyers.example/rules',item:'rules',title:'Acheteurs',quote:passage};
+ const claim={proof:'q',segment:'distributeurs indépendants',market:'France',value:'la responsable des achats décide',passage};
+ const receipts=[{id:need.id,urls:[fact.url],facts:[fact]}];
+ const plan={needs:[need],procurementResearch:true,focusedProductComparison:true,qualityReport:true,
+  verifiedResults:true,scopeMarketCounts:true,readEvidenceOnly:true,taskReporting:true};
+ const result=await reviewScopedResearch({identity,briefUnderstanding,brief,packet,plan,rounds:[{receipts}],last:true,
+  providers:{managedBudgetVersion:22,manager:async(_stage,_input,contract)=>{
+   const data=draft({approve:true,decisions:[{id:need.id,sufficient:true,proofs:['q'],buyerProcess:claim}]});
+   assertSchema(data,contract);
+   return {data};
+  }}});
+ assert.equal(result.approved,true);
+ const evidence=scopedEvidence({packet},plan,[{receipts},result]);
+ assert.equal(evidence.coverage[0].status,'confirmed');
+ assert.equal(evidence.coverage[0].marketMeasures,undefined);
+ assert.equal(evidence.coverage[0].requiresPeer,undefined);
+ assert.equal(evidence.approved,true);
+});
+
+test('a later partial procurement report preserves confirmed evidence and coverage',()=>{
+ const evidence={sourceIds:['prior'],coversTarget:true};
+ const buyer={needId:'buyer',segment:'Bağımsız distribütörler',dimension:'approval',targetMarket:'Fransa',evidence};
+ const originalMetric={id:'buyer',section:'supply',status:'confirmed',sourceIds:['prior']};
+ const patchMetric={...originalMetric,status:'open',researchStatus:'partially_verified',sourceIds:['patch']};
+ const common={findings:[],competitors:[],dimensions:[],meetingQuestions:[]};
+ const original={...common,sources:[{id:'prior'}],verifiedResearch:{metrics:[originalMetric],buyerProcurement:[buyer]}};
+ const patch={...common,sources:[{id:'patch'}],verifiedResearch:{metrics:[patchMetric],buyerProcurement:[
+  {...buyer,evidence:{...evidence,sourceIds:['patch']},hypothesis:'Yeni örneklem kısmi'}
+ ]}};
+ const merged=mergeManagedGapReport(original,patch,['supply'],{taskReporting:true});
+ assert.deepEqual(merged.verifiedResearch.buyerProcurement,[buyer]);
+ assert.equal(merged.verifiedResearch.metrics[0].status,'confirmed');
+ assert.deepEqual(merged.verifiedResearch.metrics[0].sourceIds,['prior']);
+ assert.equal(scopedCoverage(merged,[patchMetric],true,true,false,true).some(section=>section.openMetrics?.length),false);
+});
+
+test('a negative buyer statement remains a pilot hypothesis through the audit and proposal',async()=>{
+ const need={...needs[0],id:'buyer',section:'purchasing',sectionTitle:'Satın alma',metric:'Sipariş kanalı',first:'gemini',
+  buyerSegment:'Kreş zincirleri',buyerSourceSegment:'nursery chains',buyingDimension:'channel',market:'United Kingdom',country:'GB',language:'en'};
+ const url='https://buyers.example/terms';
+ const passage='In the United Kingdom, nursery chains do not place orders through the approved supplier portal.';
+ const receipts=await runScopedDefaults([need],{
+  managedBudgetVersion:22,searchGemini:async()=>({results:[{url}]}),
+  worker:async()=>assert.fail('procurement review must retain reader context rather than model extracts')
+ },async()=>({sources:[{url,method:'html',excerpts:[{text:passage}]}]}));
+ const fact=receipts[0].facts[0];
+ assert.equal(fact.quote,passage);
+ const buyerProcess={proof:fact.id,segment:'nursery chains',market:'United Kingdom',value:'place orders through the approved supplier portal',passage};
+ const plan={needs:[need],procurementResearch:true,adaptiveResearch:true,qualityReport:true,verifiedResults:true,readEvidenceOnly:true,taskReporting:true};
+ const report=await writeScopedSynthesis({brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,allowWrite:false,
+  rounds:[{approved:true,receipts,decisions:[{id:need.id,sufficient:true,proofs:[fact.id],buyerProcess}]}],
+  providers:{manager:async()=>assert.fail('saved research does not call a provider')}});
+ const audit=directAuditResult(brief,report).data;
+ assert.equal(audit.verifiedResearch.buyerProcurement[0].evidence,undefined);
+ const proposal=selectProposalAudit(audit,brief);
+ assert.equal(proposal.verifiedResearch.buyerProcurement[0].evidence,undefined);
+ assert.match(proposal.verifiedResearch.buyerProcurement[0].hypothesis,/pilotta/);
 });
 
 test('task titles survive planning and saved source reads determine the user-visible gap states',async()=>{

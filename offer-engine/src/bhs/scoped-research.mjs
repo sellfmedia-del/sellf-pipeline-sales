@@ -75,6 +75,7 @@ const compact=s=>String(s||'').replace(/\s+/g,' ').trim();
 const uniqueBy=(rows,key)=>[...new Map(rows.map(row=>[key(row),row])).values()];
 const siteLinks=s=>[...(s.technicalSignals?.identityLinks||[]),...(s.technicalSignals?.navigation||[])];
 const comparisonNeed=need=>/rakip|rekabet|competit/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '));
+const quantitativeMarketNeed=(need,counts)=>!buyerNeed(need)&&marketMeasureNeed(need,counts);
 const peerHosts=(peers,website,targeted=false)=>new Set(peers.filter(p=>!targeted||p.relationship==='direct')
  .map(p=>researchHost(p.url)).filter(host=>host&&host!==researchHost(website)));
 const publisherRead=fact=>!['search-snippet','html-signals'].includes(fact.method)&&!fact.metadataOnly;
@@ -292,7 +293,7 @@ async function extractFacts(searches,providers,{excerptsOnly=false}={}){
  const inputs=searches.map(search=>({...search,rows:search.rows.map((row,i)=>({...row,proof:'p'+(i+1)}))}));
  // The controller reviews these publisher excerpts itself. Gemini-grounded
  // searches and specialist datasets still use the extraction worker.
- const withRows=excerptsOnly?[]:inputs.filter(input=>input.rows.length&&input.rows.length<=input.need.quantity*2&&
+ const withRows=excerptsOnly?[]:inputs.filter(input=>!buyerNeed(input.need)&&input.rows.length&&input.rows.length<=input.need.quantity*2&&
   !(providers.managedBudgetVersion>=13&&input.attempts?.length===1&&input.attempts[0].tool==='tavily'));
  const worker=providers.managedBudgetVersion>=12&&providers.modelHandoff?providers.worker:providers.geminiWorker||providers.worker;
  const result=withRows.length?await attempt(()=>worker('bhs-scoped-extract',{
@@ -476,7 +477,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  if(!tasks.length)return {};
  const worker=providers.worker||providers.geminiWorker;
  if(!worker)return {issue:'not_configured'};
- const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>marketMeasureNeed(n,scopeMarketCounts)&&tasks.some(t=>t.id===n.id));
+ const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>quantitativeMarketNeed(n,scopeMarketCounts)&&tasks.some(t=>t.id===n.id));
  const scopedBuyer=procurementResearch&&tasks.some(buyerNeed);
  const contract=scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema;
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
@@ -501,7 +502,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   // confirmed decision. The controller can revisit it with the full context.
   const need=needs.find(n=>n.id===task.id);
   const decision=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
-   providers.managedBudgetVersion>=17&&marketMeasureNeed(need,scopeMarketCounts)?
+   providers.managedBudgetVersion>=17&&quantitativeMarketNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
    confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
   for(const f of task.incoming)seen.add(f.id);
@@ -538,7 +539,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const receipts=rounds.flatMap(round=>round.receipts||[]);
  let facts=receiptFacts(receipts,readEvidenceOnly);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
- const dispatchable=need=>!plan.focusedProductComparison||comparisonCanStart(need,priorNeeds,facts,checked,brief.website,packet);
+ const dispatchable=need=>buyerNeed(need)||!plan.focusedProductComparison||comparisonCanStart(need,priorNeeds,facts,checked,brief.website,packet);
  const keepOpen=options=>keepResearchOpen({...options,needs:options.needs.filter(dispatchable),readerBlocked,readerWasBlocked});
  const seen=new Set(rounds.flatMap(round=>round.reviewedProofIds||[]));
  const reviewedBefore=new Set(seen);
@@ -546,7 +547,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  let qualifiedPeers=qualifyPeers(rounds.flatMap(r=>r.peers||[]));
  let rivalHosts=plan.qualityReport?peerHosts(qualifiedPeers,brief.website,targeted):undefined;
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
-  plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
+  !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
  const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
@@ -594,7 +595,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)])];
  const knownUrls=[...new Set(targeted?observedUrls.map(researchUrl):observedUrls)].filter(Boolean);
  const history=rounds.flatMap(r=>r.commandResults||[]);
- const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&marketMeasureNeed(n,plan.scopeMarketCounts));
+ const scopedMarket=plan.verifiedResults===true&&priorNeeds.some(n=>inScope(n)&&quantitativeMarketNeed(n,plan.scopeMarketCounts));
  const baseContract=targeted&&ordered?targetedReviewSchema:ordered?orderedReviewSchema:reviewSchema;
  const titledContract=plan.taskReporting?withTaskTitles(baseContract,'newNeeds'):baseContract;
  const comparisonContract=plan.focusedProductComparison?withProductPeers(withProductScope(titledContract,'newNeeds')):titledContract;
@@ -687,7 +688,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const need=priorNeeds.find(n=>n.id===row.id);
   const saved=checked.get(row.id);
   checked.set(row.id,scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
-   scopedMarket&&marketMeasureNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision);
+   scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>
@@ -872,12 +873,12 @@ export function scopedEvidence(brand,plan,rounds){
  const buyerRows=new Map(buyerProcurement.map(row=>[row.needId,row]));
  const coverage=needs.map(n=>{
   const decision=checked.get(n.id);
-  const marketMeasures=plan.verifiedResults&&marketMeasureNeed(n,plan.scopeMarketCounts)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts,plan.scopeMarketCounts):undefined;
+  const marketMeasures=plan.verifiedResults&&quantitativeMarketNeed(n,plan.scopeMarketCounts)?verifyMarketMeasures(n,decision?.marketMeasures,decision?.proofs||[],facts,plan.scopeMarketCounts):undefined;
   const buyer=buyerRows.get(n.id);
   const proofs=facts.filter(f=>f.needId===n.id&&(buyer?buyer.process?.proof===f.id:decision?.proofs.includes(f.id))&&(!readEvidenceOnly||isReadEvidence(f)));
   const displayName=salesMetricName(n);
   const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)&&
-   (!plan.focusedProductComparison||focusedNeedSupported(n,peers)&&comparisonReferenceVerified(n,needs,facts,checked,website,brand.packet))&&
+   (buyer||!plan.focusedProductComparison||focusedNeedSupported(n,peers)&&comparisonReferenceVerified(n,needs,facts,checked,website,brand.packet))&&
    (!marketMeasures||marketMeasures.some(row=>!plan.scopeMarketCounts||marketMeasureMatchesScope(n,row)))?'confirmed':'open';
   const researchStatus=taskReporting&&status==='open'?(proofs.length?'partially_verified':
    [...(sourceReads.get(n.id)?.values()||[])].includes(false)?'source_unreadable':
@@ -885,7 +886,7 @@ export function scopedEvidence(brand,plan,rounds){
   return {id:n.id,section:n.section,name:n.metric,status,
    ...(plan.targetedEvidence?{displayName,...(searched.has(n.id)||!interrupted?{searched:searched.has(n.id)}:{})}:{}),
    ...(taskReporting?{sectionTitle:salesTaskSectionTitle(n.section,n.sectionTitle,displayName),...(researchStatus?{researchStatus}:{})}:{}),
-   ...(marketMeasures?{marketMeasures}:{}),...(rivalHosts&&(comparisonNeed(n)||n.comparisonRole==='rivals')?{requiresPeer:true}:{}),
+   ...(marketMeasures?{marketMeasures}:{}),...(!buyer&&rivalHosts&&(comparisonNeed(n)||n.comparisonRole==='rivals')?{requiresPeer:true}:{}),
    proofs};
  });
  const accepted=coverage.flatMap(c=>c.proofs.map(f=>({...f,section:c.section})));

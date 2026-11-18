@@ -1132,7 +1132,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const coverage=evidence.coverage.map(({proofs,marketMeasures,...metric})=>({...metric,
   sources:proofAliases(proofs),
   ...(buyerRows.has(metric.id)?{buyerProcurement:true}:{}),
-  ...(plan.focusedProductComparison&&evidence.needs.some(need=>need.id===metric.id&&need.comparisonRole==='rivals')?{
+  ...(!buyerRows.has(metric.id)&&plan.focusedProductComparison&&evidence.needs.some(need=>need.id===metric.id&&need.comparisonRole==='rivals')?{
    verifiedProductProofs:evidence.productComparisons.flatMap(({reference,candidate})=>{
     const candidateFacts=[candidate.proof,...Object.values(candidate.fields).map(field=>field.proof)];
     const required=proofAliases((/fiyat|price|\bgbp\b/iu.test(metric.name)?[candidate.fields.price?.proof]:candidateFacts)

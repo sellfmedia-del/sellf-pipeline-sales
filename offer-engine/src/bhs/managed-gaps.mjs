@@ -277,10 +277,17 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
  for(const row of comparisons.values())for(const item of [row.reference,row.candidate,...row.fields.flatMap(field=>[field.reference,field.candidate])])
   for(const id of item?.sourceIds||[])sourceIds.add(id);
  const procurement=new Map((original.verifiedResearch?.buyerProcurement||[]).map(row=>[row.needId,row]));
+ const procurementRank=row=>row?.evidence?.coversTarget?(row.hypothesis?2:3):row?.evidence?1:0;
+ const originalMetrics=new Map((original.verifiedResearch?.metrics||[]).map(metric=>[metric.id,metric]));
  if(verified)for(const row of patch.verifiedResearch.buyerProcurement||[]){
   if(!eligibleNeeds.has(row.needId))continue;
   const prior=procurement.get(row.needId);
-  if(!prior?.evidence||row.evidence&&(!prior.evidence.coversTarget||row.evidence.coversTarget))procurement.set(row.needId,row);
+  if(procurementRank(row)>=procurementRank(prior))procurement.set(row.needId,row);
+  else{
+   const metric=metrics.get(row.needId),originalMetric=originalMetrics.get(row.needId);
+   if(originalMetric)metrics.set(row.needId,{...metric,status:originalMetric.status,
+    sourceIds:originalMetric.sourceIds,researchStatus:originalMetric.researchStatus});
+  }
  }
  for(const row of procurement.values())for(const id of row.evidence?.sourceIds||[])sourceIds.add(id);
  const acceptedHosts=new Set(competitors.map(peer=>researchHost(peer.website)));

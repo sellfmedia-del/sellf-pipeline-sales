@@ -34,10 +34,17 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  for(const proof of trusted.values())records.push({url:proof.url,aliases:[proof.url],title:proof.title,text:proof.quote,segments:[proof.quote],method:proof.method});
  const hydrated=hydrateCitationSources(value,trusted);
  const projected=offerReport(hydrated),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
+ const buyerContexts=new Map();
  const sources=(raw.sources||[]).filter(s=>{
-  const url=publicUrl(s.url),quote=normalized(s.quote),record=records.find(r=>
-   (!s.id.startsWith('buyer_')||isReadEvidence(r))&&r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote)));
+  const url=publicUrl(s.url),quote=normalized(s.quote),buyer=s.id.startsWith('buyer_');
+  const matches=r=>(!buyer||isReadEvidence(r))&&r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote));
+  const record=records.find(matches);
   if(!record){issues.push({path:'sources.'+s.id,reason:'unread_source_or_unmatched_quote'});return false;}
+  if(buyer){
+   const context=records.filter(matches).flatMap(r=>r.segments).filter(text=>normalized(text).includes(quote))
+    .reduce((longest,text)=>text.length>longest.length?text:longest,'');
+   buyerContexts.set(s.id,context);
+  }
   s.title=record.title||s.title;s.publishedAt=null;
   if(s.period&&!supportedNumbers(s.period,record.text))s.period=null;
   if(record.method==='search-snippet')s.scope='Arama motorunun kısmi alıntısı; tam sayfa okunmuş değildir.';
@@ -55,8 +62,23 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
     fields:row.fields.map(field=>({...field,reference:value(field.reference,row.reference.url),candidate:value(field.candidate,row.candidate.url)}))}));
  }
  if(raw.verifiedResearch?.buyerProcurement){
-  raw.verifiedResearch.buyerProcurement=raw.verifiedResearch.buyerProcurement.map(row=>
-   groundBuyerProcurement(row,byId.get(row.evidence?.sourceIds?.[0])));
+  raw.verifiedResearch.buyerProcurement=raw.verifiedResearch.buyerProcurement.map(row=>{
+   const id=row.evidence?.sourceIds?.[0];
+   return groundBuyerProcurement(row,byId.get(id),buyerContexts.get(id));
+  });
+  const buyers=new Map(raw.verifiedResearch.buyerProcurement.map(row=>[row.needId,row]));
+  for(const metric of raw.verifiedResearch.metrics||[]){
+   const buyer=buyers.get(metric.id);
+   if(!buyer)continue;
+   const confirmed=buyer.evidence?.coversTarget&&!buyer.hypothesis;
+   if(confirmed)delete metric.researchStatus;
+   else if(buyer.evidence)metric.researchStatus='partially_verified';
+   else if(metric.status==='confirmed'||metric.researchStatus==='partially_verified')metric.researchStatus='searched';
+   metric.status=confirmed?'confirmed':'open';
+   metric.sourceIds=buyer.evidence?.sourceIds||[];
+   const acceptedUrls=new Set(metric.sourceIds.map(id=>byId.get(id)?.url));
+   for(const row of metric.evidence||[])if(row.status==='verified'&&!acceptedUrls.has(row.url))row.status='read';
+  }
  }
  const needs=scopedFindings?new Map((raw.verifiedResearch?.metrics||[]).map(m=>[m.id,{metric:m.name,sectionTitle:m.sectionTitle}])):null;
  const selected=[];

@@ -82,7 +82,7 @@ export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false
  const sectionId=id=>includeSwot&&isSwotSection(id)?swotId:id;
  const isOpen=(metric,findings)=>{
   const buyer=buyerRows.get(metric.id);
-  if(buyer)return metric.status==='open'||!buyer.evidence?.coversTarget||Boolean(buyer.hypothesis);
+  if(buyer)return !buyer.evidence?.coversTarget||Boolean(buyer.hypothesis);
   return metric.status==='open'||linked&&!findings.some(f=>f.sourceIds.length&&!f.researchEvidenceOnly&&
    f.researchNeedIds?.includes(metric.id)&&(!metric.requiresPeer||peers.has(f.peerId)));
  };
@@ -99,7 +99,9 @@ export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false
   const missingQuadrants=includeSwot&&id===swotId?quadrants.filter(q=>!findings.some(f=>f.swotQuadrant===q)):[];
   return {id,title,findingIds:findings.map(f=>f.id),count:findings.length,missingQuadrants,complete:!openNeeds.length&&!missingQuadrants.length,
    ...(describeGaps&&openNeeds.length?{openMetrics:openNeeds.map(metric=>{
-    const status=salesGapStatus(metric);
+    const buyer=buyerRows.get(metric.id);
+    const status=salesGapStatus(buyer?{...metric,status:'open',
+     researchStatus:buyer.evidence?'partially_verified':metric.researchStatus==='partially_verified'?undefined:metric.researchStatus}:metric);
     return {name:metric.displayName||salesMetricName(metric),status,
      ...(taskReporting?{id:metric.id,...(salesGapLabels[status]?{statusLabel:salesGapLabels[status]}:{})}:{})};
    })}:{})};
