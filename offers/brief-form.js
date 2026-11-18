@@ -264,6 +264,15 @@
         heading('Dolaylı alternatifler');
         data.verifiedResearch.indirectAlternatives.forEach(p=>paragraph([p.name,p.product,p.url].filter(Boolean).join(' · ')));
       }
+      if(data.verifiedResearch?.buyerProcurement?.length){
+        heading('Satın alma yapısı');
+        for(const {segment,label,targetMarket,evidence,hypothesis} of data.verifiedResearch.buyerProcurement){
+          const item=document.createElement('article');box.appendChild(item);
+          const title=document.createElement('h4');title.textContent=[segment,label,targetMarket].join(' · ');item.appendChild(title);
+          if(evidence)paragraph(['Kaynaklı gözlem',evidence.segment,evidence.market,evidence.value,evidence.sourceIds.join(', ')].join(' · '),item);
+          if(hypothesis)paragraph('Pilot hipotezi · '+hypothesis,item);
+        }
+      }
       const evidenceTasks=(data.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
       if(evidenceTasks.length){
         heading('Araştırma sorularının kaynakları');

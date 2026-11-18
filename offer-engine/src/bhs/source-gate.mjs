@@ -1,9 +1,10 @@
 import {hydrateCitationSources,verifiedCitationCards,technicalCitations} from './citation-cards.mjs';
-import {requireGroundedResearch} from './research-content.mjs';
+import {isReadEvidence,requireGroundedResearch} from './research-content.mjs';
 import {normalized,publicUrl} from './verify.mjs';
 import {offerReport} from './offer-report.mjs';
 import {supportedNumbers,numericEvidence} from './numeric-evidence.mjs';
 import {customerFinding,qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
+import {groundBuyerProcurement} from './buyer-procurement.mjs';
 
 const readSegments=source=>{const chunks=[];for(const e of [...(source.excerpts||[])].sort((a,b)=>(a.offset??Infinity)-(b.offset??Infinity))){const last=chunks.at(-1);if(last&&Number.isInteger(last.offset)&&Number.isInteger(e.offset)&&last.offset+last.text.length===e.offset)last.text+=e.text;else chunks.push({...e});}return chunks.map(e=>e.text);};
 const unsafeReasons=new Set(['invalid_source','unresolved_source','unverified','unread_source_or_unmatched_quote','unsupported_finding','unsupported_benchmark','unsupported_coverage','unsupported_summary_number']);
@@ -26,7 +27,7 @@ function completedForecast(finding,evidence){
 // syntactically valid citation as proof that its quote was actually read.
 // Quote matches do not prove semantic entailment; inference stays labelled.
 export function groundOfferReport(value,{packet,searchEvidence=[],brief={},preserveQualifiedImpacts=false,scopedFindings=false}={}){
- const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method}));
+ const records=(packet?.sources||[]).map(s=>({url:s.finalUrl||s.url,aliases:[s.url,s.finalUrl],title:s.title,text:(s.excerpts||[]).map(e=>e.text).join('\n'),segments:readSegments(s),method:s.method,metadataOnly:s.metadataOnly}));
  for(const search of searchEvidence)for(const s of search.results||[])records.push({url:s.url,aliases:[s.url],title:s.title,text:s.content||'',segments:[s.content||''],method:'search-snippet'});
  for(const source of packet?.sources||[])for(const quote of technicalCitations(source))records.push({url:source.finalUrl||source.url,aliases:[source.url,source.finalUrl],title:source.title,text:quote,segments:[quote],method:'html-signals'});
  const trusted=verifiedCitationCards(packet?.citationCards,records);
@@ -34,7 +35,8 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const hydrated=hydrateCitationSources(value,trusted);
  const projected=offerReport(hydrated),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
  const sources=(raw.sources||[]).filter(s=>{
-  const url=publicUrl(s.url),quote=normalized(s.quote),record=records.find(r=>r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote)));
+  const url=publicUrl(s.url),quote=normalized(s.quote),record=records.find(r=>
+   (!s.id.startsWith('buyer_')||isReadEvidence(r))&&r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote)));
   if(!record){issues.push({path:'sources.'+s.id,reason:'unread_source_or_unmatched_quote'});return false;}
   s.title=record.title||s.title;s.publishedAt=null;
   if(s.period&&!supportedNumbers(s.period,record.text))s.period=null;
@@ -51,6 +53,10 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
   raw.verifiedResearch.productComparisons=raw.verifiedResearch.productComparisons.filter(row=>
    onProduct(row.reference,row.reference?.url)&&onProduct(row.candidate,row.candidate?.url)).map(row=>({...row,
     fields:row.fields.map(field=>({...field,reference:value(field.reference,row.reference.url),candidate:value(field.candidate,row.candidate.url)}))}));
+ }
+ if(raw.verifiedResearch?.buyerProcurement){
+  raw.verifiedResearch.buyerProcurement=raw.verifiedResearch.buyerProcurement.map(row=>
+   groundBuyerProcurement(row,byId.get(row.evidence?.sourceIds?.[0])));
  }
  const needs=scopedFindings?new Map((raw.verifiedResearch?.metrics||[]).map(m=>[m.id,{metric:m.name,sectionTitle:m.sectionTitle}])):null;
  const selected=[];

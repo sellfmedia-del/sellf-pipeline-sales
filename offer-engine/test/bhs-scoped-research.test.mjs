@@ -15,6 +15,7 @@ import {sourceLinks} from '../src/bhs/evidence.mjs';
 import {workerInfraReservationKurus} from '../src/bhs/job-infrastructure.mjs';
 import {localBudget} from './fixtures/local-budget.mjs';
 import {selectProposalAudit} from '../src/proposal/audit-selection.mjs';
+import {localizeProposal} from '../src/proposal/language.mjs';
 import {compositionEnvelope,offerCopy} from '../src/proposal/composition.mjs';
 import {mergeManagedGapReport} from '../src/bhs/managed-gaps.mjs';
 import {continuationAudit,restoreContinuation} from '../src/bhs/continuity.mjs';
@@ -50,6 +51,105 @@ const frequency={...engagement,id:'frequency',metric:'Son 30 günün paylaşım 
 const followers={...engagement,id:'followers',metric:'Güncel takipçi sayısı',expected:'Resmî hesaptaki takipçi sayısı',
  query:'Marque Instagram nombre abonnés officiel',quantity:1,period:'',since:''};
 
+test('procurement is planned, verified and transferred by buyer group and question',async()=>{
+ const scope={section:'buying',sectionTitle:'Satın alma yapısı',target:'Kreş alıcıları',market:'Birleşik Krallık',country:'GB',language:'en'};
+ const measurement=(id,buyerSegment,buyingDimension)=>({id,buyerSegment,buyingDimension,metric:buyingDimension,
+  buyerSourceSegment:id.startsWith('b0')?'independent nurseries':'nursery chains',
+  expected:'O alıcı grubunun satın alma prosedürü',query:buyerSegment+' '+buyingDimension+' United Kingdom',first:'tavily',quantity:1,
+  period:'',since:'',comparisonProduct:'',comparisonRole:'none'});
+ const measurements=['Bağımsız kreşler','Kreş zincirleri'].flatMap((segment,i)=>
+  ['decisionMaker','approval','channel'].map((dimension,j)=>measurement('b'+i+j,segment,dimension)));
+ const controllerVersion={managedBudgetVersion:22};
+ const planned=await planScopedResearch({brief,identity,briefUnderstanding,asOf:packet.asOf,packet,providers:{...controllerVersion,
+  manager:async(_stage,input,contract,{normalizeData})=>{
+   assert.match(input.instruction,/bağımsız işletmeler ile bir zincire bağlı işletmeleri ayrı araştır/);
+   const output={needs:[{...scope,measurements}]};
+   assertSchema(output,contract);
+   return {data:normalizeData(output)};
+  }}});
+ assert.deepEqual(planned.needs.map(({id,buyerSegment,buyingDimension})=>[id,buyerSegment,buyingDimension]),
+  measurements.map(({id,buyerSegment,buyingDimension})=>[id,buyerSegment,buyingDimension]));
+ const record=(id,segment,market,value,passage,method='html')=>({
+  quote:passage,method,id,url:'https://buyers.example/policies/'+id,title:id,item:id,
+  buyerProcess:{proof:id,segment,market,value,passage}
+ });
+ const owner=record('owner','independent nurseries','United Kingdom','owners decide on purchases',
+  'At independent nurseries in the United Kingdom, owners decide on purchases.');
+ const limited=record('limited','independent nurseries','England','approval by the manager',
+  'For independent nurseries in England, purchase orders require approval by the manager.');
+ const supplier=record('supplier','independent nurseries','United Kingdom','supplier catalogue',
+  'Our supplier catalogue lists play mats for independent nurseries in the United Kingdom.');
+ const wrongBuyer={...owner,id:'other-buyer',buyerProcess:{...owner.buyerProcess,proof:'other-buyer'}};
+ const unread=record('unread','nursery chains','United Kingdom','central approval',
+  'For nursery chains in the United Kingdom, orders require central approval.','search-snippet');
+ const chain=record('chain','nursery chains','United Kingdom','approved supplier portal',
+  'For nursery chains in the United Kingdom, staff place orders through the approved supplier portal.');
+ const facts=[owner,limited,supplier,wrongBuyer,unread,chain];
+ const receipts=facts.map(({buyerProcess,...fact},i)=>({id:measurements[i].id,facts:[fact],urls:[fact.url]}));
+ const attempted=facts.map((fact,i)=>({id:measurements[i].id,sufficient:true,proofs:[fact.id],buyerProcess:fact.buyerProcess}));
+ const plan={...planned,adaptiveResearch:true,qualityReport:true,taskReporting:true,readEvidenceOnly:true,
+  targetedEvidence:true,verifiedResults:true,qualifyReportFindings:true,procurementResearch:true};
+ const review=await reviewScopedResearch({identity,briefUnderstanding,brief,packet,plan,rounds:[{receipts}],last:true,
+  providers:{...controllerVersion,manager:async(stage,input,contract)=>{
+   assert.equal(stage,'bhs-scoped-clearance');
+   assert.match(input.instruction,/Daha dar pazarı yeterli sayma/);
+   const data=draft({approve:true,decisions:attempted});
+   assertSchema(data,contract);
+   return {data};
+  }}});
+ assert.equal(review.approved,false);
+ assert.deepEqual(review.openNeeds,['b01','b02','b10','b11']);
+ let delegated=false;
+ const fallback=await reviewScopedResearch({identity,briefUnderstanding,brief,packet,plan:{...plan,needs:planned.needs.slice(0,2),
+  orderedResearch:true,reportOnlyAfterResearch:true},rounds:[{receipts:receipts.slice(0,2)}],last:true,
+  providers:{...controllerVersion,manager:()=>{throw new BudgetError('not_configured','fixture');},
+   worker:async(stage,input,contract)=>{
+    delegated=true;
+    assert.equal(stage,'bhs-scoped-evidence-check');
+    assert.deepEqual(input.tasks.map(task=>[task.buyerSourceSegment,task.buyingDimension]),
+     [['independent nurseries','decisionMaker'],['independent nurseries','approval']]);
+    const data={decisions:attempted.slice(0,2).map(row=>({...row,read:'',nextQuery:''}))};
+    assertSchema(data,contract);
+    return {data};
+   }}});
+ assert.equal(delegated,true);
+ assert.deepEqual(fallback.decisions.map(row=>[row.id,row.sufficient,row.buyerProcess?.market]),[
+  ['b00',true,'United Kingdom'],['b01',false,'England']
+ ]);
+ const rounds=[{receipts},{...review,closed:true,stopReason:'research_budget_exhausted'}];
+ const brand={packet,facts:[],brandUnderstanding:identity,briefUnderstanding};
+ const synthesis=await writeScopedSynthesis({brief,brand,plan,rounds,allowWrite:false,
+  providers:{manager:()=>assert.fail('formatting saved procurement must be free')}});
+ const audit=directAuditResult(brief,synthesis).data;
+ const rows=audit.verifiedResearch.buyerProcurement;
+ assert.deepEqual(rows.map(row=>[row.needId,row.evidence?.value,Boolean(row.hypothesis)]),[
+  ['b00',owner.buyerProcess.value,false],['b01',limited.buyerProcess.value,true],['b02',undefined,true],
+  ['b10',undefined,true],['b11',undefined,true],['b12',chain.buyerProcess.value,false]
+ ]);
+ assert.equal(rows[1].evidence.market,'England');
+ assert.equal(rows[1].evidence.coversTarget,false);
+ assert.deepEqual(audit.bhsSections[0].openMetrics.map(row=>row.id),review.openNeeds);
+ assert.match(audit.rawReport,/Kaynaklı gözlem · independent nurseries · England/);
+ const proposal=selectProposalAudit(audit,brief);
+ assert.equal(proposal.verifiedResearch.buyerProcurement.length,6);
+ assert.ok(rows[0].evidence.sourceIds.every(id=>proposal.sources.some(source=>source.id===id&&source.url===owner.url)));
+ const translated=await localizeProposal({bhs:proposal,copy:{},alternatives:[],plans:{}},'en',{providers:{
+  generate:async(_stage,{texts})=>{
+   assert.ok(texts.includes(rows[1].hypothesis));
+   assert.ok(texts.includes(rows[1].evidence.market));
+   assert.ok(!texts.includes(rows[1].evidence.sourceIds[0]));
+   return {model:'fixture',data:{translations:texts.map(text=>'EN '+text)}};
+  }
+ }});
+ assert.equal(translated.bhs.verifiedResearch.buyerProcurement[1].hypothesis,'EN '+rows[1].hypothesis);
+ const withoutOwner={...synthesis,analysisPacket:{...synthesis.analysisPacket,
+  sources:synthesis.analysisPacket.sources.filter(source=>source.url!==owner.url),
+  citationCards:synthesis.analysisPacket.citationCards.filter(source=>source.url!==owner.url)}};
+ const regrounded=directAuditResult(brief,withoutOwner).data.verifiedResearch.buyerProcurement[0];
+ assert.equal(regrounded.evidence,undefined);
+ assert.match(regrounded.hypothesis,/pilotta/);
+});
+
 test('task titles survive planning and saved source reads determine the user-visible gap states',async()=>{
  const fields=[
   {id:'price',section:'T_FIYAT',sectionTitle:'Royal set fiyatlandırması',metric:'Royal set için Türkiye satış fiyatları'},
@@ -60,7 +160,7 @@ test('task titles survive planning and saved source reads determine the user-vis
   {id:'failed',section:'T_PAZAR',sectionTitle:'Hedef pazar',metric:'Hedef pazarda satış kanalları'}
  ];
  const grouped=fields.map(({id,section,sectionTitle,metric})=>({...instagramScope,section,sectionTitle,
-  measurements:[{...engagement,id,metric,first:'gemini',comparisonProduct:'',comparisonRole:'none'}]}));
+  measurements:[{...engagement,id,metric,first:'gemini',comparisonProduct:'',comparisonRole:'none',buyerSegment:'',buyerSourceSegment:'',buyingDimension:'none'}]}));
  const version={managedBudgetVersion:22};
  const planned=await planScopedResearch({brief,identity,briefUnderstanding,asOf:packet.asOf,packet,providers:{...version,
   manager:async(stage,input,contract,{normalizeData,responseSchema})=>{

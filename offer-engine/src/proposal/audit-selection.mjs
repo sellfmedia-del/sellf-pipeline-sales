@@ -35,9 +35,15 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
  const coverage=array(audit.researchCoverage).filter(c=>typeof c?.observation==='string'&&c.observation.trim()&&c.observation!=='Bu araştırmada veri bulunamadı; görüşmede doğrulanacak.'&&!affectedDimensions.has(c.dimension));
  const sourceIds=new Set([...selected.flatMap(f=>array(f.sourceIds)),...coverage.flatMap(c=>c.sourceIds),...benchmarks.flatMap(b=>b.entries.flatMap(e=>e.sourceIds))]);
  const keepSources=ids=>array(ids).filter(id=>knownSources.has(id)).map(id=>{sourceIds.add(id);return id;});
+ const buyerProcurement=contextPending?[]:array(audit.verifiedResearch?.buyerProcurement).flatMap(({segment,label,targetMarket,evidence,hypothesis})=>{
+  const proofs=keepSources(evidence?.sourceIds);
+  return proofs.length||hypothesis?[{segment,label,targetMarket,...(hypothesis?{hypothesis}:{}),
+   ...(proofs.length?{evidence:{segment:evidence.segment,market:evidence.market,value:evidence.value,sourceIds:proofs}}:{})}]:[];
+ });
  const verifiedResearch=audit.verifiedResearch&&!contextPending?{metrics:array(audit.verifiedResearch.metrics).map(({evidence,additionalEvidence,requestedMarket,requestedPeriod,marketMeasures,sourceIds,...metric})=>
   ({...metric,sourceIds:keepSources(sourceIds),...(marketMeasures?{marketMeasures:marketMeasures.map(row=>
-   ({...row,sourceIds:keepSources(row.sourceIds)})).filter(row=>row.sourceIds.length)}:{})}))}:undefined;
+   ({...row,sourceIds:keepSources(row.sourceIds)})).filter(row=>row.sourceIds.length)}:{})})),
+  ...(buyerProcurement.length?{buyerProcurement}:{})}:undefined;
  const competitors=array(audit.competitors).map(p=>({id:p.id,name:p.name,...(verifiedResearch?{sourceIds:keepSources(p.sourceIds)}:{})}));
  const excludedIds=new Set(excluded.map(f=>f.id));
  const summary=excluded.length?(selected[0]?.statement||'Araştırma soruları görüşmede değerlendirilecek.'):audit.summary;

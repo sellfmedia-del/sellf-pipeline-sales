@@ -77,10 +77,15 @@ export function managedCoverage(report){
 
 export function scopedCoverage(report,metrics=[],linked=false,describeGaps=false,includeSwot=false,taskReporting=false){
  const peers=new Set((report.competitors||[]).map(peer=>peer.id));
+ const buyerRows=new Map((report.verifiedResearch?.buyerProcurement||[]).map(row=>[row.needId,row]));
  const swotId=metrics.find(m=>isSwotSection(m.section))?.section||report.findings.find(f=>isSwotSection(f.bhsSection))?.bhsSection||'swot';
  const sectionId=id=>includeSwot&&isSwotSection(id)?swotId:id;
- const isOpen=(metric,findings)=>metric.status==='open'||linked&&!findings.some(f=>f.sourceIds.length&&!f.researchEvidenceOnly&&
-  f.researchNeedIds?.includes(metric.id)&&(!metric.requiresPeer||peers.has(f.peerId)));
+ const isOpen=(metric,findings)=>{
+  const buyer=buyerRows.get(metric.id);
+  if(buyer)return metric.status==='open'||!buyer.evidence?.coversTarget||Boolean(buyer.hypothesis);
+  return metric.status==='open'||linked&&!findings.some(f=>f.sourceIds.length&&!f.researchEvidenceOnly&&
+   f.researchNeedIds?.includes(metric.id)&&(!metric.requiresPeer||peers.has(f.peerId)));
+ };
  const openMetrics=taskReporting?metrics.filter(m=>isOpen(m,report.findings)):null;
  const ids=unique([...report.findings.map(f=>sectionId(f.bhsSection)).filter(Boolean),
   ...(openMetrics||metrics.filter(m=>linked||m.status==='open')).map(m=>sectionId(m.section||m.name)),...(includeSwot?[swotId]:[])]);
@@ -175,6 +180,10 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const adaptive=input.plan.adaptiveResearch===true;
  const linked=input.plan.qualityReport===true;
  const targeted=input.plan.targetedEvidence===true;
+ const buyerMetrics=coverage.filter(metric=>metric.buyerProcurement);
+ const buyerProofs=new Set(buyerMetrics.flatMap(metric=>metric.sources));
+ const otherProofs=new Set(coverage.filter(metric=>!metric.buyerProcurement).flatMap(metric=>metric.sources));
+ const structuredProofs=new Set([...buyerProofs].filter(proof=>!otherProofs.has(proof)));
  const outputSchema=linked?linkedReportSchema:adaptive?adaptiveReportSchema:scopedReportSchema;
  const request={...input,needs,coverage,approved,...(stopReason?{stopReason}:{}),instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
@@ -188,13 +197,15 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (input.plan.taskReporting?' Önemli, doğrulanmış ve brief hedefini etkileyen bulguları, araştırma görevinin başlığına veya hazır BHS başlıklarına birebir sığmasa da rapora al. section alanına bulgunun raporda en iyi anlaşılacağı başlığı yaz. Örneğin kullanıcıyı satış noktasına yönlendiren, mevzuattan da etkilenen bir eczane bulucu, etkisi operasyonelse Operasyonel verimlilik altında yer alabilir. Görevin needIds ve proof bağlantılarını aynen koru.':'')+
   (input.plan.qualifyReportFindings?' Her bulgu müşterinin bağlamı bilmeden okuyabileceği tam ve kendi başına anlaşılır bir cümle olsun. Alıntı, menü, başlık veya kesik metni bulgu olarak kopyalama. Her iddiayı doğrudan ilgili kanıtla eşleştir ve farklı ifade edilmiş tekrarları birleştir. Kullanım şekli, özellik ve fayda bilgisini uygun bir kullanım başlığında değerlendir. Talep için hedef kitlenin gözlenen satın alma davranışı, sipariş, bütçe, alıcı araştırması veya benzer doğrudan kanıt gerekir. Yalnız kullanımı gösteren kanıtla talep ihtiyacını karşılandı olarak işaretleme.':'')+
   (input.plan.focusedProductComparison?' Adı belirtilmiş ürün kıyaslarında verifiedProductProofs içindeki aynı peerId kaydını kullan. Her bulgu o kaydın required kanıtlarından en az birini ve yalnız allowed kanıtlarını kullanır. Referans SKU, parça adedi, kapladığı alan, hedef yaş, yerel liste fiyatı, KDV ve teslimatı ayrı tut. Farklı ürün, paket, para birimi veya vergi koşulunu eşdeğer fiyat diye yazma. Dolaylı alternatiften doğrudan rakip sonucu çıkarma.':'')+
+  (buyerMetrics.length?' buyerProcurement işaretli satın alma soruları kaynaklı gözlem ve pilot hipotezi olarak ayrı gösterilir. Bu satırları bulgu olarak tekrarlama. Eksik karar verici, onay veya sipariş kanalının cevabını çıkarma.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
  if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
   request.plan={understanding:input.plan.understanding,briefUnderstanding:input.plan.briefUnderstanding};
-  request.needs=needs.map(({id,section,sectionTitle,target,market,period,metric,expected,comparisonProduct,comparisonRole})=>({id,section,target,market,period,
+  request.needs=needs.map(({id,section,sectionTitle,target,market,period,metric,expected,comparisonProduct,comparisonRole,buyerSegment,buyingDimension})=>({id,section,target,market,period,
    ...(input.plan.sectionedSynthesis?{metric,expected}:{}),...(input.plan.taskReporting?{sectionTitle}:{}),
+   ...(buyerSegment?{buyerSegment,buyingDimension}:{}),
    ...(comparisonProduct?{comparisonProduct,comparisonRole}:{})}));
  }
  if(targeted){
@@ -228,8 +239,10 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   return [key,rows.slice(0,field.maxItems)];
  }));
  const swotId=input.plan.sectionedSynthesis?(coverage.find(m=>isSwotSection(m.section))?.section||sections?.find(isSwotSection)||'swot'):undefined;
+ const buyerIds=new Set(buyerMetrics.map(metric=>metric.id));
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
-  usedInput:input,data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
+  usedInput:input,data:buyerIds.size?{...data,findings:list(data.findings).filter(row=>!row.needIds?.some(id=>buyerIds.has(id))&&
+   !row.proof.some(proof=>structuredProofs.has(proof)))}:data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
  if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly});
  try{
   const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;

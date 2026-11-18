@@ -1128,8 +1128,10 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
  const aliases=new Map([...reverse].map(([alias,id])=>[id,alias]));
  const cite=fact=>context.cards.filter(card=>card.url===fact.url&&fact.quote.includes(card.quote)).map(card=>card.id);
  const proofAliases=facts=>unique(facts.filter(Boolean).flatMap(cite).map(id=>aliases.get(id)).filter(Boolean));
+ const buyerRows=new Map(evidence.buyerProcurement.map(row=>[row.needId,row]));
  const coverage=evidence.coverage.map(({proofs,marketMeasures,...metric})=>({...metric,
   sources:proofAliases(proofs),
+  ...(buyerRows.has(metric.id)?{buyerProcurement:true}:{}),
   ...(plan.focusedProductComparison&&evidence.needs.some(need=>need.id===metric.id&&need.comparisonRole==='rivals')?{
    verifiedProductProofs:evidence.productComparisons.flatMap(({reference,candidate})=>{
     const candidateFacts=[candidate.proof,...Object.values(candidate.fields).map(field=>field.proof)];
@@ -1190,6 +1192,18 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   }
   if(evidence.competitorCandidates.length)report.verifiedResearch.competitorCandidates=evidence.competitorCandidates;
   if(evidence.indirectAlternatives.length)report.verifiedResearch.indirectAlternatives=evidence.indirectAlternatives;
+  if(evidence.buyerProcurement.length){
+   const sources=new Map(report.sources.map(source=>[source.id,source]));
+   report.verifiedResearch.buyerProcurement=evidence.buyerProcurement.map(({process,...row})=>{
+    if(!process)return row;
+    const {proof,passage,...observation}=process;
+    const fact=evidence.coverage.find(metric=>metric.id===row.needId).proofs.find(f=>f.id===proof);
+    const id='buyer_'+hash([fact.url,passage]).slice(0,22);
+    sources.set(id,{id,url:fact.url,title:fact.title||fact.url,quote:passage,scope:'Doğrudan okunan satın alma kanıtı.',publishedAt:null,period:null,sourceType:'secondary'});
+    return {...row,evidence:{...observation,sourceIds:[id]}};
+   });
+   report.sources=[...sources.values()];
+  }
   if(evidence.productComparisons.length){
    const sources=new Map(report.sources.map(source=>[source.id,source]));
    function comparisonRefs(fact,value){
@@ -1293,7 +1307,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=18?{separateGapCosts:true,...(providers.compactQueue?{compactQueue:true}:{})}:{}),
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
-   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true}:{}),
+   ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

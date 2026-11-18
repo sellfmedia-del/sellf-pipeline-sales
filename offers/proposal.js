@@ -96,6 +96,15 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
     for(const question of data.bhs.meetingQuestions)add('li',question,questions);
    }
   }
+  if(data.bhs.verifiedResearch?.buyerProcurement?.length){
+   const block=add('section','',$('#so-analysis'),'so-benchmark');
+   add('h3',english?'How buyers purchase':'Satın alma yapısı',block);
+   for(const {segment,label,targetMarket,evidence,hypothesis} of data.bhs.verifiedResearch.buyerProcurement){
+    add('h4',[segment,label,targetMarket].join(' · '),block);
+    if(evidence)add('p',[english?'Source-backed observation':'Kaynaklı gözlem',evidence.segment,evidence.market,evidence.value,evidence.sourceIds.join(', ')].join(' · '),block);
+    if(hypothesis)add('p',(english?'Pilot hypothesis':'Pilot hipotezi')+' · '+hypothesis,block);
+   }
+  }
   const foot=$('.so-chart-foot');foot.replaceChildren();
   add('span',t('Ön BHS: ')+(data.bhs.scoring?.total==null?t('Yeterli veri yok'):data.bhs.scoring.total+'/100'),foot);
   add('span',(data.bhs.sources||[]).length+t(' kaynak · ')+(data.bhs.competitors||[]).length+t(' rakip · Dışsal ön analiz'),foot);

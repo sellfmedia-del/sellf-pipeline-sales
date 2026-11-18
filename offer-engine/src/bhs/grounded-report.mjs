@@ -58,6 +58,14 @@ export function renderGroundedReport(report){
  if(report.verifiedResearch?.indirectAlternatives?.length){
   rows.push('### Dolaylı alternatifler',...report.verifiedResearch.indirectAlternatives.map(p=>[p.name,p.product,p.url].filter(Boolean).join(' · ')));
  }
+ if(report.verifiedResearch?.buyerProcurement?.length){
+  rows.push('## Satın alma yapısı');
+  for(const {segment,label,targetMarket,evidence,hypothesis} of report.verifiedResearch.buyerProcurement){
+   rows.push('### '+[segment,label,targetMarket].join(' · '));
+   if(evidence)rows.push(['Kaynaklı gözlem',evidence.segment,evidence.market,evidence.value,evidence.sourceIds.join(', ')].join(' · '));
+   if(hypothesis)rows.push('Pilot hipotezi · '+hypothesis);
+  }
+ }
  const tasks=(report.verifiedResearch?.metrics||[]).filter(metric=>metric.evidence?.length||metric.additionalEvidence);
  if(tasks.length){
   rows.push('## Araştırma sorularının kaynakları');

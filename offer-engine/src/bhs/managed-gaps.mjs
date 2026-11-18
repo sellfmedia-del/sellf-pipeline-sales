@@ -276,6 +276,13 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
  }
  for(const row of comparisons.values())for(const item of [row.reference,row.candidate,...row.fields.flatMap(field=>[field.reference,field.candidate])])
   for(const id of item?.sourceIds||[])sourceIds.add(id);
+ const procurement=new Map((original.verifiedResearch?.buyerProcurement||[]).map(row=>[row.needId,row]));
+ if(verified)for(const row of patch.verifiedResearch.buyerProcurement||[]){
+  if(!eligibleNeeds.has(row.needId))continue;
+  const prior=procurement.get(row.needId);
+  if(!prior?.evidence||row.evidence&&(!prior.evidence.coversTarget||row.evidence.coversTarget))procurement.set(row.needId,row);
+ }
+ for(const row of procurement.values())for(const id of row.evidence?.sourceIds||[])sourceIds.add(id);
  const acceptedHosts=new Set(competitors.map(peer=>researchHost(peer.website)));
  const candidates=[...new Map([...(original.verifiedResearch?.competitorCandidates||[]),...(patch.verifiedResearch?.competitorCandidates||[])]
   .filter(candidate=>!acceptedHosts.has(researchHost(candidate.url))).map(candidate=>[researchHost(candidate.url),candidate])).values()];
@@ -284,7 +291,8 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
   .filter(item=>!directProducts.has(item.url)).map(item=>[item.url,item])).values()];
  return {...original,findings,competitors,
   ...(verified?{verifiedResearch:{metrics:boundScopedEvidence([...metrics.values()]),...(candidates.length?{competitorCandidates:candidates}:{}),
-   ...(comparisons.size?{productComparisons:[...comparisons.values()]}:{}),...(indirect.length?{indirectAlternatives:indirect}:{})}}:{}),
+   ...(comparisons.size?{productComparisons:[...comparisons.values()]}:{}),...(indirect.length?{indirectAlternatives:indirect}:{}),
+   ...(procurement.size?{buyerProcurement:[...procurement.values()]}:{})}}:{}),
   sources:[...new Map([...original.sources,...patch.sources.filter(s=>sourceIds.has(s.id))].map(s=>[s.id,s])).values()],
   meetingQuestions:[...original.meetingQuestions,...patch.meetingQuestions.filter(q=>q.findingIds.some(id=>addedIds.has(id)))],
   dimensions:original.dimensions.map(d=>({...d,findingIds:[...d.findingIds,...findings.filter(f=>addedIds.has(f.id)&&f.dimension===d.id).map(f=>f.id)]}))};

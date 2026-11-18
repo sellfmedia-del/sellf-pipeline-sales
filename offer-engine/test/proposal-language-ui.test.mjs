@@ -24,9 +24,20 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
    // Exercise the published-proposal form without opening or sending email.
    await page.evaluate(({language,currency})=>{
-    PipelineProposal.mount(document.querySelector('#offer'),docs[language][currency],{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'offer1'});
+    const doc=structuredClone(docs[language][currency]),en=language==='en';
+    doc.bhs.verifiedResearch={buyerProcurement:[{
+     segment:en?'Independent buyers':'Bağımsız alıcılar',label:en?'Approvals':'Satın alma onayı',targetMarket:en?'United Kingdom':'Birleşik Krallık',
+     evidence:{segment:en?'Independent buyers':'Bağımsız alıcılar',market:en?'England':'İngiltere',
+      value:en?'Approval by the manager':'Yönetici onayı',sourceIds:['buyer-fixture']},
+     hypothesis:en?'Test the approvals in a pilot.':'Onay sürecini pilotta sınayın.'
+    }]};
+    PipelineProposal.mount(document.querySelector('#offer'),doc,{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'offer1'});
     document.querySelector('#sellf-two-option-offer').addEventListener('click',event=>{if(event.target.closest('a[href^="mailto:"]'))event.preventDefault();});
    },{language,currency});
+   await page.getByRole('heading',{name:en?'How buyers purchase':'Satın alma yapısı'}).waitFor();
+   await page.getByText(en?'Pilot hypothesis · Test the approvals in a pilot.':'Pilot hipotezi · Onay sürecini pilotta sınayın.',{exact:true}).waitFor();
+   await page.getByText(en?'Source-backed observation · Independent buyers · England · Approval by the manager · buyer-fixture':
+    'Kaynaklı gözlem · Bağımsız alıcılar · İngiltere · Yönetici onayı · buyer-fixture',{exact:true}).waitFor();
    await page.locator('#so-request-open').click();
    await page.locator('[name=name]').fill('Jane Smith');await page.locator('[name=email]').fill('jane@example.com');
    await page.locator('#so-request-form').evaluate(form=>form.requestSubmit());
