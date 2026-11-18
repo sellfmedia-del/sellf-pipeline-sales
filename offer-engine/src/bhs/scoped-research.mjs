@@ -136,6 +136,11 @@ function normalizeNeeds(rows,schema,useMeasurements){
  return (useMeasurements?uniqueBy(needs,n=>n.id):needs).slice(0,maxItems);
 }
 
+function brandPageReceipt(url,{value,issue}){
+ return {url,status:issue||value?.unavailable?.find(row=>researchUrl(row.url)===url)?.reason||
+  (value?.sources?.some(source=>!source.metadataOnly)?'read':'no_readable_text')};
+}
+
 export async function understandScopedBrand({brief,packet,providers,prior,readPages,final=false}){
  const brand={name:brief.brandName,website:brief.website};
  const ordered=providers.managedBudgetVersion>=12;
@@ -146,8 +151,20 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  if(targeted)for(const hint of hints)observed.add(hint.url);
  const lookupReceipts=[...(prior?.lookupReceipts||[])];
  const readReceipts=[...(prior?.readReceipts||[])];
+ if(targeted&&!prior&&!packet.sources.some(source=>!source.metadataOnly)){
+  const homepage=researchUrl(brand.website);
+  visited.add(homepage);
+  readReceipts.push(brandPageReceipt(homepage,{value:packet}));
+ }
  if(prior){
-  const targets=(prior.value?.pages||[]).map(researchUrl).filter(url=>observed.has(url)&&!visited.has(url));
+  const requestedPages=(prior.value?.pages||[]).map(researchUrl).filter(Boolean);
+  const targets=requestedPages.filter(url=>observed.has(url)&&!visited.has(url));
+  // A rejected request must reach the controller once so it can choose a search.
+  // Keep the existing URL allowlist and avoid another turn for the same rejection.
+  const skippedPages=targeted?[...new Set(requestedPages)].filter(url=>!targets.includes(url)&&
+   (!observed.has(url)||readReceipts.some(receipt=>receipt.url===url&&receipt.status!=='read'))&&
+   !readReceipts.some(receipt=>receipt.url===url&&receipt.status==='page_not_read')):[];
+  for(const url of skippedPages)readReceipts.push({url,status:'page_not_read'});
   const searches=prior.value?.searches||[];
   for(const {query,tool,limit} of ordered?searches.slice(0,targets.length?0:1):searches){
    const key=hash([tool,query,limit]);
@@ -169,14 +186,13 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
     if(identity||candidates[0])targets.push((identity||candidates[0]).url);
    }
   }
-  if(!targets.length&&lookedUp.size===(prior.lookedUp||[]).length)return {...prior,packet,done:true};
+  if(!targets.length&&!skippedPages.length&&lookedUp.size===(prior.lookedUp||[]).length)return {...prior,packet,done:true};
   const additions=[];
   for(const url of new Set(targets)){
    visited.add(url);
    const answer=await attempt(()=>readPages([url]));
    additions.push(...(answer.value?.sources||[]));
-   if(targeted)readReceipts.push({url,status:answer.issue||answer.value?.unavailable?.find(u=>u.url===url)?.reason||
-    (answer.value?.sources?.some(s=>!s.metadataOnly)?'read':'no_readable_text')});
+   if(targeted)readReceipts.push(brandPageReceipt(url,answer));
   }
   packet={...packet,sources:uniqueBy([...packet.sources,...additions],s=>s.finalUrl||s.url)
    .map((source,index)=>({...source,id:'ev'+(index+1)}))};
@@ -188,7 +204,7 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
   ...(ordered?{lookupReceipts,final}:{}),...(targeted?{readReceipts}:{}),instruction:
   'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'+
   (ordered?' Tek seferde yalnız bir sayfa ya da tek, somut kimlik sorusu için bir araç seç. Önceki çağrıların sonuçlarını dikkate al. Bir araç hata verdiyse ve bilgi gerekliyse aynı dar soruyu uygun diğer araca kendin ver. final doğruysa ek istek gönderme ve belirsizlikleri yazarak marka anlayışını tamamla.':'')+
-  (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin.':'')},ordered?orderedBrandSchema:brandSchema,1400);
+  (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin. İlk sayfadan okunabilir içerik gelmediyse veya readReceipts içinde page_not_read varsa aynı adresi tekrar isteme. Kimlik bilgisi hâlâ gerekliyse marka adıyla resmi siteyi, ürünü veya kurumsal kimliği bulmak için Gemini ya da Tavily’ye tek bir hedefli arama seç. Doğrulanamayan bilgileri açıkça belirsiz bırak.':'')},ordered?orderedBrandSchema:brandSchema,1400);
  const value=result.value||prior?.value;
  return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],...(ordered?{lookupReceipts}:{}),...(targeted?{readReceipts}:{}),
   done:final||!result.value||!result.value.pages?.length&&!result.value.searches?.length};
@@ -199,6 +215,7 @@ export async function understandScopedBrief({brief,identity,providers,compactRet
  const {brandName,website,...card}=brief;
  return ask(providers,compactRetry?'bhs-scoped-brief-compact':'bhs-scoped-brief',{identity,card,instruction:
   'İkinci adım. Şimdi BHS öncesinde karta girilen briefi oku. Birinci adımda oluşturduğun marka anlayışını bağlam olarak kullan. Markanın ne istediğini, başarıdan ne anladığını ve teklifin hangi işleri kapsaması gerektiğini açıkla. Önemli gördüğün koşulları kendin belirle. Bu adımda araştırma planı ya da teşhis yazma.'+
+  (identity.sourceStatus==='no_readable_sources'?' Marka adımında okunabilir kaynak bulunamadı. Marka hakkındaki doğrulanmamış bilgileri açık bırak ve briefte açıkça verilen bilgilerle devam et.':'')+
   (compactRetry?' Hedefi ve teklif kapsamını kısa ve eksiksiz bir paragrafta belirt.':'')},understandingSchema,compactRetry?850:1500);
 }
 

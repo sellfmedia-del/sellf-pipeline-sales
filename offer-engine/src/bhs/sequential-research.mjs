@@ -14,6 +14,8 @@ import {collectionBrandCeiling,readResearchPages,runCollectionFirstStage} from '
 import {assertSchema} from './schema.mjs';
 
 const brandPlan=b=>({entities:[{id:'brand',role:'brand',name:b.brandName,website:b.website,scaleReason:'Ölçek henüz doğrulanmadı.',audienceReason:'Ürün ve kitle kaynaklardan doğrulanacak.',geographyReason:'Pazar kaynaklardan doğrulanacak.',scope:'Marka kimliği araştırması.'}],sources:[{url:b.website,purpose:'Resmî marka kimliği ve ürünler.'}]});
+const scopedBrandSummary=({value,packet})=>value&&{understanding:value.understanding,
+ ...(!packet.sources.some(source=>!source.metadataOnly)?{sourceStatus:'no_readable_sources'}:{})};
 const makeCollector=()=>createEvidenceCollector({timeout:60000,allowPartialPlan:true,concurrency:4,preferProductLinks:true,maxSourceChars:360000,hardDeadline:true});
 const queryBrand=b=>'"'+b.brandName.replace(/["\n\r]/g,' ').trim()+'"';
 const researchTargetCount=4;
@@ -335,7 +337,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
     readPages:urls=>readResearchPages(brief,prior.plan,urls,brandProviders,collect,{archive:false})});
    const {packet,...brandDiscovery}=discovery;
    return finish({...prior,packet,brandDiscovery,
-    brandUnderstanding:discovery.value?{understanding:discovery.value.understanding}:prior.brandUnderstanding,
+    brandUnderstanding:scopedBrandSummary(discovery)||prior.brandUnderstanding,
     ...(discovery.issue?{toolIssues:[...(prior.toolIssues||[]),discovery.issue]}:{})});
   }
   if(phase!=='brand_plan')return finish({...prior});
@@ -345,7 +347,7 @@ export async function runSequentialStage({phase,brief,providers,previous,collect
   const {packet:discoveredPacket,...brandDiscovery}=understanding;
   return finish({plan,packet,facts:[],collectionFirst:true,peerDiscoveryVersion:'product-v2',
    ...(adaptive?{packet:discoveredPacket||packet,brandDiscovery}:{}),
-   ...(scoped?{brandUnderstanding:adaptive&&understanding.value?{understanding:understanding.value.understanding}:understanding.value,...(understanding.issue?{toolIssues:[understanding.issue]}:{})}:{})});
+   ...(scoped?{brandUnderstanding:adaptive?scopedBrandSummary(understanding):understanding.value,...(understanding.issue?{toolIssues:[understanding.issue]}:{})}:{})});
  }
  if(providers.collectionFirst&&!providers.managedAudit&&index<=sequentialPhases.indexOf('brand')){
   const {capKurus}=await providers.costStatus();

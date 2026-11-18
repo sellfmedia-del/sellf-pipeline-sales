@@ -1629,6 +1629,75 @@ test('an already-read brand page preserves the sources through the brief and int
  assert.deepEqual(calls,['bhs-scoped-brand','bhs-scoped-brand','bhs-scoped-brief','bhs-scoped-plan','bhs-scoped-plan']);
 });
 
+for(const recovered of [true,false])test(`an unreadable brand homepage ${recovered?'recovers through targeted search':'leaves unknowns open and still uses the brief'}`,async()=>{
+ const saved=new Map(),reads=[],searches=[];
+ const alternate='https://marque-group.fr/about',query='Marque official company identity and products';
+ const unknown={understanding:'Markanın ürünleri, kurumsal kimliği ve faaliyet pazarı doğrulanmadı.'};
+ const orderedNeed={...needs[0],first:'tavily'};
+ const providers={collectionFirst:true,managedAudit:true,managedBudgetVersion:14,withCeiling(){return this;},
+  async claudeManager(stage,input){
+   if(stage==='bhs-scoped-brand'){
+    assert.equal(input.card,undefined);
+    assert.deepEqual(input.readReceipts[0],{url:brief.website,status:'HTTP_403'});
+    if(!input.priorUnderstanding)return {data:{...unknown,pages:[brief.website],searches:[]}};
+    if(!input.lookupReceipts.length){
+     assert.deepEqual(input.readReceipts.at(-1),{url:brief.website,status:'page_not_read'});
+     return {data:{...unknown,pages:[],searches:[{query,tool:'gemini',limit:1}]}};
+    }
+    assert.deepEqual(input.lookupReceipts[0],{query,tool:'gemini',issue:'provider_unavailable'});
+    if(input.lookupReceipts.length===1)return {data:{...unknown,pages:[],searches:[{query,tool:'tavily',limit:2}]}};
+    assert.deepEqual(input.sources.map(source=>source.url),recovered?[alternate]:[]);
+    return {data:{...(recovered?identity:unknown),pages:[],searches:[]}};
+   }
+   assert.deepEqual(input.identity,recovered?identity:{...unknown,sourceStatus:'no_readable_sources'});
+   if(stage==='bhs-scoped-brief'){
+    assert.equal(input.card.goals,brief.goals);
+    return {data:briefUnderstanding};
+   }
+   assert.equal(stage,'bhs-scoped-plan');
+   assert.deepEqual(input.briefUnderstanding,briefUnderstanding);
+   return {data:{needs:[orderedNeed]}};
+  },
+  async searchGemini(need){
+   assert.equal(need.query,query);
+   searches.push('gemini');
+   throw new BudgetError('provider_unavailable','Synthetic provider outage');
+  },
+  async search(value,options){
+   assert.equal(value,query);
+   assert.equal(options.maxResults,2);
+   searches.push('tavily');
+   return {results:[{url:brief.website,title:'Marque'},...(recovered?[{url:alternate,title:'Marque Group'}]:[])]};
+  }};
+ for(const phase of sequentialPhases.slice(0,sequentialPhases.indexOf('sector_sources')+1)){
+  saved.set(phase,await runSequentialStage({phase,brief,providers,previous:async name=>saved.get(name),
+   collect:async(_brief,_plan,{prioritySources:[url]})=>{
+    reads.push(url);
+    if(url===brief.website)return {...packet,sources:[],unavailable:[{url,reason:'HTTP_403'}]};
+    assert.equal(url,alternate);
+    return {...packet,sources:[{...packet.sources[0],url,finalUrl:url}]};
+   }}));
+ }
+ assert.deepEqual(searches,['gemini','tavily']);
+ assert.deepEqual(reads,recovered?[brief.website,alternate]:[brief.website]);
+ assert.deepEqual(saved.get('sector_sources').managedPlan.needs,[orderedNeed]);
+});
+
+test('an undiscovered page is reported to the brand controller once and is never fetched',async()=>{
+ const empty={...packet,sources:[]},choice={...identity,pages:['https://unobserved.example/'],searches:[]};
+ let choices=0;
+ const providers={managedBudgetVersion:14,async manager(_stage,input){
+  choices++;
+  assert.deepEqual(input.readReceipts.at(-1),{url:choice.pages[0],status:'page_not_read'});
+  return {data:choice};
+ }};
+ const discover=prior=>understandScopedBrand({brief,packet:empty,providers,prior,readPages:()=>assert.fail('Unobserved URL')});
+ const corrected=await discover({value:choice});
+ assert.equal(corrected.done,false);
+ assert.equal((await discover(corrected)).done,true);
+ assert.equal(choices,1);
+});
+
 test('ordered research runs one exact command, then returns the evidence to the controller before its next choice',async()=>{
  const plan={orderedResearch:true,reportOnlyAfterResearch:true,needs:[{...needs[0],first:'tavily'},needs[1]]};
  const requests=[],query='distributeurs indépendants alimentation bio France';
