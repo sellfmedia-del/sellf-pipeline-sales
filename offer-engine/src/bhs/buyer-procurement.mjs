@@ -28,7 +28,12 @@ const coveredUK={'Birleşik Krallık':['Büyük Britanya','İngiltere','Galler',
 // their parent jurisdiction together with the observed location.
 const knownRegions={FR:['ile-de-france']};
 const procurement=/\b(?:purchas\w*|procur\w*|orders?|buy\w*|satin al\w*|siparis\w*|tedarik\w*|achats?|command\w*|bestell\w*|einkauf\w*|beschaff\w*)\b/u;
-const qualification=/\b(?:not|never|no longer|cannot|can['’]t|doesn['’]t|don['’]t|non|pas|jamais|aucun\w*|nicht|kein\w*|niemals|degil|yasak\w*|verilmez|vermez\w*|kullanilmaz|kullanmaz\w*|onaylanmaz|disinda|haric|except\w*|exclud\w*|prohibit\w*|unlike|whereas|rather than|tandis que|hors|sauf|oysa|wahrend|hingegen|ausgenomm\w*|would|might|plans?\s+to|propos\w*\s+to|will\s+(?:begin|start|switch|introduce|use|place|order|buy)|next year|prevu\w*|envisag\w*|prevoit|plane[nt]|planl\w*|ongor\w*|hedeflen\w*|beklen\w*)\b/u;
+const qualifications=[
+ /\b(?:no|not|never|cannot|\w+n['’]t|without|except\w*|exclud\w*|prohibit\w*|forbidden|unlike|whereas|rather than|would|might|plans?\s+to|propos\w*\s+to|will\s+(?:begin|start|switch|introduce|use|place|order|buy)|next year)\b/u,
+ /\b(?:degil|yasak\w*|olmadan|(?:ver|kullan|onayla)(?:il|n)?m[ae](?:z|m[ai]s|mekt\w*|makt\w*|yacak|yecek)\w*|disinda|haric|oysa|planl\w*|ongor\w*|hedeflen\w*|beklen\w*)\b/u,
+ /\b(?:non|pas|jamais|aucun\w*|sans|tandis que|hors|sauf|prevu\w*|envisag\w*|prevoit)\b/u,
+ /\b(?:nicht|kein\w*|niemals|ohne|wahrend|hingegen|ausgenomm\w*|plane[nt])\b/u
+];
 const sentences=new Intl.Segmenter('en',{granularity:'sentence'});
 
 export function buyerNeed(need){
@@ -67,7 +72,7 @@ function validateClaim(need,proposed,quote){
  if(!clauses.some(clause=>inText(clause,segment)&&inText(clause,value)&&inMarket(fold(clause),fold(market))))return null;
  if(!inText(actual,wanted)||ownership(wanted)&&ownership(wanted)!==ownership(actual))return null;
  const proposition=fold(value);
- if(qualification.test(body)||!procurement.test(body)||!dimensions[need.buyingDimension].pattern.test(proposition))return null;
+ if(qualifications.some(pattern=>pattern.test(body))||!procurement.test(body)||!dimensions[need.buyingDimension].pattern.test(proposition))return null;
  if(/\b(?:by|from|through|via|using|de|par|aupres|bei|uber)(?:\s+(?:the|a|an|la|le|les|der|die|das))?[.!?]?$/u.test(proposition))return null;
  if(need.buyingDimension==='decisionMaker'&&/^(?:decid\w*\s+on|karar\s+ver\w*)\b/u.test(proposition))return null;
  if(need.buyingDimension!=='approval'&&!procurement.test(proposition))return null;
