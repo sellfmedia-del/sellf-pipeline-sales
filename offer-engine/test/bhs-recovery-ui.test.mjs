@@ -24,7 +24,8 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
     const response=await original(payload);
     Object.assign(response.result.data,{findings:[],researchContinuity:{status:'unavailable',notice:'Görüşme bilgileriyle teklife devam edebilirsin.'},
      verifiedResearch:{metrics:[],competitorCandidates:[{name:'Örnek Aday',url:'https://candidate.example/catalogue'}]},
-     supervision:{researchStopReason:width===1280?'research_engine_failure':'research_source_plan_invalid'},
+     meetingQuestions:[{question:'Teslimat süresi hangi sipariş kayıtlarıyla ölçülebilir?'}],
+     supervision:{researchPlan:{reportRecovery:true},researchStopReason:width===1280?'research_engine_failure':'research_source_plan_invalid'},
      bhsSections:[{id:'DİJİTAL',title:'Dijital varlıklar',complete:false,findingIds:[],openMetrics:[
       {name:'Instagram’da son 30 günün etkileşimi',status:'not_searched'},
       {name:'Markanın YouTube hesabı',status:'insufficient_sources'},
@@ -50,6 +51,7 @@ test('desktop/mobile display distinct sales gap reasons even when no findings re
   assert.match(text,/Kanıt bekleyen SWOT kolları · Zayıf yön, Tehdit/);
   for(const status of ['Kaynak okunamadı','Arama yapıldı, yeterli kanıt bulunamadı','Ölçüm kısmen doğrulandı','Doğrulandı, rapora aktarılamadı'])assert.ok(text.includes(status),status);
   assert.match(text,/Royal set ürün deneyimi/);
+  assert.match(text,/Teslimat süresi hangi sipariş kayıtlarıyla ölçülebilir\?/);
   assert.deepEqual(await page.evaluate(()=>reviewCalls.map(r=>r.action)),['start']);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
   assert.deepEqual(errors,[]);await page.close();
@@ -61,7 +63,25 @@ test('desktop/mobile restores the recorded research view at 46.21 TRY and reache
  try{for(const width of [1280,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'));try{await route.fulfill({contentType:{'.html':'text/html','.mjs':'application/javascript','.js':'application/javascript','.css':'text/css','.json':'application/json'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:''});}});
-  await page.goto('https://preview.vercel.app/offers/recovery-review.html');await page.locator('#review-restored').click();await page.locator('.ob-price:not([hidden])').waitFor();
+  await page.goto('https://preview.vercel.app/offers/recovery-review.html');
+  await page.waitForFunction(()=>typeof window.PipelineAuditRequest==='function');
+  await page.evaluate(()=>{
+   const original=window.PipelineAuditRequest;
+   window.PipelineAuditRequest=async payload=>{
+    const response=await original(payload),data=response.result.data;
+    const id='retained-source',url='https://evidence.example/catalogue';
+    data.sources.push({id,url,title:'Toptan satış kataloğu'});
+    data.verifiedResearch={metrics:[{id:'catalogue',name:'Toptan satış kanalı'}],
+     reportRecovery:{evidence:[{needId:'catalogue',sourceIds:[id]}],
+      hypotheses:[{needId:'catalogue',quadrant:'strength',question:'Kanalın satışa katkısı hangi kayıtlardan ölçülür?',sourceIds:[id]}]}};
+    return response;
+   };
+  });
+  await page.locator('#review-restored').click();await page.locator('.ob-price:not([hidden])').waitFor();
+  const report=page.locator('.ob-research-report');
+  assert.match(await report.innerText(),/Kısmi raporda korunan kanıtlar/);
+  assert.match(await report.innerText(),/Güçlü yön · Kanalın satışa katkısı hangi kayıtlardan ölçülür\?/);
+  assert.equal(await report.getByRole('link',{name:'Toptan satış kataloğu'}).first().getAttribute('href'),'https://evidence.example/catalogue');
   assert.match(await page.locator('#ob-review-title').textContent(),/Kısmi BHS/);assert.match(await page.locator('.ob-review-notice').textContent(),/daha önce tamamlanan araştırma/);assert.match(await page.locator('.ob-footer>p').textContent(),/46,21 \/ 50,00/);
   await chooseBoth(page,'meta');await page.locator('.ob-price').click();await page.locator('.ob-compose:not([hidden])').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();
   assert.equal(await page.locator('.ob-scope-approved').isChecked(),false);assert.deepEqual(await page.evaluate(()=>reviewCalls.map(c=>c.action)),['start']);assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);assert.deepEqual(errors,[]);await page.close();

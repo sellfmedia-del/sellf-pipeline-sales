@@ -24,6 +24,7 @@ import {boundScopedEvidence} from '../src/bhs/scoped-evidence-index.mjs';
 import {parseSourcePlan} from '../src/bhs/source-plan.mjs';
 import {assertSchema} from '../src/bhs/schema.mjs';
 import {verifiedBuyerProcess} from '../src/bhs/buyer-procurement.mjs';
+import {groundOfferReport} from '../src/bhs/source-gate.mjs';
 
 const brief=snapshotBrief({brandName:'Marque',website:'https://marque.fr/',segment:'corporate',goals:'Fransa pazarı ve aktif dağıtıcıları',services:'Growth',needs:'Dağıtım',meetingNotes:''});
 const identity={understanding:'Marque SAS gıda üreticisi. Türkiye’de perakende kanalına satış yapıyor.'};
@@ -472,6 +473,101 @@ test('a sectioned report keeps the brief questions when the evidence supports no
  assert.deepEqual(result.report.findings,[]);
  assert.ok(result.report.meetingQuestions.some(q=>q.question===question));
  assert.equal(result.report.bhsSections.find(s=>s.id==='swot').missingQuadrants.length,4);
+});
+
+test('scoped report recovery restores later parts without the first part or any model call',async()=>{
+ const metrics=Array.from({length:6},(_,index)=>({...needs[0],id:'part-'+index,metric:'Dağıtım kanalı '+index}));
+ const plan={needs:metrics,scopedResearch:true,adaptiveResearch:true,orderedResearch:true,qualityReport:true,
+  verifiedResults:true,readEvidenceOnly:true,targetedEvidence:true,sectionedSynthesis:true,reportRecovery:true,reportOnlyAfterResearch:true};
+ const proofs=[
+  {id:'retail',url:about,title:'Marque dağıtım',method:'html',quote:'Marque runs a direct wholesale catalogue for supermarket customers in France.'},
+  {id:'orders',url:'https://market.example/orders',title:'Sipariş rehberi',method:'pdf',quote:'French distributors accept purchase orders through their existing supplier accounts.'}
+ ];
+ const receipts=proofs.map((proof,index)=>({id:metrics[index*3].id,urls:[proof.url],facts:[proof]}));
+ const args={brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,
+  rounds:[{closed:true,stopReason:'research_budget_exhausted',receipts,decisions:receipts.map(row=>({id:row.id,sufficient:true,proofs:row.facts.map(p=>p.id)}))}]};
+ const saved=new Map();
+ const readCheckpoint=async(_name,key)=>saved.get(JSON.stringify(key));
+ const providers={readCheckpoint,checkpoint:async(_name,key,write)=>{
+  const result=await write();saved.set(JSON.stringify(key),result);return result;
+ },manager:async(stage,input,_schema,options)=>{
+  const index=Number(stage.endsWith('-topics'));
+  const swot=stage.endsWith('-swot');
+  assert.deepEqual(input.existing,[]);
+  if(stage.endsWith('-brief'))assert.equal(options.reserveForFollowingKurus,660);
+  const proof=Object.entries(input.sources).find(([,row])=>row[1].includes(proofs[index].quote))?.[0];
+  const observation=swot?'Marque operates its own wholesale catalogue for French supermarkets.':proofs[index].quote;
+  return {model:'offline',data:{findings:[{section:'readiness',rank:1,quadrant:swot?'strength':'none',
+   observation,proof:[proof],needIds:[metrics[index*3].id],kind:'observation',
+   analysis:'Kanal kapsamı dağıtım önceliğini etkileyebilir.',action:'Dağıtım kanalını bir örnek siparişle sınayın.',
+   measurement:'Başvuruyu siparişe bağlayan kayıt.',limitation:'Satış hacmi doğrulanmadı.'}],benchmarks:[],questions:[]}};
+ }};
+ const initial=await writeScopedSynthesis({...args,providers});
+ assert.equal(initial.report.findings.length,3);
+ assert.equal(saved.size,3);
+ assert.equal(initial.supervision.reportIssue,undefined);
+ saved.delete([...saved.keys()].find(key=>JSON.parse(key).part==='brief'));
+ const restored=await writeScopedSynthesis({...args,allowWrite:false,providers:{readCheckpoint,manager:()=>assert.fail('no model call')}});
+ assert.equal(restored.supervision.reportIssue,'report_checkpoint_missing');
+ const findings=restored.report.findings;
+ assert.equal(findings.length,2);
+ assert.ok(findings.some(f=>f.swotQuadrant==='strength'));
+ assert.ok(findings.some(f=>f.statement===proofs[1].quote));
+});
+
+test('failed synthesis carries accepted evidence and decision checks into a free partial handoff',async()=>{
+ const researchNeeds=[
+  {...needs[0],metric:'Marque toptan sipariş akışı',decisionId:'distribution'},
+  {...needs[0],id:'external',metric:'Fransa distribütörlerinin sipariş kanalı',decisionId:'distribution'},
+  {...needs[1],id:'missing',metric:'Bayi siparişinden teslimata geçen süre',decisionId:'distribution'}
+ ];
+ const plan={needs:researchNeeds,scopedResearch:true,adaptiveResearch:true,orderedResearch:true,qualityReport:true,
+  verifiedResults:true,readEvidenceOnly:true,taskReporting:true,qualifyReportFindings:true,targetedEvidence:true,
+  sectionedSynthesis:true,reportRecovery:true,reportOnlyAfterResearch:true,
+  briefScope:{objective:brief.goals,decisions:[{id:'distribution',decision:'Fransa’da distribütör kanalını seçme'}]}};
+ const facts=[
+  {id:'catalogue',url:about,title:'Marka toptan satış sayfası',method:'html',quote},
+  {id:'trade',url:'https://market.example/catalogue',title:'Toptan sipariş şartları',method:'pdf',
+   quote:'French distributors take wholesale orders through the supplier account portal.'},
+  {id:'snippet',url:'https://snippet.example/',title:'Arama sonucu',method:'search-snippet',quote:'A search snippet claims deliveries take three days.'}
+ ];
+ const receipts=facts.map((fact,index)=>({id:researchNeeds[index].id,urls:[fact.url],facts:[fact]}));
+ const args={brief,brand:{packet,facts:[],brandUnderstanding:identity,briefUnderstanding},plan,
+  rounds:[{closed:true,stopReason:'research_budget_exhausted',receipts,decisions:receipts.map(row=>({id:row.id,sufficient:false,proofs:row.facts.map(f=>f.id)}))}]};
+ const providerStages=[];
+ const failure=await writeScopedSynthesis({...args,providers:{manager:async stage=>{
+  providerStages.push(stage);
+  throw Object.assign(Error('simulated interruption'),{code:'model_deadline'});
+ }}});
+ assert.deepEqual(providerStages,['bhs-scoped-report-brief','bhs-scoped-report-swot']);
+ assert.equal(failure.supervision.reportIssue,'model_deadline');
+ const restored=await recoverManagedSectionSynthesis(brief,async stage=>
+  ({sector_sources:{managedPlan:{...plan,compactQueue:true}},brand:args.brand,'scoped-tail':args.rounds})[stage],
+  {readCheckpoint:async()=>undefined,manager:()=>assert.fail('no additional calls')});
+ assert.deepEqual(restored.report,failure.report);
+ const partial=continuationAudit(brief,{synthesis:restored,reason:restored.supervision.reportIssue});
+ assert.equal(partial.status,'ready');
+ assert.equal(partial.data.researchContinuity.status,'partial');
+ assert.equal(partial.data.researchContinuity.additionalPaidCalls,0);
+ assert.equal(partial.data.quality.contentComplete,false);
+ assert.deepEqual(partial.data.findings,[]);
+ assert.ok(partial.data.bhsSections.find(section=>section.id==='swot').missingQuadrants.includes('threat'));
+ const recovery=partial.data.verifiedResearch.reportRecovery;
+ assert.deepEqual(recovery.evidence.map(row=>row.needId),['t0','external']);
+ assert.ok(recovery.hypotheses.some(row=>row.question.includes('Fransa’da distribütör kanalını seçme')));
+ assert.deepEqual(recovery.hypotheses.filter(row=>row.quadrant).map(row=>row.quadrant),['strength','weakness','opportunity','threat']);
+ const byId=new Map(partial.data.sources.map(source=>[source.id,source]));
+ assert.ok(recovery.hypotheses.find(row=>row.quadrant==='opportunity').sourceIds.every(id=>byId.get(id).url===facts[1].url));
+ assert.ok(partial.data.meetingQuestions.some(row=>row.question.includes(researchNeeds[2].metric)));
+ assert.match(partial.data.rawReport,/Kısmi raporda korunan kanıtlar/);
+ const selected=selectProposalAudit(partial.data,brief);
+ assert.equal(selected.findings.length,0);
+ assert.ok(selected.sources.some(source=>source.url===facts[0].url));
+ assert.ok(!selected.sources.some(source=>source.url===facts[2].url));
+ const unsafe=structuredClone(restored.report);
+ unsafe.verifiedResearch.reportRecovery.evidence.push({needId:'missing',sourceIds:recovery.evidence[0].sourceIds});
+ const grounded=groundOfferReport(unsafe,{brief,packet:restored.analysisPacket});
+ assert.ok(!grounded.verifiedResearch.reportRecovery.evidence.some(row=>row.needId==='missing'));
 });
 
 test('the compact plan keeps each measurement’s own action, sample size, timeframe and proof identity',async()=>{

@@ -18,7 +18,7 @@ export function continuationAudit(brief,{synthesis,reason,verifiedAudit,managed=
  audit.status='ready';
  const missing=audit.data.bhsSections?.filter(section=>!section.complete)||[];
  const detailed=missing.some(section=>section.openMetrics?.length);
- const notice=(partial?'Doğrulanan bulgular hazır. Fiyatlandırmaya geçebilirsin.'
+ const notice=(partial?(audit.data.verifiedResearch?.reportRecovery?'Kayıtlı kanıtlarla kısmi BHS hazır.':'Doğrulanan bulgular hazır.')+' Fiyatlandırmaya geçebilirsin.'
   :'Teklif hazırlığına görüşme hedefleri ve hizmet kapsamıyla devam edebilirsin. Bu araştırmada teklife aktarılabilecek doğrulanmış bulgu bulunmuyor.')
   +(missing.length&&!detailed?' Ek kanıt gereken bölümler: '+missing.map(section=>section.title).join(', ')+'.':'')
   +(reason==='claude_spend_limit'?' Claude API hesabının harcama sınırına ulaşıldı. Önceki araştırma kayıtları korundu.':'');

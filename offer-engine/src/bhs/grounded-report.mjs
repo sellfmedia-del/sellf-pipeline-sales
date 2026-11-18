@@ -28,9 +28,9 @@ export function readStoredEnvelope(interaction,kind,brief){
 export function parseGroundedReport(text){const report=JSON.parse(text);assertSchema(report,reportSchema);return report;}
 export function renderGroundedReport(report){
  const rows=['# Ön BHS analizi','## 1. Marka genel bakış',report.summary];
+ const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
  if(report.bhsSections){
   const byId=new Map(report.findings.map(f=>[f.id,f]));
-  const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
   for(const section of report.bhsSections){
    rows.push('## '+section.title);
    if(!section.complete)rows.push('Bu bölümde doğrulanacak bulgular var.');
@@ -44,6 +44,14 @@ export function renderGroundedReport(report){
    }
   }
  }
+ const recovery=report.verifiedResearch?.reportRecovery;
+ if(recovery?.evidence.length){
+  const metrics=new Map(report.verifiedResearch.metrics.map(metric=>[metric.id,metric.displayName||metric.name]));
+  rows.push('## Kısmi raporda korunan kanıtlar',
+   ...recovery.evidence.map(row=>metrics.get(row.needId)+' · Kaynaklar '+row.sourceIds.join(', ')));
+ }
+ if(recovery?.hypotheses.length)rows.push('## Görüşmede sınanacak ticari ve SWOT hipotezleri',
+  ...recovery.hypotheses.map(row=>(quadrants[row.quadrant]||'Ticari karar')+' · '+row.question+' ['+row.sourceIds.join(', ')+']'));
  rows.push('## 2. Boyut analizleri');
  for(const d of report.dimensions){rows.push('### '+(dimensions.find(x=>x.id===d.id)?.name||d.id),d.rationale,'Puan: '+(d.score===null?'Yeterli veri yok':d.score+'/100'),'Güçlü yönler: '+d.strengths.join(' · '),'Açıklar: '+d.gaps.join(' · '));for(const f of report.findings.filter(f=>f.dimension===d.id))rows.push(f.statement,f.impact,'Hedef bağlantısı: '+f.goalConnection,'Kaynaklar: '+f.sourceIds.join(', '));for(const area of (report.researchCoverage||[]).filter(a=>a.dimension===d.id))rows.push(area.topic+' · '+({observed:'Kaynaklı gözlem',partial:'Kısmi veri',unavailable:'Veri bulunamadı'}[area.status]||area.status),area.observation,'Kaynaklar: '+area.sourceIds.join(', '));}
  rows.push('## 3. Toplam değerlendirme','Toplam puan sunucu kontrollerinden sonra hesaplanır.','## 4. Onboarding soruları',...report.dimensions.flatMap(d=>d.onboardingQuestions),'## 5. Kritik fırsat',report.findings.find(f=>f.id===report.criticalOpportunityFindingId)?.statement||'Ek kanıt gerekli.','## 6. Risk hipotezi',report.findings.find(f=>f.id===report.criticalRiskFindingId)?.statement||'Ek kanıt gerekli.','## 7. Toplantı soruları',...report.meetingQuestions.map(q=>q.question),'## 8. Rakip karşılaştırması');

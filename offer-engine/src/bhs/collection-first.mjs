@@ -1154,7 +1154,7 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   verifiedPeers,savedPartsOnly:!allowWrite,
   ...(plan.orderedResearch&&terminal?{stopReason:terminal.stopReason}:{})}):{};
  let {report}=written;
- const useSavedEvidence=!report||plan.qualityReport&&!report.findings.length;
+ const useSavedEvidence=!report||!plan.reportRecovery&&plan.qualityReport&&!report.findings.length;
  const writtenQuestions=plan.sectionedSynthesis&&useSavedEvidence?report?.meetingQuestions||[]:[];
  if(useSavedEvidence){
   const dimensionFor={competition:'competition',digital:'digital',swot:'operations',perception:'perception',readiness:'operations'};
@@ -1236,7 +1236,12 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   report.bhsSections=scopedCoverage(report,coverage,plan.qualityReport,plan.targetedEvidence,plan.sectionedSynthesis,plan.taskReporting);
  }
  const open=evidence.coverage.filter(c=>c.status==='open');
- if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
+ const missingFromReport=report.bhsSections?.some(section=>section.openMetrics?.some(metric=>metric.status==='missing_from_report'));
+ const recoveryIssue=plan.reportRecovery?(written.reportIssue||(!allowWrite&&!written.completion?'report_checkpoint_missing':
+  missingFromReport?'verified_evidence_missing_from_report':null)):null;
+ if(plan.reportRecovery&&report.verifiedResearch&&(recoveryIssue||!report.findings.length))
+  recoverReportEvidence(report,{brief,plan,needs:evidence.needs,sections,writtenQuestions});
+ else if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
   ...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))].map(q=>[q.question,q])).values()];
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
@@ -1246,7 +1251,52 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    ...(rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid')?{sourceReaderIssue:'source_plan_invalid'}:{}),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
-   ...(written.reportIssue?{reportIssue:written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
+   ...(written.reportIssue||recoveryIssue?{reportIssue:recoveryIssue||written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};
+}
+
+function recoverReportEvidence(report,{brief,plan,needs,sections,writtenQuestions}){
+ const metrics=report.verifiedResearch.metrics.filter(metric=>!sections||sections.includes(metric.section));
+ const sources=new Map(report.sources.map(source=>[source.id,source]));
+ const covered=new Set(report.findings.flatMap(finding=>finding.researchNeedIds||[]));
+ const evidence=metrics.filter(metric=>!covered.has(metric.id)&&metric.sourceIds.length).map(metric=>
+  ({needId:metric.id,sourceIds:metric.sourceIds}));
+ const decisions=new Map(plan.briefScope?.decisions.map(row=>[row.id,row.decision])||[]);
+ const needById=new Map(needs.map(need=>[need.id,need]));
+ const label=metric=>(metric.displayName||metric.name).replace(/[.!?]+$/u,'');
+ const goal=metric=>decisions.get(needById.get(metric.id)?.decisionId)||plan.briefScope?.objective||brief.goals;
+ const hypotheses=[];
+ const usedDecisions=new Set();
+ for(const metric of metrics){
+  const decision=goal(metric);
+  if(!decision||!metric.sourceIds.length||covered.has(metric.id)||usedDecisions.has(decision))continue;
+  usedDecisions.add(decision);
+  hypotheses.push({needId:metric.id,sourceIds:metric.sourceIds.slice(0,2),
+   question:'“'+decision+'” kararı için, “'+label(metric)+'” güncel veride doğrulanırsa hangi teklif kapsamı veya pilot adımı öncelik kazanır?'});
+ }
+ // Observing an internal or external condition can support a question, but
+ // assigning its effect requires evidence of how it bears on the decision.
+ if(!sections||sections.some(section=>/^swot\b/iu.test(section))){
+  const brandHost=researchHost(brief.website);
+  const missing=report.bhsSections.find(section=>/^swot\b/iu.test(section.id))?.missingQuadrants||[];
+  for(const quadrant of missing){
+   const internal=quadrant==='strength'||quadrant==='weakness';
+   const metric=metrics.find(row=>goal(row)&&row.sourceIds.some(id=>{
+    const host=researchHost(sources.get(id)?.url);
+    return brandHost&&host&&(host===brandHost)===internal;
+   }));
+   if(!metric)continue;
+   const sourceIds=metric.sourceIds.filter(id=>(researchHost(sources.get(id)?.url)===brandHost)===internal).slice(0,2);
+   const effect={strength:'İç kayıtlarda hangi ölçüm bu koşulun hedefe katkısını gösterebilir?',
+    weakness:'İç kayıtlarda bu koşulun ilerlemeyi sınırlayıp sınırlamadığı nasıl ölçülebilir?',
+    opportunity:'Hedef pazardaki alıcılarda bu koşulu bir fırsata dönüştürecek hangi davranış doğrulanabilir?',
+    threat:'Hedef pazarda bu koşulun hangi durumda ticari risk yaratacağı nasıl sınanabilir?'}[quadrant];
+   hypotheses.push({needId:metric.id,sourceIds,quadrant,question:'“'+label(metric)+'” · '+effect});
+  }
+ }
+ if(evidence.length||hypotheses.length)report.verifiedResearch.reportRecovery={evidence,hypotheses};
+ const questions=metrics.filter(metric=>metric.status==='open'&&!covered.has(metric.id)).map(metric=>
+  ({dimension:'operations',findingIds:[],question:'“'+label(metric)+'” hangi kayıt, dönem veya örneklem üzerinden doğrulanabilir?'}));
+ report.meetingQuestions=[...new Map([...report.meetingQuestions,...writtenQuestions,...questions].map(row=>[row.question,row])).values()];
 }
 
 function retainScopedResults(report,context,coverage,reverse,qualifyReportFindings){
@@ -1308,6 +1358,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
+   ...(providers.managedBudgetVersion>=24?{reportRecovery:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

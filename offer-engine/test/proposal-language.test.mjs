@@ -18,6 +18,7 @@ import {teamDatabase,users,gatewayKey,tokens} from './fixtures/team-db.mjs';
 import {createLedger} from '../src/budget/ledger.mjs';
 import {createBoundedProviders} from '../src/budget/providers.mjs';
 import {researchTariff} from '../src/bhs/research-tariff.mjs';
+import {implementationContext,applyImplementation} from '../src/proposal/implementation-plan.mjs';
 
 async function fixture(currency='TRY'){
  const brief=snapshotBrief({...base,services:'Meta ve Google Ads'}),data=context().report;
@@ -77,6 +78,110 @@ test('English contract email uses the saved quote and localised labels without c
  }
 });
 
+async function scopedDraft(){
+ const {audit,logo}=await fixture();
+ const brief=snapshotBrief({...base,brandName:'Muffik',website:'https://muffik.example',
+  goals:'Birleşik Krallık bağımsız kreşlerinde Royal seti için pilot',
+  needs:'Royal açılış sayfası, yaş ve oda büyüklüğüne göre teklif, talep → teklif → sipariş takibi',
+  services:'Royal sayfası ve seçili kreşlere erişim',meetingNotes:'Birleşik Krallık bağımsız kreşleri seçildi.'});
+ const source=(id,url,method)=>({id,url,title:id,verification:{status:'quote_matched',method}});
+ audit.data.briefHash=briefHash(brief);
+ audit.data.sources=[source('royal','https://muffik.example/royal','html'),source('snippet','https://search.example','search-snippet')];
+ audit.data.findings=[
+  {id:'royal-observation',kind:'observation',dimension:'operations',priority:'high',sourceIds:['royal'],
+   statement:'Royal seti ürün sayfası kullanım yaşı ve oda boyutuna göre set seçimini açıklıyor. Ürün fiyatı £204, normal fiyatı £240.'},
+  {id:'unread-demand',kind:'observation',dimension:'operations',priority:'high',sourceIds:['snippet'],statement:'Kreşlere satış garantili.'}
+ ];
+ const standard={brief,serviceSelection:{alternatives:[
+  {id:'growth_operations',services:[{serviceId:'growth_initial'},{serviceId:'b2b'}]},
+  {id:'operations_bundle',services:[{serviceId:'b2b'}]}],projects:[{serviceId:'project_wordpress'}]}};
+ const pricing={stage:'pricing',...await pricingEngine.run(standard,{audit})};
+ return {brief,audit,pricing,logo};
+}
+const step=(serviceIds,action,measurement,findingIds=[])=>({serviceIds,action,measurement,briefQuote:'Royal',findingIds});
+test('signed Turkish and English drafts each compose one brief-specific plan on the same independent account and retain exact prices',async()=>{
+ const old=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const f=await scopedDraft(),secret='scoped-draft-secret',session='k'.repeat(43),host='preview.vercel.app';
+  const codec=createPricingProof(secret),run='00000000-0000-4000-8000-000000000002';
+  const body={action:'start',context:{leadId:'lead1',spaceId:'space1'},brief:f.brief,audit:f.audit,pricing:f.pricing,
+   logo:{...f.logo.data,logoProof:logoProof(secret,host,f.logo.data)},proposalProof:codec.encode({kind:'pricing_ready',createdAt:Date.now(),
+    briefHash:briefHash(f.brief),auditHash:digest(f.audit),pricingHash:digest(f.pricing),budgetLeadId:'lead1',budgetResearchRunId:run},session,host)};
+  const request=body=>({method:'POST',headers:{host,origin:'https://'+host,cookie:'__Host-offer-research='+session},body});
+  const response=()=>({setHeader(){},status(code){this.code=code;return this;},json(data){this.data=data;return this;}});
+  const calls=[];
+  const ledger={begin:async()=>({chargedKurus:0,capKurus:1000}),status:async()=>({chargedKurus:145,capKurus:1000})};
+  const getLedger=async(_req,_res,id,opts)=>{
+   assert.equal(id,'lead1');assert.equal(opts.scope,digest(['proposal-draft-v1',run,null]));return ledger;
+  };
+  const handler=createProposalHandler({getSecret:()=>secret,getLedger,getProviders:({ledger:used})=>{
+   assert.equal(used,ledger);
+   return {generate:async(stage,input,contract,options)=>{
+    calls.push(stage);
+    assert.deepEqual(input.implementation.findings.map(f=>f.id),['royal-observation']);
+    assert.ok(!/base64|monthlyAmount|costSnapshot|Kreşlere satış garantili/.test(JSON.stringify(input.implementation)));
+    assert.equal(input.implementation.brief.goals,f.brief.goals);
+    const english=input.language==='en';
+    const steps=[
+     step(['project_wordpress'],english?'Build the Royal launch page for UK nurseries.':'Royal için Birleşik Krallık kreşlerine yönelik açılış sayfası hazırla.',
+      english?'Check that the enquiry form records the nursery and room details.':'Talep formunda kreş ve oda bilgilerinin kaydedildiğini kontrol et.',['royal-observation']),
+     step(['b2b'],english?'Run outreach to selected independent UK nurseries.':'Seçili Birleşik Krallık bağımsız kreşlerine Royal pilotu için eriş.',
+      english?'Record replies and qualified enquiries by nursery.':'Yanıtları ve nitelikli talepleri kreş bazında kaydet.'),
+     step(['b2b'],english?'Prepare a Royal quote by age group and room size.':'Yaş grubu ve oda büyüklüğüne göre Royal teklifi hazırla.',
+      english?'Check that the quote matches the age and room details.':'Her teklifi yaş ve oda bilgileriyle karşılaştır.',['royal-observation']),
+     step(['b2b'],english?'Link each enquiry, quote and order before reviewing the pilot.':'Pilot değerlendirmesi için talep, teklif ve sipariş kayıtlarını eşleştir.',
+      english?'Compare progress from enquiry to quote to order.':'Talep, teklif ve sipariş geçişlerini karşılaştır.')
+    ];
+    const plans=[{groupId:'growth_operations',steps:[...steps.slice(0,3),{...steps[3],serviceIds:['b2b','growth_initial']}]},
+     {groupId:'operations_bundle',steps}];
+    const data={...(english?{translations:input.texts.map(text=>'EN '+text)}:{}),plans};
+    options.validateData?.(data);return {model:'offline',data};
+   }};
+  }});
+  for(const language of ['tr','en']){
+   const res=response();await handler(request({...body,brief:{...f.brief,language}}),res);
+   assert.equal(res.code,200);assert.equal(res.data.draftPlanStatus,'brief_linked');
+   assert.deepEqual(res.data.draftCost,{chargedKurus:145,capKurus:1000});
+   const result=res.data.result.data,steps=result.plans.operations_bundle.steps;
+   assert.deepEqual(result.alternatives.map(a=>a.monthlyAmount),f.pricing.data.alternatives.map(a=>a.monthlyAmount));
+   assert.equal(result.projectPlan.oneTimeAmount,f.pricing.data.projectPlan.oneTimeAmount);
+   assert.equal(result.logo.image,f.logo.data.candidates[0].image);
+   assert.equal(steps.length,4);
+   assert.match(steps[2].title,language==='en'?/age group and room size/:/Yaş grubu ve oda büyüklüğüne/);
+   assert.match(steps[3].measurement,language==='en'?/enquiry to quote to order/:/Talep, teklif ve sipariş/);
+   assert.deepEqual(steps[0].sourceIds,['royal']);
+   assert.equal(result.language||'tr',language);
+   assert.equal(codec.decode(res.data.saveProof,session,host,Date.now()).proposalHash,digest(res.data.result));
+  }
+  assert.deepEqual(calls,['proposal_implementation','proposal_translation']);
+  const failed=response();
+  await createProposalHandler({getSecret:()=>secret,getLedger,getProviders:()=>({generate:async()=>{throw Error('simulated unavailable');}})})(request(body),failed);
+  assert.equal(failed.code,200);assert.equal(failed.data.draftPlanStatus,'standard');
+  assert.deepEqual(failed.data.result.data.alternatives.map(a=>a.monthlyAmount),f.pricing.data.alternatives.map(a=>a.monthlyAmount));
+ }finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;}
+});
+
+test('the monthly implementation validates service ownership, source links and offers without altering assignments',async()=>{
+ const f=await scopedDraft();
+ const pricing={stage:'pricing',...await pricingEngine.run({brief:f.brief,pricingMode:'monthly',monthlyPlan:{months:[
+  {month:1,services:[],projects:[{serviceId:'project_wordpress'}]},{month:2,services:[{serviceId:'b2b'}]}
+ ]}},{audit:f.audit})};
+ const {data:doc}=await proposalEngine.run({brief:f.brief,planMode:'operations'},{...f,pricing});
+ const context=implementationContext(doc,f.brief,f.audit.data,pricing.data,'operations');
+ assert.equal(implementationContext(doc,f.brief,f.audit.data,pricing.data,'manual'),null);
+ const first=step(['project_wordpress'],'Royal açılış sayfasını hazırlayın.','Yaş ve oda alanlarını kontrol edin.',['royal-observation']);
+ const second=step(['b2b'],'Seçili kreşlere Royal pilot teklifini iletin.','Talep, teklif ve sipariş kayıtlarını eşleştirin.');
+ const result=applyImplementation(doc,context,[{groupId:'month-2',steps:[second]},{groupId:'month-1',steps:[first]}],'tr');
+ assert.deepEqual(result.monthlyPlan,doc.monthlyPlan);
+ assert.deepEqual(result.plans.operations_bundle.steps.map(s=>s.time),['1. ay','2. ay']);
+ assert.deepEqual(result.plans.operations_bundle.steps.map(s=>s.title),[first.action,second.action]);
+ for(const invalid of [
+  {...first,serviceIds:['b2b']},{...first,findingIds:['unread-demand']},{...first,briefQuote:'Onaylanmamış pazar'},
+  {...first,action:'Royal için 42 dönüşüm taahhüt edin.'},{...first,action:'Royal için €204 ücret ekleyin.'},
+  {...first,action:'Royal için Google Ads Reklam Yönetimi ekleyin.'}
+ ])assert.equal(applyImplementation(doc,context,[{groupId:'month-1',steps:[invalid]}],'tr'),doc);
+});
+
 test('a registered teammate with a fully used BHS budget can produce an English draft, and PostgreSQL caps separate draft reservations at 10 TL',async()=>{
  const {db,rpc,gateway,apply}=await teamDatabase();
  try{
@@ -109,9 +214,10 @@ test('a registered teammate with a fully used BHS budget can produce an English 
     generations++;
     const body=JSON.parse(options.body);
     assert.ok(body.generationConfig.maxOutputTokens<16384);
-    const {texts}=JSON.parse(body.contents[0].parts[0].text);
+    const {texts,implementation}=JSON.parse(body.contents[0].parts[0].text);
+    const translated=JSON.stringify({translations:texts.map(s=>'English '+s)});
     return Response.json({modelVersion:'gemini-2.5-flash',usageMetadata:{promptTokenCount:850,candidatesTokenCount:600,totalTokenCount:1450},
-     candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({translations:texts.map(s=>'English '+s)})}]}}]});
+     candidates:[{finishReason:implementation?'MAX_TOKENS':'STOP',content:{parts:[{text:implementation?translated.slice(0,-1)+',"plans":[{"groupId":':translated}]}}]});
    }});
   const english=await localizeProposal(original,'en',{providers});
   assert.equal(english.language,'en');
@@ -119,6 +225,13 @@ test('a registered teammate with a fully used BHS budget can produce an English 
   assert.deepEqual(english.quote,original.quote);
   assert.deepEqual(await localizeProposal(original,'en',{providers}),english);
   assert.equal(generations,1);
+  const scoped=await scopedDraft(),scopedDocument=(await proposalEngine.run({brief:scoped.brief},scoped)).data;
+  const implementation=implementationContext(scopedDocument,scoped.brief,scoped.audit.data,scoped.pricing.data,'growth');
+  const clipped=await localizeProposal(scopedDocument,'en',{providers,implementation});
+  assert.equal(clipped.language,'en');
+  assert.deepEqual(clipped.alternatives.map(a=>a.monthlyAmount),scopedDocument.alternatives.map(a=>a.monthlyAmount));
+  assert.ok(clipped.plans.operations_bundle.steps[0].title.startsWith('English '));
+  assert.equal(generations,2);
   const used=(await ledger.status()).chargedKurus;
   assert.ok(used>0&&used<1000);
   const step=i=>({step:'model:proposal_translation:'+String(i).repeat(64),hash:'f'.repeat(64),token:randomUUID(),amount:1000-used});
