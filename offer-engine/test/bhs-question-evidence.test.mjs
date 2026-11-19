@@ -166,6 +166,7 @@ test('new general BHS plans persist semantic review and disambiguate queries wit
  const previous=async stage=>stage==='brand'?{decision:'accepted',collectionFirst:true,packet,plan:{},brandUnderstanding:identity,briefUnderstanding:{...understanding,scope}}:undefined;
  const saved=await runSequentialStage({phase:'sector_sources',brief,providers,previous,collect:()=>assert.fail('Planning is not a paid search')});
  assert.equal(saved.managedPlan.questionEvidence,true);
+ assert.equal(saved.managedPlan.decisionTurns,true);
  assert.equal(saved.managedPlan.classifyReportFindings,true);
  assert.equal(saved.managedPlan.needs[0].query,need.query);assert.equal(calls,1);
 });
