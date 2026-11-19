@@ -10,11 +10,14 @@ test('desktop/tablet/mobile show both proposal languages independently of curren
  try{for(const width of [1280,834,390]){
   const page=await browser.newPage({viewport:{width,height:900},hasTouch:width===834}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');try{const file=path.join(process.cwd(),'public',u.pathname);await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css'}[path.extname(file)],body:await readFile(file)});}catch{await route.fulfill({status:404,body:'Missing fixture'});}});
-  await page.goto('https://preview.vercel.app/offers/language-review.html');
+  await page.goto('https://preview.vercel.app/offers/plan-evidence-review.html');
   for(const language of ['tr','en'])for(const currency of ['TRY','USD']){
    await page.selectOption('#language',language);await page.selectOption('#currency',currency);const en=language==='en';
    assert.equal(await page.locator('#sellf-two-option-offer').getAttribute('lang'),language);
    await page.getByText(en?'Partnership options':'İşbirliği alternatifleri',{exact:true}).waitFor();
+   assert.equal(await page.locator('#so-plan-sources a').count(),2);
+   assert.equal(await page.locator('#so-track .so-step-basis').count(),3);
+   assert.equal(await page.locator('#so-track .so-step').nth(3).locator('details').count(),0);
    assert.match(await page.locator('.so-option-price').first().textContent(),new RegExp((currency==='USD'?'USD':en?'TRY':'TL')+' / '+(en?'month':'ay')));
    await page.locator('.so-option').nth(1).click();assert.equal(await page.locator('#so-scope-title').textContent(),en?'Operations Package':'Operasyon Paketi');
    await page.locator('[data-dim=digital]').click();assert.ok((await page.locator('#so-flow').textContent()).includes(en?'Digital':'Dijital'));

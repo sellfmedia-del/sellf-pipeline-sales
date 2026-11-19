@@ -12,10 +12,31 @@ const translations=[
 ];
 export async function buildLanguageReview(publicDir,{production=false}={}){
  const file=path.join(publicDir,'offers/language-review.html');
- if(production){await rm(file,{force:true});return;}
+ if(production){await rm(file,{force:true});await rm(path.join(publicDir,'offers/plan-evidence-review.html'),{force:true});return;}
  const tr=JSON.parse(await readFile(path.join(publicDir,'examples/proposal.json'),'utf8')).document,map=new Map(translations);
  const en=await localizeProposal(tr,'en',{providers:{async generate(stage,{texts}){return {model:'synthetic-human-reviewed',data:{translations:texts.map(t=>{if(!map.has(t))throw Error('Missing preview translation: '+t);return map.get(t);})}};}}});
  const fx={provider:'TCMB',kind:'ForexSelling',base:'USD',quote:'TRY',rate:44,publishedAt:'2026-11-04',checkedAt:'2026-11-04T08:00:00Z',source:'https://www.tcmb.gov.tr/kurlar/today.xml'};
  const docs={tr:{TRY:tr,USD:addQuote({data:tr},{currency:'USD',exchangeRate:fx}).data},en:{TRY:en,USD:addQuote({data:en},{currency:'USD',exchangeRate:fx}).data}};
- await writeFile(file,`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Teklif dili · Önizleme</title><link rel="stylesheet" href="/offers/proposal.css"><style>body{margin:0;background:#f7f6f2;font-family:Arial,sans-serif}nav{padding:16px;display:flex;gap:16px;flex-wrap:wrap}select{padding:10px}#offer{max-width:1200px;margin:auto}</style><nav><span>Sentetik örnek · Gerçek müşteri verisi, kayıt veya ücretli AI çağrısı kullanılmaz. Kur örnektir.</span><label>Teklif dili <select id="language"><option value="tr">Türkçe</option><option value="en" selected>English</option></select></label><label>Para birimi <select id="currency"><option>TRY</option><option>USD</option></select></label></nav><main id="offer"></main><script src="/offers/proposal.js"></script><script>const docs=${JSON.stringify(docs).replace(/</g,'\\u003c')};function render(){PipelineProposal.mount(document.querySelector('#offer'),docs[document.querySelector('#language').value][document.querySelector('#currency').value]);}document.querySelectorAll('select').forEach(s=>s.onchange=render);render();</script></html>`);
+ const page=docs=>`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Teklif dili · Önizleme</title><link rel="stylesheet" href="/offers/proposal.css"><style>body{margin:0;background:#f7f6f2;font-family:Arial,sans-serif}nav{padding:16px;display:flex;gap:16px;flex-wrap:wrap}select{padding:10px}#offer{max-width:1200px;margin:auto}</style><nav><span>Sentetik örnek · Gerçek müşteri verisi, kayıt veya ücretli AI çağrısı kullanılmaz. Kur örnektir.</span><label>Teklif dili <select id="language"><option value="tr">Türkçe</option><option value="en" selected>English</option></select></label><label>Para birimi <select id="currency"><option>TRY</option><option>USD</option></select></label></nav><main id="offer"></main><script src="/offers/proposal.js"></script><script>const docs=${JSON.stringify(docs).replace(/</g,'\\u003c')};function render(){PipelineProposal.mount(document.querySelector('#offer'),docs[document.querySelector('#language').value][document.querySelector('#currency').value]);}document.querySelectorAll('select').forEach(s=>s.onchange=render);render();</script></html>`;
+ await writeFile(file,page(docs));
+ // This separate review page uses reserved example domains and local fixtures
+ // only. It does not change the normal language sandbox or call a provider.
+ const evidenceDocs=structuredClone(docs);
+ for(const [language,quotes] of Object.entries(evidenceDocs))for(const doc of Object.values(quotes)){
+  const en=language==='en';
+  doc.bhs.sources.push(
+   {id:'demo-events',title:en?'Synthetic measurement document':'Sentetik ölçüm dokümanı',url:'https://example.com/measurement'},
+   {id:'demo-product',title:en?'Synthetic product document':'Sentetik ürün dokümanı',url:'https://example.com/product'},
+   {id:'demo-product-repeat',title:en?'Same synthetic product document':'Aynı sentetik ürün dokümanı',url:'https://example.com/product?utm_source=review#usage'});
+  doc.bhs.findings.push(
+   {id:'demo-event-observation',kind:'observation',dimension:'digital',priority:'high',statement:en?'The synthetic measurement document defines the enquiry event.':'Sentetik ölçüm dokümanında talep olayı tanımlı.',sourceIds:['demo-events']},
+   {id:'demo-product-observation',kind:'observation',dimension:'digital',priority:'medium',statement:en?'The synthetic product document describes how the product is used.':'Sentetik ürün dokümanında ürünün kullanım biçimi açıklanıyor.',sourceIds:['demo-product','demo-product-repeat']});
+  for(const plan of Object.values(doc.plans))plan.steps=[
+   {time:en?'Step 1':'Adım 1',title:en?'Match conversion events to the measurement plan.':'Dönüşüm olaylarını ölçüm planıyla eşleştir.',measurement:en?'Check that a test enquiry reaches the event record.':'Test talebinin olay kaydına ulaştığını kontrol et.',findingIds:['demo-event-observation'],sourceIds:['demo-events']},
+   {time:en?'Step 2':'Adım 2',title:en?'Match selected Meta and Google campaigns to product usage information.':'Seçili Meta ve Google kampanyalarını ürün kullanım bilgisiyle eşleştir.',measurement:en?'Compare campaign messages with product usage information.':'Kampanya mesajlarını ürün kullanım bilgisiyle karşılaştır.',findingIds:['demo-product-observation'],sourceIds:['demo-product','demo-product-repeat']},
+   {time:en?'Step 3':'Adım 3',title:en?'Prepare design variations using product usage information.':'Tasarım varyasyonlarını ürün kullanım bilgisine göre hazırla.',measurement:en?'Check that the variations are consistent with the product information.':'Varyasyonların ürün bilgisiyle tutarlılığını kontrol et.',findingIds:['demo-product-observation'],sourceIds:['demo-product','demo-product-repeat']},
+   {time:en?'Step 4':'Adım 4',title:en?'Review campaign and design test results.':'Kampanya ve tasarım testlerinin sonuçlarını değerlendir.',measurement:en?'Compare campaign and design variation records.':'Kampanya ve tasarım varyasyonu kayıtlarını karşılaştır.',findingIds:[]}
+  ];
+ }
+ await writeFile(path.join(publicDir,'offers/plan-evidence-review.html'),page(evidenceDocs));
 }
