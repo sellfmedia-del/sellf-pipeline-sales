@@ -12,6 +12,7 @@ import {supportsBuyerDemand} from './scoped-findings.mjs';
 import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
+import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -87,8 +88,11 @@ const scopedReceiptsFrom=(plan,rounds,needs)=>{
 const siteLinks=s=>[...(s.technicalSignals?.identityLinks||[]),...(s.technicalSignals?.navigation||[])];
 const comparisonNeed=need=>/rakip|rekabet|competit/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '));
 const quantitativeMarketNeed=(need,counts)=>!buyerNeed(need)&&marketMeasureNeed(need,counts);
-const peerHosts=(peers,website,targeted=false)=>new Set(peers.filter(p=>!targeted||p.relationship==='direct')
- .map(p=>researchHost(p.url)).filter(host=>host&&host!==researchHost(website)));
+const peerHosts=(peers,website,targeted=false,packet)=>{
+ const owned=brandPublisherHosts(website,packet);
+ return new Set(peers.filter(p=>!targeted||p.relationship==='direct')
+  .map(p=>researchHost(p.url)).filter(host=>host&&!owned.has(host)));
+};
 const publisherRead=fact=>!['search-snippet','html-signals'].includes(fact.method)&&!fact.metadataOnly;
 const readEvidenceInstruction='Arama alıntısı ve sayfa meta verisi yalnız kaynak bulmak içindir. proof olarak yalnız doğrudan okunmuş sayfa, belge veya platform kaydındaki ilgili özgün metni seç. İstenen ürün/varyantı ve hedef coğrafyayı karşılaştır. Metrik gerektiriyorsa veri dönemi ile yayın ve erişim tarihini ayır; ölçüm birimini doğrula. Fiyatta para birimi ve satış birimini, dozda miktar ve formu, mevzuatta yetkili kurum, yürürlük tarihi ve geçerli coğrafyayı, sosyal veride hesap, örneklem ve dönemi kontrol et. Yalnız gerçekten desteklenen kısmın kanıtını seç; kapsamı belirsiz ihtiyaç açık kalır. Sayfa henüz okunmadıysa ilgili gözlemlenmiş URL’yi read için seç.';
 function reviewProofs(ids,sources,readEvidenceOnly){
@@ -215,7 +219,11 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
   ...(ordered?{lookupReceipts,final}:{}),...(targeted?{readReceipts}:{}),instruction:
   'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'+
   (ordered?' Tek seferde yalnız bir sayfa ya da tek, somut kimlik sorusu için bir araç seç. Önceki çağrıların sonuçlarını dikkate al. Bir araç hata verdiyse ve bilgi gerekliyse aynı dar soruyu uygun diğer araca kendin ver. final doğruysa ek istek gönderme ve belirsizlikleri yazarak marka anlayışını tamamla.':'')+
-  (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin. İlk sayfadan okunabilir içerik gelmediyse veya readReceipts içinde page_not_read varsa aynı adresi tekrar isteme. Kimlik bilgisi hâlâ gerekliyse marka adıyla resmi siteyi, ürünü veya kurumsal kimliği bulmak için Gemini ya da Tavily’ye tek bir hedefli arama seç. Doğrulanamayan bilgileri açıkça belirsiz bırak.':'')},ordered?orderedBrandSchema:brandSchema,1400);
+  (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin. İlk sayfadan okunabilir içerik gelmediyse veya readReceipts içinde page_not_read varsa aynı adresi tekrar isteme. Kimlik bilgisi hâlâ gerekliyse marka adıyla resmi siteyi, ürünü veya kurumsal kimliği bulmak için Gemini ya da Tavily’ye tek bir hedefli arama seç. Doğrulanamayan bilgileri açıkça belirsiz bırak.':'')+
+  (providers.managedBudgetVersion>=24?' '+publisherIdentityInstruction:'')},
+  providers.managedBudgetVersion>=24?{...(ordered?orderedBrandSchema:brandSchema),
+   properties:{...(ordered?orderedBrandSchema:brandSchema).properties,publishers:publisherIdentitiesSchema}}:ordered?orderedBrandSchema:brandSchema,1400);
+ if(providers.managedBudgetVersion>=24)packet=retainBrandPublishers(packet,result.value?.publishers);
  const value=result.value||prior?.value;
  return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],...(ordered?{lookupReceipts}:{}),...(targeted?{readReceipts}:{}),
   done:final||!result.value||!result.value.pages?.length&&!result.value.searches?.length};
@@ -256,7 +264,8 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
   (guarded?'':' Gemini, Tavily veya ikisini seç. İkisini yalnız kanıt türleri birbirini tamamlayacaksa seç.')};
  if(guarded)request.instruction+=' Görevleri yapılma sırasına koy. Bir görev, bir metrik veya tek somut karar sorusu içersin. Her görev için ilk aracı tek başına seç. Başlangıçta yalnız sonucu başka bir sorguya bağlı olmayan, hemen çalıştırılabilecek görevler ver. Sonuç gelince devamını belirle. Bölüm veya bulgu kotası yoktur.';
  if(providers.managedBudgetVersion>=14){
-  request.publisherLinks=uniqueBy((packet?.sources||[]).filter(s=>researchHost(s.finalUrl||s.url)===researchHost(brief.website))
+  const owned=brandPublisherHosts(brief.website,packet);
+  request.publisherLinks=uniqueBy((packet?.sources||[]).filter(s=>owned.has(researchHost(s.finalUrl||s.url)))
    .flatMap(s=>s.technicalSignals?.identityLinks||[]),l=>l.url);
   request.instruction+=' Yayıncıdan gelen bağlantılar varsa ilgili hesabı ve kuruluşu doğrudan hedefle. Birden çok platform ve ölçümü tek genel sorguda toplama. Her işi somut bir metrik veya doğrulama olarak yaz.';
  }
@@ -265,6 +274,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  if(taskReporting){
   request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+buyerPlanInstruction;
   request.commercialBrief={goals:brief.goals,needs:brief.needs,services:brief.services,meetingNotes:brief.meetingNotes};
+  request.publisherSources=brandProductSources(brief.website,packet);
  }
  const normalizeData=data=>Array.isArray(data?.needs)?{needs:normalizeNeeds(data.needs,contract.properties.needs,useMeasurements)}:data;
  const outputContract=useMeasurements?withMeasurementGroups(contract,'needs'):contract;
@@ -594,7 +604,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const reviewedBefore=new Set(seen);
  const qualifyPeers=(peers,needs=priorNeeds)=>plan.focusedProductComparison?qualifyProductPeers(peers,needs,facts,checked,brief.website,packet):peers;
  let qualifiedPeers=qualifyPeers(rounds.flatMap(r=>r.peers||[]));
- let rivalHosts=plan.qualityReport?peerHosts(qualifiedPeers,brief.website,targeted):undefined;
+ let rivalHosts=plan.qualityReport?peerHosts(qualifiedPeers,brief.website,targeted,packet):undefined;
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
   !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
@@ -712,6 +722,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   return recoverReview(latest.issue);
  const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
   identity,briefUnderstanding:scope?{understanding:briefUnderstanding?.understanding}:briefUnderstanding,asOf:packet.asOf,
+  ...(plan.focusedProductComparison?{publisherSources:brandProductSources(brief.website,packet)}:{}),
   needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
   ...(scope?{briefScope:scope,tradeEvidence:plan.tradeEvidence||[]}:{}),
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
@@ -761,10 +772,11 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
- const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&researchHost(p.url)!==researchHost(brief.website)),p=>
+ const owned=brandPublisherHosts(brief.website,packet);
+ const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&!owned.has(researchHost(p.url))),p=>
   plan.focusedProductComparison?researchUrl(p.url):researchHost(p.url));
  qualifiedPeers=qualifyPeers(uniqueBy([...rounds.flatMap(r=>r.peers||[]),...peers],p=>researchUrl(p.url)),[...priorNeeds,...newNeeds]);
- if(rivalHosts)rivalHosts=peerHosts(qualifiedPeers,brief.website,targeted);
+ if(rivalHosts)rivalHosts=peerHosts(qualifiedPeers,brief.website,targeted,packet);
  const omitted=incremental?await checkNew(capacity?.minimumDefaultKurus||0):{};
  const decisions=[...checked.values()];
  const openNeeds=priorNeeds.filter(open);
@@ -938,9 +950,10 @@ export function scopedEvidence(brand,plan,rounds){
  }
  const clearance=rounds.findLast(r=>typeof r.approved==='boolean')||{};
  const website=brand.packet.entities.find(e=>e.role==='brand')?.website;
- const proposed=uniqueBy(rounds.flatMap(r=>r.peers||[]),p=>plan.focusedProductComparison?researchUrl(p.url):researchHost(p.url));
+ const owned=brandPublisherHosts(website,brand.packet);
+ const proposed=uniqueBy(rounds.flatMap(r=>r.peers||[]).filter(p=>!owned.has(researchHost(p.url))),p=>plan.focusedProductComparison?researchUrl(p.url):researchHost(p.url));
  const peers=plan.focusedProductComparison?qualifyProductPeers(proposed,needs,facts,checked,website,brand.packet):proposed;
- const rivalHosts=plan.qualityReport?peerHosts(peers,website,plan.targetedEvidence):undefined;
+ const rivalHosts=plan.qualityReport?peerHosts(peers,website,plan.targetedEvidence,brand.packet):undefined;
  const buyerProcurement=plan.procurementResearch?needs.filter(buyerNeed).map(need=>{
   const decision=checked.get(need.id);
   const process=verifiedBuyerProcess(need,decision?.buyerProcess,decision?.proofs||[],facts);

@@ -1,11 +1,12 @@
 import {isReadEvidence} from './research-content.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
+import {brandPublisherHosts} from './brand-publishers.mjs';
 
 export const comparisonFields=Object.freeze({
  sku:'SKU',pieces:'Parça adedi',footprint:'Kapladığı alan',age:'Hedef yaş',
  price:'Liste fiyatı',vat:'KDV',delivery:'Teslimat'
 });
-export const productComparisonPlanInstruction='Brief belirli bir ürün, model veya paket için rekabet kıyası istiyorsa comparisonProduct alanında ürün adını aynen koru. Önce reference göreviyle markanın kendi ürün sayfasından ürün sınıfı, kullanım biçimi ve hedef alıcıyı doğrula. Ürün sınıfı belirlenmeden rivals fiyat veya rakip sorgusu açma. Sonraki rivals görevinde genel kategori yerine aynı ihtiyaca, ürün formuna, alıcıya ve hedef pazara göre yakın ürünleri ara. Geniş ürün ailesi, genel ekipman veya komşu kategoriyi dolaylı alternatif olarak ayır. Ürüne özel kıyas yoksa comparisonRole none ve comparisonProduct boş olsun.';
+export const productComparisonPlanInstruction='Briefteki hedef belirli bir ürün, model veya paket üzerinden değerlendirilecekse comparisonProduct alanında ürün adını aynen koru. Önce reference göreviyle markanın kendi ürün sayfasından ürün sınıfı, kullanım biçimi ve hedef alıcıyı doğrula. publisherSources içindeki bilinen ürün bağlantılarını kullan; ilgili ürün sayfası henüz bulunmadıysa ürünün tam adı ve doğrulanmış resmî alan adıyla tek dar arama seç. Hakkımızda, kategori veya genel marka sayfasını tekil ürün doğrulaması sayma. Unconfirmed alan adı önce kurumsal kaynakla doğrulanacak adaydır. Ürün sınıfını belirleme işine tüm fiyat, yaş, ölçü ve teslimat alanlarını zorunlu olarak yükleme; teklif için gerekli diğer alanları ayrıca seç ve bilinmeyeni açık bırak. Ürün sınıfı belirlenmeden rivals fiyat veya rakip sorgusu açma. Sonraki rivals görevinde genel kategori yerine aynı ihtiyaca, ürün formuna, alıcıya ve hedef pazara göre yakın ürünleri ara. Geniş ürün ailesi, genel ekipman veya komşu kategoriyi dolaylı alternatif olarak ayır. Ürüne özel araştırma yoksa comparisonRole none ve comparisonProduct boş olsun.';
 export const productComparisonReviewInstruction='Ürüne özel kıyasta reference görevinin doğrudan okunmuş marka kaynağına dön. Karşılaştırılan aynı ihtiyacı, ürün formunu, hedef alıcıyı ve pazarı koru. Bir direct kayıt için productMatch içinde kendi referans ürünü ile rakibin tekil ürün sayfasına ait proof kimliklerini ve iki sayfadaki ürün sınıfı ifadelerini aynen ver. URL rakibin okunan ürün sayfası olmalı. İki ürün için SKU, parça adedi, gerçekten kapladığı alan, hedef yaş, liste fiyatı, KDV ve teslimatı referenceFields ve candidateFields içinde ayrı topla. Her değer ilgili varyantın kendi sayfasındaki özgün ifadeyi ve proof kimliğini taşısın. Birleşik Krallık fiyatında açık GBP veya £ işareti gereklidir. Parça ölçüsünü toplam alan diye yazma. Katalog, eksik kanıt ve genel duyusal oda ekipmanı doğrudan muadil sayılmaz. Dolaylı alternatifi related olarak sakla. Bilinmeyen alanı doldurma.';
 
 const fold=value=>String(value||'').normalize('NFKD').toLowerCase().replace(/\p{M}/gu,'').replaceAll('ı','i').replace(/\s+/gu,' ').trim();
@@ -14,27 +15,32 @@ const includes=(text,value)=>Boolean(words(value))&&(' '+words(text)+' ').includ
 const sameFocus=(a,b)=>Boolean(a.comparisonProduct&&a.country&&b.country&&
  words(a.comparisonProduct)===words(b.comparisonProduct)&&a.country.toUpperCase()===b.country.toUpperCase());
 
-function officialHosts(website,packet){
- const host=researchHost(website);
- return new Set([host,...(packet?.sources||[]).filter(page=>researchHost(page.url)===host).map(page=>researchHost(page.finalUrl))].filter(Boolean));
-}
-const identityText=fact=>[fact.title,fact.quote,new URL(fact.url).pathname].join(' ');
+const identityText=fact=>{
+ const path=new URL(fact.url).pathname;
+ let decoded=path;try{decoded=decodeURIComponent(path);}catch{/* Keep a malformed escape literal. */}
+ return [fact.title,fact.quote,decoded].join(' ');
+};
+const productNamed=(fact,product)=>{
+ const name=words(product).split(' ').filter(Boolean),source=new Set(words(identityText(fact)).split(' '));
+ return name.length>0&&name.every(word=>source.has(word));
+};
 function referenceProofs(need,needs,facts,decisions,hosts){
  const refs=new Set(needs.filter(n=>n.comparisonRole==='reference'&&sameFocus(need,n)&&decisions.get(n.id)?.sufficient===true).map(n=>n.id));
  return facts.filter(f=>refs.has(f.needId)&&researchUrl(f.url)&&hosts.has(researchHost(f.url))&&isReadEvidence(f)&&
-  productPage(f.url)&&decisions.get(f.needId).proofs.includes(f.id)&&includes(identityText(f),need.comparisonProduct));
+  productPage(f.url)&&decisions.get(f.needId).proofs.includes(f.id)&&productNamed(f,need.comparisonProduct));
 }
 export function comparisonCanStart(need,needs,facts,decisions,website,packet){
- return need.comparisonRole!=='rivals'||referenceProofs(need,needs,facts,decisions,officialHosts(website,packet)).length>0;
+ return need.comparisonRole!=='rivals'||referenceProofs(need,needs,facts,decisions,brandPublisherHosts(website,packet)).length>0;
 }
 export function comparisonReferenceVerified(need,needs,facts,decisions,website,packet){
- return need.comparisonRole!=='reference'||referenceProofs(need,needs,facts,decisions,officialHosts(website,packet)).some(f=>f.needId===need.id);
+ return need.comparisonRole!=='reference'||referenceProofs(need,needs,facts,decisions,brandPublisherHosts(website,packet)).some(f=>f.needId===need.id);
 }
 
 function productPage(url){
  const path=new URL(url).pathname;
- return path.length>1&&!/^\/(?:collections|categories|category|search|catalog(?:ue)?)(?:\/[^/]+)?\/?$/iu.test(path)&&
-  !/^\/(?:shop|products)\/?$/iu.test(path);
+ return path.length>1&&!/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:collections|categories|category|search|catalog(?:ue)?)(?:\/[^/]+)?\/?$/iu.test(path)&&
+  !/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:shop|products)\/?$/iu.test(path)&&
+  !/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:about|contact|faq|privacy|terms|delivery|shipping|returns|hakkimizda|iletisim|kurumsal|how-to|guides?|blog|news|help|support)(?:[-/.]|$)/iu.test(path);
 }
 const tileForm=/\b(?:mats?|floor tiles?|karo\p{L}*|paspa[sz]\p{L}*)\b/u;
 const roomEquipment=/\b(?:sensory rooms?|duyusal oda\p{L}*|bubble tubes?|projectors?|projection|lighting|isiklik|aydinlatma)\b/u;
@@ -65,7 +71,7 @@ function fieldsFor(rows,source,need,facts,decisions,byNeed){
 // reviewed product pages, and each commercial field keeps its own evidence.
 export function qualifyProductPeers(peers,needs,facts,decisions,website,packet){
  if(!needs.some(n=>n.comparisonProduct&&n.comparisonRole!=='none'))return peers;
- const byNeed=new Map(needs.map(n=>[n.id,n])),byId=new Map(facts.map(f=>[f.id,f])),hosts=officialHosts(website,packet);
+ const byNeed=new Map(needs.map(n=>[n.id,n])),byId=new Map(facts.map(f=>[f.id,f])),hosts=brandPublisherHosts(website,packet);
  return peers.map(peer=>{
   if(peer.relationship!=='direct')return peer;
   const match=peer.productMatch||{};
