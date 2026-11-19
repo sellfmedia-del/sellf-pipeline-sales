@@ -14,6 +14,7 @@ import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,bu
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
 import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
+import {questionPlanningInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -273,6 +274,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  }
  if(providers.managedBudgetVersion>=15)request.instruction+=' İlk planda teklif kararını etkileyen her bağımsız başlık için bir açılış sorgusu yaz ve başlıkları karar önceliğine göre sırala. Bu sorgular ilk turda çalıştırılabilir olmalı. Aynı başlık için farklı kaynak arama veya bir sonuca bağlı ayrıntı isteme işlerini, ilk kanıtlar geldikten sonra belirle.';
  if(useMeasurements)request.instruction+=' '+measurementInstruction;
+ if(providers.managedBudgetVersion>=24)request.instruction+=' '+questionPlanningInstruction;
  if(taskReporting){
   request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+buyerPlanInstruction;
   request.commercialBrief={goals:brief.goals,needs:brief.needs,services:brief.services,meetingNotes:brief.meetingNotes};
@@ -352,7 +354,7 @@ async function extractFacts(searches,providers,{excerptsOnly=false}={}){
   !(providers.managedBudgetVersion>=13&&input.attempts?.length===1&&input.attempts[0].tool==='tavily'));
  const worker=providers.managedBudgetVersion>=12&&providers.modelHandoff?providers.worker:providers.geminiWorker||providers.worker;
  const result=withRows.length?await attempt(()=>worker('bhs-scoped-extract',{
-  instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
+  instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma. Aynı kelimelerin geçmesi yeterli değildir: sorunun öznesini, eylemini, nesnesini ve beklenen kanıtı karşılaştır. Bir işletmenin ürün satın alması ile işletmenin şirket olarak satın alınmasını karıştırma. Farklı soruyu yanıtlayan pasajı bu iş için seçme.',
   requests:withRows.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
  },workerSchema,{maxOutputTokens:1800,minimumOutputTokens:760,compactWorker:true,generationTimeoutMs:28000})):{};
  return inputs.map(({need,rows,issue,attempts=[],urls=[],actorStarted,sourceReads=[]})=>{
@@ -517,15 +519,15 @@ function receiptFacts(receipts,readEvidenceOnly=false){
  return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,queryAllowed,reserveForFollowingKurus=0}){
- const tasks=needs.map(({id,target,market,metric,period,expected,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus=0}){
+ const tasks=needs.map(({id,target,market,metric,period,expected,query,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
   const previous=checked.get(id)?.proofs||[];
   const context=saved.filter(f=>seen.has(f.id)).sort((a,b)=>Number(previous.includes(b.id))-Number(previous.includes(a.id))).slice(0,4);
   const sources=[...incoming,...context].map(({id,url,title,quote,method,metadataOnly,retrievedAt})=>
    ({id,url,title,quote:quote.slice(0,950),method,metadataOnly,...(readEvidenceOnly?{retrievedAt}:{})}));
-  return {id,target,market,metric,period,expected,quantity,sources,incoming,
+  return {id,target,market,metric,period,expected,query,quantity,sources,incoming,
    ...(procurementResearch&&buyerSegment?{buyerSegment,buyerSourceSegment,buyingDimension}:{}),
    previousProofs:previous.filter(proof=>sources.some(f=>f.id===proof))};
  }).filter(task=>task.incoming.length).slice(0,3);
@@ -535,6 +537,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>quantitativeMarketNeed(n,scopeMarketCounts)&&tasks.some(t=>t.id===n.id));
  const scopedBuyer=procurementResearch&&tasks.some(buyerNeed);
  const contract=scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema;
+ const proofContract=scopedBuyer?withBuyerProof(contract):contract;
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
   tasks:tasks.map(({incoming,...task})=>({...task,newProofs:incoming.map(f=>f.id)})),
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
@@ -542,8 +545,9 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
    (readEvidenceOnly?' '+readEvidenceInstruction:'')+
    (qualifyReportFindings?' Kullanım kılavuzu ve ürün özelliği talebi doğrulamaz. Talep için alıcı davranışı, sipariş, bütçe veya alıcının bildirdiği tercih gibi gözlenmiş kanıt ara.':'')+
    (queryAllowed?' nextQuery içinde aynı pazar, ürün veya alıcı ve ölçümü koru. Mevcut sorgunun ayırt edici terimlerinden en az birini kullan. Kapsamı genişletme.':'')+
-   (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')
- },scopedBuyer?withBuyerProof(contract):contract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
+   (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')
+ },questionEvidence?withQuestionEvidence(proofContract):proofContract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
  if(!result.value?.data)return {issue:result.issue||'research_clearance_unavailable'};
  const decisions=[];
@@ -555,14 +559,18 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   const saved=checked.get(task.id);
   const need=needs.find(n=>n.id===task.id);
   const nextQuery=compact(row.nextQuery);
-  const candidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,
+  const rawCandidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,
    nextQuery:!queryAllowed||queryAllowed(need,nextQuery)?nextQuery:'',...(read?{read}:{})};
+  const candidate=questionEvidence?questionEvidenceDecision(rawCandidate,row.answerFit):rawCandidate;
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
-  const decision=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
+  const previousConfirmed=confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings);
+  const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
    providers.managedBudgetVersion>=17&&quantitativeMarketNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
-   confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
+   previousConfirmed?{...saved,proofs:[...new Set([...saved.proofs,...candidate.proofs])]}:candidate;
+  const decision=!questionEvidence?reviewed:previousConfirmed&&candidate.answerFit.status!=='direct'?saved:
+   questionEvidenceDecision(reviewed,row.answerFit);
   for(const f of task.incoming)seen.add(f.id);
   checked.set(decision.id,decision);
   decisions.push(decision);
@@ -584,6 +592,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
  const useMeasurements=providers.managedBudgetVersion>=19;
  const readEvidenceOnly=plan.readEvidenceOnly===true;
+ const questionEvidence=plan.questionEvidence===true;
  const scope=plan.briefScope;
  const readerWasBlocked=guarded&&rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid');
  let readerBlocked=readerWasBlocked;
@@ -598,7 +607,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const receipts=scopedReceiptsFrom(plan,rounds,priorNeeds);
  const queryAllowed=scope?(need,query)=>queryWithinBrief(plan,need,query):undefined;
  let facts=receiptFacts(receipts,readEvidenceOnly);
- const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
+ const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,
+  questionEvidence?questionEvidenceDecision(row,row.answerFit):row]));
  const queryIdentity=(id,query)=>JSON.stringify([id,compact(query).toLocaleLowerCase('tr')]);
  const supersededQueries=new Set(rounds.flatMap(round=>round.commandResults||[])
   .filter(row=>['cancelled','replaced'].includes(row.status)&&row.query?.trim()).map(row=>queryIdentity(row.id,row.query)));
@@ -615,7 +625,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
   !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,queryAllowed,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
@@ -684,7 +694,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const scopedBuyer=plan.procurementResearch&&priorNeeds.some(n=>inScope(n)&&buyerNeed(n));
  const buyerContract=plan.procurementResearch?withBuyerScope(marketContract,'newNeeds'):marketContract;
  const proofContract=scopedBuyer?withBuyerProof(buyerContract):buyerContract;
- const reviewContract=scope?withBriefDecision(proofContract,'newNeeds'):proofContract;
+ const questionContract=questionEvidence?withQuestionEvidence(proofContract):proofContract;
+ const reviewContract=scope?withBriefDecision(questionContract,'newNeeds'):questionContract;
  const normalizeData=data=>Array.isArray(data?.newNeeds)?
   {...data,newNeeds:normalizeNeeds(data.newNeeds,reviewContract.properties.newNeeds,true),
    ...(plan.focusedProductComparison&&Array.isArray(data.peers)?{peers:data.peers.map(peer=>({...peer,productMatch:peer.productMatch||
@@ -806,6 +817,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
    (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },outputContract,last?1150:1700,
@@ -827,12 +839,14 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  for(const row of data.decisions)if(ids.has(row.id)){
   const related=facts.filter(f=>f.needId===row.id);
   const {proofs,unread}=readEvidenceOnly?reviewProofs(row.proofs,related,true):{proofs:row.proofs.filter(id=>related.some(f=>f.id===id))};
-  const decision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!unread),proofs,
+  const rawDecision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!unread),proofs,
    ...(unread?{read:unread}:{})};
+  const decision=questionEvidence?questionEvidenceDecision(rawDecision,row.answerFit):rawDecision;
   const need=priorNeeds.find(n=>n.id===row.id);
   const saved=checked.get(row.id);
-  checked.set(row.id,scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
-   scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision);
+  const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
+   scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision;
+  checked.set(row.id,questionEvidence?questionEvidenceDecision(reviewed,row.answerFit):reviewed);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
  const owned=brandPublisherHosts(brief.website,packet);
@@ -1033,7 +1047,8 @@ export function scopedEvidence(brand,plan,rounds){
   const executed=new Set((round.commandResults||[]).filter(c=>c.status==='executed').map(c=>c.id));
   return (round.receipts||[]).filter(r=>retainedReceipts.has(r)&&researchAttempted(r,executed.has(r.id))).map(r=>r.id);
  }));
- const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,row]));
+ const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,
+  plan.questionEvidence?questionEvidenceDecision(row,row.answerFit):row]));
  const sourceReads=new Map();
  const completedLookups=new Set();
  if(taskReporting)for(const receipt of receipts){
