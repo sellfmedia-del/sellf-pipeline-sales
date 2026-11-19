@@ -2,6 +2,7 @@
 import {customerFinding} from '../bhs/scoped-findings.mjs';
 import {consentEvidenceRequested,researchGapQuestion,substantiveEvidence} from '../bhs/research-text.mjs';
 import {scopedCoverage,scopedMetrics} from '../bhs/research-status.mjs';
+import {internalDimensionText} from '../bhs/finding-classification.mjs';
 
 const array=value=>Array.isArray(value)?value:[];
 const normalize=value=>String(value||'').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ı/g,'i');
@@ -42,7 +43,7 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
   const key=(f.bhsSection||'')+' '+normalize(f.statement).replace(/\s+/g,' ').trim();
   if(seen.has(key)){
    const prior=seen.get(key);
-   if(prior.peerId===f.peerId&&prior.swotQuadrant===f.swotQuadrant){
+   if(prior.peerId===f.peerId&&prior.swotQuadrant===f.swotQuadrant&&prior.conditionScope===f.conditionScope){
     prior.researchNeedIds=[...new Set([...array(prior.researchNeedIds),...array(f.researchNeedIds)])];
     prior.sourceIds=[...new Set([...prior.sourceIds,...f.sourceIds])];
    }
@@ -78,6 +79,7 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
   }
   let changed=affectedDimensions.has(d.id);
   for(const [label,values] of [['Güçlü yön',d.strengths],['Gelişim alanı',d.gaps]])for(const value of array(values)){
+   if(!internalDimensionText(value,findings)){changed=true;continue;}
    if(!metadataAllowed(value,d.id)){changed=true;continue;}
    const text=short(value,200);if(text&&!items.some(i=>i.text===text))items.push({text:label+': '+text});
   }
@@ -100,6 +102,7 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
   dimensions:dimensionRows,
   findings:selected.map(f=>({id:f.id,kind:f.kind,dimension:f.dimension,priority:f.priority,statement:f.statement,impact:f.impact,sourceIds:array(f.sourceIds),
    ...(f.bhsSection?{bhsSection:f.bhsSection,bhsSectionTitle:f.bhsSectionTitle}:{}),...(Array.isArray(f.researchNeedIds)?{researchNeedIds:[...f.researchNeedIds]}:{}),
+   ...(f.conditionScope?{conditionScope:f.conditionScope}:{}),...(f.swotQuadrant?{swotQuadrant:f.swotQuadrant}:{}),
    ...(f.recommendation?{recommendation:structuredClone(f.recommendation),bhsRank:f.bhsRank,swotQuadrant:f.swotQuadrant,peerId:f.peerId}:{}),...(f.verification?{verification:f.verification}:{})})),
   competitors,benchmarks,
   sources:array(audit.sources).filter(s=>sourceIds.has(s.id)).map(s=>({id:s.id,title:short(s.title,96),url:s.url}))};

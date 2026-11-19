@@ -6,6 +6,7 @@ import {groundOfferReport} from './source-gate.mjs';
 import {supportedNumbers} from './numeric-evidence.mjs';
 import {researchHost} from './research-url.mjs';
 import {hash} from '../budget/ledger.mjs';
+import {internalFinding} from './finding-classification.mjs';
 
 export const expertVersion='sellf-pre-bhs-2026-11-09-expert-v6';
 export const isExpertMethodology=version=>[expertVersion,'sellf-pre-bhs-2026-11-10-supervised-v7','sellf-pre-bhs-2026-11-10-sequential-v8'].includes(version);
@@ -158,7 +159,8 @@ export function projectExpertReport(value,context,{explicitComparisons=false,mod
   const locale=sourceIds.map(id=>cards.get(id).url).some(url=>/\/en(?:\/|$)|\.us(?:\/|$)/.test(url));
   if(locale&&/(?:turkiye.*(?:musteri|donusum|satin)|turk lira.*yerine|yurt ici.*(?:bozuk|engell))/i.test(fold(f.observation))){issues.push({path:'findings.'+f.id,reason:'market_scope_mismatch'});continue;}
   const limitation=String(f.limitation||'İç veriler ve hedef pazar deneyimi görüşmede doğrulanacak.');
-  findings.push({id:f.id,dimension:f.dimension,kind:f.kind==='observation'?'observation':'inference',statement:f.observation,reportExcerpt:f.observation,sourceIds:use(sourceIds),impact:'Hipotez: '+String(f.commercialHypothesis||'Bu gözlemin ticari etkisi görüşmede değerlendirilecek.')+' Sınır: '+limitation,goalConnection:String(f.question||'Bu gözlemin iş sonuçlarına etkisini hangi verilerle değerlendirebiliriz?'),priority:f.priority||'medium'});
+  findings.push({id:f.id,dimension:f.dimension,kind:f.kind==='observation'?'observation':'inference',statement:f.observation,reportExcerpt:f.observation,sourceIds:use(sourceIds),impact:'Hipotez: '+String(f.commercialHypothesis||'Bu gözlemin ticari etkisi görüşmede değerlendirilecek.')+' Sınır: '+limitation,goalConnection:String(f.question||'Bu gözlemin iş sonuçlarına etkisini hangi verilerle değerlendirebiliriz?'),priority:f.priority||'medium',
+   ...(f.conditionScope?{conditionScope:f.conditionScope}:{}),...(f.swotQuadrant?{swotQuadrant:f.swotQuadrant}:{})});
  }
  const findingById=new Map(findings.map(f=>[f.id,f])),entities=context.input.entities||[],brand=entities.find(e=>e.role==='brand'),brandHost=researchHost(context.input.brief.website);
  const competitors=[];
@@ -204,7 +206,7 @@ export function projectExpertReport(value,context,{explicitComparisons=false,mod
   const score=perceptionEvidence&&selected.some(hasBrand)&&peerIds.length&&typeof d.bandReason==='string'&&d.bandReason.trim()&&typeof d.score==='number'&&d.score>=0&&d.score<=100&&!issues.some(x=>x.path.startsWith('findings.')&&list(d.findingIds).includes(x.path.split('.').at(-1)))?d.score:null;
   const qs=selected.map(f=>f.goalConnection).filter(Boolean);
   const stance=f=>qualifiedStances.get(f.id);
-  return {id,score,dataStatus:selected.length?'partial':'insufficient',rationale:selected.length?selected.map(f=>f.statement).join(' '):'Bu boyut için yeterli kanıt bulunamadı; görüşmede doğrulanacak.',findingIds:ids,comparisonCompetitorIds:peerIds,strengths:selected.filter(f=>stance(f)==='positive').map(f=>f.statement),gaps:selected.filter(f=>stance(f)==='risk').map(f=>f.kind==='inference'?'Doğrulanacak hipotez: '+f.statement:f.statement),onboardingQuestions:qs.length?qs:['Bu boyutun mevcut durumunu hangi güncel verilerle doğrulayabiliriz?']};
+  return {id,score,dataStatus:selected.length?'partial':'insufficient',rationale:selected.length?selected.map(f=>f.statement).join(' '):'Bu boyut için yeterli kanıt bulunamadı; görüşmede doğrulanacak.',findingIds:ids,comparisonCompetitorIds:peerIds,strengths:selected.filter(f=>stance(f)==='positive'&&internalFinding(f)).map(f=>f.statement),gaps:selected.filter(f=>stance(f)==='risk'&&internalFinding(f)).map(f=>f.kind==='inference'?'Doğrulanacak hipotez: '+f.statement:f.statement),onboardingQuestions:qs.length?qs:['Bu boyutun mevcut durumunu hangi güncel verilerle doğrulayabiliriz?']};
  });
  const entityIds=new Set([brand?.id,...competitors.map(e=>e.id)]);
  const benchmarks=[];

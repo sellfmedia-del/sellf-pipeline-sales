@@ -135,7 +135,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
   if(ok){
    const duplicate=needs&&selected.find(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement));
    if(duplicate){
-    if(duplicate.peerId===f.peerId&&duplicate.swotQuadrant===f.swotQuadrant&&normalized(duplicate.statement).toLocaleLowerCase('tr')===normalized(f.statement).toLocaleLowerCase('tr')){
+    if(duplicate.peerId===f.peerId&&duplicate.swotQuadrant===f.swotQuadrant&&duplicate.conditionScope===f.conditionScope&&normalized(duplicate.statement).toLocaleLowerCase('tr')===normalized(f.statement).toLocaleLowerCase('tr')){
      duplicate.researchNeedIds=[...new Set([...(duplicate.researchNeedIds||[]),...(f.researchNeedIds||[])])];
      duplicate.sourceIds=[...new Set([...duplicate.sourceIds,...f.sourceIds])];
     }else issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});

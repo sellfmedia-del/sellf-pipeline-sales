@@ -14,6 +14,7 @@ export {scopedCoverage} from './research-status.mjs';
 import {writeBoundedScopedParts} from './scoped-report-parts.mjs';
 import {evidenceQualityInstruction,researchGapStatement,researchGapQuestion} from './research-text.mjs';
 import {statisticalScopeInstruction} from './statistical-scope.mjs';
+import {classificationAreas,conditionScopes,classifiedDimension,classificationIssue,classificationInstruction} from './finding-classification.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -66,6 +67,9 @@ const adaptiveReportSchema=obj({...scopedReportSchema.properties,findings:arr(ob
 }),50)});
 const linkedReportSchema=obj({...adaptiveReportSchema.properties,findings:arr(obj({
  ...adaptiveReportSchema.properties.findings.items.properties,needIds:arr(field(20),6)
+}),50)});
+const classifiedReportSchema=obj({...linkedReportSchema.properties,findings:arr(obj({
+ ...linkedReportSchema.properties.findings.items.properties,area:choice(classificationAreas),conditionScope:choice(conditionScopes)
 }),50)});
 
 export function managedCoverage(report){
@@ -159,7 +163,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const buyerProofs=new Set(buyerMetrics.flatMap(metric=>metric.sources));
  const otherProofs=new Set(coverage.filter(metric=>!metric.buyerProcurement).flatMap(metric=>metric.sources));
  const structuredProofs=new Set([...buyerProofs].filter(proof=>!otherProofs.has(proof)));
- const outputSchema=linked?linkedReportSchema:adaptive?adaptiveReportSchema:scopedReportSchema;
+ const outputSchema=input.plan.classifyReportFindings&&linked?classifiedReportSchema:linked?linkedReportSchema:adaptive?adaptiveReportSchema:scopedReportSchema;
  const request={...input,needs,coverage,approved,...(stopReason?{stopReason}:{}),instruction:
   'Beşinci adım. Araştırma kapandı. Önce marka anlayışını ve kart briefindeki hedefleri yeniden değerlendir. Ardından bütün kayıtlı kaynakları incele ve bu markaya özgü BHS raporunu yaz. Açık bir araştırma ihtiyacı raporu durdurmaz. Eldeki kanıtın izin verdiği sonuçları yaz, kritik boşlukları ve karar için gereken doğrulamaları toplantı sorularına taşı. Kanıtı olmayan metrikleri ve iddiaları üretme. Ham HTML işareti bir çalışma testi sayılmaz. Bölüm kodları teklife aktarım içindir. Hangi bulgunun hangi başlığa girdiğine, sıralamasına ve yeterli bulgu sayısına sen karar ver. Aynı bulguyu tekrarlama. Rakip seçerken pazar, ürün, fiyat bandı ve kanalı karşılaştır. SWOT için kanıtın desteklediği kolları kapsa. Her olgusal bulguda sources içindeki geçerli kaynak anahtarını, briefteki hedef açısından analizini ve uygulanabilir bir sonraki adımı ver. '+
   analysisStandard+' Her bulgu alanında bir kısa cümle yaz ve sözleşmedeki anahtarları kullan. Eksik listeleri boş dizi olarak ver.'+
@@ -175,7 +179,8 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (buyerMetrics.length?' buyerProcurement işaretli satın alma soruları kaynaklı gözlem ve pilot hipotezi olarak ayrı gösterilir. Bu satırları bulgu olarak tekrarlama. Eksik karar verici, onay veya sipariş kanalının cevabını çıkarma.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')+
   (input.plan.cleanResearchEvidence?' '+evidenceQualityInstruction:'')+
-  (input.plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')};
+  (input.plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')+
+  (input.plan.classifyReportFindings?' '+classificationInstruction:'')};
  if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
@@ -545,6 +550,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    if(metricCoverage&&row.peerId&&!verifiedPeers?.some(peer=>peer.entityId===resolvedPeerId))continue;
    row={...row,section,sectionTitle:row.section,needIds,peerId:resolvedPeerId};
   }
+  if(usedInput.plan?.classifyReportFindings&&classificationIssue(row))continue;
   let proofs=decoded(row.proof);
   const key=row.section+' '+row.observation.trim().toLocaleLowerCase('tr');
   const observationKey=customerQuoteKey(row.observation);
@@ -597,7 +603,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   if(qualifyReportFindings){
    const duplicate=selected.find(f=>f.proofs.some(id=>proofs.includes(id))&&repeatedFinding(row.observation,f.observation));
    if(duplicate){
-    if(mergeNeedLinks&&duplicate.peerId===row.peerId&&duplicate.quadrant===row.quadrant&&customerQuoteKey(duplicate.observation)===customerQuoteKey(row.observation)){
+    if(mergeNeedLinks&&duplicate.peerId===row.peerId&&duplicate.quadrant===row.quadrant&&duplicate.conditionScope===row.conditionScope&&customerQuoteKey(duplicate.observation)===customerQuoteKey(row.observation)){
      duplicate.needIds=unique([...list(duplicate.needIds),...list(row.needIds)]);
      duplicate.proofs=unique([...duplicate.proofs,...proofs]);
     }
@@ -613,8 +619,9 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   }
   seenFindings.add(key);seenObservations.add(observationKey);selected.push({...row,id:managedFindingId(row,proofs),proofs});
  }
- const findings=selected.map(row=>({id:row.id,dimension:areas.get(row.area)?.dimension||
+ const findings=selected.map(row=>({id:row.id,dimension:usedInput.plan?.classifyReportFindings?classifiedDimension(row):areas.get(row.area)?.dimension||
   (needsById&&row.peerId?'competition':taskReporting&&dimensions.some(d=>d.id===row.section)?row.section:'operations'),kind:row.kind,
+  ...(row.conditionScope?{conditionScope:row.conditionScope}:{}),...(row.quadrant!=='none'?{swotQuadrant:row.quadrant}:{}),
   ...((!taskReporting&&row.section==='competition'||needsById&&row.peerId)?{comparisonPeerId:row.peerId}:{}),
   stance:['strength','opportunity'].includes(row.quadrant)?'positive':['weakness','threat'].includes(row.quadrant)?'risk':'neutral',
   observation:row.observation,sourceIds:row.proofs,commercialHypothesis:row.analysis,limitation:row.limitation,question:row.question,priority:row.rank<=3?'high':row.rank<=7?'medium':'low'}));

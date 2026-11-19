@@ -1368,7 +1368,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
-   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true,preserveStatisticalScope:true}:{}),
+   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true,preserveStatisticalScope:true,classifyReportFindings:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
