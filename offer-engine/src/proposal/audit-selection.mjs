@@ -42,8 +42,10 @@ export function selectProposalAudit(audit={},brief={},pricing={}){
   const key=(f.bhsSection||'')+' '+normalize(f.statement).replace(/\s+/g,' ').trim();
   if(seen.has(key)){
    const prior=seen.get(key);
-   prior.researchNeedIds=[...new Set([...array(prior.researchNeedIds),...array(f.researchNeedIds)])];
-   prior.sourceIds=[...new Set([...prior.sourceIds,...f.sourceIds])];
+   if(prior.peerId===f.peerId&&prior.swotQuadrant===f.swotQuadrant){
+    prior.researchNeedIds=[...new Set([...array(prior.researchNeedIds),...array(f.researchNeedIds)])];
+    prior.sourceIds=[...new Set([...prior.sourceIds,...f.sourceIds])];
+   }
    continue;
   }
   const item={...f,statement:short(f.statement,280),impact:short(f.impact,240)};

@@ -173,6 +173,8 @@ test('an exact duplicate keeps both explicit need links through source verificat
  const rejected=groundOfferReport(invalid,{packet:context().packet,brief,scopedFindings:true,preserveQualifiedImpacts:true});
  assert.deepEqual(rejected.findings[0].researchNeedIds,['dealer']);
  assert.ok(scope(rejected).some(section=>!section.complete&&section.openMetrics.some(row=>row.id==='approval')));
+ const differentPeer=structuredClone(report);differentPeer.findings[1].peerId='another_peer';
+ assert.deepEqual(selectProposalAudit(differentPeer,brief).findings[0].researchNeedIds,['dealer']);
  assert.deepEqual(report,before);
 });
 
