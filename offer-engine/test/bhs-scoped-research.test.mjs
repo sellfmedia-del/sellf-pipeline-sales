@@ -599,7 +599,10 @@ test('an engagement proof cannot clear the frequency task and follow-up needs ge
  const plan={needs:[engagement,frequency].map(metric=>({...instagramScope,...metric})),
   orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true};
  const saved={id:'eng-proof',url:instagram,title:'Marque',quote:postQuote,item:'Instagram post',method:'html'};
- const rounds=[{openingSearch:true,receipts:[{id:engagement.id,query:engagement.query,urls:[instagram],facts:[saved],attempts:[{tool:'tavily'}],defaultAttempt:true}]}];
+ // Both openings have run; only engagement has a usable proof. The controller
+ // must not use that proof to close the separately searched frequency need.
+ const rounds=[{openingSearch:true,receipts:[{id:engagement.id,query:engagement.query,urls:[instagram],facts:[saved],attempts:[{tool:'tavily'}],defaultAttempt:true},
+  {id:frequency.id,query:frequency.query,urls:[],facts:[],attempts:[{tool:'gemini'}],defaultAttempt:true}]}];
  const priceScope={section:'FİYAT',target:'Marque aynı ürün varyantı',market:'Fransa',country:'FR',language:'fr'};
  const price={...followers,id:'price',metric:'Kendi sitesinde ve pazaryerinde aynı varyantın birim fiyat farkı',
   expected:'Aynı ürün kodu, aynı satış birimi ve para biriminde iki fiyat',query:'Marque produit référence prix boutique marketplace',quantity:2};
@@ -608,7 +611,7 @@ test('an engagement proof cannot clear the frequency task and follow-up needs ge
   manager:async(stage,input,schema,options)=>{
    assert.equal(stage,'bhs-scoped-review');
    assert.match(input.instruction,/Bir ölçümün kanıtıyla diğerini kapatma/);
-   assert.deepEqual(input.waitingNeeds,[frequency.id]);
+   assert.deepEqual(input.waitingNeeds,[]);
    const response=draft({approve:true,newNeeds:[{...priceScope,measurements:[price]}],
     decisions:[engagement,frequency].map(metric=>({id:metric.id,sufficient:true,proofs:[saved.id]})),
     commands:[{id:price.id,tool:'tavily',query:price.query,url:'',mode:'default',limit:price.quantity}]});
@@ -747,7 +750,7 @@ test('an unreadable publisher page stays open and the next source is tried witho
 test('a source plan validation failure stays isolated and a different affordable need still runs',async()=>{
  const target={...needs[0],first:'tavily'};
  const independent={...needs[1],section:target.section};
- const plan={needs:[target,independent],orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true};
+ const plan={needs:[target],orderedResearch:true,reportOnlyAfterResearch:true,targetedEvidence:true};
  const original={id:'saved',item:'Katalog',title:'Marque',url:about,quote,method:'search-snippet'};
  const rounds=[{receipts:[{id:target.id,query:target.query,urls:[about],attempts:[{tool:'tavily'}],facts:[original],defaultAttempt:true}],
   decisions:[{id:target.id,proofs:[original.id],sufficient:false}],reviewedProofIds:[original.id]}];
@@ -760,7 +763,9 @@ test('a source plan validation failure stays isolated and a different affordable
     assert.equal(stage,'bhs-scoped-review');
     assert.ok(input.findings.some(fact=>fact.id===original.id));
     if(reads)assert.equal(input.publisherReadAvailable,false);
-    return {data:draft({commands:[{id:target.id,tool:'read',url:about,query:'',mode:'default',limit:1}]})};
+    // Claude adds the independent question while requesting this read. It is
+    // still available if the source reader fails on the earlier question.
+    return {data:draft({newNeeds:reads?[]:[independent],commands:[{id:target.id,tool:'read',url:about,query:'',mode:'default',limit:1}]})};
    },
    worker:async()=>({data:{decisions:[]}}),
    searchGemini:()=>assert.fail('grounded results require the unavailable reader'),
@@ -827,11 +832,11 @@ test('sales gaps use human names and distinguish blocked searches, weak sources 
  assert.equal(restored.researchContinuity.notice,'Eski araştırma.');
 });
 
-test('the active worker covers all ten planned opening topics before a deeper review of any single topic',async()=>{
+test('the active worker covers Claude’s planned openings before Claude adds a deeper question',async()=>{
  const topics=['rakipler','pazar','pazaryeri','fiyat','müşteri deneyimi','Instagram','YouTube','bilinirlik','influencer','reklam maliyeti'];
  const opening=topics.map((section,i)=>({...needs[0],id:'N'+(i+1),section,query:'Açılış: '+section,first:'tavily'}));
  const deeper={...opening[0],id:'D1',query:'Rakip ürün sayfasında ayrıntılı fiyat karşılaştırması'};
- const planNeeds=[opening[0],deeper,...opening.slice(1)];
+ const planNeeds=opening;
  const saved=new Map([['brand',{decision:'accepted',collectionFirst:true,packet,facts:[],brandUnderstanding:identity,briefUnderstanding}]]);
  let charged=1300,reviewed=0;
  const dispatched=[],waves=[],checkpoints=[];
@@ -848,10 +853,10 @@ test('the active worker covers all ten planned opening topics before a deeper re
    if(stage==='bhs-scoped-plan')return {data:{needs:planNeeds}};
    assert.equal(stage,'bhs-scoped-review');
    assert.deepEqual(dispatched,opening.map(n=>n.query));
-   assert.deepEqual(input.waitingNeeds,[deeper.id]);
+   assert.deepEqual(input.waitingNeeds,[]);
    assert.ok(input.findings.some(f=>f.needId==='N10'));
    reviewed++;
-   return {data:draft({commands:[{id:deeper.id,tool:'tavily',query:deeper.query,url:'',mode:'default',limit:3}]})};
+   return {data:draft({newNeeds:[deeper],commands:[{id:deeper.id,tool:'tavily',query:deeper.query,url:'',mode:'default',limit:3}]})};
   },
   search:async(query,options)=>{
    assert.ok(charged+62<=3000);
@@ -926,16 +931,18 @@ test('an unaffordable planned tool is recorded and a follow-up uses the same nee
   worker:async()=>({data:{decisions:[]}}),manager:async(stage,input)=>{
    assert.equal(stage,'bhs-scoped-review');
    assert.deepEqual(input.previous[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'budget_limit'});
-   return {data:draft({decisions:[{id:need.id,sufficient:false,proofs:[]}]})};
+   return {data:draft({decisions:[{id:need.id,sufficient:false,proofs:[]}],
+    commands:[{id:need.id,tool:'gemini',query:need.query,url:'',mode:'default',limit:need.quantity}]})};
   }};
  const args={identity,briefUnderstanding,plan,providers,brief,packet,readPages:()=>assert.fail()};
  const first=await reviewScopedResearch({...args,rounds:[]});
  assert.deepEqual(first.receipts[0].toolRouting,{requestedTool:'gemini',selectedTool:'tavily',reason:'budget_limit'});
  remaining=1500;
  const followUp=await reviewScopedResearch({...args,rounds:[first]});
- assert.deepEqual(searched,[['tavily',need.query],['gemini',need.query]]);
+ assert.deepEqual(searched,[['tavily',need.query],['tavily',other.query],['gemini',need.query]]);
  assert.equal(followUp.receipts[0].id,need.id);
- assert.deepEqual(followUp.receipts[0].toolRouting,{requestedTool:'tavily',selectedTool:'gemini',reason:'insufficient_evidence'});
+ assert.equal(followUp.receipts[0].toolRouting,undefined);
+ assert.equal(followUp.commandResults[0].status,'executed');
 });
 
 test('an unaffordable explicit search keeps the selected need, query and sample size on the alternate tool',async()=>{

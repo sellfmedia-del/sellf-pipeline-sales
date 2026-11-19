@@ -409,20 +409,19 @@ function defaultReceipt(receipt,requestedTool,reason){
 }
 
 async function openingSearchPlan({plan,receipts,providers,readerBlocked,dispatchable}){
- // Claude supplies the topics, priority and exact query. Each original topic
- // gets its first funded search before the controller can deepen another topic.
- const topics=new Map();
+ // Claude supplies each independent question, its priority and its exact query.
+ // A shared report heading must never collapse different need identities.
+ const byId=new Map();
  for(const need of plan.needs){
   if(dispatchable&&!dispatchable(need))continue;
-  const topic=compact(need.section).toLocaleLowerCase('tr');
-  if(!topics.has(topic))topics.set(topic,need);
+  if(!byId.has(need.id))byId.set(need.id,need);
  }
  const attemptsByNeed=new Map();
  for(const receipt of receipts){
   if(!receipt.defaultAttempt)continue;
   attemptsByNeed.set(receipt.id,[...(attemptsByNeed.get(receipt.id)||[]),...(receipt.attempts||[])]);
  }
- const pending=[...topics.values()].filter(need=>!(attemptsByNeed.get(need.id)||[]).some(a=>!a.issue));
+ const pending=[...byId.values()].filter(need=>!(attemptsByNeed.get(need.id)||[]).some(a=>!a.issue));
  if(!pending.length)return;
  const capacity=(await attempt(()=>providers.researchCapacity?.({includeActors:false}))).value;
  if(!capacity?.quotes)return;
@@ -454,7 +453,7 @@ async function openingSearchPlan({plan,receipts,providers,readerBlocked,dispatch
  const pool=tool==='gemini'&&rest.length&&providers.withCeiling?
   providers.withCeiling(capKurus-Math.min(reserve,remainingKurus-used)):providers;
  const routing=Object.fromEntries(selected.flatMap(need=>{
-  const planned=topics.get(compact(need.section).toLocaleLowerCase('tr')).first;
+  const planned=byId.get(need.id).first;
   if(!defaultTools.includes(planned)||planned===need.first)return [];
   const prior=priorSearchAttempt(receipts,need.id,need.query,planned);
   return [[need.id,{requested:planned,reason:defaultBlocker(planned,{capacity,receipts,readerBlocked})||prior?.issue||'opening_budget_reserved'}]];
@@ -621,7 +620,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(readerBlocked?{sourceReaderIssue:'source_plan_invalid'}:{})
  });
  if(ordered&&!last&&providers.managedBudgetVersion>=15){
-  const openingArgs={plan,receipts,providers:acquisition,readerBlocked,dispatchable};
+  const openingArgs={plan,receipts,providers:acquisition,readerBlocked,dispatchable:need=>dispatchable(need)&&open(need)};
   const opening=await openingSearchPlan(openingArgs);
   if(opening){
    const results=(await runScopedDefaults(opening.selected,opening.pool,readPages)).map(result=>{
