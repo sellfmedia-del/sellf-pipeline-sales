@@ -47,7 +47,7 @@ export function validateTranslations(value,texts){
  });
  return value;
 }
-export async function localizeProposal(document,language,{providers,implementation}={}){
+export async function localizeProposal(document,language,{providers,implementation,onImplementationReview}={}){
  proposalLanguage(language);
  if(language==='tr')return document;
  const doc=structuredClone(document),slots=presentationSlots(doc),texts=[...new Set(slots.map(s=>s.text))];
@@ -70,5 +70,5 @@ export async function localizeProposal(document,language,{providers,implementati
  const translated=new Map(texts.map((text,i)=>[text,result.data.translations[i]]));
  for(const s of slots)s.obj[s.key]=translated.get(s.text);
  doc.language='en';doc.provenance={...doc.provenance,translation:{sourceLanguage:'tr',targetLanguage:'en',sourceHash:digest(document),model:result.model}};
- return implementation?applyImplementation(doc,implementation,result.data.plans,language):doc;
+ return implementation?applyImplementation(doc,implementation,result.data.plans,language,{onReview:onImplementationReview}):doc;
 }

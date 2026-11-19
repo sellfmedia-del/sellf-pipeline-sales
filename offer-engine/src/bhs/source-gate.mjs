@@ -5,6 +5,7 @@ import {offerReport} from './offer-report.mjs';
 import {supportedNumbers,numericEvidence} from './numeric-evidence.mjs';
 import {customerFinding,qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
 import {groundBuyerProcurement} from './buyer-procurement.mjs';
+import {consentEvidenceRequested,researchGapQuestion,researchGapStatement,substantiveEvidence} from './research-text.mjs';
 
 const readSegments=source=>{const chunks=[];for(const e of [...(source.excerpts||[])].sort((a,b)=>(a.offset??Infinity)-(b.offset??Infinity))){const last=chunks.at(-1);if(last&&Number.isInteger(last.offset)&&Number.isInteger(e.offset)&&last.offset+last.text.length===e.offset)last.text+=e.text;else chunks.push({...e});}return chunks.map(e=>e.text);};
 const unsafeReasons=new Set(['invalid_source','unresolved_source','unverified','unread_source_or_unmatched_quote','unsupported_finding','unsupported_benchmark','unsupported_coverage','unsupported_summary_number']);
@@ -34,12 +35,16 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  for(const proof of trusted.values())records.push({url:proof.url,aliases:[proof.url],title:proof.title,text:proof.quote,segments:[proof.quote],method:proof.method});
  const hydrated=hydrateCitationSources(value,trusted);
  const projected=offerReport(hydrated),raw=structuredClone(projected),issues=[...projected.transfer.issues];delete raw.originalReport;delete raw.transfer;
- const buyerContexts=new Map(),readableIds=new Set();
+ const buyerContexts=new Map(),readableIds=new Set(),openQuestions=[];
+ const consentSources=new Set((raw.verifiedResearch?.metrics||[]).filter(consentEvidenceRequested).flatMap(metric=>metric.sourceIds||[]));
  const sources=(raw.sources||[]).filter(s=>{
   const url=publicUrl(s.url),quote=normalized(s.quote),buyer=s.id.startsWith('buyer_');
   const matches=r=>(!buyer||isReadEvidence(r))&&r.aliases.some(alias=>publicUrl(alias)===url)&&quote.length>=24&&r.segments.some(text=>normalized(text).includes(quote));
   const record=records.find(matches);
   if(!record){issues.push({path:'sources.'+s.id,reason:'unread_source_or_unmatched_quote'});return false;}
+  if(scopedFindings&&!substantiveEvidence(quote,{preserveConsent:consentSources.has(s.id)})){
+   issues.push({path:'sources.'+s.id,reason:'unsupported_finding'});return false;
+  }
   if(isReadEvidence(record))readableIds.add(s.id);
   if(buyer){
    const context=records.filter(matches).flatMap(r=>r.segments).filter(text=>normalized(text).includes(quote))
@@ -52,6 +57,11 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
   s.verification={status:'quote_matched',method:record.method};return true;
  });
  const byId=new Map(sources.map(s=>[s.id,s]));
+ if(scopedFindings)for(const metric of raw.verifiedResearch?.metrics||[]){
+  const prior=metric.sourceIds||[];
+  metric.sourceIds=prior.filter(id=>byId.has(id));
+  if(prior.length&&!metric.sourceIds.length){metric.status='open';metric.researchStatus='searched';}
+ }
  const supported=ids=>Array.isArray(ids)&&ids.length>0&&ids.every(id=>byId.has(id));
  const quotes=ids=>(ids||[]).map(id=>byId.get(id)?.quote||'').join('\n');
  if(raw.verifiedResearch?.productComparisons){
@@ -104,9 +114,15 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
   if(f.kind==='brief')continue;
   if(needs){
    const cards=f.sourceIds.map(id=>byId.get(id)).filter(Boolean);
+   if(researchGapStatement(f.statement,{sources:cards})){
+    const question=researchGapQuestion(f,needs);
+    if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});
+    issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;
+   }
    const row=f.researchEvidenceOnly?customerFinding(f,raw):qualifyScopedFinding({observation:f.statement,analysis:f.impact,
-    section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs);
-   if(!row||selected.some(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement))){
+    section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs,{contentQuality:true,statisticalScope:true});
+   if(!row){
+    if(!row){const question=researchGapQuestion(f,needs);if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});}
     issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;
    }
    if(!f.researchEvidenceOnly){
@@ -116,7 +132,18 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
    }
   }
   const ok=supported(f.sourceIds)&&!completedForecast(f,quotes(f.sourceIds))&&!reversedPercentage([f.statement,f.reportExcerpt,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
-  if(ok)selected.push(f);else issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+  if(ok){
+   const duplicate=needs&&selected.find(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement));
+   if(duplicate){
+    if(duplicate.peerId===f.peerId&&duplicate.swotQuadrant===f.swotQuadrant&&duplicate.conditionScope===f.conditionScope&&normalized(duplicate.statement).toLocaleLowerCase('tr')===normalized(f.statement).toLocaleLowerCase('tr')){
+     duplicate.researchNeedIds=[...new Set([...(duplicate.researchNeedIds||[]),...(f.researchNeedIds||[])])];
+     duplicate.sourceIds=[...new Set([...duplicate.sourceIds,...f.sourceIds])];
+    }else issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+   }else selected.push(f);
+  }else{
+   issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+   if(needs){const question=researchGapQuestion(f,needs);if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});}
+  }
  }
  const findings=selected.map(f=>{
   if(preserveQualifiedImpacts&&f.impact.startsWith('Hipotez: ')&&f.impact.includes(' Sınır: '))return f;
@@ -131,14 +158,18 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const dimensions=(raw.dimensions||[]).map(d=>{
   const kept=(d.findingIds||[]).filter(id=>findingIds.has(id)),peers=(d.comparisonCompetitorIds||[]).filter(id=>peerIds.has(id));
   const numeric=supportedNumbers([d.rationale,...(d.strengths||[]),...(d.gaps||[])].join(' '),findings.filter(f=>kept.includes(f.id)).map(f=>quotes(f.sourceIds)).join(' '));
-  const changed=!numeric||kept.length!==(d.findingIds||[]).length||peers.length!==(d.comparisonCompetitorIds||[]).length;
+  const cards=findings.filter(f=>kept.includes(f.id)).flatMap(f=>f.sourceIds.map(id=>byId.get(id)).filter(Boolean));
+  const contentGaps=scopedFindings?[d.rationale,...(d.strengths||[]),...(d.gaps||[])].filter(value=>typeof value==='string'&&value.trim()&&
+   (researchGapStatement(value,{sources:cards})||!substantiveEvidence(value))):[];
+  for(const statement of contentGaps){const question=researchGapQuestion({statement},needs);if(question)openQuestions.push({dimension:d.id,question,findingIds:[]});}
+  const changed=!numeric||contentGaps.length>0||kept.length!==(d.findingIds||[]).length||peers.length!==(d.comparisonCompetitorIds||[]).length;
   if(!kept.length||changed){
    issues.push({path:'dimensions.'+d.id,reason:'unsupported_dimension_claims'});
    const evidence=findings.filter(f=>kept.includes(f.id)),text=evidence.map(f=>quotes(f.sourceIds)).join('\n');
    return {...d,score:null,dataStatus:kept.length?'partial':'insufficient',findingIds:kept,comparisonCompetitorIds:peers,
     rationale:kept.length?evidence.map(f=>f.statement).join(' ').slice(0,3000):missing,
     strengths:kept.length&&!scopedFindings?(d.strengths||[]).filter(value=>supportedNumbers(value,text)&&!unmeasuredJudgement(value)):[],
-    gaps:kept.length?[...(!scopedFindings?(d.gaps||[]).filter(value=>supportedNumbers(value,text)):[]),'Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak.']:[missing]};
+    gaps:scopedFindings?[]:kept.length?[...(d.gaps||[]).filter(value=>supportedNumbers(value,text)),'Bazı iddialar doğrulanamadı; korunan bulgular üzerinden görüşmede tamamlanacak.']:[missing]};
   }
   return {...d,strengths:(d.strengths||[]).filter(value=>!unmeasuredJudgement(value)),score:peers.length&&d.dataStatus!=='insufficient'?d.score:null};
  });
@@ -168,7 +199,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
  const report=offerReport({...raw,summary,sources,findings,competitors,dimensions,benchmarks,researchCoverage,
   criticalOpportunityFindingId:findingIds.has(raw.criticalOpportunityFindingId)?raw.criticalOpportunityFindingId:null,
   criticalRiskFindingId:findingIds.has(raw.criticalRiskFindingId)?raw.criticalRiskFindingId:null,
-  meetingQuestions:(raw.meetingQuestions||[]).filter(q=>(q.findingIds||[]).every(id=>findingIds.has(id))),
+  meetingQuestions:[...new Map([...(raw.meetingQuestions||[]).filter(q=>(q.findingIds||[]).every(id=>findingIds.has(id))),...openQuestions].map(row=>[row.question,row])).values()],
   serviceRecommendations:(raw.serviceRecommendations||[]).filter(s=>(s.findingIds||[]).length&&(s.findingIds||[]).every(id=>findingIds.has(id)))});
  report.transfer.issues.push(...issues);report.transfer.contentComplete=report.transfer.issues.length===0;
  return report;

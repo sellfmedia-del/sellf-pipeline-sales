@@ -8,7 +8,9 @@ import {marketMeasureInstruction,marketMeasureMatchesScope,marketMeasureNeed,ver
 import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
-import {supportsBuyerDemand} from './scoped-findings.mjs';
+import {cleanEvidenceText,consentEvidenceRequested,substantiveEvidence,evidenceQualityInstruction} from './research-text.mjs';
+import {supportsBuyerDemand,supportsStatisticalNeed} from './scoped-findings.mjs';
+import {statisticalScopeInstruction} from './statistical-scope.mjs';
 import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,productComparisonRoleInstruction,productComparisonContinuationInstruction,coherentComparisonRole,unreadableComparisonSources,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
@@ -301,10 +303,10 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  return {needs,...(scope?{briefScope:scope,tradeEvidence}:{}),...(issue?{issue}:{})};
 }
 
-function evidenceRows(result,limit,method){
+function evidenceRows(result,limit,method,need){
  return (result||[]).flatMap(row=>{
   const url=researchUrl(row.finalUrl||row.url);
-  const content=compact(row.text||row.content).slice(0,950);
+  const content=compact(cleanEvidenceText(row.text||row.content,{preserveConsent:consentEvidenceRequested(need)})).slice(0,950);
   return url&&content.length>=24?[{url,title:compact(row.title).slice(0,150),content,method,...(row.metadataOnly?{metadataOnly:true}:{}),
    ...(row.retrievedAt?{retrievedAt:row.retrievedAt}:{})}]:[];
  }).slice(0,limit);
@@ -321,7 +323,7 @@ async function seekDefault(needs,providers,readPages){
   }]);
   const attempts=await Promise.all(calls.map(async ([tool,run])=>({tool,...await attempt(run)})));
   const rows=attempts.filter(({tool})=>!(providers.managedBudgetVersion>=13)||tool==='tavily')
-   .flatMap(({value})=>evidenceRows(value?.results,need.quantity,'search-snippet'));
+   .flatMap(({value})=>evidenceRows(value?.results,need.quantity,'search-snippet',need));
   const urls=[...new Set(attempts.flatMap(({value})=>(value?.results||[]).map(row=>researchUrl(row.url)).filter(Boolean)))];
   // Tavily already provides excerpts. Resolve grounded publisher links, whose
   // Gemini-generated summaries are discovery hints rather than source text.
@@ -347,7 +349,7 @@ async function readSearchEvidence(urls,readPages,need){
   const slices=(source.excerpts||[]).flatMap(({text})=>{
    const rows=[];for(let i=0;i<text.length;i+=480)rows.push(text.slice(i,i+950));return rows;
   }).filter(text=>text.trim().length>=24).sort((a,b)=>wordScore(b)-wordScore(a));
-  return evidenceRows(slices.slice(0,2).map(text=>({...source,text})),2,source.method||'extracted');
+  return evidenceRows(slices.slice(0,2).map(text=>({...source,text})),2,source.method||'extracted',need);
  }):evidenceRows(sources.map(source=>({...source,text:source.excerpts?.map(e=>e.text).join(' ')})),sources.length,'extracted');
  const readable=new Set(rows.filter(isReadEvidence).map(row=>row.url));
  const readUrls=new Set(sources.filter(source=>readable.has(researchUrl(source.finalUrl||source.url)))
@@ -522,13 +524,15 @@ async function keepResearchOpen({needs,receipts,providers,readPages,issue,ordere
  return {closed:false,issue:issue||'research_needs_open'};
 }
 
-function receiptFacts(receipts,readEvidenceOnly=false){
+function receiptFacts(receipts,readEvidenceOnly=false,cleaningNeeds){
  const facts=receipts.flatMap(r=>(r.facts||[]).map(f=>({...f,needId:r.id})));
+ const needs=cleaningNeeds&&new Map(cleaningNeeds.map(need=>[need.id,need]));
  // The same quote can arrive from search before or after the page read.
- return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
+ return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id)
+  .filter(f=>!needs||!needs.has(f.needId)||substantiveEvidence(f.quote,{preserveConsent:consentEvidenceRequested(needs.get(f.needId))}));
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus=0}){
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,questionEvidence,cleanResearchEvidence,preserveStatisticalScope,queryAllowed,reserveForFollowingKurus=0}){
  const tasks=needs.map(({id,target,market,metric,period,expected,query,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
@@ -555,7 +559,8 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
    (qualifyReportFindings?' Kullanım kılavuzu ve ürün özelliği talebi doğrulamaz. Talep için alıcı davranışı, sipariş, bütçe veya alıcının bildirdiği tercih gibi gözlenmiş kanıt ara.':'')+
    (queryAllowed?' nextQuery içinde aynı pazar, ürün veya alıcı ve ölçümü koru. Mevcut sorgunun ayırt edici terimlerinden en az birini kullan. Kapsamı genişletme.':'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
-   (questionEvidence?' '+questionEvidenceInstruction:'')
+   (questionEvidence?' '+questionEvidenceInstruction:'')+(cleanResearchEvidence?' '+evidenceQualityInstruction:'')+
+   (preserveStatisticalScope?' '+statisticalScopeInstruction:'')
  },questionEvidence?withQuestionEvidence(proofContract):proofContract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
  if(!result.value?.data)return {issue:result.issue||'research_clearance_unavailable'};
@@ -573,7 +578,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   const candidate=questionEvidence?questionEvidenceDecision(rawCandidate,row.answerFit):rawCandidate;
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
-  const previousConfirmed=confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings);
+  const previousConfirmed=confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings,preserveStatisticalScope);
   const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
    providers.managedBudgetVersion>=17&&quantitativeMarketNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
@@ -615,7 +620,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const priorNeeds=scopedNeedsFrom(plan,rounds);
  const receipts=scopedReceiptsFrom(plan,rounds,priorNeeds);
  const queryAllowed=scope?(need,query)=>queryWithinBrief(plan,need,query):undefined;
- let facts=receiptFacts(receipts,readEvidenceOnly);
+ let facts=receiptFacts(receipts,readEvidenceOnly,plan.cleanResearchEvidence?priorNeeds:undefined);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,
   questionEvidence?questionEvidenceDecision(row,row.answerFit):row]));
  const queryIdentity=(id,query)=>JSON.stringify([id,compact(query).toLocaleLowerCase('tr')]);
@@ -631,15 +636,15 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const qualifyPeers=(peers,needs=priorNeeds)=>plan.focusedProductComparison?qualifyProductPeers(peers,needs,facts,checked,brief.website,packet):peers;
  let qualifiedPeers=qualifyPeers(rounds.flatMap(r=>r.peers||[]));
  let rivalHosts=plan.qualityReport?peerHosts(qualifiedPeers,brief.website,targeted,packet):undefined;
- const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
+ const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings,plan.preserveStatisticalScope)||
   !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,questionEvidence,cleanResearchEvidence:plan.cleanResearchEvidence,preserveStatisticalScope:plan.preserveStatisticalScope,queryAllowed,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
   if(!(remaining<acquisition.infrastructureOffsetKurus))return {};
-  facts=receiptFacts([...receipts,...added],readEvidenceOnly);
+  facts=receiptFacts([...receipts,...added],readEvidenceOnly,plan.cleanResearchEvidence?priorNeeds:undefined);
   return checkNew(0,needs);
  };
  const proofCheckpoint=()=>({
@@ -658,7 +663,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    let check={};
    if(incremental){
     const combined=[...receipts,...results];
-    facts=receiptFacts(combined,readEvidenceOnly);
+    facts=receiptFacts(combined,readEvidenceOnly,plan.cleanResearchEvidence?priorNeeds:undefined);
     // Review in the same metered invocation while retaining the floor for
     // pending opening topics. Deferred proof stays eligible for the next check.
     const pending=await openingSearchPlan({...openingArgs,receipts:combined,readerBlocked});
@@ -762,7 +767,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    const read=await readSearchEvidence([url],readPages,need);
    added.push(...await extractFacts([{need,...read,urls:[url]}],acquisition,{excerptsOnly:true}));
    commandResults.push({...command,key:commandSignature(command),status:readerBlocked?'source_plan_invalid':'executed'});
-   facts=receiptFacts([...receipts,...added],readEvidenceOnly);
+   facts=receiptFacts([...receipts,...added],readEvidenceOnly,plan.cleanResearchEvidence?priorNeeds:undefined);
    const rereview=await checkNew();
    if(rereview.issue||rereview.decisions)check=rereview;
   }
@@ -828,7 +833,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
    (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
-   (questionEvidence?' '+questionEvidenceInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')+(plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },outputContract,last?1150:1700,
@@ -982,8 +987,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    ...(c.query.trim()?{query:c.query,queries:[c.query]}:{}),maxResults:c.limit,since:need.since,period:need.period,countryCode:need.country.toUpperCase(),language:need.language},
   {brief:targetBrief,packet:targetPacket,searches:[{results:known}],scrapes:rounds.flatMap(r=>r.actorTargets||[]),geo:{countryCode:need.country.toUpperCase(),language:need.language}}));
   const actorResult=found.value;
-  const records=evidenceRows(actorResult?.pages,c.limit,readEvidenceOnly&&isSearch?'search-snippet':'extracted');
-  const search=evidenceRows((actorResult?.searches||[]).flatMap(s=>s.results||[]),c.limit,'search-snippet');
+  const records=evidenceRows(actorResult?.pages,c.limit,readEvidenceOnly&&isSearch?'search-snippet':'extracted',need);
+  const search=evidenceRows((actorResult?.searches||[]).flatMap(s=>s.results||[]),c.limit,'search-snippet',need);
   const {rows:read,sourceReads}=await readSearchEvidence([...new Set(search.map(r=>r.url))],readPages);
   const issue=found.issue||actorResult?.reason;
   return {need,rows:[...records,...read,...search],sourceReads,issue,attempts:[{tool:c.tool,issue,providerStatus:found.providerStatus}],
@@ -1028,11 +1033,12 @@ function focusedNeedSupported(need,peers){
  const price=/fiyat|price|\bgbp\b/iu.test(need.metric);
  return peers.some(({verifiedProductMatch:m})=>price?m?.candidate.fields.price?.proof.needId===need.id:m?.candidateNeedId===need.id);
 }
-function confirmed(need,decision,facts,rivalHosts,readEvidenceOnly=false,qualifyReportFindings=false){
+function confirmed(need,decision,facts,rivalHosts,readEvidenceOnly=false,qualifyReportFindings=false,preserveStatisticalScope=false){
  if(buyerNeed(need))return Boolean(decision?.sufficient&&verifiedBuyerProcess(need,decision.buyerProcess,decision.proofs,facts)?.coversTarget);
  const supportsNeed=f=>f.needId===need.id&&decision?.proofs?.includes(f.id)&&(!readEvidenceOnly||isReadEvidence(f));
  if(rivalHosts&&comparisonNeed(need)&&!facts.some(f=>supportsNeed(f)&&rivalHosts.has(researchHost(f.url))&&publisherRead(f)))return false;
  if(readEvidenceOnly&&!facts.some(supportsNeed))return false;
+ if(preserveStatisticalScope&&!supportsStatisticalNeed(need,facts.filter(supportsNeed)))return false;
  if(qualifyReportFindings&&!supportsBuyerDemand(need,facts.filter(supportsNeed).map(fact=>fact.quote)))return false;
  if(typeof decision?.sufficient==='boolean')return decision.sufficient&&decision.proofs.length>0;
  return countProofs(need,decision?.proofs,facts)>=need.quantity;
@@ -1052,7 +1058,7 @@ export function scopedEvidence(brand,plan,rounds){
  const needs=scopedNeedsFrom(plan,rounds);
  const receipts=scopedReceiptsFrom(plan,rounds,needs);
  const retainedReceipts=new Set(receipts);
- const facts=receiptFacts(receipts,readEvidenceOnly);
+ const facts=receiptFacts(receipts,readEvidenceOnly,plan.cleanResearchEvidence?needs:undefined);
  const interrupted=rounds.some(round=>round.issue==='research_round_interrupted');
  const searched=new Set(rounds.flatMap(round=>{
   const executed=new Set((round.commandResults||[]).filter(c=>c.status==='executed').map(c=>c.id));
@@ -1088,7 +1094,7 @@ export function scopedEvidence(brand,plan,rounds){
   const buyer=buyerRows.get(n.id);
   const proofs=facts.filter(f=>f.needId===n.id&&(buyer?buyer.process?.proof===f.id:decision?.proofs.includes(f.id))&&(!readEvidenceOnly||isReadEvidence(f)));
   const displayName=salesMetricName(n);
-  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)&&
+  const status=confirmed(n,decision,facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings,plan.preserveStatisticalScope)&&
    (buyer||!plan.focusedProductComparison||focusedNeedSupported(n,peers)&&comparisonReferenceVerified(n,needs,facts,checked,website,brand.packet))&&
    (!marketMeasures||marketMeasures.some(row=>!plan.scopeMarketCounts||marketMeasureMatchesScope(n,row)))?'confirmed':'open';
   const researchStatus=taskReporting&&status==='open'?(proofs.length?'partially_verified':

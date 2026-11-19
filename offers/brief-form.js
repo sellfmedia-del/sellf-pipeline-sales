@@ -440,9 +440,15 @@
             dialog.querySelector('.ob-pricing').hidden=true;dialog.querySelector('.ob-research-report').hidden=true;
             dialog.querySelector('.ob-approval').hidden=false;dialog.querySelector('.ob-save').hidden=false;dialog.querySelector('.ob-publish').hidden=true;button.hidden=true;
             dialog.querySelectorAll('.ob-approval input').forEach(x=>x.checked=false);
+            let planReviewNotice='';
+            if(response.draftPlanReview){
+              try{planReviewNotice=(await import('/offers/implementation-review.mjs')).implementationReviewNotice(response.draftPlanReview);}
+              catch{planReviewNotice='Planın doğrulama ayrıntıları yüklenemedi; uygulama adımlarını kontrol et.';}
+            }
             dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent=(draft.audit?.data.researchContinuity?.notice||'')+
              (response.draftPlanStatus==='standard'?' Brief’e özgü uygulama planı doğrulanamadı. Seçili hizmetlerin başlangıç planı gösteriliyor.':'')+
              (response.draftPlanStatus==='partial'?' Brief’e özgü uygulama planının bir kısmı doğrulandı. Diğer adımları kontrol et.':'')+
+             (planReviewNotice?' '+planReviewNotice:'')+
              ' Logo, kapsam ve planı bu teklif üzerinde kontrol et. '+(variant?'Yeni teklif ayrı kaydedilir; mevcut teklif ve kart değeri korunur.':'Kaydetme, kart değerini önerilen aylık bedele günceller.');
             task=null;dialog.querySelector('.ob-body').scrollTop=0;return;
           }

@@ -1,6 +1,7 @@
 import {dimensions} from './brief.mjs';
 import {normalizeMethodologyAreas} from './methodology-areas.mjs';
 import {publicUrl} from './verify.mjs';
+import {internalDimensionText} from './finding-classification.mjs';
 
 const list=v=>Array.isArray(v)?v:[];
 const text=(v,fallback='')=>typeof v==='string'&&v.trim()?v:fallback;
@@ -33,10 +34,14 @@ export function offerReport(value){
   if(!d.id)warn('dimensions.'+id,'missing');
   const score=typeof d.score==='number'&&Number.isFinite(d.score)&&d.score>=0&&d.score<=100?d.score:null;
   if(d.score!=null&&score===null)warn('dimensions.'+id+'.score','invalid_score');
-  return {...d,id,score,rationale:text(d.rationale,missing),dataStatus:['full','partial','insufficient'].includes(d.dataStatus)?d.dataStatus:'insufficient',findingIds:findingRefs(d.findingIds),comparisonCompetitorIds:strings(d.comparisonCompetitorIds).filter(id=>peerIds.has(id)),strengths:strings(d.strengths),gaps:strings(d.gaps),onboardingQuestions:strings(d.onboardingQuestions)};
+  return {...d,id,score,rationale:text(d.rationale,missing),dataStatus:['full','partial','insufficient'].includes(d.dataStatus)?d.dataStatus:'insufficient',findingIds:findingRefs(d.findingIds),comparisonCompetitorIds:strings(d.comparisonCompetitorIds).filter(id=>peerIds.has(id)),strengths:strings(d.strengths).filter(value=>internalDimensionText(value,findings)),gaps:strings(d.gaps).filter(value=>internalDimensionText(value,findings)),onboardingQuestions:strings(d.onboardingQuestions)};
  });
  const benchmarks=list(r.benchmarks).filter(b=>b&&text(b.metric)).map(b=>({...b,entries:list(b.entries).filter(e=>e&&text(e.entityId)).map(e=>{const sourceIds=refs(e.sourceIds,'benchmarks.'+b.metric),value=typeof e.value==='string'?e.value:typeof e.value==='number'&&Number.isFinite(e.value)?String(e.value):null;return {...e,value,unit:text(e.unit)||null,period:text(e.period)||null,sourceIds,...(value!==null&&!sourceIds.length?{verification:'unverified'}:{})};})}));
- const researchCoverage=normalizeMethodologyAreas(r.researchCoverage,sources.map(s=>s.id));
+ const plannedResearch=Array.isArray(r.verifiedResearch?.metrics);
+ // Scoped research is measured by its planned need IDs. Keep actual coverage
+ // observations, but do not manufacture gaps from the older global checklist.
+ const researchCoverage=normalizeMethodologyAreas(r.researchCoverage,sources.map(s=>s.id))
+  .filter(area=>!plannedResearch||area.status!=='unavailable');
  for(const c of researchCoverage)if(c.status==='unavailable')warn('researchCoverage.'+c.dimension+'.'+c.topic,'unavailable_or_unverified');
  if(!text(r.summary))warn('summary','missing');
  return {...r,summary:text(r.summary,'Ön araştırmanın mevcut bulguları ve görüşmede doğrulanacak konular.'),sources,competitors,findings,dimensions:projectedDimensions,benchmarks,researchCoverage,

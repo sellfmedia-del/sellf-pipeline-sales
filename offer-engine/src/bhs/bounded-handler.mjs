@@ -213,7 +213,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      if(action==='complete_gaps')throw new BudgetError('completion_unavailable','Ek araştırma için kaydedilmiş bir BHS sonucu gerekli.');
      return {};
     }
-    const gap=await resolveManagedGaps({action,brief,synthesis,secret:getSecret(),sections:audit.data.bhsSections.filter(section=>!section.complete).map(section=>section.id),baseLedger:ledger,
+    const gap=await resolveManagedGaps({action,brief,synthesis,verifiedReport:audit.data,secret:getSecret(),sections:audit.data.bhsSections.filter(section=>!section.complete).map(section=>section.id),baseLedger:ledger,
      getGapLedger:id=>getGapLedger?getGapLedger(req,res,job.leadId,id):getLedger(req,res,job.leadId,{researchRunId:id}),getProviders,previous});
     if(!gap)return {};
     const {synthesis:updated,...gapCompletion}=gap;

@@ -19,6 +19,7 @@ import {managedReportInput,scopedCoverage,synthesizeManagedReport,synthesizeScop
 import {balancedScopedProofs,boundScopedEvidence,indexScopedEvidence} from './scoped-evidence-index.mjs';
 import {evidenceGeographies,marketObservationSupported} from './scoped-market.mjs';
 import {comparisonFields} from './product-comparison.mjs';
+import {supportsStatisticalNeed} from './scoped-findings.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -362,7 +363,7 @@ export async function readResearchPages(brief,plan,targets,providers,collect,{co
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
    const key=hash(input);
    if(!entries.has(key))entries.set(key,{input,page});
-   if(complete)full.set(input.url+' '+input.method,page.text);
+   if(complete)full.set(input.url+' '+input.method,page.researchText??page.text);
   }
   const pending=entries.values();
   const workers=Array.from({length:Math.min(archiveConcurrency,entries.size)},async()=>{
@@ -1243,6 +1244,15 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   recoverReportEvidence(report,{brief,plan,needs:evidence.needs,sections,writtenQuestions});
  else if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
   ...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))].map(q=>[q.question,q])).values()];
+ if(plan.preserveStatisticalScope){
+  const questions=open.flatMap(metric=>{
+   const need=evidence.needs.find(row=>row.id===metric.id);
+   if(!need||supportsStatisticalNeed(need,metric.proofs))return [];
+   const scope=[need.market,need.target,need.period].filter(Boolean).join(' · ');
+   return [{dimension:'operations',findingIds:[],question:'“'+need.metric+'” '+scope+' kapsamında hangi dönem, örneklem veya alıcı kaydıyla doğrulanabilir?'}];
+  });
+  report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...questions].map(row=>[row.question,row])).values()];
+ }
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
@@ -1294,7 +1304,7 @@ function recoverReportEvidence(report,{brief,plan,needs,sections,writtenQuestion
   }
  }
  if(evidence.length||hypotheses.length)report.verifiedResearch.reportRecovery={evidence,hypotheses};
- const questions=metrics.filter(metric=>metric.status==='open'&&!covered.has(metric.id)).map(metric=>
+ const questions=metrics.filter(metric=>(metric.status==='open'||plan.cleanResearchEvidence)&&!covered.has(metric.id)).map(metric=>
   ({dimension:'operations',findingIds:[],question:'“'+label(metric)+'” hangi kayıt, dönem veya örneklem üzerinden doğrulanabilir?'}));
  report.meetingQuestions=[...new Map([...report.meetingQuestions,...writtenQuestions,...questions].map(row=>[row.question,row])).values()];
 }
@@ -1341,7 +1351,7 @@ function retainScopedResults(report,context,coverage,reverse,qualifyReportFindin
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
  const brand=await loadScopedBrand(previous);
- const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:plan?.cleanResearchEvidence===true&&Boolean(providers.checkpoint),evidenceFocus});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers,packet:brand.packet});
   if(providers.managedBudgetVersion>=12&&!planned.needs.length){
@@ -1358,7 +1368,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
-   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true}:{}),
+   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true,preserveStatisticalScope:true,classifyReportFindings:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
@@ -1394,7 +1404,7 @@ export async function continueScopedCollection({brief,providers,previous,collect
  ]);
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
  const rounds=stage.managedPlan.compactQueue?[]:await savedScopedRounds(previous);
- const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:stage.managedPlan.cleanResearchEvidence===true&&Boolean(providers.checkpoint),evidenceFocus});
  try{
   return await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
    plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
