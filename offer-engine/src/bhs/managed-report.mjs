@@ -11,6 +11,7 @@ import {qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
 import {salesGapLabels,salesGapStatus,salesMetricName,salesSectionTitle,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {writeBoundedScopedParts} from './scoped-report-parts.mjs';
 import {evidenceQualityInstruction,researchGapStatement,researchGapQuestion} from './research-text.mjs';
+import {statisticalScopeInstruction} from './statistical-scope.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -203,7 +204,8 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (input.plan.focusedProductComparison?' Adı belirtilmiş ürün kıyaslarında verifiedProductProofs içindeki aynı peerId kaydını kullan. Her bulgu o kaydın required kanıtlarından en az birini ve yalnız allowed kanıtlarını kullanır. Referans SKU, parça adedi, kapladığı alan, hedef yaş, yerel liste fiyatı, KDV ve teslimatı ayrı tut. Farklı ürün, paket, para birimi veya vergi koşulunu eşdeğer fiyat diye yazma. Dolaylı alternatiften doğrudan rakip sonucu çıkarma.':'')+
   (buyerMetrics.length?' buyerProcurement işaretli satın alma soruları kaynaklı gözlem ve pilot hipotezi olarak ayrı gösterilir. Bu satırları bulgu olarak tekrarlama. Eksik karar verici, onay veya sipariş kanalının cevabını çıkarma.':'')+
   (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')+
-  (input.plan.cleanResearchEvidence?' '+evidenceQualityInstruction:'')};
+  (input.plan.cleanResearchEvidence?' '+evidenceQualityInstruction:'')+
+  (input.plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')};
  if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
@@ -595,7 +597,8 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    openQuestions.push(researchGapQuestion(row,needsById));continue;
   }
   if(qualifyReportFindings){
-   row=qualifyScopedFinding(row,sourceCards,needsById,{excludeLiteral:true,contentQuality:usedInput.plan?.cleanResearchEvidence===true});
+   row=qualifyScopedFinding(row,sourceCards,needsById,{excludeLiteral:true,contentQuality:usedInput.plan?.cleanResearchEvidence===true,
+    statisticalScope:usedInput.plan?.preserveStatisticalScope===true});
    if(!row)continue;
    if(selected.some(f=>f.proofs.some(id=>proofs.includes(id))&&repeatedFinding(row.observation,f.observation)))continue;
   }

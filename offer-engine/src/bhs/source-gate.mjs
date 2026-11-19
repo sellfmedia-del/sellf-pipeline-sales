@@ -120,7 +120,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
     issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;
    }
    const row=f.researchEvidenceOnly?customerFinding(f,raw):qualifyScopedFinding({observation:f.statement,analysis:f.impact,
-    section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs,{contentQuality:true});
+    section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs,{contentQuality:true,statisticalScope:true});
    if(!row||selected.some(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement))){
     if(!row){const question=researchGapQuestion(f,needs);if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});}
     issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;

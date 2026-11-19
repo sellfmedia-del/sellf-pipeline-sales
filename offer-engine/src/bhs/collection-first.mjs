@@ -19,6 +19,7 @@ import {managedReportInput,scopedCoverage,synthesizeManagedReport,synthesizeScop
 import {balancedScopedProofs,boundScopedEvidence,indexScopedEvidence} from './scoped-evidence-index.mjs';
 import {evidenceGeographies,marketObservationSupported} from './scoped-market.mjs';
 import {comparisonFields} from './product-comparison.mjs';
+import {supportsStatisticalNeed} from './scoped-findings.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -1243,6 +1244,15 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
   recoverReportEvidence(report,{brief,plan,needs:evidence.needs,sections,writtenQuestions});
  else if(useSavedEvidence)report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...writtenQuestions,
   ...open.map(c=>({dimension:'operations',question:c.displayName||c.name,findingIds:[]}))].map(q=>[q.question,q])).values()];
+ if(plan.preserveStatisticalScope){
+  const questions=open.flatMap(metric=>{
+   const need=evidence.needs.find(row=>row.id===metric.id);
+   if(!need||supportsStatisticalNeed(need,metric.proofs))return [];
+   const scope=[need.market,need.target,need.period].filter(Boolean).join(' · ');
+   return [{dimension:'operations',findingIds:[],question:'“'+need.metric+'” '+scope+' kapsamında hangi dönem, örneklem veya alıcı kaydıyla doğrulanabilir?'}];
+  });
+  report.meetingQuestions=[...new Map([...(report.meetingQuestions||[]),...questions].map(row=>[row.question,row])).values()];
+ }
  const proofIds=Object.fromEntries(evidence.coverage.map(c=>[c.id,c.proofs.map(f=>f.id)]));
  return {report,analysisPacket:plan.readEvidenceOnly?context.packet:evidence.packet,searchEvidence:[],model:written.completion?.model||null,usage:written.completion?.usage||null,
   researchContext:{brief,briefHash:briefHash(brief)},supervision:{reviewMode:'managed-audit',researchPlan:reportPlan,scopedResearch:true,
@@ -1358,7 +1368,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
-   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true}:{}),
+   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true,preserveStatisticalScope:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});

@@ -1,6 +1,7 @@
 import {numericEvidence} from './numeric-evidence.mjs';
 import {marketObservationSupported} from './scoped-market.mjs';
 import {consentEvidenceRequested,researchGapStatement,substantiveEvidence} from './research-text.mjs';
+import {statisticalNeedSupported,statisticalScopeIssue} from './statistical-scope.mjs';
 
 const fold=value=>String(value||'').normalize('NFKD').toLowerCase().replace(/\p{M}/gu,'').replaceAll('ı','i');
 const key=value=>fold(value).replace(/[^\p{L}\p{N}]+/gu,' ').trim();
@@ -37,12 +38,16 @@ export function supportsBuyerDemand(need,quotes){
  return !intent||quotes.some(hasBuyerEvidence);
 }
 
-export function qualifyScopedFinding(row,cards,needs,{excludeLiteral=false,contentQuality=false}={}){
+export const supportsStatisticalNeed=(need,cards)=>statisticalNeedSupported(need,cards,{buyerEvidence:cards.some(card=>hasBuyerEvidence(card.quote))});
+
+export function qualifyScopedFinding(row,cards,needs,{excludeLiteral=false,contentQuality=false,statisticalScope=false}={}){
  if(!readableFinding(row.observation)||excludeLiteral&&cards.some(card=>key(card.quote)===key(row.observation)))return null;
  const consent=row.needIds?.some(id=>consentEvidenceRequested(needs?.get(id)));
  if(contentQuality&&(researchGapStatement(row.observation,{sources:cards})||
   !substantiveEvidence(row.observation,{preserveConsent:consent})||
   cards.length&&!cards.some(card=>substantiveEvidence(card.quote,{preserveConsent:consent}))))return null;
+ if(statisticalScope&&[row.observation,row.analysis].some(value=>statisticalScopeIssue(value,cards,
+  {checkCommercial:true,buyerEvidence:cards.some(card=>hasBuyerEvidence(card.quote))})))return null;
  const linkedDemand=(row.needIds||[]).filter(id=>demandQuestion(needs?.get(id)));
  const claim=fold(row.observation);
  const headingIsDemand=demand.test(fold(row.sectionTitle||row.section));
@@ -76,6 +81,8 @@ export function customerFinding(finding,audit={}){
  const consent=(Array.isArray(finding.researchNeedIds)?finding.researchNeedIds:[]).some(id=>consentEvidenceRequested(needs.get(id)));
  const sources=Array.isArray(audit.sources)?audit.sources:[];
  const cards=(Array.isArray(finding.sourceIds)?finding.sourceIds:[]).map(id=>sources.find(source=>source?.id===id)).filter(source=>typeof source?.quote==='string');
+ if([finding.statement,finding.impact].some(value=>statisticalScopeIssue(value,cards,
+  {checkCommercial:true,buyerEvidence:cards.some(card=>hasBuyerEvidence(card.quote))})))return false;
  if(researchGapStatement(finding.statement,{sources:cards})||!substantiveEvidence(finding.statement,{preserveConsent:consent})||
   cards.length&&!cards.some(card=>substantiveEvidence(card.quote,{preserveConsent:consent})))return false;
  if(!finding.researchEvidenceOnly)return true;
