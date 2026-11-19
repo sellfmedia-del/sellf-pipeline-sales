@@ -16,8 +16,8 @@ import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,bu
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
 import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
-import {questionPlanningInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
-import {brandReviewContext,plannedBrandActions,brandStepInstruction,incrementalBrandInstruction} from './brand-review-state.mjs';
+import {questionPlanningInstruction,briefDecisionCoverageInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
+import {brandReviewContext,brandSourceExcerpts,plannedBrandActions,brandStepInstruction,incrementalBrandInstruction} from './brand-review-state.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -221,7 +221,7 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
    .map((source,index)=>({...source,id:'ev'+(index+1)}))};
  }
  const sources=packet.sources.filter(s=>!s.metadataOnly).map(s=>({url:s.finalUrl||s.url,title:s.title,
-  excerpts:s.excerpts.slice(0,3).map(e=>e.text.slice(0,520)),
+  excerpts:providers.managedBudgetVersion>=24?brandSourceExcerpts(s):s.excerpts.slice(0,3).map(e=>e.text.slice(0,520)),
   links:uniqueBy(targeted?siteLinks(s):s.technicalSignals?.navigation||[],l=>l.url).map(({url,label})=>({url,label}))}));
  const delta=incremental?brandReviewContext({brand,sources,hints,lookupReceipts,readReceipts,prior,visited}):null;
  const priorPublishers=incremental&&prior?retainBrandPublishers({...packet,publisherIdentities:[]},packet.publisherIdentities).publisherIdentities||[]:[];
@@ -285,7 +285,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  }
  if(providers.managedBudgetVersion>=15)request.instruction+=' İlk planda teklif kararını etkileyen her bağımsız başlık için bir açılış sorgusu yaz ve başlıkları karar önceliğine göre sırala. Bu sorgular ilk turda çalıştırılabilir olmalı. Aynı başlık için farklı kaynak arama veya bir sonuca bağlı ayrıntı isteme işlerini, ilk kanıtlar geldikten sonra belirle.';
  if(useMeasurements)request.instruction+=' '+measurementInstruction;
- if(providers.managedBudgetVersion>=24)request.instruction+=' '+questionPlanningInstruction;
+ if(providers.managedBudgetVersion>=24)request.instruction+=' '+questionPlanningInstruction+' '+briefDecisionCoverageInstruction;
  if(taskReporting){
   request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+productComparisonRoleInstruction+' '+buyerPlanInstruction;
   request.commercialBrief={goals:brief.goals,needs:brief.needs,services:brief.services,meetingNotes:brief.meetingNotes};
@@ -833,7 +833,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
    (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
-   (questionEvidence?' '+questionEvidenceInstruction:'')+(plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')+
+   (providers.managedBudgetVersion>=24?' '+briefDecisionCoverageInstruction+' Eksik önemli karar sorusunu newNeeds ile ekle; görev sayısını tamamlamak için iş üretme.':'')+
+   (plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },outputContract,last?1150:1700,

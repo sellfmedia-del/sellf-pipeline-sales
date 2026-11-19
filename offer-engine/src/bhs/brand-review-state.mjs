@@ -8,6 +8,20 @@ const links=source=>[...(source.technicalSignals?.identityLinks||[]),...(source.
 const subject=brand=>hash([brand.name,researchUrl(brand.website)]);
 const admissionFailures=new Set(['budget_limit','input_budget','model_budget','not_configured','fx_limit','fx_unavailable','tariff_expired','token_count','cancelled']);
 
+// Reuse the existing 3 x 520 character source allowance. A single archived
+// paragraph must not lose its product/channel details just because the reader
+// did not split it into three excerpts. Keep later excerpts' existing share.
+export function brandSourceExcerpts(source){
+ const excerpts=(source.excerpts||[]).slice(0,3).map(row=>String(row.text||''));
+ let remaining=1560;
+ return excerpts.map((value,index)=>{
+  const reserved=excerpts.slice(index+1).reduce((sum,text)=>sum+Math.min(520,text.length),0);
+  const text=value.slice(0,Math.max(0,remaining-reserved)).toWellFormed();
+  remaining-=text.length;
+  return text;
+ });
+}
+
 // These are model-visible source fingerprints, not replacements for the full
 // archived pages. Volatile IDs, timestamps and receipt charges are excluded.
 export function brandReviewContext({brand,sources,hints,lookupReceipts,readReceipts,prior,visited}){
@@ -64,5 +78,5 @@ export function brandDiscoveryNeedsWork(stage){
  return Boolean(actions.targets.length||actions.skippedPages.length||actions.searches.length);
 }
 
-export const brandStepInstruction='Yalnız markanın kimliğini, işini veya faaliyet biçimini anlamayı gerçekten değiştirecek açık bir soru varsa sonraki kaynağı seç. Marka briefi yorumlamaya yetecek kadar anlaşıldıysa pages ve searches boş olsun. Ürün varyantı/fiyat kıyası, rakip ölçümleri ve hedefe özgü ayrıntılı araştırmalar brief okunduktan sonraki planlama adımına aittir.';
+export const brandStepInstruction='Önce sunulan kaynakların tamamından açıkça adlandırılan ürün/hizmetleri ve satış yollarını marka anlayışına taşı. Gördüğün somut ürünü genel sektör tahminiyle değiştirme. Marka beyanını, gözlemlenen satış yönlendirmesini ve doğrulanmamış gelir/ölçek varsayımını ayrı belirt. Eksik şirket bilgilerini belirsiz bırak; her alanı doğrulamayı geçiş koşulu yapma. Yalnız kimliği, işi veya faaliyet biçimini anlamayı değiştirecek açık soru için sonraki kaynağı seç. Anlayış yeterliyse pages ve searches boş olsun. Varyant/fiyat kıyası, rakip ölçümleri ve hedefe özgü araştırmalar brief okunduktan sonraki planlama adımına aittir.';
 export const incrementalBrandInstruction='Önceki marka anlayışı kayıtlı temel bağlamdır; onu sıfırdan oluşturma. sources yalnız yeni veya değişmiş metinlerdir; retainedSources işlenmiş sayfaların dizinidir, availablePages bunlardan gözlemlenmiş okunmamış bağlantılardır. Yeni kanıtla önceki doğrulanmış bilgileri birleştiren tam marka özetini yaz. Çelişki varsa kaynağa dayanarak düzelt ve belirsizliği belirt. Aynı bilgiler için başka sayfa veya eşdeğer sorgu isteme. priorPublishers doğrulanmış kurumsal bağlamdır; yalnız yeni yayıncı kanıtı veya düzeltme varsa publishers kaydı ekle. '+brandStepInstruction;
