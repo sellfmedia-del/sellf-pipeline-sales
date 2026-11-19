@@ -20,6 +20,37 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
 
  const contractRecipients=Object.freeze(['yigit@sellfmedia.com','businessdevelopment@sellfmedia.com']);
  const englishText={"Sellf logosu":"Sellf logo","Müşteri logosunun yerleşim alanı":"Client logo","Marka logosu":"Brand logo","Marka özel teklifi":"A proposal for your brand","BÜYÜME, MÜHENDİSLİK İŞİDİR.":"GROWTH IS ENGINEERING.","STRATEJİ · OPERASYON · VERİMLİLİK":"STRATEGY · OPERATIONS · EFFICIENCY","Ön BHS · Öncelik haritası":"Preliminary BHS · Priority map","BHS boyutu":"BHS dimension","Finansal değerlendirme ilişkisi":"Financial assessment","Önerilen eylemler":"Recommended actions","Acil":"Urgent","Önemli":"Important","Düşük öncelikli":"Lower priority","Önce doğrula":"Validate first","İlk çalışma odağı":"Initial focus","Sonraki aşama":"Next phase","Puan: Yeterli veri yok":"Score: Insufficient data","İç verilerle derinleştirilecek":"To be refined with internal data","İşbirliği alternatifleri":"Partnership options","Bir model seçin, kapsamını inceleyin.":"Choose an option and explore its scope.","Teklif alternatifleri":"Proposal options","01 / ENTEGRE":"01 / INTEGRATED","02 / UYGULAMA":"02 / EXECUTION","Önerilen":"Recommended","Growth + Operasyon":"Growth + Operations","Operasyon Paketi":"Operations Package","TL / ay":"TRY / month","Strateji ve uygulama, aynı yapıda.":"Strategy and execution, together.","Growth ekibi ve operasyonların birlikte yönetimi.":"Growth consulting and operations, managed together.","SEÇİLİ KAPSAM":"SELECTED SCOPE","Toplam aylık hizmet bedelidir. KDV, reklam harcaması ve üçüncü taraf bedelleri dahil değildir.":"Total monthly service fee. VAT, advertising spend and third-party fees are excluded.","Başlangıç planı":"Getting started","Growth + Operasyon ile ilerleyelim.":"Let’s proceed with Growth + Operations.","Kapsam ve başlangıç planını sözleşmeye taşıyalım.":"Let’s take the agreed scope and starting plan into a contract.","Sözleşme talep et":"Request a contract","Sözleşme talebi":"Contract request","Yetkili adı":"Contact name","Ad Soyad":"Full name","İş e-postası":"Work email","isim@marka.com":"name@brand.com","E-postayı aç ↗":"Open email ↗","Finansal":"Financial","Operasyon":"Operations","Dijital":"Digital","Algı":"Perception","Rekabet":"Competition","Daralt −":"Collapse −","Analizi aç ↗":"Expand analysis ↗","Doğrulanacak: ":"To be verified: ","Çıkarım: ":"Inference: ","İş etkisi ve dayanak":"Business impact and evidence","Bu öncelikte doğrulanmış bulgu yok.":"No verified findings at this priority.","Ön BHS: ":"Preliminary BHS: ","Yeterli veri yok":"Insufficient data"," kaynak · ":" sources · "," rakip · Dışsal ön analiz":" competitors · Preliminary external assessment","Bu boyutta yeterli veri yok.":"Insufficient data for this dimension.","Veri eksik":"Insufficient data","Kaynaklı değerlendirme":"Source-based assessment","İç veriyle doğrula":"Validate with internal data","Aylık web trafiği":"Monthly website traffic","Sosyal kitle":"Social audience","Yorumlar":"Reviews","Reklam aktivitesi":"Advertising activity","İçerik olgunluğu":"Content maturity","Ciro / büyüme":"Revenue / growth","Farklılaştırıcı":"Differentiator","Tahmini Ön BHS":"Estimated preliminary BHS","Rakip karşılaştırmasını incele":"Explore the competitor comparison","Aynı dönem ve coğrafyada doğrulanamayan metrikler boş bırakılmıştır.":"Metrics that could not be verified for the same period and geography are left blank.","Metrik":"Metric","Veri bulunamadı":"Data unavailable","Seçili bulguların kaynakları":"Sources for selected findings","Growth danışmanlığı ve seçili operasyonların birlikte yönetimi.":"Growth consulting and selected operations, managed together.","Seçili hizmetler için uygulama, ölçüm ve takip.":"Execution, measurement and monitoring for the selected services.","Çalışma odağı: ":"Working focus: "," ile ilerleyelim.":" — let’s proceed."," / ay":" / month","Teklif kuru: 1 USD = ":"Proposal exchange rate: 1 USD = "," TL · TCMB dolar satış kuru, ":" TRY · CBRT USD selling rate, ",". Bu teklifin USD tutarları sabittir.":". USD amounts in this proposal are fixed.",": ayrıca fiyatlandırılacak; bu toplama dahil değildir.":": priced separately; excluded from this total.",": sonraki aşamaya ayrıldı.":": deferred to a later phase.","Kapsam sınırları":"Scope exclusions","E-posta taslağı müşteri bağlantısı oluşturulduktan sonra açılabilir.":"The email draft is available after the customer link is published.","E-posta taslağını yeniden aç":"Reopen email draft","Gönderimi e-posta uygulamanızdaki taslaktan tamamlayın.":"Complete sending from the draft in your email application.","E-posta taslağı hazırlanamadı.":"The email draft could not be prepared.","Sözleşme talebi · ":"Contract request · ","Marka: ":"Brand: ","Teklif: ":"Proposal: ","Alternatif: ":"Option: ","Aylık hizmet bedeli: ":"Monthly service fee: ","Teklif bağlantısı: ":"Proposal link: ","Yetkili: ":"Contact: ","E-posta: ":"Email: "," için özel olarak hazırlanmıştır.":" — prepared exclusively for your brand."," logosu":" logo","Geçerli yayınlanmış teklif bağlantısı gerekli.":"A valid published proposal link is required.","Geçerli işbirliği alternatifini seç.":"Choose a valid partnership option.","Yetkili adı ve geçerli iş e-postası gerekli.":"A contact name and valid work email are required."};
+ // Resolve only the findings explicitly selected for this step. A shared page
+ // can support several observations without proving the whole proposed action.
+ function implementationEvidence(data,steps){
+  const sourceById=new Map((data.bhs?.sources||[]).map(source=>[source.id,source]));
+  const findingById=new Map((data.bhs?.findings||[]).filter(f=>f.kind==='observation'&&!f.verification).map(f=>[f.id,f]));
+  const sources=[],byUrl=new Map();
+  function reference(id){
+   const source=sourceById.get(id);if(!source)return null;
+   let url;try{url=new URL(source.url);}catch{return null;}
+   if(!['https:','http:'].includes(url.protocol)||url.username||url.password)return null;
+   const key=new URL(url.href);key.hash='';
+   for(const name of [...key.searchParams.keys()])if(/^(?:utm_.+|gclid|fbclid|msclkid)$/i.test(name))key.searchParams.delete(name);
+   key.searchParams.sort();
+   if(!byUrl.has(key.href)){const row={number:sources.length+1,title:source.title||url.hostname,url:url.href};sources.push(row);byUrl.set(key.href,row);}
+   return byUrl.get(key.href).number;
+  }
+  const rows=steps.map(step=>{
+   const allowed=new Set(step.sourceIds||[]),findings=[];
+   const explicit=Object.prototype.hasOwnProperty.call(step,'findingIds');
+   if(explicit){
+    for(const id of new Set(Array.isArray(step.findingIds)?step.findingIds:[])){
+     const finding=findingById.get(id);if(!finding)continue;
+     const references=[...new Set((finding.sourceIds||[]).filter(id=>allowed.has(id)).map(reference).filter(Boolean))];
+     if(references.length)findings.push({id,statement:finding.statement,references});
+    }
+   }
+   const references=[...new Set(explicit?findings.flatMap(f=>f.references):[...allowed].map(reference).filter(Boolean))];
+   return {findings,references,legacy:!explicit};
+  });
+  return {steps:rows,sources};
+ }
  function projectQuote(data,plan,month){
   if(!data.quote)return plan;
   const q=month?data.quote.monthlyPlan?.months.find(row=>row.month===month)?.projectPlan:data.quote.projectPlan;
@@ -139,7 +170,6 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   const full=add('details','',$('#so-analysis'));add('summary',t('Seçili bulguların kaynakları'),full);
   for(const source of data.bhs.sources||[]){const p=add('p',source.id+' · '+source.title+' · ',full,'so-detail-source');try{const u=new URL(source.url);if(['https:','http:'].includes(u.protocol)){const a=add('a',u.href,p);a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';}}catch{}}
   const monthly=data.pricingMode==='monthly',options=$('.so-options');options.replaceChildren();let selected;
-  const planSources=new Map((data.bhs.sources||[]).map(source=>[source.id,source]));
   const form=$('#so-request-form'),status=$('.so-request-status');
   function select(id){
    if(monthly&&id!=='operations_bundle')return;
@@ -149,15 +179,29 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    const list=$('#so-service-list');list.replaceChildren();
    selected.services.forEach((s,i)=>{const box=add('div','',list,'so-service'),b=add('button','✓ '+s.name+' +',box);b.type='button';b.setAttribute('aria-expanded','false');const p=add('p',s.description,box);p.hidden=true;p.id='so-service-'+i;b.setAttribute('aria-controls',p.id);b.addEventListener('click',()=>{p.hidden=!p.hidden;b.setAttribute('aria-expanded',String(!p.hidden));});});
    const track=$('#so-track');track.replaceChildren();
-   data.plans[id].steps.forEach(s=>{
+   const planEvidence=implementationEvidence(data,data.plans[id].steps);
+   data.plans[id].steps.forEach((s,index)=>{
     const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);
     if(s.measurement)add('small',(english?'Measure · ':'Ölçüm · ')+s.measurement,item);
-    for(const sourceId of s.sourceIds||[]){
-     const source=planSources.get(sourceId);
-     if(!source||!/^https?:\/\//i.test(source.url))continue;
-     const link=add('a',source.title,item);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+    const basis=planEvidence.steps[index];
+    if(basis.legacy&&basis.references.length){
+     add('small',(english?'Saved source references':'Kayıtlı kaynak referansları')+' · '+basis.references.map(n=>'['+n+']').join(' '),item);
+    }else if(basis.references.length){
+     const detail=add('details','',item,'so-step-basis');
+     add('summary',(english?'Supporting observations':'Dayanak bulgular')+' · '+basis.references.map(n=>'['+n+']').join(' '),detail);
+     for(const finding of basis.findings)add('p',finding.statement+' '+finding.references.map(n=>'['+n+']').join(' '),detail);
     }
    });
+   let planSources=$('#so-plan-sources');if(!planSources){planSources=add('details','',$('.so-process'),'so-plan-sources');planSources.id='so-plan-sources';}
+   planSources.replaceChildren();planSources.hidden=!planEvidence.sources.length;
+   if(planEvidence.sources.length){
+    add('summary',english?'Plan sources':'Plan kaynakları',planSources);
+    add('p',english?'Sources document the observations. Actions and measures describe our proposed work.':'Kaynaklar bulguların dayanağıdır. Uygulama ve ölçüm adımları çalışma önerimizi açıklar.',planSources);
+    for(const source of planEvidence.sources){
+     const row=add('p','['+source.number+'] ',planSources),link=add('a',source.title,row);
+     link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+    }
+   }
    let focus=$('.so-plan-focus');if(!focus)focus=add('p','',$('.so-process'),'so-feenote so-plan-focus');focus.textContent=t('Çalışma odağı: ')+data.plans[id].focus;
    $('#so-process-model').textContent=selected.name;$('#so-choice-label').textContent=selected.name+t(' ile ilerleyelim.');
    $('#so-request-model').textContent=monthly?(english?'Monthly operations plan · Fees as shown above':'Ay bazlı operasyon planı · Yukarıdaki aylık bedeller geçerlidir'):selected.name+' · '+money(quoteAmount(data,selected))+' '+currencyLabel(data)+t(' / ay');
@@ -215,5 +259,5 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
   });
   return {select};
  }
- window.PipelineProposal=Object.freeze({mount,buildMailto});
+ window.PipelineProposal=Object.freeze({mount,buildMailto,implementationEvidence});
 })();
