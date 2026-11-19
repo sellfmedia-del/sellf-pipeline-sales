@@ -3,7 +3,7 @@ import {backgroundBhsEnabled,createBhsJobStore} from './job-store.mjs';
 import {createSequentialProviders} from './sequential-providers.mjs';
 import {runClaimedBhsStage} from './background-runner.mjs';
 import {runBoundedStage,stageKey} from './direct-research.mjs';
-import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus,useShortResearchWindow,workerInfrastructureKey} from './job-infrastructure.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
@@ -19,9 +19,21 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  const scopedJob={...job,...(options.scopedRoundIndex===undefined?{}:{scopedRoundIndex:options.scopedRoundIndex})};
  if(job.phase==='report_draft'&&providers.managedBudgetVersion>=18&&providers.collectionFirst){
   if(options.scopedRoundIndex===undefined)return runStage(options);
+  // A settled balance can select a different envelope on reconnect. Keep the
+  // already-funded mode authoritative; changing modes cannot authorize replay.
+  const [fullReceipt,shortReceipt]=await Promise.all([
+   options.ledger.get?.(workerInfrastructureKey(scopedJob)),options.ledger.get?.(workerInfrastructureKey(scopedJob,true))
+  ]);
+  if(fullReceipt||shortReceipt)return meter({job:scopedJob,ledger:options.ledger,shortResearch:!fullReceipt,
+   run:()=>runStage(options)});
   const {chargedKurus}=await options.ledger.status();
   const remaining=options.phaseCeiling-chargedKurus;
-  if(remaining>=shortResearchReservationKurus&&remaining<workerInfraReservationKurus&&providers.withExecutionWindow){
+  // This is a free ledger/tariff lookup, without actor discovery or a provider
+  // call. A 3.10 TRY balance must not be consumed by a 3 TRY worker reservation
+  // while the bounded short worker plus a targeted call would fit.
+  const quotes=providers.withExecutionWindow&&remaining>=workerInfraReservationKurus?
+   (await providers.researchCapacity?.({includeActors:false}))?.quotes:undefined;
+  if(providers.withExecutionWindow&&useShortResearchWindow(remaining,quotes)){
    // The network window leaves time for PDF parsing and durable receipts
    // inside the smaller worker envelope. Renderer work stays in full turns.
    const now=providers.now||Date.now,deadline=now()+55000;
