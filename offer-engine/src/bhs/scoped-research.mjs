@@ -9,11 +9,13 @@ import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
 import {supportsBuyerDemand} from './scoped-findings.mjs';
-import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,qualifyProductPeers} from './product-comparison.mjs';
+import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,productComparisonRoleInstruction,productComparisonContinuationInstruction,coherentComparisonRole,unreadableComparisonSources,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
 import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
+import {questionPlanningInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
+import {brandReviewContext,plannedBrandActions,brandStepInstruction,incrementalBrandInstruction} from './brand-review-state.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -141,7 +143,7 @@ function normalizeNeeds(rows,schema,useMeasurements){
   return candidates.flatMap(need=>{
    const fields=Object.fromEntries(Object.entries(items.properties).map(([key,field])=>{
     const value=key==='sectionTitle'?salesTaskSectionTitle(need.section,need.sectionTitle,salesMetricName(need)):
-     key==='comparisonProduct'?need.comparisonProduct||'':key==='comparisonRole'?need.comparisonRole||'none':
+     key==='comparisonProduct'?need.comparisonProduct||'':key==='comparisonRole'?coherentComparisonRole(need):
      key==='buyerSegment'||key==='buyerSourceSegment'?need[key]||'':key==='buyingDimension'?need.buyingDimension||'none':need[key];
     if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
     return [key,value];
@@ -162,8 +164,10 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  const brand={name:brief.brandName,website:brief.website};
  const ordered=providers.managedBudgetVersion>=12;
  const targeted=providers.managedBudgetVersion>=14;
- const observed=new Set(packet.sources.flatMap(s=>[s.finalUrl||s.url,...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)]).map(researchUrl).filter(Boolean));
- const lookedUp=new Set(prior?.lookedUp||[]),visited=new Set(prior?.visited||packet.sources.map(s=>researchUrl(s.finalUrl||s.url)));
+ const incremental=providers.managedBudgetVersion>=24;
+ const actions=incremental&&prior?plannedBrandActions(packet,prior):null;
+ const observed=actions?.observed||new Set(packet.sources.flatMap(s=>[s.finalUrl||s.url,...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)]).map(researchUrl).filter(Boolean));
+ const lookedUp=new Set(prior?.lookedUp||[]),visited=actions?.visited||new Set(prior?.visited||packet.sources.map(s=>researchUrl(s.finalUrl||s.url)));
  const hints=[...(prior?.hints||[])];
  if(targeted)for(const hint of hints)observed.add(hint.url);
  const lookupReceipts=[...(prior?.lookupReceipts||[])];
@@ -175,14 +179,14 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  }
  if(prior){
   const requestedPages=(prior.value?.pages||[]).map(researchUrl).filter(Boolean);
-  const targets=requestedPages.filter(url=>observed.has(url)&&!visited.has(url));
+  const targets=actions?.targets||requestedPages.filter(url=>observed.has(url)&&!visited.has(url));
   // A rejected request must reach the controller once so it can choose a search.
   // Keep the existing URL allowlist and avoid another turn for the same rejection.
-  const skippedPages=targeted?[...new Set(requestedPages)].filter(url=>!targets.includes(url)&&
+  const skippedPages=actions?.skippedPages||(targeted?[...new Set(requestedPages)].filter(url=>!targets.includes(url)&&
    (!observed.has(url)||readReceipts.some(receipt=>receipt.url===url&&receipt.status!=='read'))&&
-   !readReceipts.some(receipt=>receipt.url===url&&receipt.status==='page_not_read')):[];
+   !readReceipts.some(receipt=>receipt.url===url&&receipt.status==='page_not_read')):[]);
   for(const url of skippedPages)readReceipts.push({url,status:'page_not_read'});
-  const searches=prior.value?.searches||[];
+  const searches=actions?.searches||prior.value?.searches||[];
   for(const {query,tool,limit} of ordered?searches.slice(0,targets.length?0:1):searches){
    const key=hash([tool,query,limit]);
    if(lookedUp.has(key))continue;
@@ -190,7 +194,7 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
    const search=await attempt(()=>tool==='gemini'
     ?providers.searchGemini?.({query,quantity:limit,target:brand.name,metric:'Markanın kimliği, ürün grubu ve faaliyet pazarı'},{maxResults:limit})
     :providers.search(query,{depth:'basic',maxResults:limit}));
-   if(ordered)lookupReceipts.push({query,tool,issue:search.issue||(!search.value?.results?.length?'no_results':undefined)});
+   if(ordered)lookupReceipts.push({query,tool,...(incremental?{limit}:{}),issue:search.issue||(!search.value?.results?.length?'no_results':undefined)});
    for(const row of (search.value?.results||[]).slice(0,limit)){
     const url=researchUrl(row.url);
     if(!url||visited.has(url))continue;
@@ -217,17 +221,23 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  const sources=packet.sources.filter(s=>!s.metadataOnly).map(s=>({url:s.finalUrl||s.url,title:s.title,
   excerpts:s.excerpts.slice(0,3).map(e=>e.text.slice(0,520)),
   links:uniqueBy(targeted?siteLinks(s):s.technicalSignals?.navigation||[],l=>l.url).map(({url,label})=>({url,label}))}));
- const result=await ask(providers,'bhs-scoped-brand',{brand,sources,hints,priorUnderstanding:prior?.value?.understanding,
-  ...(ordered?{lookupReceipts,final}:{}),...(targeted?{readReceipts}:{}),instruction:
+ const delta=incremental?brandReviewContext({brand,sources,hints,lookupReceipts,readReceipts,prior,visited}):null;
+ const priorPublishers=incremental&&prior?retainBrandPublishers({...packet,publisherIdentities:[]},packet.publisherIdentities).publisherIdentities||[]:[];
+ const result=await ask(providers,'bhs-scoped-brand',{brand,sources:delta?.sources||sources,hints:delta?.hints||hints,
+  priorUnderstanding:!delta||delta.canReuseUnderstanding?prior?.value?.understanding:undefined,
+  ...(delta?.retainedSources?{retainedSources:delta.retainedSources}:{}),...(delta?.availablePages?{availablePages:delta.availablePages}:{}),
+  ...(priorPublishers.length?{priorPublishers:priorPublishers.map(({quote,...row})=>row)}:{}),
+  ...(ordered?{lookupReceipts:delta?.lookupReceipts||lookupReceipts,final}:{}),...(targeted?{readReceipts:delta?.readReceipts||readReceipts}:{}),instruction:
   'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'+
   (ordered?' Tek seferde yalnız bir sayfa ya da tek, somut kimlik sorusu için bir araç seç. Önceki çağrıların sonuçlarını dikkate al. Bir araç hata verdiyse ve bilgi gerekliyse aynı dar soruyu uygun diğer araca kendin ver. final doğruysa ek istek gönderme ve belirsizlikleri yazarak marka anlayışını tamamla.':'')+
   (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin. İlk sayfadan okunabilir içerik gelmediyse veya readReceipts içinde page_not_read varsa aynı adresi tekrar isteme. Kimlik bilgisi hâlâ gerekliyse marka adıyla resmi siteyi, ürünü veya kurumsal kimliği bulmak için Gemini ya da Tavily’ye tek bir hedefli arama seç. Doğrulanamayan bilgileri açıkça belirsiz bırak.':'')+
-  (providers.managedBudgetVersion>=24?' '+publisherIdentityInstruction:'')},
+  (providers.managedBudgetVersion>=24?' '+publisherIdentityInstruction+' '+(prior?incrementalBrandInstruction:brandStepInstruction):'')},
   providers.managedBudgetVersion>=24?{...(ordered?orderedBrandSchema:brandSchema),
    properties:{...(ordered?orderedBrandSchema:brandSchema).properties,publishers:publisherIdentitiesSchema}}:ordered?orderedBrandSchema:brandSchema,1400);
  if(providers.managedBudgetVersion>=24)packet=retainBrandPublishers(packet,result.value?.publishers);
  const value=result.value||prior?.value;
  return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],...(ordered?{lookupReceipts}:{}),...(targeted?{readReceipts}:{}),
+  ...(incremental&&(result.value||prior?.brandReview)?{brandReview:result.value?delta.state:prior.brandReview}:{}),
   done:final||!result.value||!result.value.pages?.length&&!result.value.searches?.length};
 }
 
@@ -273,8 +283,9 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  }
  if(providers.managedBudgetVersion>=15)request.instruction+=' İlk planda teklif kararını etkileyen her bağımsız başlık için bir açılış sorgusu yaz ve başlıkları karar önceliğine göre sırala. Bu sorgular ilk turda çalıştırılabilir olmalı. Aynı başlık için farklı kaynak arama veya bir sonuca bağlı ayrıntı isteme işlerini, ilk kanıtlar geldikten sonra belirle.';
  if(useMeasurements)request.instruction+=' '+measurementInstruction;
+ if(providers.managedBudgetVersion>=24)request.instruction+=' '+questionPlanningInstruction;
  if(taskReporting){
-  request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+buyerPlanInstruction;
+  request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+productComparisonRoleInstruction+' '+buyerPlanInstruction;
   request.commercialBrief={goals:brief.goals,needs:brief.needs,services:brief.services,meetingNotes:brief.meetingNotes};
   request.publisherSources=brandProductSources(brief.website,packet);
  }
@@ -352,7 +363,7 @@ async function extractFacts(searches,providers,{excerptsOnly=false}={}){
   !(providers.managedBudgetVersion>=13&&input.attempts?.length===1&&input.attempts[0].tool==='tavily'));
  const worker=providers.managedBudgetVersion>=12&&providers.modelHandoff?providers.worker:providers.geminiWorker||providers.worker;
  const result=withRows.length?await attempt(()=>worker('bhs-scoped-extract',{
-  instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma.',
+  instruction:'Her iş için yalnız talep edilen metriği karşılayan kaynak kimliklerini seç. Bir öğeyi iki kez sayma. Her öğe için ayırt edici ad ve kaynağın proof kimliğini ver. Özgün alıntıyı aynen kopyalayabiliyorsan quote içine yaz, yoksa boş bırak. Eksik veri varsa bir sonraki hedefli aramaya aday ad veya sorgu öner. Harici bilgi ve kaynak URL uydurma. Aynı kelimelerin geçmesi yeterli değildir: sorunun öznesini, eylemini, nesnesini ve beklenen kanıtı karşılaştır. Bir işletmenin ürün satın alması ile işletmenin şirket olarak satın alınmasını karıştırma. Farklı soruyu yanıtlayan pasajı bu iş için seçme.',
   requests:withRows.map(({need,rows})=>({need,sources:rows.map(({proof,url,content})=>({proof,url,content}))}))
  },workerSchema,{maxOutputTokens:1800,minimumOutputTokens:760,compactWorker:true,generationTimeoutMs:28000})):{};
  return inputs.map(({need,rows,issue,attempts=[],urls=[],actorStarted,sourceReads=[]})=>{
@@ -517,15 +528,15 @@ function receiptFacts(receipts,readEvidenceOnly=false){
  return uniqueBy(readEvidenceOnly?[...facts.filter(f=>!isReadEvidence(f)),...facts.filter(isReadEvidence)]:facts,f=>f.id);
 }
 
-async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,queryAllowed,reserveForFollowingKurus=0}){
- const tasks=needs.map(({id,target,market,metric,period,expected,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
+async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts,qualifyReportFindings,procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus=0}){
+ const tasks=needs.map(({id,target,market,metric,period,expected,query,quantity,buyerSegment,buyerSourceSegment,buyingDimension})=>{
   const saved=facts.filter(f=>f.needId===id);
   const incoming=saved.filter(f=>!seen.has(f.id)).slice(0,8);
   const previous=checked.get(id)?.proofs||[];
   const context=saved.filter(f=>seen.has(f.id)).sort((a,b)=>Number(previous.includes(b.id))-Number(previous.includes(a.id))).slice(0,4);
   const sources=[...incoming,...context].map(({id,url,title,quote,method,metadataOnly,retrievedAt})=>
    ({id,url,title,quote:quote.slice(0,950),method,metadataOnly,...(readEvidenceOnly?{retrievedAt}:{})}));
-  return {id,target,market,metric,period,expected,quantity,sources,incoming,
+  return {id,target,market,metric,period,expected,query,quantity,sources,incoming,
    ...(procurementResearch&&buyerSegment?{buyerSegment,buyerSourceSegment,buyingDimension}:{}),
    previousProofs:previous.filter(proof=>sources.some(f=>f.id===proof))};
  }).filter(task=>task.incoming.length).slice(0,3);
@@ -535,6 +546,7 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
  const scopedMarket=providers.managedBudgetVersion>=17&&needs.some(n=>quantitativeMarketNeed(n,scopeMarketCounts)&&tasks.some(t=>t.id===n.id));
  const scopedBuyer=procurementResearch&&tasks.some(buyerNeed);
  const contract=scopedMarket?withMarketMeasures(evidenceReviewSchema):evidenceReviewSchema;
+ const proofContract=scopedBuyer?withBuyerProof(contract):contract;
  const result=await attempt(()=>worker('bhs-scoped-evidence-check',{
   tasks:tasks.map(({incoming,...task})=>({...task,newProofs:incoming.map(f=>f.id)})),
   instruction:'Her iş için yeni kaynakları istenen ürün, pazar, dönem ve metrik bakımından denetle. Her iş için bir karar yaz. Önceki geçerli kanıtı koru. Yalnız o işte görülen ilgili kaynak kimliklerini proofs alanına koy. Kısmi kanıtı sakla ve açık bırak. Bir arama alıntısı yalnız rapor adı veya sonuç bağlantısı gösteriyorsa yeterli sayma. Resmî raporun ilgili tablosu, dönemi, birimi ve kapsamı veya ürün sayfasındaki fiyat doğrulanacaksa read alanına açılacak kaynağın kimliğini yaz. İki kanalda fiyat kıyaslanacaksa aynı ürün kodu veya ayırt edilebilir tam varyantı iki gerçek kaynakta eşleştir. Fiyat, para birimi, satış birimi ve dönem bağlamını kontrol et. Pazar, kanal veya eşleşme belirsizse açık bırak. Başka kaynağa ihtiyaç varsa nextQuery alanına aynı iş için tek dar, farklı sorgu yaz. Gerek yoksa read ve nextQuery boş olsun. Kaynak veya olgu uydurma.'+
@@ -542,8 +554,9 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
    (readEvidenceOnly?' '+readEvidenceInstruction:'')+
    (qualifyReportFindings?' Kullanım kılavuzu ve ürün özelliği talebi doğrulamaz. Talep için alıcı davranışı, sipariş, bütçe veya alıcının bildirdiği tercih gibi gözlenmiş kanıt ara.':'')+
    (queryAllowed?' nextQuery içinde aynı pazar, ürün veya alıcı ve ölçümü koru. Mevcut sorgunun ayırt edici terimlerinden en az birini kullan. Kapsamı genişletme.':'')+
-   (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')
- },scopedBuyer?withBuyerProof(contract):contract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
+   (scopedMarket?' '+marketMeasureInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')
+ },questionEvidence?withQuestionEvidence(proofContract):proofContract,{maxOutputTokens:840,minimumOutputTokens:530,compactWorker:true,compactVerdicts:true,
   reserveForFollowingKurus,generationTimeoutMs:22000,signal:providers.executionSignal}));
  if(!result.value?.data)return {issue:result.issue||'research_clearance_unavailable'};
  const decisions=[];
@@ -555,14 +568,18 @@ async function reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,
   const saved=checked.get(task.id);
   const need=needs.find(n=>n.id===task.id);
   const nextQuery=compact(row.nextQuery);
-  const candidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,
+  const rawCandidate={id:task.id,sufficient:row.sufficient&&proofs.length>0&&!read,proofs,
    nextQuery:!queryAllowed||queryAllowed(need,nextQuery)?nextQuery:'',...(read?{read}:{})};
+  const candidate=questionEvidence?questionEvidenceDecision(rawCandidate,row.answerFit):rawCandidate;
   // An incremental slice may add evidence without re-adjudicating an earlier
   // confirmed decision. The controller can revisit it with the full context.
-  const decision=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
+  const previousConfirmed=confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings);
+  const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,candidate,row.buyerProcess,facts,saved):
    providers.managedBudgetVersion>=17&&quantitativeMarketNeed(need,scopeMarketCounts)?
    marketDecision(need,{...candidate,sufficient:candidate.sufficient||Boolean(saved?.sufficient)},row.marketMeasures,facts,saved,scopeMarketCounts):
-   confirmed(need,saved,facts,rivalHosts,readEvidenceOnly,qualifyReportFindings)?{...saved,proofs:[...new Set([...saved.proofs,...proofs])]}:candidate;
+   previousConfirmed?{...saved,proofs:[...new Set([...saved.proofs,...candidate.proofs])]}:candidate;
+  const decision=!questionEvidence?reviewed:previousConfirmed&&candidate.answerFit.status!=='direct'?saved:
+   questionEvidenceDecision(reviewed,row.answerFit);
   for(const f of task.incoming)seen.add(f.id);
   checked.set(decision.id,decision);
   decisions.push(decision);
@@ -584,6 +601,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
  const useMeasurements=providers.managedBudgetVersion>=19;
  const readEvidenceOnly=plan.readEvidenceOnly===true;
+ const questionEvidence=plan.questionEvidence===true;
  const scope=plan.briefScope;
  const readerWasBlocked=guarded&&rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid');
  let readerBlocked=readerWasBlocked;
@@ -598,7 +616,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const receipts=scopedReceiptsFrom(plan,rounds,priorNeeds);
  const queryAllowed=scope?(need,query)=>queryWithinBrief(plan,need,query):undefined;
  let facts=receiptFacts(receipts,readEvidenceOnly);
- const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
+ const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,
+  questionEvidence?questionEvidenceDecision(row,row.answerFit):row]));
  const queryIdentity=(id,query)=>JSON.stringify([id,compact(query).toLocaleLowerCase('tr')]);
  const supersededQueries=new Set(rounds.flatMap(round=>round.commandResults||[])
   .filter(row=>['cancelled','replaced'].includes(row.status)&&row.query?.trim()).map(row=>queryIdentity(row.id,row.query)));
@@ -615,7 +634,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const open=need=>!confirmed(need,checked.get(need.id),facts,rivalHosts,readEvidenceOnly,plan.qualifyReportFindings)||
   !buyerNeed(need)&&plan.focusedProductComparison&&(!focusedNeedSupported(need,qualifiedPeers)||!comparisonReferenceVerified(need,priorNeeds,facts,checked,brief.website,packet));
  const inScope=need=>!gap||eligibleSections.includes(need.section);
- const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,queryAllowed,reserveForFollowingKurus});
+ const checkNew=(reserveForFollowingKurus,needs=priorNeeds)=>reviewNewEvidence({needs,facts,checked,seen,rivalHosts,providers,readEvidenceOnly,scopeMarketCounts:plan.scopeMarketCounts,qualifyReportFindings:plan.qualifyReportFindings,procurementResearch:plan.procurementResearch,questionEvidence,queryAllowed,reserveForFollowingKurus});
  const checkBeforeWorkerEnds=async(added,needs)=>{
   if(!incremental||!acquisition.infrastructureOffsetKurus||!added.some(r=>r.facts.length))return {};
   const remaining=(await attempt(()=>acquisition.researchCapacity?.({includeActors:false}))).value?.remainingKurus;
@@ -684,7 +703,9 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const scopedBuyer=plan.procurementResearch&&priorNeeds.some(n=>inScope(n)&&buyerNeed(n));
  const buyerContract=plan.procurementResearch?withBuyerScope(marketContract,'newNeeds'):marketContract;
  const proofContract=scopedBuyer?withBuyerProof(buyerContract):buyerContract;
- const reviewContract=scope?withBriefDecision(proofContract,'newNeeds'):proofContract;
+ const questionContract=questionEvidence?withQuestionEvidence(proofContract):proofContract;
+ const reviewContract=scope?withBriefDecision(questionContract,'newNeeds'):questionContract;
+ const sourceReadFailures=plan.focusedProductComparison?unreadableComparisonSources(priorNeeds.filter(n=>open(n)&&inScope(n)),receipts):[];
  const normalizeData=data=>Array.isArray(data?.newNeeds)?
   {...data,newNeeds:normalizeNeeds(data.newNeeds,reviewContract.properties.newNeeds,true),
    ...(plan.focusedProductComparison&&Array.isArray(data.peers)?{peers:data.peers.map(peer=>({...peer,productMatch:peer.productMatch||
@@ -783,6 +804,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
   ...(readerBlocked?{publisherReadAvailable:false}:{}),
   ...(plan.focusedProductComparison?{waitingForReference:priorNeeds.filter(need=>!dispatchable(need)).map(need=>need.id)}:{}),
+  ...(sourceReadFailures.length?{sourceReadFailures}:{}),
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
   previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,
    nextQuery:r.nextQuery,...(r.toolRouting?{toolRouting:r.toolRouting}:{}),...(!targeted?{urls:r.urls}:{})})),
@@ -802,10 +824,11 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.taskReporting?' '+taskTitleInstruction:'')+
    (readEvidenceOnly?' '+readEvidenceInstruction+' Adayı ancak kendi kaynağındaki ürün/hizmet ve hedef pazardaki ikame örtüşmesi doğrulanmışsa direct yaz. İlişkili marka veya doğrulanamamış adayı ayrı tut.':'')+
    (plan.qualifyReportFindings?' Kullanım bilgisi, özellik ve faydayı talep kanıtı sayma. Talep için alıcı davranışı, sipariş, bütçe veya alıcı araştırmasına doğrudan dayanan kanıt iste.':'')+
-   (plan.focusedProductComparison?' '+productComparisonPlanInstruction+' '+productComparisonReviewInstruction:'')+
+   (plan.focusedProductComparison?' '+productComparisonPlanInstruction+' '+productComparisonReviewInstruction+' '+productComparisonContinuationInstruction:'')+
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
    (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
+   (questionEvidence?' '+questionEvidenceInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
  },outputContract,last?1150:1700,
@@ -827,12 +850,14 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  for(const row of data.decisions)if(ids.has(row.id)){
   const related=facts.filter(f=>f.needId===row.id);
   const {proofs,unread}=readEvidenceOnly?reviewProofs(row.proofs,related,true):{proofs:row.proofs.filter(id=>related.some(f=>f.id===id))};
-  const decision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!unread),proofs,
+  const rawDecision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!unread),proofs,
    ...(unread?{read:unread}:{})};
+  const decision=questionEvidence?questionEvidenceDecision(rawDecision,row.answerFit):rawDecision;
   const need=priorNeeds.find(n=>n.id===row.id);
   const saved=checked.get(row.id);
-  checked.set(row.id,scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
-   scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision);
+  const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
+   scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision;
+  checked.set(row.id,questionEvidence?questionEvidenceDecision(reviewed,row.answerFit):reviewed);
   if(incremental)for(const fact of related)seen.add(fact.id);
  }
  const owned=brandPublisherHosts(brief.website,packet);
@@ -1033,7 +1058,8 @@ export function scopedEvidence(brand,plan,rounds){
   const executed=new Set((round.commandResults||[]).filter(c=>c.status==='executed').map(c=>c.id));
   return (round.receipts||[]).filter(r=>retainedReceipts.has(r)&&researchAttempted(r,executed.has(r.id))).map(r=>r.id);
  }));
- const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,row]));
+ const checked=new Map(rounds.flatMap(r=>r.decisions||[]).map(row=>[row.id,
+  plan.questionEvidence?questionEvidenceDecision(row,row.answerFit):row]));
  const sourceReads=new Map();
  const completedLookups=new Set();
  if(taskReporting)for(const receipt of receipts){

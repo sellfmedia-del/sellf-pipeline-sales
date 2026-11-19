@@ -3,7 +3,7 @@ import {backgroundBhsEnabled,createBhsJobStore} from './job-store.mjs';
 import {createSequentialProviders} from './sequential-providers.mjs';
 import {runClaimedBhsStage} from './background-runner.mjs';
 import {runBoundedStage,stageKey} from './direct-research.mjs';
-import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {meteredBhsStage,shortResearchReservationKurus,workerInfraReservationKurus,useShortResearchWindow,workerInfrastructureKey} from './job-infrastructure.mjs';
 import {createEvidenceCollector} from './evidence.mjs';
 import {BudgetError} from '../budget/ledger.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
@@ -12,15 +12,28 @@ import {createSupervisedReadiness} from './supervised-readiness.mjs';
 import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages,scopedRounds} from './collection-first.mjs';
 import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
+import {brandDiscoveryNeedsWork} from './brand-review-state.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
  const {providers}=options;
  const scopedJob={...job,...(options.scopedRoundIndex===undefined?{}:{scopedRoundIndex:options.scopedRoundIndex})};
  if(job.phase==='report_draft'&&providers.managedBudgetVersion>=18&&providers.collectionFirst){
   if(options.scopedRoundIndex===undefined)return runStage(options);
+  // A settled balance can select a different envelope on reconnect. Keep the
+  // already-funded mode authoritative; changing modes cannot authorize replay.
+  const [fullReceipt,shortReceipt]=await Promise.all([
+   options.ledger.get?.(workerInfrastructureKey(scopedJob)),options.ledger.get?.(workerInfrastructureKey(scopedJob,true))
+  ]);
+  if(fullReceipt||shortReceipt)return meter({job:scopedJob,ledger:options.ledger,shortResearch:!fullReceipt,
+   run:()=>runStage(options)});
   const {chargedKurus}=await options.ledger.status();
   const remaining=options.phaseCeiling-chargedKurus;
-  if(remaining>=shortResearchReservationKurus&&remaining<workerInfraReservationKurus&&providers.withExecutionWindow){
+  // This is a free ledger/tariff lookup, without actor discovery or a provider
+  // call. A 3.10 TRY balance must not be consumed by a 3 TRY worker reservation
+  // while the bounded short worker plus a targeted call would fit.
+  const quotes=providers.withExecutionWindow&&remaining>=workerInfraReservationKurus?
+   (await providers.researchCapacity?.({includeActors:false}))?.quotes:undefined;
+  if(providers.withExecutionWindow&&useShortResearchWindow(remaining,quotes)){
    // The network window leaves time for PDF parsing and durable receipts
    // inside the smaller worker envelope. Renderer work stays in full turns.
    const now=providers.now||Date.now,deadline=now()+55000;
@@ -62,6 +75,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   const adaptiveBrand=options.providers.managedBudgetVersion>=10&&phaseIndex>0&&phaseIndex<=sequentialPhases.indexOf('brand');
   if(adaptiveBrand){
    const prior=(await options.ledger.get(stageKey(options.brief,sequentialPhases[phaseIndex-1],options.researchVersion,options.checkpointHash)))?.value;
+   if(options.providers.managedBudgetVersion>=24&&job.phase!=='brand'&&prior?.brandDiscovery&&!brandDiscoveryNeedsWork(prior))return runStage(options);
    if(job.phase==='brand'?prior?.brandUnderstanding:prior?.brandDiscovery&&!prior.brandDiscovery.done)freePhases.delete(job.phase);
    else return runStage(options);
   }

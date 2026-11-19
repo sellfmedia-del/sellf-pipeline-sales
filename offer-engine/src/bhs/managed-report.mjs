@@ -9,6 +9,7 @@ import {numericEvidence,supportedNumbers} from './numeric-evidence.mjs';
 import {evidenceGeographySupported,marketMeasureNeed,marketObservationSupported} from './scoped-market.mjs';
 import {qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
 import {salesGapLabels,salesGapStatus,salesMetricName,salesSectionTitle,salesTaskSectionTitle} from './sales-research-labels.mjs';
+import {writeBoundedScopedParts} from './scoped-report-parts.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -245,6 +246,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
   usedInput:input,data:buyerIds.size?{...data,findings:list(data.findings).filter(row=>!row.needIds?.some(id=>buyerIds.has(id))&&
    !row.proof.some(proof=>structuredProofs.has(proof)))}:data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
+ if(input.plan.sectionedSynthesis&&input.plan.boundedReportParts)return writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures});
  if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,
   independentParts:input.plan.reportRecovery===true});
  try{

@@ -1,6 +1,7 @@
 import {isReadEvidence} from './research-content.mjs';
 import {researchHost,researchUrl} from './research-url.mjs';
 import {brandPublisherHosts} from './brand-publishers.mjs';
+import {buyerNeed} from './buyer-procurement.mjs';
 
 export const comparisonFields=Object.freeze({
  sku:'SKU',pieces:'Parça adedi',footprint:'Kapladığı alan',age:'Hedef yaş',
@@ -8,6 +9,36 @@ export const comparisonFields=Object.freeze({
 });
 export const productComparisonPlanInstruction='Briefteki hedef belirli bir ürün, model veya paket üzerinden değerlendirilecekse comparisonProduct alanında ürün adını aynen koru. Önce reference göreviyle markanın kendi ürün sayfasından ürün sınıfı, kullanım biçimi ve hedef alıcıyı doğrula. publisherSources içindeki bilinen ürün bağlantılarını kullan; ilgili ürün sayfası henüz bulunmadıysa ürünün tam adı ve doğrulanmış resmî alan adıyla tek dar arama seç. Hakkımızda, kategori veya genel marka sayfasını tekil ürün doğrulaması sayma. Unconfirmed alan adı önce kurumsal kaynakla doğrulanacak adaydır. Ürün sınıfını belirleme işine tüm fiyat, yaş, ölçü ve teslimat alanlarını zorunlu olarak yükleme; teklif için gerekli diğer alanları ayrıca seç ve bilinmeyeni açık bırak. Ürün sınıfı belirlenmeden rivals fiyat veya rakip sorgusu açma. Sonraki rivals görevinde genel kategori yerine aynı ihtiyaca, ürün formuna, alıcıya ve hedef pazara göre yakın ürünleri ara. Geniş ürün ailesi, genel ekipman veya komşu kategoriyi dolaylı alternatif olarak ayır. Ürüne özel araştırma yoksa comparisonRole none ve comparisonProduct boş olsun.';
 export const productComparisonReviewInstruction='Ürüne özel kıyasta reference görevinin doğrudan okunmuş marka kaynağına dön. Karşılaştırılan aynı ihtiyacı, ürün formunu, hedef alıcıyı ve pazarı koru. Bir direct kayıt için productMatch içinde kendi referans ürünü ile rakibin tekil ürün sayfasına ait proof kimliklerini ve iki sayfadaki ürün sınıfı ifadelerini aynen ver. URL rakibin okunan ürün sayfası olmalı. İki ürün için SKU, parça adedi, gerçekten kapladığı alan, hedef yaş, liste fiyatı, KDV ve teslimatı referenceFields ve candidateFields içinde ayrı topla. Her değer ilgili varyantın kendi sayfasındaki özgün ifadeyi ve proof kimliğini taşısın. Birleşik Krallık fiyatında açık GBP veya £ işareti gereklidir. Parça ölçüsünü toplam alan diye yazma. Katalog, eksik kanıt ve genel duyusal oda ekipmanı doğrudan muadil sayılmaz. Dolaylı alternatifi related olarak sakla. Bilinmeyen alanı doldurma.';
+export const productComparisonRoleInstruction='Görevin başlığı rakip araştırması ve comparisonProduct doluysa comparisonRole rivals olmalı; none bırakma. Markanın referans ürünü için reference kullan. Satın alma karar vericisi gibi bağımsız sorulara ürün kıyası rolü yükleme.';
+export const productComparisonContinuationInstruction=productComparisonRoleInstruction+' sourceReadFailures içindeki URL için okuma çalışmış fakat kullanılabilir kaynak metni alınamamıştır; bu durum ürünün bulunmadığını veya rakip araştırmasının bittiğini göstermez. Aynı sorunun knownUrls ve findings içindeki diğer gözlemlenmiş aday ürün sayfalarını değerlendir. Sıradaki uygun sayfayı aynı ihtiyaç kimliğiyle read komutuna ver; gereksiz yeni arama satın alma. Ürün sınıfı, ürün formu, hedef alıcı, pazar, fiyat bandı ve satış kanalı ölçütlerini koru. Bir adayın okunamaması, bu ölçütleri gevşetme gerekçesi değildir. Okunan ama uygun olmayan ürünü direct yapma; aday veya dolaylı alternatif olarak ayır. Uygun gözlemlenmiş aday kalmadıysa aynı soruya yönelik tek dar sorguyu kendin seç. Daha önce uygulanmış okumayı tekrar etme. Sıradaki adayın seçimi sana aittir; kod otomatik rakip veya araştırma görevi üretmez.';
+
+// Reconcile the two labels the controller already supplied. This does not
+// invent a product, infer a reference product or choose a competing company.
+export function coherentComparisonRole(need){
+ const role=typeof need.comparisonRole==='string'?need.comparisonRole.trim():need.comparisonRole||'none';
+ return role==='none'&&typeof need.comparisonProduct==='string'&&need.comparisonProduct.trim()&&
+  !(typeof need.buyerSegment==='string'&&buyerNeed(need))&&
+  /rakip|rekabet|competit|rival/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '))?'rivals':role;
+}
+
+export function unreadableComparisonSources(needs,receipts){
+ const relevant=new Set(needs.filter(n=>n.comparisonProduct&&['reference','rivals'].includes(n.comparisonRole)&&!buyerNeed(n)).map(n=>n.id));
+ const reads=new Map();
+ const remember=(id,raw,readable)=>{
+  const url=researchUrl(raw);if(!url)return;
+  if(!reads.has(id))reads.set(id,new Map());
+  reads.get(id).set(url,readable);
+ };
+ for(const receipt of receipts){
+  if(!relevant.has(receipt.id))continue;
+  for(const row of receipt.sourceReads||[])if(typeof row.readable==='boolean')remember(receipt.id,row.url,row.readable);
+  for(const fact of receipt.facts||[])if(isReadEvidence(fact))remember(receipt.id,fact.url,true);
+ }
+ return [...reads].flatMap(([id,urls])=>{
+  const failed=[...urls].filter(([,readable])=>!readable).map(([url])=>url);
+  return failed.length?[{id,urls:failed}]:[];
+ });
+}
 
 const fold=value=>String(value||'').normalize('NFKD').toLowerCase().replace(/\p{M}/gu,'').replaceAll('ı','i').replace(/\s+/gu,' ').trim();
 const words=value=>fold(value).replace(/[^\p{L}\p{N}]+/gu,' ').trim();
