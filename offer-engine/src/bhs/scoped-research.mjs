@@ -13,6 +13,7 @@ import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productC
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
+import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -33,7 +34,8 @@ const orderedPlanSchema=obj({needs:arr(orderedNeedSchema,planSchema.properties.n
 const factSchema=obj({proof:text(12),quote:str(420),item:text(180)});
 const workerSchema=obj({results:arr(obj({id:text(20),facts:arr(factSchema,12),nextQuery:str(340)}),6)});
 const evidenceReviewSchema=obj({decisions:arr(obj({id:text(20),sufficient:{type:'boolean'},proofs:arr(text(28),8),read:str(28),nextQuery:str(340)}),3)});
-const commandSchema=obj({id:text(20),tool:text(90),query:str(340),url:str(2048),mode:{type:'string',enum:['default','posts','profile','reviews','engagement']},limit:number(1,12)});
+const commandDecisionsSchema=arr(obj({key:text(64),action:{type:'string',enum:['cancel','replace']},reason:text(180)}),4);
+const withCommandDecisions=schema=>({...schema,properties:{...schema.properties,commandDecisions:commandDecisionsSchema}});
 const reviewSchema=obj({approve:{type:'boolean'},newNeeds:arr(needSchema,12),
  decisions:arr(obj({id:text(20),sufficient:{type:'boolean'},proofs:arr(text(28),24)}),48),commands:arr(commandSchema,16),peers:arr(obj({name:text(100),url:text(2048),product:text(160),market:text(110),priceBand:str(110),channel:str(110)}),10)});
 const orderedReviewSchema=obj({...reviewSchema.properties,newNeeds:arr(orderedNeedSchema,12),commands:arr(commandSchema,1)});
@@ -103,7 +105,7 @@ function reviewProofs(ids,sources,readEvidenceOnly){
   ...(readEvidenceOnly?{unread:selected.find(f=>f.method==='search-snippet')?.url}:{})
  };
 }
-const commandSignature=c=>hash([c.id,c.tool,compact(c.query).toLocaleLowerCase('tr'),researchUrl(c.url),c.mode,c.limit]);
+const commandSignature=researchCommandKey;
 const defaultTools=['tavily','gemini'];
 const defaultConcurrency=3;
 const errors=new Set(['budget_limit','budget_pending','budget_uncertain','input_budget','not_configured','model_budget','fx_limit','fx_unavailable','tariff_expired','quota','incomplete','invalid_report','token_count','model_deadline','claude_spend_limit','cancelled']);
@@ -597,8 +599,14 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const queryAllowed=scope?(need,query)=>queryWithinBrief(plan,need,query):undefined;
  let facts=receiptFacts(receipts,readEvidenceOnly);
  const checked=new Map(rounds.flatMap(round=>round.decisions||[]).map(row=>[row.id,row]));
+ const queryIdentity=(id,query)=>JSON.stringify([id,compact(query).toLocaleLowerCase('tr')]);
+ const supersededQueries=new Set(rounds.flatMap(round=>round.commandResults||[])
+  .filter(row=>['cancelled','replaced'].includes(row.status)&&row.query?.trim()).map(row=>queryIdentity(row.id,row.query)));
+ const supersededCommands=new Set(rounds.flatMap(round=>round.commandResults||[])
+  .filter(row=>['cancelled','replaced'].includes(row.status)).map(row=>row.key||commandSignature(row)));
  const dispatchable=need=>withinBrief(plan,need)&&(buyerNeed(need)||!plan.focusedProductComparison||comparisonCanStart(need,priorNeeds,facts,checked,brief.website,packet));
- const keepOpen=options=>keepResearchOpen({...options,needs:options.needs.filter(dispatchable),readerBlocked,readerWasBlocked,queryAllowed});
+ const keepOpen=options=>keepResearchOpen({...options,needs:options.needs.filter(dispatchable),readerBlocked,readerWasBlocked,
+  queryAllowed:(need,query)=>(!queryAllowed||queryAllowed(need,query))&&!supersededQueries.has(queryIdentity(need.id,query))});
  const seen=new Set(rounds.flatMap(round=>round.reviewedProofIds||[]));
  const reviewedBefore=new Set(seen);
  const qualifyPeers=(peers,needs=priorNeeds)=>plan.focusedProductComparison?qualifyProductPeers(peers,needs,facts,checked,brief.website,packet):peers;
@@ -620,7 +628,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(readerBlocked?{sourceReaderIssue:'source_plan_invalid'}:{})
  });
  if(ordered&&!last&&providers.managedBudgetVersion>=15){
-  const openingArgs={plan,receipts,providers:acquisition,readerBlocked,dispatchable:need=>dispatchable(need)&&open(need)};
+  const openingArgs={plan,receipts,providers:acquisition,readerBlocked,dispatchable:need=>dispatchable(need)&&open(need)&&
+   !supersededQueries.has(queryIdentity(need.id,need.query))};
   const opening=await openingSearchPlan(openingArgs);
   if(opening){
    const results=(await runScopedDefaults(opening.selected,opening.pool,readPages)).map(result=>{
@@ -682,13 +691,50 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
     {referenceProof:'',candidateProof:'',referenceClass:'',candidateClass:'',referenceFields:[],candidateFields:[]}}))}:{})}:data;
  const reviewOptions=targeted&&capacity?.minimumDefaultKurus?{reserveForFollowingKurus:capacity.minimumDefaultKurus}:{};
  const alreadyRead=(id,url)=>history.some(r=>r.id===id&&r.tool==='read'&&researchUrl(r.url)===researchUrl(url)&&r.status==='executed');
+ const commandKey=targeted?commandSignature:c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
+ const queueEnabled=targeted&&ordered;
+ const savedState=c=>{
+  const need=priorNeeds.find(n=>n.id===c.id&&inScope(n));
+  if(!need||!open(need))return 'need_unavailable';
+  if(scope&&(!queryAllowed(need,c.query)||c.url&&!urlAllowed(need,c.url)))return 'brief_scope_mismatch';
+  if(!dispatchable(need))return 'waiting_reference';
+  if(attempted.has(commandKey(c))||c.tool==='read'&&alreadyRead(c.id,c.url))return 'duplicate';
+  const tool=c.tool==='default'?need.first:c.tool;
+  if(defaultTools.includes(tool)&&priorSearchAttempt(receipts,c.id,c.query,tool))return 'duplicate';
+  if(readerBlocked&&c.tool==='read')return 'source_plan_invalid';
+  return c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
+ };
+ const replayAvailable=c=>{
+  if(capacity?.workerBudgetExhausted)return false;
+  if(c.tool==='read')return !readerBlocked;
+  const need=priorNeeds.find(n=>n.id===c.id),tool=c.tool==='default'?need?.first:c.tool;
+  return defaultTools.includes(tool)?available(tool):actors.includes(tool);
+ };
+ const retired=[];
+ const retiredRecord=(c,state)=>({...c,status:state,reason:state==='duplicate'?'recorded_attempt_exists':
+  state==='need_unavailable'?priorNeeds.some(n=>n.id===c.id&&inScope(n))?'need_satisfied':'need_removed_or_out_of_scope':state});
+ let queued=queueEnabled?queuedResearchCommands(history).filter(c=>{
+  const state=savedState(c);
+  if(!state||state==='waiting_reference')return true;
+  retired.push(retiredRecord(c,state));return false;
+ }):[];
+ const queuedRecord=c=>{
+  const need=priorNeeds.find(n=>n.id===c.id),tool=c.tool==='default'?need?.first:c.tool;
+  const reason=savedState(c)||(capacity?.workerBudgetExhausted?'budget_limit':
+   defaultTools.includes(tool)?blocker(tool):c.tool!=='read'&&!actors.includes(c.tool)?'actor_unavailable':null);
+  return {...c,status:reason||'not_dispatched',reason:reason||'ordered_turn'};
+ };
+ const recordQueue=result=>!queueEnabled||!retired.length&&!queued.length?result:{...result,
+  commandResults:uniqueBy([...retired,...queued.map(queuedRecord),...(result.commandResults||[])],c=>c.key||commandKey(c))};
+ const replayCommand=()=>queued.find(c=>!savedState(c)&&replayAvailable(c));
  const recoverReview=async issue=>{
   if(!incremental)return {...await keepOpen({needs:priorNeeds.filter(open),receipts,providers:acquisition,readPages,issue,ordered,targeted,focus:followUp()}),...proofCheckpoint()};
   const added=[];
   const commandResults=[];
   let check=await checkNew();
   const need=!last&&!readerBlocked&&!capacity?.workerBudgetExhausted&&priorNeeds.find(n=>dispatchable(n)&&open(n)&&checked.get(n.id)?.read&&
-   urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read));
+   urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read)&&
+   !supersededCommands.has(commandKey({id:n.id,tool:'read',query:'',url:checked.get(n.id).read,mode:'default',limit:1})));
   if(need){
    const url=checked.get(need.id).read;
    const command={id:need.id,tool:'read',query:'',url,mode:'default',limit:1};
@@ -717,9 +763,19 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   if(!priorNeeds.some(open))return {...saved(),approved:true,stopReason:'evidence_confirmed',receipts:updated};
   return {...saved(),...continuation,receipts:updated};
  };
- if(targeted&&guarded&&!last&&!readerBlocked&&['budget_limit','input_budget','provider_unavailable','not_configured','tariff_expired'].includes(latest?.issue))
-  return recoverReview(latest.issue);
- const result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
+ const recoverableIssue=targeted&&guarded&&!last&&!readerBlocked&&
+  ['budget_limit','input_budget','provider_unavailable','not_configured','tariff_expired'].includes(latest?.issue)?latest.issue:null;
+ let replayedIssue,result;
+ if(recoverableIssue){
+  const saved=replayCommand();
+  if(!saved)return recordQueue(await recoverReview(recoverableIssue));
+  replayedIssue=recoverableIssue;
+  result={value:{approve:false,newNeeds:[],decisions:[],commands:[saved],peers:[]}};
+ }
+ const responseContract=queueEnabled&&queued.length?withCommandDecisions(reviewContract):reviewContract;
+ const groupedContract=useMeasurements?withMeasurementGroups(reviewContract,'newNeeds'):reviewContract;
+ const outputContract=queueEnabled&&queued.length?withCommandDecisions(groupedContract):groupedContract;
+ if(!result)result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
   identity,briefUnderstanding:scope?{understanding:briefUnderstanding?.understanding}:briefUnderstanding,asOf:packet.asOf,
   ...(plan.focusedProductComparison?{publisherSources:brandProductSources(brief.website,packet)}:{}),
   needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
@@ -730,10 +786,13 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
   previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,
    nextQuery:r.nextQuery,...(r.toolRouting?{toolRouting:r.toolRouting}:{}),...(!targeted?{urls:r.urls}:{})})),
-  ...(targeted?{commandHistory:uniqueBy(history,r=>r.key).map(({key,...r})=>r)}:{}),
+  ...(targeted?{commandHistory:uniqueBy([...history,...retired],r=>r.key||commandKey(r))
+   .filter(r=>!queued.some(c=>c.key===(r.key||commandKey(r)))).map(({key,...r})=>r)}:{}),
+  ...(queueEnabled&&queued.length?{pendingCommands:queued}:{}),
   instruction:'Dördüncü adım. Dönen bütün kaynakları doğru ürün, pazar, metrik ve dönem bakımından değerlendir. Proof kimlikleri ile geçerli kanıtları seç. Önceki geçerli kararları tekrar yazma. Her farklı öğeyi bir kez say. Numune sayısı ile metriğin yeterliliğini ayırt et. Tavily alıntısı doğrulama için yetersizse, özellikle rakibin kendi ürün sayfası için, commands içinde read aracına gözlemlenmiş URL’yi ver. Ek arama için tavily veya gemini aracına net sorgu ve limit ver. Varsayılan araçlar yeterliyse scraper çağırma. Yetersizse yalnız açık ihtiyaç için uygun scraper, gözlemlenen URL veya hedefli sorgu, mod ve örneklemi seç. Önceki çağrıyı tekrarlama. Bir sonraki ihtiyaç ortaya çıktıysa newNeeds ile ekle. Rakipleri ürün, pazar, fiyat bandı ve kanalla karşılaştır. Peers alanında kaynaklı adayları ve özgün ürün URL’sini göster. last doğruysa yeni komut ekleme. Bütün görevler tamamlandı ve kanıt yeterliyse approve true. Ticari teşhisi beşinci adıma bırak.'+
    (!guarded?' Kalan araştırma faydasızsa yeni komut ekleme ve boşlukları açık bırak.':'')+
    (ordered?' Bu turda yalnız tek bir sonraki işi seç. Önce son emrin sonucuna bak; ona bağlı iş ve sorguyu şimdi belirle. Bir araç hata verdiyse veya metrik için veri yetersizse sıradaki uygun aracı kendin seç. Yeni ihtiyaçları öncelik sırasıyla kaydet. Bir sonraki çağrı için genel araştırma verme; tek metrik, hedef, dönem ve gerekli en küçük örneklemi belirt.':'')+
+   (queueEnabled&&queued.length?' pendingCommands önceki turda verdiğin ancak henüz uygulanmamış emirlerdir. Hâlâ gerekli emri commands içinde seçebilirsin; seçmediğin emir kuyrukta korunur. Artık gerekmeyen emri commandDecisions içinde key, cancel ve somut reason ile iptal et. Aynı sorunun emrini değiştireceksen replace ve reason yazıp yeni emri commands içine koy. Bekleyen emri uygulandı sayma. Yeni emir vermezsen uygulanabilir en eski emrin kayıtlı parametreleri korunarak çalıştırılabilir.':'')+
    ' Her ihtiyacın yeterli olup olmadığına sufficient alanında sen karar ver; örneklem sayısını bulgu kotası olarak kullanma. Uygun bir ihtiyacın kanıtı Gemini ve Tavily birlikte denendikten sonra hâlâ yetersizse scraper kullan. missingDefaults varsa o iş için önce oradaki varsayılan aracı hedefli bir emirle çağır. Seçilen scraper istenen dönem, mod veya kayıt sayısını desteklemiyorsa talebi genişletmeden uygun bir başka araç seç. waitingNeeds planlanıp henüz çalıştırılmamış işlerdir. Hâlâ gereklilerse commands alanında aracı ve net sorguyu seç.'+
    (guarded?' Bilgi eksikse ve yeni bir araştırma çağrısı bütçeye sığıyorsa yazıma geçme. Açık kalan ölçüm için önceki çağrılardan farklı, uygulanabilir bir sonraki hedefli sorguyu seç. Bir komutun çalışmaması veya hiç komut üretmemek araştırmayı bitirme gerekçesi değildir. approve ancak bütün açık ihtiyaçlar kaynakla karşılandığında true olabilir.':'')+
    (plan.qualityReport?' Bir rakip ihtiyacını ancak rakibin kendi sitesinden okunmuş ilgili ürün veya satış kanalı kanıtıyla yeterli say. Arama alıntısında aday bulunmuşsa gözlemlenen ürün sayfasını read ile aç. Adayı peers alanına ekle. Aynı metriğe tekrar dönmeden önce henüz çalışılmamış gerekli ihtiyaçları değerlendir.':'')+
@@ -749,9 +808,14 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (scopedMarket?' '+marketMeasureInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
- },useMeasurements?withMeasurementGroups(reviewContract,'newNeeds'):reviewContract,last?1150:1700,
- useMeasurements?{...reviewOptions,normalizeData,responseSchema:reviewContract}:reviewOptions);
- if(!result.value&&guarded)return recoverReview(result.issue||'research_clearance_unavailable');
+ },outputContract,last?1150:1700,
+ useMeasurements?{...reviewOptions,normalizeData,responseSchema:responseContract}:reviewOptions);
+ if(!result.value&&guarded){
+  const saved=!last&&replayCommand();
+  if(!saved)return recordQueue(await recoverReview(result.issue||'research_clearance_unavailable'));
+  replayedIssue=result.issue||'research_clearance_unavailable';
+  result={value:{approve:false,newNeeds:[],decisions:[],commands:[saved],peers:[]}};
+ }
  if(!result.value)return {issue:result.issue||'research_clearance_unavailable',
   ...(['budget_limit','input_budget','provider_unavailable','claude_spend_limit','not_configured'].includes(result.issue)?{closed:true}:{})};
  const data=result.value;
@@ -780,29 +844,47 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const decisions=[...checked.values()];
  const openNeeds=priorNeeds.filter(open);
  const actionable=(ordered?[...openNeeds,...newNeeds]:openNeeds).filter(dispatchable);
- const commandKey=targeted?commandSignature:c=>hash([c.id,c.tool,c.query,c.url,c.mode,c.limit]);
  const commandState=c=>{
-  const need=actionable.find(n=>n.id===c.id&&inScope(n));
+  const need=[...openNeeds,...newNeeds].find(n=>n.id===c.id&&inScope(n));
   if(!need)return 'need_unavailable';
   if(scope&&(!queryAllowed(need,c.query)||c.url&&!urlAllowed(need,c.url)))return 'brief_scope_mismatch';
+  if(!dispatchable(need))return 'waiting_reference';
   if(readerBlocked&&c.tool==='read')return 'source_plan_invalid';
   if(attempted.has(commandKey(c))||targeted&&c.tool==='read'&&alreadyRead(c.id,c.url))return 'duplicate';
   return c.tool==='read'&&!knownUrls.includes(researchUrl(c.url))?'unknown_url':null;
  };
+ if(queueEnabled){
+  const updated=decideQueuedCommands(queued,data.commandDecisions,data.commands,c=>!commandState(c));
+  queued=updated.pending.filter(c=>{
+   const state=savedState(c);
+   if(!state||state==='waiting_reference')return true;
+   retired.push(retiredRecord(c,state));return false;
+  });
+  retired.push(...updated.events);
+  for(const event of updated.events){
+   supersededCommands.add(event.key);
+   if(event.query.trim())supersededQueries.add(queryIdentity(event.id,event.query));
+  }
+ }
  const proposedWork=data.commands.length>0||data.newNeeds.length>0;
  const pendingWork=scope?newNeeds.length>0||data.commands.some(c=>!commandState(c)):proposedWork;
  const approved=(data.approve||Boolean(scope&&proposedWork&&!pendingWork))&&!pendingWork&&
   (readEvidenceOnly?!openNeeds.some(inScope):!guarded||!openNeeds.length);
- if(last||approved)return {approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),...proofCheckpoint(),
-  ...(approved&&guarded?{stopReason:'evidence_confirmed'}:{}),...(!approved?{issue:'research_needs_open'}:{})};
- const suggestedRead=readEvidenceOnly&&!readerBlocked&&openNeeds.find(n=>dispatchable(n)&&inScope(n)&&checked.get(n.id)?.read&&
-  urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read));
+ if(last||approved)return recordQueue({approved,decisions,peers,openNeeds:openNeeds.map(n=>n.id),...proofCheckpoint(),
+  ...(approved&&guarded?{stopReason:'evidence_confirmed'}:{}),...(!approved?{issue:'research_needs_open'}:{})});
+ const suggestedRead=!replayedIssue&&readEvidenceOnly&&!readerBlocked&&openNeeds.find(n=>dispatchable(n)&&inScope(n)&&checked.get(n.id)?.read&&
+  urlAllowed(n,checked.get(n.id).read)&&!alreadyRead(n.id,checked.get(n.id).read)&&
+  !supersededCommands.has(commandKey({id:n.id,tool:'read',query:'',url:checked.get(n.id).read,mode:'default',limit:1})));
  const readUrl=suggestedRead&&checked.get(suggestedRead.id).read;
  const readCommand=suggestedRead&&!data.commands.some(c=>c.id===suggestedRead.id&&c.tool==='read'&&researchUrl(c.url)===readUrl)?
   {id:suggestedRead.id,tool:'read',query:'',url:readUrl,mode:'default',limit:1}:null;
- const proposedCommands=readCommand?[...data.commands.filter(c=>c.tool==='read'),readCommand,...data.commands.filter(c=>c.tool!=='read')]:data.commands;
+ const currentCommands=readCommand?[...data.commands.filter(c=>c.tool==='read'),readCommand,...data.commands.filter(c=>c.tool!=='read')]:data.commands;
+ const cancelledKeys=new Set(retired.filter(c=>['cancelled','replaced'].includes(c.status)).map(c=>c.key));
+ const proposedCommands=queueEnabled?uniqueBy([...currentCommands,...queued].filter(c=>!cancelledKeys.has(commandKey(c))),commandKey):currentCommands;
  const pendingCommands=uniqueBy(proposedCommands.filter(c=>targeted||scope?!commandState(c):!attempted.has(commandKey(c))),commandKey);
- const commands=ordered?pendingCommands.slice(0,1):pendingCommands;
+ const queuedKeys=new Set(queued.map(c=>c.key)),currentKeys=new Set(currentCommands.map(commandKey));
+ const eligible=pendingCommands.filter(c=>!queuedKeys.has(commandKey(c))||currentKeys.has(commandKey(c))||replayAvailable(c));
+ const commands=ordered?eligible.slice(0,1):pendingCommands;
  const requests=ordered?[]:newNeeds.filter(dispatchable);
  const used=[];
  const searchRoutes=new Map();
@@ -891,10 +973,25 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   nextQueries:checked,focus:focusedCommand||followUp()}):{closed:guarded?false:!next.length,issue};
  const {receipts:extra=[],...completion}=continuation;
  const followUpCheck=await checkBeforeWorkerEnds([...next,...extra],[...priorNeeds,...newNeeds]);
- return {approved:false,decisions:followUpCheck.decisions?[...checked.values()]:decisions,peers,newNeeds,receipts:[...next,...extra],commandKeys:used.map(commandKey),...completion,...proofCheckpoint(),
+ const noDispatch=new Set(['budget_limit','input_budget','model_budget','not_configured','fx_limit','fx_unavailable','tariff_expired',
+  'actor_budget_limit','actor_limit_unverified','actor_source_unverified']);
+ const dispatchIssue=c=>{
+  if(c.tool==='read')return null;
+  const need=actionable.find(n=>n.id===c.id),tool=c.tool==='default'?need?.first:c.tool;
+  const attempts=next.filter(r=>r.id===c.id&&(!defaultTools.includes(tool)||!c.query.trim()||compact(r.query)===compact(c.query)))
+   .flatMap(r=>r.attempts||[]).filter(a=>a.tool===tool);
+  return attempts.length&&attempts.every(a=>noDispatch.has(a.issue))?attempts[0].issue:null;
+ };
+ return recordQueue({approved:false,decisions:followUpCheck.decisions?[...checked.values()]:decisions,peers,newNeeds,receipts:[...next,...extra],
+  commandKeys:used.filter(c=>!queueEnabled||!dispatchIssue(c)).map(commandKey),...completion,...proofCheckpoint(),
+  ...(replayedIssue&&!completion.closed?{issue:replayedIssue}:{}),
   ...(followUpCheck.issue||omitted.issue?{evidenceReviewIssue:followUpCheck.issue||omitted.issue}:{}),
-  ...(targeted?{commandResults:proposedCommands.map(c=>({...c,key:commandKey(c),status:readerBlocked&&c.tool==='read'?'source_plan_invalid':used.includes(c)?'executed':routingStatus.get(c)||commandState(c)||'not_dispatched'}))}:{}),
-  actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)};
+  ...(targeted?{commandResults:proposedCommands.map(c=>{
+   const status=readerBlocked&&c.tool==='read'?'source_plan_invalid':used.includes(c)?queueEnabled&&dispatchIssue(c)||'executed':
+    routingStatus.get(c)||(queuedKeys.has(commandKey(c))?queuedRecord(c).status:commandState(c))||'not_dispatched';
+   return {...c,key:commandKey(c),status,...(queueEnabled?{reason:status==='not_dispatched'?
+    replayAvailable(c)?'ordered_turn':'tool_unavailable':status}:{})};
+  })}:{}),actorTargets:scraped.map(s=>s.actorTarget).filter(Boolean)});
 }
 
 function countProofs(need,proofs=[],facts){
