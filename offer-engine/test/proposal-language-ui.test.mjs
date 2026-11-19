@@ -5,10 +5,10 @@ import path from 'node:path';
 import {chromium as playwright} from 'playwright-core';
 import chromium from '@sparticuz/chromium';
 
-test('desktop/mobile show both proposal languages independently of currency, including interactive sections and email form',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+test('desktop/tablet/mobile show both proposal languages independently of currency, including interactive sections and email form',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const browser=await playwright.launch({args:chromium.args.filter(a=>!['--disable-web-security','--single-process'].includes(a)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
- try{for(const width of [1280,390]){
-  const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ try{for(const width of [1280,834,390]){
+  const page=await browser.newPage({viewport:{width,height:900},hasTouch:width===834}),errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');try{const file=path.join(process.cwd(),'public',u.pathname);await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.css':'text/css'}[path.extname(file)],body:await readFile(file)});}catch{await route.fulfill({status:404,body:'Missing fixture'});}});
   await page.goto('https://preview.vercel.app/offers/language-review.html');
   for(const language of ['tr','en'])for(const currency of ['TRY','USD']){
@@ -31,11 +31,15 @@ test('desktop/mobile show both proposal languages independently of currency, inc
       value:en?'Approval by the manager':'Yönetici onayı',sourceIds:['buyer-fixture']},
      hypothesis:en?'Test the approvals in a pilot.':'Onay sürecini pilotta sınayın.'
     }]};
-    doc.bhs.sources.push({id:'plan-fixture',title:en?'Product specification':'Ürün özellikleri',url:'https://synthetic.example/specification'});
+    doc.bhs.sources.push({id:'plan-fixture',title:en?'Product specification':'Ürün özellikleri',url:'https://synthetic.example/specification'},
+     {id:'plan-duplicate',title:'Duplicate source',url:'https://synthetic.example/specification?utm_source=research#section'});
+    doc.bhs.findings.push({id:'plan-observation',kind:'observation',statement:en?'The set specification describes the age range.':'Ürün özelliklerinde yaş aralığı açıklanıyor.',sourceIds:['plan-fixture','plan-duplicate']});
     doc.plans[doc.recommendedAlternativeId].steps=[{time:en?'Step 1':'Adım 1',
      title:en?'Prepare the nursery enquiry page.':'Kreş talep sayfasını hazırla.',
      measurement:en?'Check that a trial enquiry is recorded.':'Deneme talebinin kayda geçtiğini kontrol et.',
-     sourceIds:['plan-fixture']}];
+     findingIds:['plan-observation'],sourceIds:['plan-fixture','plan-duplicate']},
+     {time:en?'Step 2':'Adım 2',title:en?'Review the pilot enquiry records.':'Pilot talep kayıtlarını incele.',
+      findingIds:[],sourceIds:['plan-fixture']}];
     PipelineProposal.mount(document.querySelector('#offer'),doc,{offerUrl:'https://preview.vercel.app/brand-teklifi',offerId:'offer1'});
     document.querySelector('#sellf-two-option-offer').addEventListener('click',event=>{if(event.target.closest('a[href^="mailto:"]'))event.preventDefault();});
    },{language,currency});
@@ -44,7 +48,13 @@ test('desktop/mobile show both proposal languages independently of currency, inc
    await page.getByText(en?'Source-backed observation · Independent buyers · England · Approval by the manager · buyer-fixture':
     'Kaynaklı gözlem · Bağımsız alıcılar · İngiltere · Yönetici onayı · buyer-fixture',{exact:true}).waitFor();
    await page.locator('#so-track').getByText(en?'Measure · Check that a trial enquiry is recorded.':'Ölçüm · Deneme talebinin kayda geçtiğini kontrol et.',{exact:true}).waitFor();
-   assert.equal(await page.locator('#so-track a').getAttribute('href'),'https://synthetic.example/specification');
+   assert.equal(await page.locator('#so-track a').count(),0);
+   await page.locator('#so-track .so-step-basis summary').click();
+   await page.locator('#so-track').getByText((en?'The set specification describes the age range.':'Ürün özelliklerinde yaş aralığı açıklanıyor.')+' [1]',{exact:true}).waitFor();
+   assert.equal(await page.locator('#so-track .so-step').nth(1).locator('details').count(),0);
+   await page.locator('#so-plan-sources summary').click();
+   assert.equal(await page.locator('#so-plan-sources a').count(),1);
+   assert.equal(await page.locator('#so-plan-sources a').getAttribute('href'),'https://synthetic.example/specification');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
    await page.locator('#so-request-open').click();
    await page.locator('[name=name]').fill('Jane Smith');await page.locator('[name=email]').fill('jane@example.com');

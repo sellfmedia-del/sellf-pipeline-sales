@@ -150,6 +150,8 @@ test('signed Turkish and English drafts each compose one brief-specific plan on 
    assert.match(steps[2].title,language==='en'?/age group and room size/:/Yaş grubu ve oda büyüklüğüne/);
    assert.match(steps[3].measurement,language==='en'?/enquiry to quote to order/:/Talep, teklif ve sipariş/);
    assert.deepEqual(steps[0].sourceIds,['royal']);
+   assert.deepEqual(steps[0].findingIds,['royal-observation']);
+   assert.deepEqual(steps[1].findingIds,[]);
    assert.equal(result.language||'tr',language);
    assert.equal(codec.decode(res.data.saveProof,session,host,Date.now()).proposalHash,digest(res.data.result));
   }
