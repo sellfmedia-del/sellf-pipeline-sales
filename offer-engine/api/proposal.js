@@ -43,7 +43,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
     if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
     let result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
     const implementation=implementationContext(result.data,brief,body.audit.data,body.pricing.data,plan.mode);
-    let draftCost,draftPlanStatus;
+    let draftCost,draftPlanStatus,draftPlanReview;
     if(language==='en'||implementation){
      let ledger;
      try{
@@ -54,12 +54,14 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
       draftCost=await ledger.begin();
       if(draftCost.capKurus!==draftBudgetCapKurus)throw new BudgetError('draft_budget_unavailable','Bağımsız teklif taslağı bütçesi doğrulanamadı.');
       const providers=getProviders({ledger,pricing:researchTariff});
-      const data=language==='en'?await localizeProposal(result.data,language,{providers,implementation}):
-       await writeImplementation(result.data,implementation,providers);
+      const reviewOptions={onImplementationReview:review=>{draftPlanReview=review;}};
+      const data=language==='en'?await localizeProposal(result.data,language,{providers,implementation,...reviewOptions}):
+       await writeImplementation(result.data,implementation,providers,reviewOptions);
       result={...result,data};
       if(implementation){
-       const completed=data.pricingMode==='monthly'?data.plans.operations_bundle.steps.filter(s=>s.measurement).length:
-        implementation.groups.filter(group=>data.plans[group.id].steps.every(s=>s.measurement)).length;
+       const completed=draftPlanReview?draftPlanReview.groups.filter(group=>['accepted','normalized'].includes(group.status)).length:
+        data.pricingMode==='monthly'?data.plans.operations_bundle.steps.filter(s=>s.measurement).length:
+         implementation.groups.filter(group=>data.plans[group.id].steps.every(s=>s.measurement)).length;
        draftPlanStatus=completed===implementation.groups.length?'brief_linked':completed?'partial':'standard';
       }
       draftCost=await ledger.status();
@@ -70,11 +72,13 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
        error instanceof BudgetError?error.message:'İngilizce teklif taslağı hazırlanamadı. BHS ve fiyatlar hazır.';
       if(language==='en')return res.status(422).json({code:error.code||'translation_unavailable',error:message,...(draftCost?.capKurus===draftBudgetCapKurus?{draftCost}:{})});
       draftPlanStatus??='standard';
+      if(implementation)draftPlanReview={groups:implementation.groups.map(group=>({groupId:group.id,...(group.month?{month:group.month}:{}),
+       status:'rejected',reasons:[{code:error.code==='budget_limit'?'budget_limit':'generation_unavailable'}]}))};
      }
     }
     const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
     return res.status(200).json({phase:'complete',result:envelope,...(draftCost?.capKurus===draftBudgetCapKurus?{draftCost}:{}),
-     ...(draftPlanStatus?{draftPlanStatus}:{}),saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
+     ...(draftPlanStatus?{draftPlanStatus}:{}),...(draftPlanReview?{draftPlanReview}:{}),saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
    }
    if(language!=='tr')throw Error('İngilizce teklif için bütçeli çeviri gerekli.');
    const provider=getProvider();
