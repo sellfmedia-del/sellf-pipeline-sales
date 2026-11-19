@@ -89,7 +89,9 @@ async function scopedDraft(){
  audit.data.sources=[source('royal','https://muffik.example/royal','html'),source('snippet','https://search.example','search-snippet')];
  audit.data.findings=[
   {id:'royal-observation',kind:'observation',dimension:'operations',priority:'high',sourceIds:['royal'],
-   statement:'Royal seti ürün sayfası kullanım yaşı ve oda boyutuna göre set seçimini açıklıyor. Ürün fiyatı £204, normal fiyatı £240.'},
+   statement:'Royal seti ürün sayfası kullanım yaşı ve oda boyutuna göre set seçimini açıklıyor. Ürün fiyatı £204, normal fiyatı £240.',
+   impact:'Hipotez: Yaş ve oda bilgisi, pilot teklif formunu şekillendirebilir. Sınır: Kullanım bilgisi satın alma talebini kanıtlamaz.',
+   goalConnection:'Royal pilotunu talep, teklif ve sipariş kayıtlarıyla değerlendirin.',decisionQuestion:'Talep kaydı CRM sistemine ulaşıyor mu?'},
   {id:'unread-demand',kind:'observation',dimension:'operations',priority:'high',sourceIds:['snippet'],statement:'Kreşlere satış garantili.'}
  ];
  const standard={brief,serviceSelection:{alternatives:[
@@ -119,6 +121,9 @@ test('signed Turkish and English drafts each compose one brief-specific plan on 
    return {generate:async(stage,input,contract,options)=>{
     calls.push(stage);
     assert.deepEqual(input.implementation.findings.map(f=>f.id),['royal-observation']);
+    assert.equal(input.implementation.assessment.priorities[0].analysis,f.audit.data.findings[0].impact);
+    assert.equal(input.implementation.assessment.priorities[0].goalConnection,f.audit.data.findings[0].goalConnection);
+    assert.equal(input.implementation.assessment.priorities[0].question,f.audit.data.findings[0].decisionQuestion);
     assert.ok(!/base64|monthlyAmount|costSnapshot|Kreşlere satış garantili/.test(JSON.stringify(input.implementation)));
     assert.equal(input.implementation.brief.goals,f.brief.goals);
     const english=input.language==='en';

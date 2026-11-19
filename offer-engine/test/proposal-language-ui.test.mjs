@@ -84,6 +84,16 @@ test('desktop/tablet/mobile show both proposal languages independently of curren
   await page.getByText('Teslimat performansını hangi sistemden izliyorsunuz?',{exact:true}).waitFor();
   await page.getByText('Seçili bulguların kaynakları',{exact:true}).click();
   await page.locator('a[href="https://synthetic.example/urun"]').waitFor();
+  await page.goto('https://preview.vercel.app/offers/assessment-review.html');
+  for(const language of ['tr','en']){
+   await page.selectOption('#language',language);const en=language==='en';
+   await page.getByText(en?'Validate enquiry tracking before using pilot results.':'Pilot sonuçlarını kullanmadan önce talep takibini doğrula.',{exact:true}).waitFor();
+   await page.getByText(en?'Decide whether to expand or revise after reviewing recorded pilot enquiries.':'Kayıtlı pilot taleplerini değerlendirdikten sonra genişletme veya revizyon kararı ver.',{exact:true}).waitFor();
+   if(await page.locator('.so-bhs-bar').getAttribute('aria-expanded')!=='true')await page.locator('.so-bhs-bar').click();
+   await page.locator('#so-analysis ol').getByText(en?'Hypothesis: usage information can shape campaign messages. Limitation: product usage information does not establish buyer demand.':'Hipotez: Kullanım bilgisi kampanya mesajını şekillendirebilir. Sınır: Ürün kullanım bilgisi satın alma talebini kanıtlamaz.',{exact:true}).waitFor();
+   await page.getByText(en?'Does a test enquiry reach the CRM record?':'Test talebi CRM kaydına ulaşıyor mu?',{exact:true}).waitFor();
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+  }
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });

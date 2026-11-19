@@ -12,7 +12,7 @@ const translations=[
 ];
 export async function buildLanguageReview(publicDir,{production=false}={}){
  const file=path.join(publicDir,'offers/language-review.html');
- if(production){await rm(file,{force:true});await rm(path.join(publicDir,'offers/plan-evidence-review.html'),{force:true});return;}
+ if(production){await rm(file,{force:true});for(const name of ['plan-evidence-review.html','assessment-review.html'])await rm(path.join(publicDir,'offers',name),{force:true});return;}
  const tr=JSON.parse(await readFile(path.join(publicDir,'examples/proposal.json'),'utf8')).document,map=new Map(translations);
  const en=await localizeProposal(tr,'en',{providers:{async generate(stage,{texts}){return {model:'synthetic-human-reviewed',data:{translations:texts.map(t=>{if(!map.has(t))throw Error('Missing preview translation: '+t);return map.get(t);})}};}}});
  const fx={provider:'TCMB',kind:'ForexSelling',base:'USD',quote:'TRY',rate:44,publishedAt:'2026-11-04',checkedAt:'2026-11-04T08:00:00Z',source:'https://www.tcmb.gov.tr/kurlar/today.xml'};
@@ -39,4 +39,19 @@ export async function buildLanguageReview(publicDir,{production=false}={}){
   ];
  }
  await writeFile(path.join(publicDir,'offers/plan-evidence-review.html'),page(evidenceDocs));
+ const assessmentDocs=structuredClone(evidenceDocs);
+ for(const [language,quotes] of Object.entries(assessmentDocs))for(const doc of Object.values(quotes)){
+  const en=language==='en',event=doc.bhs.findings.find(f=>f.id==='demo-event-observation'),product=doc.bhs.findings.find(f=>f.id==='demo-product-observation');
+  event.impact=en?'Hypothesis: enquiry records can inform a pilot decision. Limitation: defining an event does not establish that it is recorded correctly.':'Hipotez: Talep kayıtları pilot kararına dayanak olabilir. Sınır: Olayın tanımlanması doğru kaydedildiğini kanıtlamaz.';
+  event.recommendation={action:en?'Validate enquiry tracking before assessing the pilot.':'Pilotu değerlendirmeden önce talep takibini doğrula.',measurement:en?'Check that a test enquiry reaches the record.':'Test talebinin kayda ulaştığını kontrol et.'};
+  product.impact=en?'Hypothesis: usage information can shape campaign messages. Limitation: product usage information does not establish buyer demand.':'Hipotez: Kullanım bilgisi kampanya mesajını şekillendirebilir. Sınır: Ürün kullanım bilgisi satın alma talebini kanıtlamaz.';
+  doc.bhs.bhsSections=[{id:'pilot',title:en?'Pilot rationale and decision conditions':'Pilot gerekçesi ve karar koşulları',findingIds:[event.id,product.id],complete:false}];
+  doc.bhs.meetingQuestions=[en?'Does a test enquiry reach the CRM record?':'Test talebi CRM kaydına ulaşıyor mu?',en?'What did the pilot establish about buyer interest?':'Pilot, alıcı ilgisi hakkında hangi kanıtı sağladı?'];
+  for(const plan of Object.values(doc.plans)){
+   plan.steps[0].title=en?'Validate enquiry tracking before using pilot results.':'Pilot sonuçlarını kullanmadan önce talep takibini doğrula.';
+   plan.steps[3].title=en?'Decide whether to expand or revise after reviewing recorded pilot enquiries.':'Kayıtlı pilot taleplerini değerlendirdikten sonra genişletme veya revizyon kararı ver.';
+   plan.steps[3].measurement=en?'Review enquiry records and agree the next test before expanding activity.':'Talep kayıtlarını inceleyip faaliyeti genişletmeden önce sıradaki testi belirle.';
+  }
+ }
+ await writeFile(path.join(publicDir,'offers/assessment-review.html'),page(assessmentDocs));
 }
