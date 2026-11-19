@@ -9,7 +9,7 @@ import {salesMetricName,salesTaskSectionTitle} from './sales-research-labels.mjs
 import {SourcePlanValidationError} from './source-plan.mjs';
 import {isReadEvidence} from './research-content.mjs';
 import {supportsBuyerDemand} from './scoped-findings.mjs';
-import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,qualifyProductPeers} from './product-comparison.mjs';
+import {comparisonCanStart,comparisonFields,comparisonReferenceVerified,productComparisonPlanInstruction,productComparisonReviewInstruction,productComparisonRoleInstruction,productComparisonContinuationInstruction,coherentComparisonRole,unreadableComparisonSources,qualifyProductPeers} from './product-comparison.mjs';
 import {buyerNeed,buyerDimensions,buyerPlanInstruction,buyerReviewInstruction,buyerProcessDecision,buyerProcurementRow,verifiedBuyerProcess} from './buyer-procurement.mjs';
 import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,followUpWithinBrief,checkedBriefScope,briefTradeEvidence,needMatchesBrief,refinedQueryMatchesBrief} from './brief-research-scope.mjs';
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
@@ -142,7 +142,7 @@ function normalizeNeeds(rows,schema,useMeasurements){
   return candidates.flatMap(need=>{
    const fields=Object.fromEntries(Object.entries(items.properties).map(([key,field])=>{
     const value=key==='sectionTitle'?salesTaskSectionTitle(need.section,need.sectionTitle,salesMetricName(need)):
-     key==='comparisonProduct'?need.comparisonProduct||'':key==='comparisonRole'?need.comparisonRole||'none':
+     key==='comparisonProduct'?need.comparisonProduct||'':key==='comparisonRole'?coherentComparisonRole(need):
      key==='buyerSegment'||key==='buyerSourceSegment'?need[key]||'':key==='buyingDimension'?need.buyingDimension||'none':need[key];
     if(field.type==='string'&&typeof value==='string')return [key,value.trim().slice(0,field.maxLength).toWellFormed()];
     return [key,value];
@@ -276,7 +276,7 @@ export async function planScopedResearch({brief,identity,briefUnderstanding,asOf
  if(useMeasurements)request.instruction+=' '+measurementInstruction;
  if(providers.managedBudgetVersion>=24)request.instruction+=' '+questionPlanningInstruction;
  if(taskReporting){
-  request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+buyerPlanInstruction;
+  request.instruction+=' '+taskTitleInstruction+' '+productComparisonPlanInstruction+' '+productComparisonRoleInstruction+' '+buyerPlanInstruction;
   request.commercialBrief={goals:brief.goals,needs:brief.needs,services:brief.services,meetingNotes:brief.meetingNotes};
   request.publisherSources=brandProductSources(brief.website,packet);
  }
@@ -696,6 +696,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const proofContract=scopedBuyer?withBuyerProof(buyerContract):buyerContract;
  const questionContract=questionEvidence?withQuestionEvidence(proofContract):proofContract;
  const reviewContract=scope?withBriefDecision(questionContract,'newNeeds'):questionContract;
+ const sourceReadFailures=plan.focusedProductComparison?unreadableComparisonSources(priorNeeds.filter(n=>open(n)&&inScope(n)),receipts):[];
  const normalizeData=data=>Array.isArray(data?.newNeeds)?
   {...data,newNeeds:normalizeNeeds(data.newNeeds,reviewContract.properties.newNeeds,true),
    ...(plan.focusedProductComparison&&Array.isArray(data.peers)?{peers:data.peers.map(peer=>({...peer,productMatch:peer.productMatch||
@@ -794,6 +795,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   defaults:{tavily:available('tavily'),gemini:available('gemini')},
   ...(readerBlocked?{publisherReadAvailable:false}:{}),
   ...(plan.focusedProductComparison?{waitingForReference:priorNeeds.filter(need=>!dispatchable(need)).map(need=>need.id)}:{}),
+  ...(sourceReadFailures.length?{sourceReadFailures}:{}),
   ...(guarded?{researchRound:rounds.length,previousIssue:latest?.issue}:{}),
   previous:receipts.map(r=>({id:r.id,query:r.query,attempts:r.attempts,issues:r.issues,missingDefaults:r.missingDefaults,
    nextQuery:r.nextQuery,...(r.toolRouting?{toolRouting:r.toolRouting}:{}),...(!targeted?{urls:r.urls}:{})})),
@@ -813,7 +815,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.taskReporting?' '+taskTitleInstruction:'')+
    (readEvidenceOnly?' '+readEvidenceInstruction+' Adayı ancak kendi kaynağındaki ürün/hizmet ve hedef pazardaki ikame örtüşmesi doğrulanmışsa direct yaz. İlişkili marka veya doğrulanamamış adayı ayrı tut.':'')+
    (plan.qualifyReportFindings?' Kullanım bilgisi, özellik ve faydayı talep kanıtı sayma. Talep için alıcı davranışı, sipariş, bütçe veya alıcı araştırmasına doğrudan dayanan kanıt iste.':'')+
-   (plan.focusedProductComparison?' '+productComparisonPlanInstruction+' '+productComparisonReviewInstruction:'')+
+   (plan.focusedProductComparison?' '+productComparisonPlanInstruction+' '+productComparisonReviewInstruction+' '+productComparisonContinuationInstruction:'')+
    (plan.procurementResearch?' '+buyerPlanInstruction:'')+(scopedBuyer?' '+buyerReviewInstruction:'')+
    (scope?' '+planWithinBrief+' '+followUpWithinBrief:'')+
    (scopedMarket?' '+marketMeasureInstruction:'')+
