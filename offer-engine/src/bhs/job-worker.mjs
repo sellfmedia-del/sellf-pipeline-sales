@@ -12,6 +12,7 @@ import {createSupervisedReadiness} from './supervised-readiness.mjs';
 import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages,scopedRounds} from './collection-first.mjs';
 import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
+import {brandDiscoveryNeedsWork} from './brand-review-state.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
  const {providers}=options;
@@ -62,6 +63,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
   const adaptiveBrand=options.providers.managedBudgetVersion>=10&&phaseIndex>0&&phaseIndex<=sequentialPhases.indexOf('brand');
   if(adaptiveBrand){
    const prior=(await options.ledger.get(stageKey(options.brief,sequentialPhases[phaseIndex-1],options.researchVersion,options.checkpointHash)))?.value;
+   if(options.providers.managedBudgetVersion>=24&&job.phase!=='brand'&&prior?.brandDiscovery&&!brandDiscoveryNeedsWork(prior))return runStage(options);
    if(job.phase==='brand'?prior?.brandUnderstanding:prior?.brandDiscovery&&!prior.brandDiscovery.done)freePhases.delete(job.phase);
    else return runStage(options);
   }

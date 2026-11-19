@@ -15,6 +15,7 @@ import {briefScopeSchema,scopedNeedFields,interpretBriefScope,planWithinBrief,fo
 import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublishers,brandProductSources,brandPublisherHosts} from './brand-publishers.mjs';
 import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
 import {questionPlanningInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
+import {brandReviewContext,plannedBrandActions,brandStepInstruction,incrementalBrandInstruction} from './brand-review-state.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -163,8 +164,10 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  const brand={name:brief.brandName,website:brief.website};
  const ordered=providers.managedBudgetVersion>=12;
  const targeted=providers.managedBudgetVersion>=14;
- const observed=new Set(packet.sources.flatMap(s=>[s.finalUrl||s.url,...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)]).map(researchUrl).filter(Boolean));
- const lookedUp=new Set(prior?.lookedUp||[]),visited=new Set(prior?.visited||packet.sources.map(s=>researchUrl(s.finalUrl||s.url)));
+ const incremental=providers.managedBudgetVersion>=24;
+ const actions=incremental&&prior?plannedBrandActions(packet,prior):null;
+ const observed=actions?.observed||new Set(packet.sources.flatMap(s=>[s.finalUrl||s.url,...(targeted?siteLinks(s):s.technicalSignals?.navigation||[]).map(l=>l.url)]).map(researchUrl).filter(Boolean));
+ const lookedUp=new Set(prior?.lookedUp||[]),visited=actions?.visited||new Set(prior?.visited||packet.sources.map(s=>researchUrl(s.finalUrl||s.url)));
  const hints=[...(prior?.hints||[])];
  if(targeted)for(const hint of hints)observed.add(hint.url);
  const lookupReceipts=[...(prior?.lookupReceipts||[])];
@@ -176,14 +179,14 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  }
  if(prior){
   const requestedPages=(prior.value?.pages||[]).map(researchUrl).filter(Boolean);
-  const targets=requestedPages.filter(url=>observed.has(url)&&!visited.has(url));
+  const targets=actions?.targets||requestedPages.filter(url=>observed.has(url)&&!visited.has(url));
   // A rejected request must reach the controller once so it can choose a search.
   // Keep the existing URL allowlist and avoid another turn for the same rejection.
-  const skippedPages=targeted?[...new Set(requestedPages)].filter(url=>!targets.includes(url)&&
+  const skippedPages=actions?.skippedPages||(targeted?[...new Set(requestedPages)].filter(url=>!targets.includes(url)&&
    (!observed.has(url)||readReceipts.some(receipt=>receipt.url===url&&receipt.status!=='read'))&&
-   !readReceipts.some(receipt=>receipt.url===url&&receipt.status==='page_not_read')):[];
+   !readReceipts.some(receipt=>receipt.url===url&&receipt.status==='page_not_read')):[]);
   for(const url of skippedPages)readReceipts.push({url,status:'page_not_read'});
-  const searches=prior.value?.searches||[];
+  const searches=actions?.searches||prior.value?.searches||[];
   for(const {query,tool,limit} of ordered?searches.slice(0,targets.length?0:1):searches){
    const key=hash([tool,query,limit]);
    if(lookedUp.has(key))continue;
@@ -191,7 +194,7 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
    const search=await attempt(()=>tool==='gemini'
     ?providers.searchGemini?.({query,quantity:limit,target:brand.name,metric:'Markanın kimliği, ürün grubu ve faaliyet pazarı'},{maxResults:limit})
     :providers.search(query,{depth:'basic',maxResults:limit}));
-   if(ordered)lookupReceipts.push({query,tool,issue:search.issue||(!search.value?.results?.length?'no_results':undefined)});
+   if(ordered)lookupReceipts.push({query,tool,...(incremental?{limit}:{}),issue:search.issue||(!search.value?.results?.length?'no_results':undefined)});
    for(const row of (search.value?.results||[]).slice(0,limit)){
     const url=researchUrl(row.url);
     if(!url||visited.has(url))continue;
@@ -218,17 +221,23 @@ export async function understandScopedBrand({brief,packet,providers,prior,readPa
  const sources=packet.sources.filter(s=>!s.metadataOnly).map(s=>({url:s.finalUrl||s.url,title:s.title,
   excerpts:s.excerpts.slice(0,3).map(e=>e.text.slice(0,520)),
   links:uniqueBy(targeted?siteLinks(s):s.technicalSignals?.navigation||[],l=>l.url).map(({url,label})=>({url,label}))}));
- const result=await ask(providers,'bhs-scoped-brand',{brand,sources,hints,priorUnderstanding:prior?.value?.understanding,
-  ...(ordered?{lookupReceipts,final}:{}),...(targeted?{readReceipts}:{}),instruction:
+ const delta=incremental?brandReviewContext({brand,sources,hints,lookupReceipts,readReceipts,prior,visited}):null;
+ const priorPublishers=incremental&&prior?retainBrandPublishers({...packet,publisherIdentities:[]},packet.publisherIdentities).publisherIdentities||[]:[];
+ const result=await ask(providers,'bhs-scoped-brand',{brand,sources:delta?.sources||sources,hints:delta?.hints||hints,
+  priorUnderstanding:!delta||delta.canReuseUnderstanding?prior?.value?.understanding:undefined,
+  ...(delta?.retainedSources?{retainedSources:delta.retainedSources}:{}),...(delta?.availablePages?{availablePages:delta.availablePages}:{}),
+  ...(priorPublishers.length?{priorPublishers:priorPublishers.map(({quote,...row})=>row)}:{}),
+  ...(ordered?{lookupReceipts:delta?.lookupReceipts||lookupReceipts,final}:{}),...(targeted?{readReceipts:delta?.readReceipts||readReceipts}:{}),instruction:
   'Birinci adım. Önce markayı tespit et ve anla. Ne sattığını, ürün veya hizmet gruplarını, kurumsal kimliğini, gelir modelini, ölçeğini, faaliyet pazarını ve sektörünü birlikte kavra. Önemli gördüğün diğer bilgileri kendin belirle. Mevcut bilgiler yeterliyse anlayışını özetle ve pages ile searches boş kalsın. Bilgi eksikse yalnız doğrudan gerekli, gördüğün bağlantıları pages alanında veya Gemini/Tavily için marka kimliğine yönelik kısa sorguyu searches alanında seç. Belirsizlikleri belirt. Kart briefi ve teklif bu adımdan sonra gelir.'+
   (ordered?' Tek seferde yalnız bir sayfa ya da tek, somut kimlik sorusu için bir araç seç. Önceki çağrıların sonuçlarını dikkate al. Bir araç hata verdiyse ve bilgi gerekliyse aynı dar soruyu uygun diğer araca kendin ver. final doğruysa ek istek gönderme ve belirsizlikleri yazarak marka anlayışını tamamla.':'')+
   (targeted?' Kimlik ve gelir modeli için resmi iletişim/kurumsal sayfaları karşılaştır. Alan adları farklıysa ticari unvanı ve adresi kontrol et. Aynı unvan ve adresi doğrulayan kurumsal siteyi üretim ve pazar araştırmasına dahil et. Doğrudan satış, üretim, B2B ve ihracat kanallarını kendi kaynaklarına göre değerlendir. Marka hesabı bağlantısını takipçi verisi olarak kullanma. hints içinde daha önce okunmamış sayfaları da pages alanında seçebilirsin. İlk sayfadan okunabilir içerik gelmediyse veya readReceipts içinde page_not_read varsa aynı adresi tekrar isteme. Kimlik bilgisi hâlâ gerekliyse marka adıyla resmi siteyi, ürünü veya kurumsal kimliği bulmak için Gemini ya da Tavily’ye tek bir hedefli arama seç. Doğrulanamayan bilgileri açıkça belirsiz bırak.':'')+
-  (providers.managedBudgetVersion>=24?' '+publisherIdentityInstruction:'')},
+  (providers.managedBudgetVersion>=24?' '+publisherIdentityInstruction+' '+(prior?incrementalBrandInstruction:brandStepInstruction):'')},
   providers.managedBudgetVersion>=24?{...(ordered?orderedBrandSchema:brandSchema),
    properties:{...(ordered?orderedBrandSchema:brandSchema).properties,publishers:publisherIdentitiesSchema}}:ordered?orderedBrandSchema:brandSchema,1400);
  if(providers.managedBudgetVersion>=24)packet=retainBrandPublishers(packet,result.value?.publishers);
  const value=result.value||prior?.value;
  return {...result,value,packet,hints,lookedUp:[...lookedUp],visited:[...visited],...(ordered?{lookupReceipts}:{}),...(targeted?{readReceipts}:{}),
+  ...(incremental&&(result.value||prior?.brandReview)?{brandReview:result.value?delta.state:prior.brandReview}:{}),
   done:final||!result.value||!result.value.pages?.length&&!result.value.searches?.length};
 }
 
