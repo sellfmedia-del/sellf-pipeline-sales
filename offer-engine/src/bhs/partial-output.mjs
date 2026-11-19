@@ -11,7 +11,11 @@ export function readPartialOutput(text){
   for(;at<stripped.length;at++){
    const c=stripped[at];if(quoted){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')quoted=false;continue;}
    if(c==='"'){quoted=true;continue;}if(c==='{'||c==='[')depth++;
-   if(c==='}'||c===']'){if(depth===0){complete=true;break;}depth--;}
+   if(c==='}'||c===']'){
+    if(depth===0){complete=true;break;}
+    depth--;
+    if(depth===0){at++;complete=true;break;}
+   }
    if(c===','&&depth===0){complete=true;break;}
   }
   if(!complete){
@@ -22,6 +26,10 @@ export function readPartialOutput(text){
      if(c==='"'){inString=true;continue;}if(c==='{'||c==='[')level++;if(c==='}'||c===']')level--;
      if(c===','&&level===0){try{rows.push(JSON.parse(stripped.slice(rowStart,i)));rowStart=i+1;}catch{break;}}
     }
+    // A complete last object is safe even if no comma/array closer arrived.
+    // Scalars at EOF can still be unfinished (e.g. 12 -> 120), so leave those.
+    const tail=stripped.slice(rowStart).trim();
+    if(!inString&&level===0&&/^[{[]/.test(tail))try{rows.push(JSON.parse(tail));}catch{}
     if(rows.length&&!['__proto__','constructor','prototype'].includes(key))data[key]=rows;
    }
    break;
