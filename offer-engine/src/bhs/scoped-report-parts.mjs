@@ -36,12 +36,14 @@ function reportParts(request,coverage,sections){
 // Each closed response contains at most two complete findings. Claude chooses
 // whether there is more to write; neither the batch size nor a clipped response
 // marks an information need as satisfied. All calls share the existing ledger.
-export async function writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality=false}){
+export async function writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality=false,parallelParts=false,deadline}){
  const parts=reportParts(request,coverage,sections);
  const collected={findings:[],benchmarks:[],questions:[]},completions=[];
  const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
  let reportIssue,reportDiagnostic;
- for(const [index,part] of parts.entries()){
+ const writePart=async(part,index)=>{
+  const completions=[];
+  let reportIssue,reportDiagnostic;
   const sources=Object.fromEntries(part.aliases.map(id=>[id,request.sources[id]]).filter(([,row])=>row));
   const documents=new Set(Object.values(sources).map(row=>row[0]));
   const needIds=new Set(part.metrics.map(metric=>metric.id));
@@ -91,9 +93,13 @@ export async function writeBoundedScopedParts({providers,request,coverage,sectio
     let written=await providers.readCheckpoint?.('scoped-report-page',key);
     if(!written&&savedPartsOnly){reportIssue??='report_checkpoint_missing';break;}
     if(!written){
+     // Restore complete checkpoints even after the window ends, but never
+     // buy another page when there is no time left for a complete response.
+     const remaining=deadline===undefined?Infinity:deadline-(providers.now||Date.now)();
+     if(signal.aborted||remaining<12000){reportIssue??='report_time_window';break;}
      const response=await manager('bhs-scoped-report-'+part.id+'-page-'+page,partRequest,contract,{
       signal,compactReview:true,lowEffort:true,plainJson:true,maxOutputTokens:rowLimit===2?2200:1400,
-      minimumOutputTokens:rowLimit===2?1800:1000,generationTimeoutMs:30000,
+      minimumOutputTokens:rowLimit===2?1800:1000,generationTimeoutMs:parallelParts?Math.min(55000,remaining-8000):30000,
       reserveForFollowingKurus:Math.min(440,(parts.length-index-1)*220),normalizeData:normalize,
       acceptPartialData:data=>normalize(data).findings.length>0
      });
@@ -120,8 +126,19 @@ export async function writeBoundedScopedParts({providers,request,coverage,sectio
     break;
    }
   }
-  for(const key of Object.keys(collected))collected[key].push(...retained[key]);
   if(unfinished)reportIssue??='partial_model_document';
+  return {retained,completions,reportIssue,reportDiagnostic};
+ };
+ // Parts have independent source packets/checkpoints; pages within a part
+ // remain ordered. Bound concurrency while keeping output order stable.
+ const width=parallelParts?2:1;
+ for(let at=0;at<parts.length;at+=width){
+  const results=await Promise.all(parts.slice(at,at+width).map((part,index)=>writePart(part,at+index)));
+  for(const result of results){
+   for(const key of Object.keys(collected))collected[key].push(...result.retained[key]);
+   completions.push(...result.completions);
+   reportIssue??=result.reportIssue;reportDiagnostic??=result.reportDiagnostic;
+  }
  }
  const report=project({...collected,benchmarks:[...new Map(collected.benchmarks.map(row=>[JSON.stringify(row),row])).values()]});
  if(!report.findings.length&&Object.keys(request.sources).length)reportIssue??='no_source_backed_findings';

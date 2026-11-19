@@ -4,6 +4,8 @@ import {sequentialPhases} from './sequential-contracts.mjs';
 import {BudgetError,tariff,hash} from '../budget/ledger.mjs';
 import {createApifyAdapter} from './apify-adapter.mjs';
 import {createResearchFx,researchTariff} from './research-tariff.mjs';
+import {createGroundedSearch} from './grounded-search.mjs';
+import {offerGeminiKey} from '../config.mjs';
 
 export const collectionFirstEnabled=()=>process.env.OFFER_BHS_COLLECTION_FIRST==='1'||(process.env.OFFER_BHS_COLLECTION_FIRST===undefined&&process.env.VERCEL_ENV==='production'&&process.env.OFFER_BHS_SEQUENTIAL_PRODUCTION_ENABLED==='true');
 
@@ -53,17 +55,21 @@ export function createSequentialProviders({ledger,phase,fetchImpl=fetch,now=Date
   }};
  }
  const scoped=stageBudgetLedger(ledger,phase,{infrastructureOffsetKurus,phaseLimitKurus}),base=createRuntimeProviders({...options,ledger:scoped,fetchImpl,now,pricing:researchTariff,researchFx});
+ const grounded=collectionFirst&&options.managedBudgetVersion>=24?createGroundedSearch({ledger:scoped,
+  key:options.geminiKey===undefined?offerGeminiKey():options.geminiKey,fetchImpl,now,pricing:researchTariff,researchFx}):null;
+ const searchQuotes=()=>({...base.searchReservations(),...(grounded?.configured?{gemini:grounded.quote()}:{})});
  // At coverage only the gap extraction, draft and final audit remain.
  const followingKurus=options.managedBudgetVersion>=2?40:phaseLimitKurus===undefined?(phase==='coverage_actors'?750:1400):600;
  const actors=apify||createApifyAdapter({ledger:scoped,fetchImpl,now,executionDeadline,retainDataset:collectionFirst&&phaseLimitKurus!==undefined&&options.managedBudgetVersion<9,followingKurus});
  const checkpointKey=(name,input)=>'audit:v8:checkpoint:'+name+':'+hash(input);
- return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8',pricing:researchTariff,researchFx,allowWorkerFallback:!(collectionFirst&&phaseLimitKurus!==undefined&&sequentialPhases.indexOf(phase)>sequentialPhases.indexOf('brand'))}),collectionFirst,managedAudit:options.managedAudit===true,infrastructureOffsetKurus,now,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once(checkpointKey(name,input),input,0,run),readCheckpoint:async(name,input)=>{
+ return {...createSupervisedProviders({...options,ledger:scoped,base,fetchImpl,now,receiptVersion:'v8',pricing:researchTariff,researchFx,allowWorkerFallback:!(collectionFirst&&phaseLimitKurus!==undefined&&sequentialPhases.indexOf(phase)>sequentialPhases.indexOf('brand'))}),
+  ...(grounded?.configured?{searchGemini:grounded.search}:{}),collectionFirst,managedAudit:options.managedAudit===true,infrastructureOffsetKurus,now,costStatus:()=>ledger.status(),checkpoint:(name,input,run)=>scoped.once(checkpointKey(name,input),input,0,run),readCheckpoint:async(name,input)=>{
   const receipt=await scoped.get(checkpointKey(name,input));
   return receipt?.state==='complete'?receipt.value:undefined;
  },availableActors:actors.availableActors,enrich:actors.enrich,mergeActorEvidence:actors.mergeEvidence,
   researchCapacity:async({includeActors=true}={})=>{
    const status=await scoped.status(),remainingKurus=status.capKurus-status.chargedKurus;
-   const quotes=Object.fromEntries(Object.entries(base.searchReservations()).map(([tool,amount])=>[tool,reserveStageQuote(amount)]));
+   const quotes=Object.fromEntries(Object.entries(searchQuotes()).map(([tool,amount])=>[tool,reserveStageQuote(amount)]));
    const defaults=Object.keys(quotes).filter(tool=>quotes[tool]<=remainingKurus);
    if(!includeActors)return {remainingKurus,capKurus:status.capKurus,quotes,defaults,configuredDefaults:Object.keys(quotes)};
    const actorsThatFit=remainingKurus>0?await actors.availableActors({affordable:true}):[];

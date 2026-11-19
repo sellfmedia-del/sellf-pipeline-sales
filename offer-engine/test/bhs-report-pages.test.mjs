@@ -169,7 +169,7 @@ test('provider wire recovery, checkpoints and the unchanged research/writing cap
    return response({model:body.model,usage:{input_tokens:1000,output_tokens:partial?body.max_tokens:700},
     stop_reason:partial?'max_tokens':'end_turn',content:[{type:'text',text:partial?'{"findings":['+JSON.stringify(data.findings[0]):JSON.stringify(data)}]});
   }});
- const args=fixture();
+ const args=fixture();args.plan.parallelReportParts=true;
  const result=await writeScopedSynthesis({...args,providers});
  assert.equal(result.supervision.reportIssue,undefined);
  assert.equal(result.report.findings.length,4);
@@ -186,4 +186,38 @@ test('provider wire recovery, checkpoints and the unchanged research/writing cap
  assert.equal(denied.supervision.reportIssue,'budget_limit');
  assert.equal(generations,count,'An insufficient writing balance must not call the paid generation endpoint');
  assert.equal((await f.ledger.status()).chargedKurus,before,'No borrowing from another budget or releasing recorded spend');
+});
+
+test('independent report parts run at most two at once and retain deterministic output and reusable checkpoints',async()=>{
+ let active=0,maximum=0;
+ const providers=memory(async(_stage,input,options)=>{
+  active++;maximum=Math.max(maximum,active);assert.ok(options.generationTimeoutMs>42000);
+  await new Promise(resolve=>setTimeout(resolve,2));active--;
+  const index=input.needs[0]?.id==='need-0'?0:2;
+  return {data:Array.isArray(input.scope)?{...empty,findings:[finding(input,index),finding(input,index+1)]}:empty};
+ });
+ const args=fixture();args.plan.parallelReportParts=true;
+ const result=await writeScopedSynthesis({...args,providers});
+ assert.equal(maximum,2);assert.equal(result.supervision.reportIssue,undefined);
+ assert.deepEqual(result.report.findings.map(row=>row.statement),observations);
+ const calls=providers.calls.length;
+ const replay=await writeScopedSynthesis({...args,providers});
+ assert.deepEqual(replay.report,result.report);assert.equal(providers.calls.length,calls);
+});
+
+test('a spent report window keeps completed findings and restores them before writing only the missing parts',async()=>{
+ let time=0,first=true;
+ const providers=memory(async(_stage,input)=>{
+  if(first){first=false;time+=220000;}
+  const index=input.needs[0]?.id==='need-0'?0:2;
+  return {data:Array.isArray(input.scope)?{...empty,findings:[finding(input,index),finding(input,index+1)]}:empty};
+ });
+ providers.now=()=>time;
+ const args=fixture();args.plan.parallelReportParts=true;
+ const partial=await writeScopedSynthesis({...args,providers});
+ assert.equal(partial.supervision.reportIssue,'report_time_window');assert.equal(partial.report.findings.length,2);
+ assert.equal(providers.calls.length,1);
+ const full=await writeScopedSynthesis({...args,providers});
+ assert.equal(full.supervision.reportIssue,undefined);assert.equal(full.report.findings.length,4);
+ assert.equal(providers.calls.filter(call=>call.stage==='bhs-scoped-report-brief-page-0').length,1);
 });

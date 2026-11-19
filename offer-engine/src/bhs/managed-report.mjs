@@ -203,7 +203,9 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const marketCoverage=input.plan.verifiedResults?coverage.filter(m=>m.marketMeasures):undefined;
  const metricCoverage=input.plan.readEvidenceOnly?new Map(coverage.map(metric=>[metric.id,metric.sources])):undefined;
  const focusedProductProofs=new Map(coverage.filter(metric=>metric.verifiedProductProofs).map(metric=>[metric.id,metric.verifiedProductProofs]));
- const signal=AbortSignal.timeout(110000);
+ const parallelParts=input.plan.parallelReportParts===true&&input.plan.boundedReportParts===true;
+ const deadline=(providers.now||Date.now)()+(parallelParts?210000:110000);
+ const signal=AbortSignal.any([AbortSignal.timeout(parallelParts?210000:110000),...(providers.executionSignal?[providers.executionSignal]:[])]);
  const normalizeData=(data,sources=request.sources,contract=outputSchema)=>Object.fromEntries(Object.entries(contract.properties).map(([key,field])=>{
   const rows=list(data?.[key]).flatMap(row=>{
    let value=row;
@@ -225,7 +227,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
   usedInput:input,data:buyerIds.size?{...data,findings:list(data.findings).filter(row=>!row.needIds?.some(id=>buyerIds.has(id))&&
    !row.proof.some(proof=>structuredProofs.has(proof)))}:data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
- if(input.plan.sectionedSynthesis&&input.plan.boundedReportParts)return writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality:input.plan.cleanResearchEvidence===true});
+ if(input.plan.sectionedSynthesis&&input.plan.boundedReportParts)return writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality:input.plan.cleanResearchEvidence===true,parallelParts,...(parallelParts?{deadline}:{})});
  if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,
   independentParts:input.plan.reportRecovery===true});
  try{

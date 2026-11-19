@@ -18,6 +18,7 @@ import {publisherIdentitiesSchema,publisherIdentityInstruction,retainBrandPublis
 import {researchCommandSchema as commandSchema,researchCommandKey,queuedResearchCommands,decideQueuedCommands} from './research-command-queue.mjs';
 import {questionPlanningInstruction,briefDecisionCoverageInstruction,questionEvidenceInstruction,withQuestionEvidence,questionEvidenceDecision} from './question-evidence.mjs';
 import {brandReviewContext,brandSourceExcerpts,plannedBrandActions,brandStepInstruction,incrementalBrandInstruction} from './brand-review-state.mjs';
+import {researchReviewContext} from './research-review-context.mjs';
 
 const sections=Object.keys(managedSections);
 const section=str(100);
@@ -419,7 +420,8 @@ function defaultBlocker(tool,{capacity,receipts,readerBlocked}){
 function priorSearchAttempt(receipts,id,query,tool){
  const key=compact(query).toLocaleLowerCase('tr');
  return receipts.filter(r=>r.id===id&&compact(r.query||query).toLocaleLowerCase('tr')===key)
-  .flatMap(r=>r.attempts||[]).findLast(a=>a.tool===tool&&a.issue!=='budget_limit');
+  .flatMap(r=>r.attempts||[]).findLast(a=>a.tool===tool&&
+   !['budget_limit','input_budget','model_budget','token_count','fx_unavailable'].includes(a.issue));
 }
 
 function defaultReceipt(receipt,requestedTool,reason){
@@ -609,6 +611,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const ordered=plan.orderedResearch===true&&!gap;
  const targeted=plan.targetedEvidence===true;
  const decisionTurns=plan.decisionTurns===true&&ordered&&targeted;
+ const compactContext=plan.compactResearchContext===true&&decisionTurns;
+ let controllerProofIds=[],controllerVisibleProofIds=[],controllerBacklog=0;
  const incremental=ordered&&guarded&&providers.managedBudgetVersion>=16;
  const useMeasurements=providers.managedBudgetVersion>=19;
  const readEvidenceOnly=plan.readEvidenceOnly===true;
@@ -655,6 +659,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  };
  const proofCheckpoint=()=>({
   ...(incremental?{reviewedProofIds:[...seen].filter(id=>!reviewedBefore.has(id))}:{}),
+  ...(compactContext&&controllerProofIds.length?{controllerProofIds}:{}),
   ...(readerBlocked?{sourceReaderIssue:'source_plan_invalid'}:{})
  });
  // The initial plan already chose the first question. Once any result exists,
@@ -811,7 +816,7 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const responseContract=queueEnabled&&queued.length?withCommandDecisions(reviewContract):reviewContract;
  const groupedContract=useMeasurements?withMeasurementGroups(reviewContract,'newNeeds'):reviewContract;
  const outputContract=queueEnabled&&queued.length?withCommandDecisions(groupedContract):groupedContract;
- if(!result)result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',{
+ const reviewRequest={
   identity,briefUnderstanding:scope?{understanding:briefUnderstanding?.understanding}:briefUnderstanding,asOf:packet.asOf,
   ...(plan.focusedProductComparison?{publisherSources:brandProductSources(brief.website,packet)}:{}),
   needs:priorNeeds,waitingNeeds,findings:facts,checked:[...checked.values()],tools:actors,last,knownUrls,...(gap?{existing,eligibleSections}:{}),
@@ -850,8 +855,13 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    (plan.preserveStatisticalScope?' '+statisticalScopeInstruction:'')+
    (readerBlocked?' Kaynak okuyucusu bu çalışmada kullanılamıyor. Bağımsız olarak kanıt üretebilecek bir Tavily sorgusu veya uygun scraper seç.':'')+
    (gap?' Kullanıcı açıkça eksik kısımları tamamlamayı seçti. Yalnız eligibleSections içindeki eksikleri, existing ve kaydedilmiş kaynakları kullanarak tamamla. Gerekli ek işleri kendin belirle. Daha önce aranan metrik ve kaynakları yeniden satın alma.':'')
- },outputContract,last?1150:1700,
- useMeasurements?{...reviewOptions,normalizeData,responseSchema:responseContract}:reviewOptions);
+ };
+ if(!result){
+  const view=compactContext?researchReviewContext(reviewRequest,new Set(rounds.flatMap(round=>round.controllerProofIds||[]))):null;
+  result=await ask(providers,last?'bhs-scoped-clearance':'bhs-scoped-review',view?.request||reviewRequest,outputContract,last?1150:1700,
+   useMeasurements?{...reviewOptions,normalizeData,responseSchema:responseContract}:reviewOptions);
+  if(view&&result.value){controllerVisibleProofIds=view.proofIds;controllerBacklog=view.backlog;}
+ }
  if(!result.value&&guarded){
   const saved=!last&&replayCommand();
   if(!saved)return recordQueue(await recoverReview(result.issue||'research_clearance_unavailable'));
@@ -868,9 +878,11 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
    readScopeKey(saved)===readScopeKey(n)&&saved.section===n.section&&open(saved))))),n=>n.id);
  for(const row of data.decisions)if(ids.has(row.id)){
   const related=facts.filter(f=>f.needId===row.id);
-  const {proofs,unread}=readEvidenceOnly?reviewProofs(row.proofs,related,true):{proofs:row.proofs.filter(id=>related.some(f=>f.id===id))};
+  const priorProofs=checked.get(row.id)?.proofs||[];
+  const visibleProofs=compactContext?row.proofs.filter(id=>controllerVisibleProofIds.includes(id)||priorProofs.includes(id)):row.proofs;
+  const {proofs,unread}=readEvidenceOnly?reviewProofs(visibleProofs,related,true):{proofs:visibleProofs.filter(id=>related.some(f=>f.id===id))};
   const need=priorNeeds.find(n=>n.id===row.id);
-  const read=decisionTurns&&related.find(f=>f.id===row.read&&!publisherRead(f))?.url||unread;
+  const read=decisionTurns&&related.find(f=>f.id===row.read&&(!compactContext||controllerVisibleProofIds.includes(f.id))&&!publisherRead(f))?.url||unread;
   const nextQuery=decisionTurns?compact(row.nextQuery):'';
   const rawDecision={id:row.id,sufficient:row.sufficient&&(!readEvidenceOnly||proofs.length>0&&!read),proofs,
    ...(read?{read}:{}),...(decisionTurns?{nextQuery:!queryAllowed||queryAllowed(need,nextQuery)?nextQuery:''}:{})};
@@ -879,7 +891,12 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
   const reviewed=scopedBuyer&&buyerNeed(need)?buyerProcessDecision(need,decision,row.buyerProcess,related,saved):
    scopedMarket&&quantitativeMarketNeed(need,plan.scopeMarketCounts)?marketDecision(need,decision,row.marketMeasures,related,saved,plan.scopeMarketCounts):decision;
   checked.set(row.id,questionEvidence?questionEvidenceDecision(reviewed,row.answerFit):reviewed);
-  if(incremental)for(const fact of related)seen.add(fact.id);
+  if(incremental)for(const fact of related)if(!compactContext||controllerVisibleProofIds.includes(fact.id)){
+   seen.add(fact.id);
+   // Transport alone is not a review. An empty controller reply must not
+   // retire a source from subsequent context windows.
+   if(compactContext&&(!questionEvidence||decision.answerFit.status!=='unreviewed'))controllerProofIds.push(fact.id);
+  }
  }
  const owned=brandPublisherHosts(brief.website,packet);
  const peers=uniqueBy([...(latest?.peers||[]),...data.peers].filter(p=>researchUrl(p.url)&&!owned.has(researchHost(p.url))),p=>
@@ -1028,7 +1045,8 @@ export async function reviewScopedResearch({identity,briefUnderstanding,plan,rou
  const issue=!next.length&&data.commands.length?'no_executable_research_command':undefined;
  const advanced=next.some(r=>r.facts.length||r.urls.length||r.missingDefaults?.length||
   r.attempts?.some(a=>!a.issue));
- const continuation=guarded&&!advanced?await keepOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
+ const reviewExisting=compactContext&&controllerBacklog>0&&controllerVisibleProofIds.length>0&&!chosenCommands.length&&!used.length;
+ const continuation=guarded&&!advanced&&reviewExisting?{closed:false,issue:'research_evidence_pending'}:guarded&&!advanced?await keepOpen({needs:[...openNeeds,...newNeeds],receipts:[...receipts,...next],
   providers:acquisition,readPages,issue,ordered,targeted,allowDispatch:!ordered||!next.length&&!used.length,
   nextQueries:checked,focus:focusedCommand||followUp()}):{closed:guarded?false:!next.length,issue};
  const {receipts:extra=[],...completion}=continuation;
