@@ -10,6 +10,7 @@ import {evidenceGeographySupported,marketMeasureNeed,marketObservationSupported}
 import {qualifyScopedFinding,repeatedFinding} from './scoped-findings.mjs';
 import {salesGapLabels,salesGapStatus,salesMetricName,salesSectionTitle,salesTaskSectionTitle} from './sales-research-labels.mjs';
 import {writeBoundedScopedParts} from './scoped-report-parts.mjs';
+import {evidenceQualityInstruction,researchGapStatement,researchGapQuestion} from './research-text.mjs';
 import {canSwitchBhsProvider,customerQuoteKey,isManagedInputLimit,managedModelIssue,managedReviewUsesHaiku,missingCustomerEvidence,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
 export const managedSections=Object.freeze({
@@ -201,7 +202,8 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (input.plan.qualifyReportFindings?' Her bulgu müşterinin bağlamı bilmeden okuyabileceği tam ve kendi başına anlaşılır bir cümle olsun. Alıntı, menü, başlık veya kesik metni bulgu olarak kopyalama. Her iddiayı doğrudan ilgili kanıtla eşleştir ve farklı ifade edilmiş tekrarları birleştir. Kullanım şekli, özellik ve fayda bilgisini uygun bir kullanım başlığında değerlendir. Talep için hedef kitlenin gözlenen satın alma davranışı, sipariş, bütçe, alıcı araştırması veya benzer doğrudan kanıt gerekir. Yalnız kullanımı gösteren kanıtla talep ihtiyacını karşılandı olarak işaretleme.':'')+
   (input.plan.focusedProductComparison?' Adı belirtilmiş ürün kıyaslarında verifiedProductProofs içindeki aynı peerId kaydını kullan. Her bulgu o kaydın required kanıtlarından en az birini ve yalnız allowed kanıtlarını kullanır. Referans SKU, parça adedi, kapladığı alan, hedef yaş, yerel liste fiyatı, KDV ve teslimatı ayrı tut. Farklı ürün, paket, para birimi veya vergi koşulunu eşdeğer fiyat diye yazma. Dolaylı alternatiften doğrudan rakip sonucu çıkarma.':'')+
   (buyerMetrics.length?' buyerProcurement işaretli satın alma soruları kaynaklı gözlem ve pilot hipotezi olarak ayrı gösterilir. Bu satırları bulgu olarak tekrarlama. Eksik karar verici, onay veya sipariş kanalının cevabını çıkarma.':'')+
-  (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')};
+  (input.existing.length?' Sadece belirtilen eksik bölümleri tamamla ve önceki bulguları yineleme.':'')+
+  (input.plan.cleanResearchEvidence?' '+evidenceQualityInstruction:'')};
  if(input.plan.readEvidenceOnly)request.asOf=context.input.asOf;
  if(adaptive&&!sections)delete request.sections;
  if(linked){
@@ -246,7 +248,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
  const project=data=>projectManagedDraft({context,reverse,accepted:adaptive&&!sections?null:new Set(sections||sectionKeys),
   usedInput:input,data:buyerIds.size?{...data,findings:list(data.findings).filter(row=>!row.needIds?.some(id=>buyerIds.has(id))&&
    !row.proof.some(proof=>structuredProofs.has(proof)))}:data,managerDirected:true,modelSelectedPeers:true,adaptive,targeted,needsById:linked?needsById:undefined,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting:input.plan.taskReporting,qualifyReportFindings:input.plan.qualifyReportFindings});
- if(input.plan.sectionedSynthesis&&input.plan.boundedReportParts)return writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures});
+ if(input.plan.sectionedSynthesis&&input.plan.boundedReportParts)return writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality:input.plan.cleanResearchEvidence===true});
  if(input.plan.sectionedSynthesis)return writeScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,
   independentParts:input.plan.reportRecovery===true});
  try{
@@ -558,7 +560,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   const matched=name?rivals.filter(e=>customerQuoteKey(e.name)===name):[];
   return matched.length===1?matched[0].id:'';
  };
- const selected=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map(),seenObservations=new Set();
+ const selected=[],openQuestions=[],seenFindings=new Set(),seenPeers=new Set(),seenQuotes=new Map(),seenObservations=new Set();
  const sorted=[...list(data.findings)].sort((a,b)=>a.rank-b.rank);
  for(const proposed of sorted){
   let row=proposed;
@@ -589,8 +591,11 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    if(metrics.length&&!marketObservationSupported(row.observation,metrics.flatMap(m=>m.marketMeasures).filter(m=>cited(m.sources))))continue;
   }
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
+  if(usedInput.plan?.cleanResearchEvidence&&researchGapStatement(row.observation,{sources:sourceCards})){
+   openQuestions.push(researchGapQuestion(row,needsById));continue;
+  }
   if(qualifyReportFindings){
-   row=qualifyScopedFinding(row,sourceCards,needsById,{excludeLiteral:true});
+   row=qualifyScopedFinding(row,sourceCards,needsById,{excludeLiteral:true,contentQuality:usedInput.plan?.cleanResearchEvidence===true});
    if(!row)continue;
    if(selected.some(f=>f.proofs.some(id=>proofs.includes(id))&&repeatedFinding(row.observation,f.observation)))continue;
   }
@@ -650,7 +655,7 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
  });
  const peersWithFindings=new Set(report.findings.map(f=>f.peerId).filter(Boolean));
  if(!verifiedPeers)report.competitors=report.competitors.filter(peer=>peersWithFindings.has(peer.id)).slice(0,10);
- report.meetingQuestions=unique([...report.findings.map(f=>f.decisionQuestion).filter(Boolean),...list(data.questions)]).map(question=>({dimension:'operations',question,findingIds:report.findings.filter(f=>f.decisionQuestion===question).map(f=>f.id)}));
+ report.meetingQuestions=unique([...report.findings.map(f=>f.decisionQuestion).filter(Boolean),...list(data.questions),...openQuestions.filter(Boolean)]).map(question=>({dimension:'operations',question,findingIds:report.findings.filter(f=>f.decisionQuestion===question).map(f=>f.id)}));
  if(modelSelectedPeers)report.directedResearch=true;
  report.bhsSections=adaptive?scopedCoverage(report):managedCoverage(report);
  return report;

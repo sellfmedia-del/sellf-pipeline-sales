@@ -6,6 +6,7 @@ import {briefHash} from './brief.mjs';
 import {packetBrandIdentity} from './identity.mjs';
 import {parseSourcePlan} from './source-plan.mjs';
 import {researchUrl,researchHost as host} from './research-url.mjs';
+import {cleanEvidenceText,consentEvidenceRequested,stripConsentUi} from './research-text.mjs';
 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const evidenceHash=packet=>digest(packet);
@@ -22,8 +23,12 @@ export function publicMetadata(html){
  }
  return [...new Set(values)].join(' ');
 }
-export function researchHtmlText(html){
- return normalized(plainHtml(Buffer.from(html.replace(/<(header|nav|footer|aside|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' '))));
+export function researchHtmlText(html,{preserveConsent=false}={}){
+ const body=html.replace(/<(header|nav|footer|aside|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ');
+ if(preserveConsent)return normalized(plainHtml(Buffer.from(body)));
+ const visible=body.replace(/<!--[\s\S]*?-->/gu,' ').replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/giu,' ');
+ const view=stripConsentUi(visible).replace(/<\/(?:p|div|section|li|h[1-6])\s*>/giu,'$&\n');
+ return normalized(cleanEvidenceText(plainHtml(Buffer.from(view))));
 }
 export function sourceLinks(html,url,{identity=false}={}){
  const links=[];
@@ -117,7 +122,9 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
     const contentType=response.headers['content-type']||'';
     if(/application\/pdf/i.test(contentType)||response.body.subarray(0,10).includes(Buffer.from('%PDF-'))){const result=await extractPdfText(response.body);return {url:input,finalUrl:url,title:new URL(url).pathname.split('/').at(-1)||'Financial report',text:result.text,method:'pdf',pages:result.pages,links:[]};}
     if(!/text\/(html|plain)|application\/xhtml\+xml/i.test(contentType))throw Error('unsupported');
-    const html=response.body.toString('utf8'),text=/html/.test(contentType)?researchHtmlText(html):normalized(html);
+    const html=response.body.toString('utf8'),preserveConsent=consentEvidenceRequested(evidenceFocus);
+    const rawText=/html/.test(contentType)?researchHtmlText(html,{preserveConsent:true}):normalized(html);
+    const text=/html/.test(contentType)?researchHtmlText(html,{preserveConsent}):normalized(cleanEvidenceText(html,{preserveConsent}));
     const title=normalized(plainHtml(Buffer.from(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||new URL(url).hostname))).slice(0,300);
     if(blockedText(title+' '+text))throw Error('access_wall');
     const technicalSignals=/html/.test(contentType)?{https:new URL(url).protocol==='https:',
@@ -125,12 +132,13 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
      noindexMeta:/<meta\b(?=[^>]*\bname\s*=\s*["'](?:robots|googlebot)["'])(?=[^>]*\bcontent\s*=\s*["'][^"']*\bnoindex\b)/i.test(html),
      structuredData:/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html),
      navigation:sourceLinks(html,url).slice(0,20),...(explicitSourcesOnly?{identityLinks:sourceLinks(html,url,{identity:true})}:{}),mobileViewport:/<meta\b[^>]*name=["']viewport["']/i.test(html),platformHints:['shopify','woocommerce','wix','webflow','wordpress','magento'].filter(name=>new RegExp(name,'i').test(html)),analyticsTags:/googletagmanager\.com|google-analytics\.com|gtag\(/i.test(html),metaPixelTag:/connect\.facebook\.net|fbq\(/i.test(html),note:'Yalnız indirilen HTMLdeki etiket sinyalleri; çalışırlık, hız veya ölçüm doğrulaması değildir.'}:undefined;
-    return {url:input,finalUrl:url,title,text,technicalSignals,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
+    return {url:input,finalUrl:url,title,text,...(rawText!==text?{rawText}:{}),technicalSignals,metadata:publicMetadata(html),method:'html',links:/html/.test(contentType)?sourceLinks(html,url):[]};
    }
    throw Error('redirect_limit');
   }
   function keep(page){
-   const excerpts=evidenceExcerpts(page.text,{focus:evidenceFocus});if(!excerpts.length||excerpts[0].text.length<24)return false;
+   const researchText=cleanEvidenceText(page.text,{preserveConsent:consentEvidenceRequested(evidenceFocus)});
+   const excerpts=evidenceExcerpts(researchText,{focus:evidenceFocus});if(!excerpts.length||excerpts[0].text.length<24)return false;
    const previous=sources.findIndex(s=>s.finalUrl===page.finalUrl);if(previous>=0&&page.method!=='rendered'&&!sources[previous].metadataOnly)return false;
    const record={id:previous>=0?sources[previous].id:'ev'+(sources.length+1),url:page.url,finalUrl:page.finalUrl,title:page.title,method:page.method,excerpts,contentHash:digest(normalized(page.text)),retrievedAt:new Date(clock()).toISOString(),...(page.technicalSignals?{technicalSignals:page.technicalSignals}:{}),...(page.metadataOnly?{metadataOnly:true}:{}),...(page.pages?{pages:page.pages}:{})};
    const nextChars=JSON.stringify(sources).length+JSON.stringify(record).length-(previous>=0?JSON.stringify(sources[previous]).length:0);
@@ -138,7 +146,10 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
    if(previous>=0)sources[previous]=record;else sources.push(record);return true;
   }
   const archived=[];
-  const archive=({url,finalUrl,title,text,method,technicalSignals})=>{if(archivePages)archived.push({url,finalUrl,title,text,method,technicalSignals});};
+  const archive=({url,finalUrl,title,text,rawText,method,technicalSignals})=>{
+   const original=rawText??text,researchText=cleanEvidenceText(text,{preserveConsent:consentEvidenceRequested(evidenceFocus)});
+   if(archivePages)archived.push({url,finalUrl,title,text:original,...(researchText!==original?{researchText}:{}),method,technicalSignals});
+  };
   while(queue.length&&sources.length+renderCandidates.length<(identityOnly?5:capacity)&&clock()<deadline-(identityOnly?2000:22000)){
    const batch=queue.splice(0,Math.min(concurrency,(identityOnly?5:capacity)-sources.length-renderCandidates.length));
    const results=await Promise.all(batch.map(async url=>{try{return {page:await readSource(url)};}catch(error){return {url,reason:['TimeoutError','AbortError'].includes(error.name)?'source_timeout':/^[A-Z0-9_]{1,40}$/.test(error.code||'')?error.code:'source_unreadable'};}}));
@@ -155,7 +166,7 @@ export function createEvidenceCollector({read,render,clock=Date.now,timeout=1000
   if(renderCandidates.length&&clock()<deadline-3000){
    const renderPages=render||(await import('./render-source.mjs')).renderEvidencePages;
    let pages=[];try{pages=await renderPages(renderCandidates.slice(0,4),{read:fetchPage,deadline,onDiagnostic:diagnostic=>unavailable.push(diagnostic)});}catch{unavailable.push({reason:'render_failed'});}
-   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)){const rendered={...page,method:'rendered'};archive(rendered);if(sources.length<capacity)keep(rendered);}});
+   pages.forEach(page=>{if(page.text?.length>=100&&!blockedText(page.title+' '+page.text)){const {rawText,...current}=page,rendered={...current,method:'rendered'};archive(rendered);if(sources.length<capacity)keep(rendered);}});
   }
   for(const page of renderCandidates)if(!sources.some(s=>s.url===page.url)){if(page.text.length>=100&&!page.requiresRender&&sources.length<capacity)keep(page);else {unavailable.push({url:page.url,reason:'render_unavailable'});if(page.metadata?.length>=24&&sources.length<capacity)keep({...page,text:page.metadata,metadataOnly:true});}}
   const packet={version:'sellf-evidence-v1',...(maxSourceChars>180000?{evidenceTransportVersion:'sequential-v8-wide'}:{}),briefHash:briefHash(brief),asOf:new Date(clock()).toISOString().slice(0,10),entities:plan.entities,sources,unavailable:unavailable.slice(0,80)};

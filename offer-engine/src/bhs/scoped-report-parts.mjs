@@ -36,7 +36,7 @@ function reportParts(request,coverage,sections){
 // Each closed response contains at most two complete findings. Claude chooses
 // whether there is more to write; neither the batch size nor a clipped response
 // marks an information need as satisfied. All calls share the existing ledger.
-export async function writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures}){
+export async function writeBoundedScopedParts({providers,request,coverage,sections,swotId,outputSchema,normalizeData,project,signal,savedPartsOnly,reportFailures,contentQuality=false}){
  const parts=reportParts(request,coverage,sections);
  const collected={findings:[],benchmarks:[],questions:[]},completions=[];
  const manager=providers.modelHandoff?providers.manager:providers.claudeManager||providers.manager;
@@ -76,12 +76,14 @@ export async function writeBoundedScopedParts({providers,request,coverage,sectio
      (part.quadrants?part.quadrants.includes(finding.quadrant):finding.quadrant==='none'&&!swotSection(finding.section)))
      .map(finding=>part.quadrants?{...finding,section:swotId}:finding);
     // Save only complete rows that pass the same final proof/content gate.
-    const findings=[];
+    const findings=[],openQuestions=[];
     for(const finding of data.findings){
      const prior=[...retained.findings,...findings];
-     if(project({findings:[...prior,finding],benchmarks:[],questions:[]}).findings.length>
-      project({findings:prior,benchmarks:[],questions:[]}).findings.length)findings.push(finding);
+     const inspected=project({findings:[...prior,finding],benchmarks:[],questions:[]});
+     if(inspected.findings.length>project({findings:prior,benchmarks:[],questions:[]}).findings.length)findings.push(finding);
+     else if(contentQuality)openQuestions.push(...inspected.meetingQuestions.map(row=>row.question));
     }
+    if(contentQuality)data.questions=unique([...openQuestions,...data.questions]).slice(0,contentSchema.properties.questions.maxItems);
     return {...data,findings,hasMore:raw?.hasMore===true||Array.isArray(raw?.findings)&&raw.findings.length>rowLimit};
    };
    const key={version:1,part:part.id,page,requestHash:hash(stable(partRequest))};

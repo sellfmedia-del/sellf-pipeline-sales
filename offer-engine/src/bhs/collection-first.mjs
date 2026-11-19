@@ -362,7 +362,7 @@ export async function readResearchPages(brief,plan,targets,providers,collect,{co
    const input={url:page.finalUrl,method:page.method,contentHash:hash(page.text)};
    const key=hash(input);
    if(!entries.has(key))entries.set(key,{input,page});
-   if(complete)full.set(input.url+' '+input.method,page.text);
+   if(complete)full.set(input.url+' '+input.method,page.researchText??page.text);
   }
   const pending=entries.values();
   const workers=Array.from({length:Math.min(archiveConcurrency,entries.size)},async()=>{
@@ -1294,7 +1294,7 @@ function recoverReportEvidence(report,{brief,plan,needs,sections,writtenQuestion
   }
  }
  if(evidence.length||hypotheses.length)report.verifiedResearch.reportRecovery={evidence,hypotheses};
- const questions=metrics.filter(metric=>metric.status==='open'&&!covered.has(metric.id)).map(metric=>
+ const questions=metrics.filter(metric=>(metric.status==='open'||plan.cleanResearchEvidence)&&!covered.has(metric.id)).map(metric=>
   ({dimension:'operations',findingIds:[],question:'“'+label(metric)+'” hangi kayıt, dönem veya örneklem üzerinden doğrulanabilir?'}));
  report.meetingQuestions=[...new Map([...report.meetingQuestions,...writtenQuestions,...questions].map(row=>[row.question,row])).values()];
 }
@@ -1341,7 +1341,7 @@ function retainScopedResults(report,context,coverage,reverse,qualifyReportFindin
 
 async function runScopedCollection({phase,brief,providers,previous,collect,save,plan}){
  const brand=await loadScopedBrand(previous);
- const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:plan?.cleanResearchEvidence===true&&Boolean(providers.checkpoint),evidenceFocus});
  if(phase==='sector_sources'){
   const planned=await planScopedResearch({brief,identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,asOf:brand.packet.asOf,providers,packet:brand.packet});
   if(providers.managedBudgetVersion>=12&&!planned.needs.length){
@@ -1358,7 +1358,7 @@ async function runScopedCollection({phase,brief,providers,previous,collect,save,
    ...(providers.managedBudgetVersion>=20?{readEvidenceOnly:true}:{}),
    ...(providers.managedBudgetVersion>=21?{sectionedSynthesis:true}:{}),
    ...(providers.managedBudgetVersion>=22?{taskReporting:true,scopeMarketCounts:true,qualifyReportFindings:true,focusedProductComparison:true,procurementResearch:true}:{}),
-   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true}:{}),
+   ...(providers.managedBudgetVersion>=24?{reportRecovery:true,questionEvidence:true,boundedReportParts:true,cleanResearchEvidence:true}:{}),
    ...(providers.managedBudgetVersion>=11?{reportOnlyAfterResearch:true}:{})}});
  }
  if(!plan?.scopedResearch)return save({});
@@ -1394,7 +1394,7 @@ export async function continueScopedCollection({brief,providers,previous,collect
  ]);
  if(!marker?.scopedTail||!stage?.managedPlan?.adaptiveResearch)throw new BudgetError('invalid_phase','Açık BHS araştırma turu bulunamadı.');
  const rounds=stage.managedPlan.compactQueue?[]:await savedScopedRounds(previous);
- const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:false,evidenceFocus});
+ const readPages=(urls,evidenceFocus)=>readResearchPages(brief,brand.plan,urls,providers,collect,{archive:stage.managedPlan.cleanResearchEvidence===true&&Boolean(providers.checkpoint),evidenceFocus});
  try{
   return await reviewScopedResearch({identity:brand.brandUnderstanding,briefUnderstanding:brand.briefUnderstanding,
    plan:stage.managedPlan,rounds:[...rounds,...tail],providers,brief,packet:brand.packet,readPages});
