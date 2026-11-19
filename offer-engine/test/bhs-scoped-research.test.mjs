@@ -824,7 +824,8 @@ test('sales gaps use human names and distinguish blocked searches, weak sources 
  assert.equal(covered.find(s=>s.id==='FİYAT').openMetrics,undefined);
  const historical=scopedCoverage({findings:[]},[{id:'old',section:'pazar',name:'reklam_maliyet',status:'open'}],true,true)[0];
  assert.deepEqual(historical.openMetrics,[{name:'Reklam maliyetleri',status:'unknown'}]);
- const stale={data:{...audit,researchContinuity:{...audit.researchContinuity,notice:'Eski araştırma. Ek kanıt gereken bölümler: PAZAR.'},
+ // Reports without need receipts retain the original legacy label adapter.
+ const stale={data:{...audit,verifiedResearch:undefined,researchContinuity:{...audit.researchContinuity,notice:'Eski araştırma. Ek kanıt gereken bölümler: PAZAR.'},
   bhsSections:[{id:'PAZAR',title:'PAZAR',complete:false,openMetrics:[{name:'reklam_maliyet',status:'needs_evidence'}]}]}};
  const restored=(await restoreContinuation(brief,stale,{get:()=>assert.fail('saved statuses are formatted without launching research')})).data;
  assert.equal(restored.bhsSections[0].title,'Pazar analizi');

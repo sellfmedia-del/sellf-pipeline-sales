@@ -2,6 +2,7 @@ import {reviewScopedResearch} from './scoped-research.mjs';
 import {createHmac} from 'node:crypto';
 import {BudgetError,tariff} from '../budget/ledger.mjs';
 import {briefHash} from './brief.mjs';
+import {openResearchSections,scopedMetrics} from './research-status.mjs';
 import {capBhsLedger,gapCapKurus} from './managed-budget.mjs';
 import {managedIndexInstruction,managedSections,synthesizeManagedReport} from './managed-report.mjs';
 import {executeDirectedResearch,planDirectedResearch} from './directed-research.mjs';
@@ -24,11 +25,15 @@ function gapRunId(baseId,brief,secret){
  return id.slice(0,8)+'-'+id.slice(8,12)+'-4'+id.slice(13,16)+'-8'+id.slice(17,20)+'-'+id.slice(20);
 }
 
-export async function resolveManagedGaps({action,brief,synthesis,sections,secret,baseLedger,getGapLedger,getProviders,previous,allowance=true,collect=createEvidenceCollector({timeout:25000,allowPartialPlan:true,hardDeadline:true})}){
+export async function resolveManagedGaps({action,brief,synthesis,verifiedReport,sections,secret,baseLedger,getGapLedger,getProviders,previous,allowance=true,collect=createEvidenceCollector({timeout:25000,allowPartialPlan:true,hardDeadline:true})}){
  if(synthesis.supervision?.reviewMode!=='managed-audit'||!allowance)return null;
  const researchPlan=synthesis.supervision.researchPlan;
  const separateCosts=researchPlan?.separateGapCosts===true;
- if(researchPlan?.briefScope){
+ const currentReport=verifiedReport||synthesis.report;
+ if(researchPlan?.adaptiveResearch&&Array.isArray(currentReport.verifiedResearch?.metrics)){
+  sections=openResearchSections(currentReport,sections,synthesis.supervision.metricCoverage);
+  if(!sections.length)return null;
+ }else if(researchPlan?.briefScope){
   const measured=synthesis.supervision.metricCoverage||synthesis.report.verifiedResearch?.metrics||[];
   const openSections=new Set(measured.filter(metric=>metric.status==='open').map(metric=>metric.section));
   sections=sections.filter(section=>openSections.has(section));
@@ -48,7 +53,8 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  const remaining=independent?gapCapKurus:Math.max(0,Math.min(gapCapKurus,tariff.capKurus-base.chargedKurus));
  const estimate=separateCosts&&independent?{baseCommittedKurus:base.chargedKurus,maximumCombinedKurus:base.chargedKurus+gapCapKurus}:{};
  const available=(ids,capKurus)=>({available:true,sections:ids.map(id=>salesSectionTitle(id,
-  Object.hasOwn(managedSections,id)?managedSections[id]:synthesis.report.bhsSections?.find(s=>s.id===id)?.title)),capKurus,...estimate});
+  Object.hasOwn(managedSections,id)?managedSections[id]:currentReport.bhsSections?.find(s=>s.id===id)?.title||
+   scopedMetrics(currentReport,synthesis.supervision.metricCoverage).find(metric=>metric.section===id)?.sectionTitle)),capKurus,...estimate});
  if(!authorization){
   if(action!=='complete_gaps')return sections.length&&remaining?available(sections,remaining):null;
   if(!sections.length||!remaining)return null;
@@ -56,7 +62,8 @@ export async function resolveManagedGaps({action,brief,synthesis,sections,secret
  }
  const authorized=(authorization||await baseLedger.get(markerKey))?.value;
  if(!authorized||authorized.runId!==runId)throw new BudgetError('completion_unavailable','Ek araştırma yetkisi doğrulanamadı.');
- const authorizedSections=researchPlan?.briefScope?authorized.sections.filter(section=>sections.includes(section)):authorized.sections;
+ const authorizedSections=researchPlan?.briefScope||researchPlan?.adaptiveResearch&&Array.isArray(currentReport.verifiedResearch?.metrics)?
+  authorized.sections.filter(section=>sections.includes(section)):authorized.sections;
  if(!authorizedSections.length)return null;
  if(authorized.directedResearch){
   // Only an explicit action can open the independent 30 TL account.
@@ -255,7 +262,15 @@ export function mergeManagedGapReport(original,patch,sections,{taskReporting=fal
   const key=statementKey(f),peer=peerCandidates.get(f.peerId);
   const existingPeer=verified&&competitors.some(p=>p.id===f.peerId);
   const inScope=sections.includes(f.bhsSection)||taskReporting&&f.researchNeedIds?.some(id=>eligibleNeeds.has(id));
-  if(!inScope||existingStatements.has(key)||f.peerId&&!existingPeer&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
+  if(!inScope||f.peerId&&!existingPeer&&(!peer||acceptedPeers.has(peer.website)||competitors.length>=10))continue;
+  if(existingStatements.has(key)){
+   if(taskReporting){
+    const prior=findings.find(row=>statementKey(row)===key),index=findings.indexOf(prior);
+    findings[index]={...prior,researchNeedIds:unique([...(prior.researchNeedIds||[]),...(f.researchNeedIds||[])]),
+     sourceIds:unique([...prior.sourceIds,...f.sourceIds])};
+   }
+   continue;
+  }
   const count=findings.filter(prior=>prior.bhsSection===f.bhsSection).length;
   if(!taskReporting&&count>=10)continue;
   findings.push({...f,bhsRank:count+1});

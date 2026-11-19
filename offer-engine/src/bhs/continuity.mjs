@@ -3,6 +3,8 @@ import {directAuditResult} from './direct-report.mjs';
 import {fallbackScope} from '../pricing/scope.mjs';
 import {readReusableResearch} from './reuse.mjs';
 import {salesMetricName,salesSectionTitle} from './sales-research-labels.mjs';
+import {scopedCoverage,scopedMetrics,scopedSupervision} from './research-status.mjs';
+import {renderGroundedReport} from './grounded-report.mjs';
 export const continuationCodes=new Set(['research_empty','model_temporarily_unavailable','model_content_invalid','model_deadline','model_output_invalid','model_timeout','model_network','budget_limit','budget_uncertain','quota','provider_error','provider_unavailable','provider_format','provider_accounting','invalid_report','stage_failed','stage_abandoned','search_unavailable','tariff_expired','fx_unavailable','fx_limit','not_configured','claude_spend_limit']);
 export function abandonedStage(step,now){
  return step?.state==='reserved'&&step.charge_kurus===0&&Number.isFinite(Date.parse(step.created_at))&&now-Date.parse(step.created_at)>360000;
@@ -35,6 +37,24 @@ export function continuationAudit(brief,{synthesis,reason,verifiedAudit,managed=
 // An old empty handoff must not hide subsequently available, completed research
 // on the same authorised card. Read and re-ground it; never replay paid work.
 export async function restoreContinuation(brief,audit,ledger,now=Date.now()){
+ if(Array.isArray(audit?.data?.verifiedResearch?.metrics)&&Array.isArray(audit.data.bhsSections)){
+  const prior=audit.data,metrics=scopedMetrics(prior,prior.supervision?.metricCoverage);
+  const verifiedResearch={...prior.verifiedResearch,metrics};
+  const bhsSections=scopedCoverage(prior,metrics,true,true,prior.bhsSections.some(section=>/^swot\b/iu.test(section.id)),true);
+  const incomplete=bhsSections.some(section=>!section.complete);
+  const researchCoverage=(prior.researchCoverage||[]).filter(row=>row.status!=='unavailable');
+  const report=prior.report?{...prior.report,bhsSections,researchCoverage,verifiedResearch,
+   ...(prior.report.transfer&&incomplete?{transfer:{...prior.report.transfer,contentComplete:false}}:{})}:undefined;
+  const quality=prior.quality?{...prior.quality,...(incomplete?{checksPassed:false,contentComplete:false}:{}),
+   methodologyCoverage:{expected:metrics.length,present:metrics.filter(metric=>metric.status==='confirmed').length,scope:'planned_needs'},
+   issues:(prior.quality.issues||[]).filter(issue=>!(issue.path?.startsWith('researchCoverage.')&&issue.reason==='unavailable_or_unverified'))}:undefined;
+  const renderable=report&&['findings','dimensions','competitors','benchmarks','sources','meetingQuestions','serviceRecommendations'].every(key=>Array.isArray(report[key]));
+  const rawReport=typeof prior.rawReport==='string'&&renderable?renderGroundedReport(report)
+   .replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.','Ön BHS: '+(prior.scoring?.total??'Yanıt Bekliyor')+'/100\n'+(prior.scoring?.note||'')):prior.rawReport;
+  audit={...audit,data:{...prior,bhsSections,researchCoverage,verifiedResearch,...(report?{report}:{}),...(quality?{quality}:{}),
+   ...(prior.supervision?{supervision:scopedSupervision(prior,prior.supervision)}:{}),
+   ...(rawReport!==undefined?{rawReport}:{})}};
+ }
  const data=audit?.data;
  // Saved handoffs can predate the status receipts. Present their recorded
  // names without reclassifying or re-running the underlying research.

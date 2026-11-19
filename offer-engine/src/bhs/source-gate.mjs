@@ -121,7 +121,7 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
    }
    const row=f.researchEvidenceOnly?customerFinding(f,raw):qualifyScopedFinding({observation:f.statement,analysis:f.impact,
     section:f.bhsSection,sectionTitle:f.bhsSectionTitle,needIds:f.researchNeedIds},cards,needs,{contentQuality:true,statisticalScope:true});
-   if(!row||selected.some(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement))){
+   if(!row){
     if(!row){const question=researchGapQuestion(f,needs);if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});}
     issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});continue;
    }
@@ -132,7 +132,15 @@ export function groundOfferReport(value,{packet,searchEvidence=[],brief={},prese
    }
   }
   const ok=supported(f.sourceIds)&&!completedForecast(f,quotes(f.sourceIds))&&!reversedPercentage([f.statement,f.reportExcerpt,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers([f.statement,f.impact].join(' '),quotes(f.sourceIds))&&supportedNumbers(f.goalConnection,[quotes(f.sourceIds),brief.goals,brief.needs,brief.services,brief.meetingNotes].filter(Boolean).join(' '));
-  if(ok)selected.push(f);else{
+  if(ok){
+   const duplicate=needs&&selected.find(prior=>prior.sourceIds.some(id=>f.sourceIds.includes(id))&&repeatedFinding(f.statement,prior.statement));
+   if(duplicate){
+    if(duplicate.peerId===f.peerId&&duplicate.swotQuadrant===f.swotQuadrant&&normalized(duplicate.statement).toLocaleLowerCase('tr')===normalized(f.statement).toLocaleLowerCase('tr')){
+     duplicate.researchNeedIds=[...new Set([...(duplicate.researchNeedIds||[]),...(f.researchNeedIds||[])])];
+     duplicate.sourceIds=[...new Set([...duplicate.sourceIds,...f.sourceIds])];
+    }else issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
+   }else selected.push(f);
+  }else{
    issues.push({path:'findings.'+f.id,reason:'unsupported_finding'});
    if(needs){const question=researchGapQuestion(f,needs);if(question)openQuestions.push({dimension:f.dimension||'operations',question,findingIds:[]});}
   }
