@@ -11,7 +11,7 @@ test('native Claude tool use carries one conversation, caches its prefix and cha
   const body=JSON.parse(init.body);requests.push({url,body});
   if(url.endsWith('/count_tokens'))return reply({input_tokens:1000});
   assert.equal(body.cache_control.type,'ephemeral');assert.ok(body.tools.some(t=>t.name==='read_pages'));
-  assert.ok(!body.tools.some(t=>t.name==='finish_bhs'));
+  assert.equal(body.tools.find(t=>t.name==='finish_bhs').strict,true);
   return reply({...assistantCall('begin_report',{reason:'Kaynaklar yeterli.'}),model:'claude-sonnet-5-5',stop_reason:'tool_use',
    usage:{input_tokens:100,output_tokens:200,cache_creation_input_tokens:200,cache_read_input_tokens:700}});
  }));
@@ -21,14 +21,23 @@ test('native Claude tool use carries one conversation, caches its prefix and cha
  assert.equal(total(),500+one.accountedKurus);assert.ok(one.accountedKurus<quote.reservation);
  assert.equal([...rows.values()].filter(r=>r.charge_kurus>0).length,1);
 });
-test('the final report is forced to its report tool while retaining historical tool definitions and a full output allowance',async()=>{
+test('Sonnet 5.5 final reports use auto choice and a strict report tool, never unsupported forced tools',async()=>{
  const {ledger}=memoryLedger();let body;
  const providers=createConversationProviders(config(ledger,async(url,init)=>{
-  if(url.endsWith('/count_tokens'))return reply({input_tokens:1200});body=JSON.parse(init.body);
+  const payload=JSON.parse(init.body);assert.equal(payload.tool_choice.type,'auto');
+  if(url.endsWith('/count_tokens'))return reply({input_tokens:1200});body=payload;
   return reply({model:'claude-sonnet-5-5',content:assistantCall('finish_bhs',report()).content,stop_reason:'tool_use',usage:{input_tokens:1200,output_tokens:2000}});
  }));
  const messages=[{role:'user',content:'Kaynakları analiz et.'}];await providers.analyst(messages,{final:true});
- assert.equal(body.max_tokens,10000);assert.ok(body.tools.some(tool=>tool.name==='read_pages'));assert.ok(body.tools.some(tool=>tool.name==='finish_bhs'));assert.equal(body.tool_choice.name,'finish_bhs');
+ assert.equal(body.max_tokens,10000);assert.ok(body.tools.some(tool=>tool.name==='read_pages'));assert.equal(body.tools.find(tool=>tool.name==='finish_bhs').strict,true);assert.equal(body.tool_choice.type,'auto');assert.equal(body.tool_choice.disable_parallel_tool_use,true);
+});
+test('Gemini fallback counts the complete generate request in its supported envelope before purchasing output',async()=>{
+ const {ledger}=memoryLedger();let counted;
+ const providers=createConversationProviders(config(ledger,async(url,init)=>{
+  if(url.endsWith(':countTokens')){counted=JSON.parse(init.body);assert.equal(counted.systemInstruction,undefined);assert.equal(counted.generateContentRequest.model,'models/gemini-3.8-flash');return reply({totalTokens:1000});}
+  return reply({modelVersion:'gemini-3.8-flash',candidates:[{content:{parts:[{text:JSON.stringify(report())}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:2000}});
+ }));
+ const result=await providers.fallbackReport({brief,sources:[source],previous:[]});assert.ok(counted.generateContentRequest.systemInstruction);assert.equal(result.data.summary,report().summary);
 });
 test('an uncertain paid Claude request retains its reservation and is never dispatched twice',async()=>{
  const {ledger,total}=memoryLedger();let paid=0;
