@@ -189,7 +189,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  async function save(turn){
   const last=messages?.at(-1)?.content;
   const budgetText=typeof last==='string'?last.match(/Sistem bütçe bilgisi: .*$/su)?.[0]:last?.findLast(block=>block.type==='text'&&block.text.startsWith('Sistem bütçe bilgisi: '))?.text;
-  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,recordedAt:new Date(now()).toISOString()};
+  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,researchOutcomeVersion,recordedAt:new Date(now()).toISOString()};
   return ledger.once(conversationKeys.turn(id,state.index)+(state.recoverFreeTurn?':recovered':''),{version:conversationVersion,id,index:state.index},0,async()=>value);
  }
 }

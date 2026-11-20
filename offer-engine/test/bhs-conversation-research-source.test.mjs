@@ -8,6 +8,7 @@ import {conversationKeys,researchHandoffSchema} from '../src/bhs/conversation-co
 import {assertSchema} from '../src/bhs/schema.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
+import {repairConversationReport} from '../src/bhs/conversation-repair.mjs';
 import {brief,source,peerSource,researchSources,researchSummary,report,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
 
 const id='c'.repeat(64),now=()=>Date.parse('2026-11-20T14:00:00Z');
@@ -95,6 +96,16 @@ test('a final answer cannot silently drop the researched named competitor while 
  await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now});assert.ok(saved.researchIssues.includes('researched_competitor_omitted'));
  assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,false);assert.equal(saved.conversationReport.reportMarkdown,report().reportMarkdown);
+});
+test('a provider outage cannot bypass research status through a later writing-only recovery',async()=>{
+ const {ledger}=memoryLedger();
+ await ledger.once(conversationKeys.turn(id,0),{},0,async()=>({sources:[source],results:[],toolIssues:[]}));
+ const failed=await advanceConversation({brief,ledger,id,now,providers:{analystQuote:async()=>{throw Object.assign(Error('Synthetic outage'),{code:'provider_error'});}}});
+ assert.equal(failed.researchOutcomeVersion,researchOutcomeVersion);
+ const restored=await repairConversationReport({brief,job:{researchRunId:'synthetic'},ledger,id,now,meter:async({run})=>run(),getProviders:()=>({
+  analystQuote:async()=>({reservation:100,output:8000}),analyst:async()=>assistantCall('finish_bhs',report())})});
+ assert.equal(restored.reason,'research_incomplete');assert.equal(conversationAuditResult(brief,restored).data.quality.contentComplete,false);
+ assert.equal(restored.repair.newResearchCalls,0);assert.equal(restored.conversationReport.reportMarkdown,report().reportMarkdown);
 });
 test('complete research outcomes survive the same durable checkpoint into pricing with the full narrative intact',async()=>{
  const {ledger}=memoryLedger();await seed(ledger);
