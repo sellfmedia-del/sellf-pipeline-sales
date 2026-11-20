@@ -9,12 +9,12 @@ import {assertSchema} from '../src/bhs/schema.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {repairConversationReport} from '../src/bhs/conversation-repair.mjs';
-import {brief,source,peerSource,researchSources,researchSummary,report,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
+import {brief,source,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSources,researchSummary,report,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
 
 const id='c'.repeat(64),now=()=>Date.parse('2026-11-20T14:00:00Z');
 const menu=Array.from({length:700},()=>'* [Home](https://pet.example.com/)\n* [Products](https://pet.example.com/products)\n').join('');
 async function seed(ledger,{sources=researchSources,summary=researchSummary()}={}){
- await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources,researchSummary:summary,researchOutcomeVersion,results:[],toolIssues:[]}));
+ await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources,researchSummary:summary,researchOutcomeVersion,researchProgress:completeResearchProgress(),results:fixtureSourceResults(),toolIssues:[]}));
 }
 test('the actual homepage-only regression cannot enter final writing with a reason or a generic competitor paragraph',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı anla'}),

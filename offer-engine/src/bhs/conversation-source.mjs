@@ -32,6 +32,7 @@ export function sourceReadingStatus(source){
  return passages(String(source.text||'')).length?'body_available':'navigation_only';
 }
 export const usableConversationSource=source=>Boolean(source)&&sourceReadingStatus(source)==='body_available';
+export const conversationSourceBody=source=>passages(String(source.text||'')).map(row=>clean(source.text.slice(row.start,row.end))).join(' ');
 
 export function presentConversationSource(source,{purpose='',offset}={}){
  const original=String(source.text||''),status=sourceReadingStatus(source);

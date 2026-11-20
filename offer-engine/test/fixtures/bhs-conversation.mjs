@@ -1,5 +1,7 @@
 import {createLedger} from '../../src/budget/ledger.mjs';
 import {sourceId} from '../../src/bhs/conversation-contract.mjs';
+import {presentConversationSource} from '../../src/bhs/conversation-source.mjs';
+import {collectSourceViews,emptyResearchProgress,updateResearchProgress} from '../../src/bhs/conversation-progress.mjs';
 
 export const brief={brandName:'Örnek Pet',segment:'kobi',website:'https://pet.example.com/',
  goals:'Türkiye pazarında büyümek ve ciro artışı.',needs:'Web sitesi ve online satış kanallarının yönetimi. Amazon tarafında mevcut bir partner var.',
@@ -10,7 +12,18 @@ export const marketSource={...source,id:sourceId('https://market.example.com/pet
  text:'Türkiye pet bakım alıcıları ürünü uzman mağazalarda ve çevrim içi pazaryerlerinde karşılaştırır. Bakım ihtiyacına uygun kullanım açıklaması ürün seçimini etkiler.'};
 export const peerSource={...source,id:sourceId('https://peer.example.com/coat-care'),url:'https://peer.example.com/coat-care',title:'Sentetik rakip ürün kaynağı',
  text:'Örnek Rakip Türkiye içinde kedi ve köpekler için tüy açıcı bakım spreyi satıyor. Ürün sayfasında uygulama videosu ve doğrudan sipariş seçeneği var.'};
-export const researchSources=[source,marketSource,peerSource];
+export const usageSource={...source,id:sourceId('https://care.example.com/detangling'),url:'https://care.example.com/detangling',title:'Sentetik kullanım kaynağı',
+ text:'Tüy bakım ürünlerinde uygulama miktarı ve kullanım sıklığı ürün seçimini etkileyebilir. Ürünün hayvan türüne uygunluğu ve kullanım adımları anlaşılır biçimde açıklanmalıdır.'};
+export const researchSources=[source,marketSource,peerSource,usageSource];
+export const researchProgressInput=()=>({objective:'Markanın Türkiye büyüme hedefi için ürün, kanal ve rekabet kararlarını anlamak.',questions:[
+ {id:'brand',question:'Marka hangi ürünü ve sipariş yolunu sunuyor?',access:'public',important:true,status:'answered',answer:'Ürün tanıtımı harici sipariş kanallarına yönleniyor.',sourceIds:[source.id],attemptedUrls:[],rationale:''},
+ {id:'market',question:'Pazarda kanal ve kullanım davranışının anlamı ne?',access:'public',important:true,status:'answered',answer:'Uzman mağaza ve pazaryerinde karşılaştırma; kullanım anlatımı önemli olabilir.',sourceIds:[marketSource.id,usageSource.id],attemptedUrls:[],rationale:''},
+ {id:'competition',question:'Hangi rakip neden alternatif?',access:'public',important:true,status:'answered',answer:'Örnek Rakip aynı ihtiyaca ürün sunuyor; videosu ve sipariş yolu farklı.',sourceIds:[peerSource.id],attemptedUrls:[],rationale:''},
+ {id:'margin',question:'Ürünlerin gerçekleşen brüt marjı nedir?',access:'client',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:'Müşterinin iç finansal verisi.'}],
+ sources:researchSources.map(row=>({sourceId:row.id,questionId:row===source?'brand':row===peerSource?'competition':'market',related:true,quote:row.text,reason:'Bu kaynak ilgili ürün, pazar veya karşılaştırma sorusunu yanıtlıyor.'})),candidates:[]});
+export const fixtureSourceResults=()=>[{type:'tool_result',tool_use_id:'synthetic-read',content:JSON.stringify({sources:researchSources.map(row=>presentConversationSource(row))})}];
+export function completeResearchProgress(){const sources=new Map(researchSources.map(row=>[row.id,row]));return updateResearchProgress(emptyResearchProgress(),researchProgressInput(),{
+ sources:researchSources,views:collectSourceViews({results:fixtureSourceResults()},sources),knownUrls:new Set(researchSources.map(row=>row.url)),readAttempts:new Set(),toolIssues:[]});}
 export const researchSummary=()=>({reason:'Pazar ve karşılaştırma sonuçları hazır.',market:{
  channels:{analysis:'Uzman mağaza ve pazaryerlerinde keşif; marka için kanal bazlı ürün anlatımı gerekli.',sourceIds:[marketSource.id]},
  customerBehavior:{analysis:'Ürüne uygun kullanım açıklaması seçimi etkileyebilir; etkisi dönüşüm pilotuyla ölçülmeli.',sourceIds:[marketSource.id]},
@@ -20,7 +33,8 @@ export function researchedReport(){const value=report();value.competitors=resear
  value.reportMarkdown=value.reportMarkdown.replace('Doğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.',
   `Örnek Rakip aynı ülkede tüy bakım ürünü sunuyor; videosu ve doğrudan sipariş yolu, markanın harici yönlendirmesinden farklı. Ürün anlatımı ve sipariş geçişini pilotla karşılaştır. [${peerSource.id}]`);
  value.reportMarkdown=value.reportMarkdown.replace('## Pazar ve müşteri\n',`## Pazar ve müşteri\nUzman mağaza ve pazaryerinde ürün karşılaştırması, ürün kullanım anlatımını kanal bazında uyarlamayı gerektirebilir. [${marketSource.id}]\n`);
- value.sourceQuotes.push(...[marketSource,peerSource].map(row=>({sourceId:row.id,quote:row.text})));return value;}
+ value.reportMarkdown=value.reportMarkdown.replace('## Rekabet\n',`Kullanım adımlarının anlaşılır sunumu, ürün açıklaması pilotunda değerlendirilebilir; satış etkisi henüz ölçülmedi. [${usageSource.id}]\n## Rekabet\n`);
+ value.sourceQuotes.push(...[marketSource,peerSource,usageSource].map(row=>({sourceId:row.id,quote:row.text})));return value;}
 export function report(){return {
  summary:'Örnek Pet için büyüme önceliği, ürün keşfini ölçülebilir bir satın alma yoluna bağlamak.',
  reportMarkdown:`# Örnek Pet BHS\n## Marka ve hedef\nAna sayfa ürünleri ve üçüncü taraf sipariş yönlendirmesini birlikte sunuyor. [${source.id}]\n## Pazar ve müşteri\nTürkiye pet kozmetiği alt pazarının büyüklüğü bu kaynakta yok; toplam pet pazarı verisi bunun yerine konamaz. Marka ve ürün stratejisi bu sayıya bağlı olmadan değerlendirilebilir.\n## Rekabet\nDoğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.\n## SWOT\n### Güçlü yönler\nÜrün faydasının tanımlı olması listeleme çalışmasına başlangıç sağlar; bu ticari bir değerlendirmedir.\n### Zayıf yönler\nSiparişin harici kanallara yönlenmesi ölçümün parçalanması riskini taşıyabilir; düşük dönüşüm yaşandığı kanıtlanmış değildir.\n### Fırsatlar\nÜrün bazlı sayfa ve kanal ölçümü için kontrollü pilot yapılabilir.\n### Tehditler\nRakip fiyat baskısı bir hipotezdir; karşılaştırılabilir fiyat kaydı olmadan gerçekleşmiş sonuç sayılamaz.\n## Öncelikli aksiyonlar\nÖnce ürün sayfasından Shopier/WhatsApp yönlendirmesine kadar olay ölçümünü kur; aynı kanalda önceki dönemle karşılaştır. Amazon partnerinin mevcut olması yeni kapsamdan otomatik dışlama yaratmaz.`,

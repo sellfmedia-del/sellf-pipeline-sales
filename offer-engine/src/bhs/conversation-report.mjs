@@ -7,6 +7,7 @@ import {conversationVersion,finalReportSchema,publicResearchUrl} from './convers
 import {assertSchema} from './schema.mjs';
 import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
 import {researchReportIssues} from './conversation-research.mjs';
+import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
 
 export function validateConversationReport(report,sources){
  const issues=[];
@@ -48,6 +49,8 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
   researchSummary=stored.researchSummary||stored.report?.researchSummary;
  if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief));
+ const researchClosure=stored.researchClosure||stored.report?.researchClosure;
+ if(raw&&researchClosure)issues.push(...(researchClosure.issues||[]),...researchClosureIssues(researchClosure.progress,retained,{report:raw,includeUnavailable:true}));
  reason??=stored.reason;
  const report=raw||{summary:brief.brandName+' için araştırma kayıtları korundu; tamamlanmış analiz henüz oluşmadı.',
   reportMarkdown:brief.brandName+' için tamamlanmış BHS oluşmadı. '+(reason?'İşlem durumu: '+reason+'.':''),highlights:[],competitors:[],sourceQuotes:[],questions:[],limitations:[]};
@@ -65,7 +68,13 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   if(source&&source.text.replace(/\s+/gu,' ').includes(row.quote.replace(/\s+/gu,' ').trim())&&row.quote.length<=240)
    quoteMap.set(row.sourceId,[...(quoteMap.get(row.sourceId)||[]),row.quote]);
  }
- const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,text:quoteMap.get(source.id).join('\n'),links:[],readingStatus:sourceReadingStatus(source)}));
+ for(const proof of qualifiedResearchSources(researchClosure?.progress,retained)){
+  const source=sourceRows.get(proof.sourceId);
+  if(source&&proof.quote.length<=240&&source.text.replace(/\s+/gu,' ').includes(proof.quote.replace(/\s+/gu,' ').trim())){
+   used.add(source.id);quoteMap.set(source.id,[...(quoteMap.get(source.id)||[]),proof.quote]);
+  }
+ }
+ const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,...sourceReadIdentity(source),text:[...new Set(quoteMap.get(source.id))].join('\n'),links:[],readingStatus:sourceReadingStatus(source)}));
  const sources=captured.map(source=>({id:source.id,url:source.url,title:source.title||source.url,
   quote:source.text,scope:source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.',
   sourceType:'secondary',publishedAt:source.publishedAt||null,period:null,
@@ -76,6 +85,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   count:findings.filter(f=>f.bhsSection===id).length,findingIds:findings.filter(f=>f.bhsSection===id).map(f=>f.id),complete,missingQuadrants:[]}));
  const reportData={summary:report.summary,findings,sources,
   ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
+  ...(researchClosure?{researchClosure}:{}),
   competitors:report.competitors.map(peer=>({id:'peer_'+hash(peer.url).slice(0,18),name:peer.name,website:peer.url,
    scaleReason:peer.reason,audienceReason:'',geographyReason:'',sourceIds:peer.sourceIds})),
   dimensions:dimensions.map(d=>({id:d.id,score:null,rationale:'Nitel değerlendirme tam BHS raporunda yer alır.',dataStatus:'partial',findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonCompetitorIds:[],strengths:[],gaps:[],onboardingQuestions:[]})),

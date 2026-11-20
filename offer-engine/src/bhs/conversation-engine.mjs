@@ -1,8 +1,9 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {conversationKeys,conversationVersion,publicResearchUrl,sourceId} from './conversation-contract.mjs';
 import {validateConversationReport} from './conversation-report.mjs';
-import {presentConversationSource,usableConversationSource} from './conversation-source.mjs';
+import {presentConversationSource,usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
 import {researchOutcomeVersion,researchOutcomeIssues,researchReportIssues} from './conversation-research.mjs';
+import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateResearchProgress,researchClosureIssues,researchStatus,sourceReadIdentity} from './conversation-progress.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -17,17 +18,19 @@ export async function readConversation(ledger,id){
  const rows=pairs.map(([original,recovered])=>complete(original)?original:complete(recovered)?recovered:original||recovered);
  const turns=[];
  for(const row of rows){if(!complete(row))break;turns.push(row.value);}
- const sources=new Map(),knownUrls=new Set(),readAttempts=new Set(),toolIssues=[];
+ const sources=new Map(),knownUrls=new Set(),readAttempts=new Set(),toolIssues=[],sourceViews=new Map();
  for(const turn of turns){
-  for(const source of turn.sources||[]){sources.set(source.id,source);knownUrls.add(source.url);
+  for(const source of turn.sources||[]){sources.set(source.id,{...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)});knownUrls.add(source.url);
    for(const url of source.links||[])knownUrls.add(url);}
   for(const url of turn.readAttempts||[])readAttempts.add(url);
   toolIssues.push(...(turn.toolIssues||[]));
+  collectSourceViews(turn,sources,sourceViews);
  }
  const final=turns.findLast(t=>t.conversationReport||t.closed);
  const pending=pairs[turns.length];
  return {turns,index:turns.length,sources:[...sources.values()],knownUrls,readAttempts,toolIssues,final,
   researchSummary:turns.findLast(turn=>turn.researchSummary)?.researchSummary,
+  researchProgress:turns.findLast(turn=>turn.researchProgress)?.researchProgress||emptyResearchProgress(),sourceViews,
   interrupted:rows[turns.length]&&!complete(rows[turns.length]),
   recoverFreeTurn:Boolean(pending?.[0]&&!complete(pending[0])&&pending[0].charge_kurus===0&&!pending[1])};
 }
@@ -35,8 +38,9 @@ function archiveSource(value,now){
  const url=publicResearchUrl(value.url);
  if(!url||typeof value.text!=='string')return null;
  const links=[...value.text.matchAll(/\]\((https?:\/\/[^\s)]+)\)/gu)].map(m=>publicResearchUrl(m[1])).filter(Boolean);
- return {id:sourceId(url),url,title:String(value.title||url),text:value.text,method:value.method,
+ const source={id:sourceId(url),url,title:String(value.title||url),text:value.text,method:value.method,
   links:[...new Set(links)],retrievedAt:new Date(now).toISOString()};
+ return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
 }
 
 export function conversationMessages(brief,state,{forceFinish=false,cost,finalReserve=0}={}){
@@ -53,6 +57,7 @@ export function conversationMessages(brief,state,{forceFinish=false,cost,finalRe
  }
  const budget={committedKurus:cost?.chargedKurus,capKurus:5000,finalReportReserveKurus:finalReserve,
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
+  research:researchStatus(state.researchProgress,state.sources),
   instruction:forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor rezervini koru.'};
  addBudget('Sistem bütçe bilgisi: '+JSON.stringify(budget));
  return messages;
@@ -66,9 +71,11 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  if(state.interrupted&&!state.recoverFreeTurn)throw new BudgetError('stage_paused','Önceki konuşma kaydı kesildi; ücretli çağrı tekrarlanmadı.');
  if(state.index>=maximumConversationTurns)throw new BudgetError('conversation_limit','Analiz tur sınırına ulaştı.');
  const cost=await ledger.status();
- const forceFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000||state.turns.some(t=>t.finishRequested);
+ const hardFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000;
+ const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
+ const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
  let messages,quote,answer,finalMode=forceFinish,providerIssue;
- const recoverySources=[],recoveryReads=[];
+ const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews;
  try{
   let requestKey='audit:conversation:request:'+id+':'+state.index;
   let request=await ledger.get(requestKey);
@@ -84,6 +91,9 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     finalMode=true;messages=conversationMessages(brief,state,{forceFinish:true,cost});
     quote=await providers.analystQuote(messages,{final:true});
    }
+   // Only the reserve's digits change after counting; the quote already has
+   // 512 tokens of input headroom. Freeze the truthful reserve with the request.
+   messages=conversationMessages(brief,state,{forceFinish:finalMode,cost,finalReserve:quote.finalReservation});
    await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode}));
   }
   answer=await providers.analyst(messages,{final:finalMode,quote});
@@ -100,6 +110,10 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      for(const row of seed.results||[]){const source=archiveSource(row,now());if(source)recoverySources.push(source);}
     }
     const report=await providers.fallbackReport({brief,sources:[...state.sources,...recoverySources],previous:state.turns.map(t=>t.assistant?.content).filter(Boolean)});
+    if(report.observedSources){
+     collectSourceViews({results:[{content:JSON.stringify({sources:report.observedSources})}]},new Map([...state.sources,...recoverySources].map(source=>[source.id,source])),fallbackViews);
+     observedSourceViews=[...fallbackViews].map(([sourceId,view])=>({sourceId,...view}));
+    }
     if(report.data)answer={content:[{type:'tool_use',id:'gemini_final_'+state.index,name:'finish_bhs',input:report.data}],stopReason:'tool_use',fallback:true};
    }catch{/* The free, explicitly partial handoff below preserves all receipts. */}
   }
@@ -109,7 +123,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use','thinking','redacted_thinking'].includes(b.type))};
  const results=[],newSources=[...recoverySources],readAttempts=[...recoveryReads],toolIssues=providerIssue?[providerIssue]:[];
  let report,reportCandidate,terminalReason,researchSummary=state.researchSummary,researchIssues,
-  finishRequested=finalMode||answer.stopReason==='max_tokens';
+  researchProgress=state.researchProgress,closureIssues,finishRequested=finalMode;
  const sourceMap=new Map([...state.sources,...recoverySources].map(s=>[s.id,s])),knownUrls=new Set([...state.knownUrls,brief.website]);
  const add=(rows,purpose)=>rows.flatMap(row=>{
   const source=archiveSource(row,now());if(!source)return [];
@@ -124,13 +138,19 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   const call=calls[index];let value,error;
   try{
    if(index>=4)throw new BudgetError('tool_batch_limit','Bu turdaki ek emir sonraki karara bırakıldı.');
-   if(call.name==='begin_report'){
-    const missing=researchOutcomeIssues(call.input,[...sourceMap.values()],brief);
+   if(call.name==='review_research'){
+    researchProgress=updateResearchProgress(researchProgress,call.input,{sources:[...sourceMap.values()],views:state.sourceViews,knownUrls,
+     readAttempts:state.readAttempts,toolIssues:state.toolIssues});
+    value={accepted:true,...researchStatus(researchProgress,[...sourceMap.values()])};
+   }else if(call.name==='begin_report'){
+    const missing=[...researchOutcomeIssues(call.input,[...sourceMap.values()],brief),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    if(typeof call.input.reason!=='string'||!call.input.reason.trim())missing.push('research_completion_reason_missing');
+    if(calls.some(other=>!['begin_report','review_research'].includes(other.name)))missing.push('research_observations_pending');
     if(missing.length&&!finalMode)throw new BudgetError('research_needed',missing.join(', '));
     researchSummary=call.input;
     finishRequested=true;value={accepted:true,instruction:'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
    }else if(call.name==='finish_bhs'&&!finalMode&&!answer.fallback){
-    const missing=researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief);
+    const missing=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(missing.length)throw new BudgetError('research_needed',missing.join(', '));
     finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){
@@ -139,7 +159,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     if(issues.length)throw new BudgetError('report_validation',issues.join(', '));
     if(calls.length!==1)throw new BudgetError('report_validation','Araştırma sonuçlarını aldıktan sonra raporu ayrı bir yanıtta tamamla.');
     researchIssues=researchReportIssues(call.input,researchSummary,[...sourceMap.values()],brief);
-    if(researchIssues.length)terminalReason='research_incomplete';
+    closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:call.input,views:answer.fallback?fallbackViews:state.sourceViews,includeUnavailable:true});
+    if(researchIssues.length||closureIssues.length)terminalReason='research_incomplete';
     report=call.input;value={accepted:true,...(researchIssues.length?{researchIssues}: {})};
    }else if(finalMode)throw new BudgetError('research_closed','Kalan bütçe ve süre tam rapor için korundu.');
    else if(call.name==='search_web')value={sources:add((await providers.search(call.input,toolOptions)).results,call.input.purpose)};
@@ -172,15 +193,16 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     const {results:extractedRows,...details}=extracted;
     value={...details,sources:add(extractedRows||[],call.input.purpose)};
    }else throw new BudgetError('unknown_tool','Bilinmeyen araştırma aracı.');
-  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
-    ...(failure.code==='research_needed'?{instruction:'Ana sayfa tek başına yeterli değil. Eksik pazar/rakip görevini ilgili kaynakları okuyarak tamamla; isimli karşılaştırmayı ve marka için sonucunu begin_report ile teslim et. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
-   if(['budget_limit','input_budget'].includes(error.code))finishRequested=true;
+  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed','research_progress_invalid'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
+    ...(['research_needed','research_progress_invalid','budget_limit','input_budget'].includes(failure.code)?{research:researchStatus(researchProgress,[...sourceMap.values()]),instruction:'Önemli public soruyu veya ilgili kaynak okumasını tamamla; review_research ile gerçek ilerlemeyi kaydet. Bir aracın reddi tüm araştırmayı bitirmez; daha dar veya ücretsiz arşiv okumasını değerlendir. Müşteriden alınacak iç bilgiler araştırmayı kilitlemez. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
    if(error.code==='report_validation'&&(answer.fallback||state.turns.some(turn=>turn.toolIssues?.some(issue=>issue.code==='report_validation'))))terminalReason='report_review_required';}
   results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(value),...(error?{is_error:true}:{})});
  }
- if(!calls.length)finishRequested=true;
+ if(!calls.length)finishRequested=closureReady||finalMode;
  return save({assistant,results,sources:newSources,readAttempts,toolIssues,finishRequested,
   ...(researchSummary?{researchSummary}:{}),...(researchIssues?{researchIssues}:{}),researchOutcomeVersion,
+  researchProgress,...(closureIssues?{closureIssues}:{}),
+  ...(observedSourceViews?{observedSourceViews}:{}),
   ...(report?{closed:true,conversationReport:report,...(terminalReason?{reason:terminalReason}:{})}:{}),...(answer.fallback?{fallbackProvider:'gemini'}:{}),
   ...(terminalReason&&!report?{closed:true,reason:terminalReason}:{}),
   ...(!report&&reportCandidate?{reportCandidate}:{}),
@@ -189,7 +211,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  async function save(turn){
   const last=messages?.at(-1)?.content;
   const budgetText=typeof last==='string'?last.match(/Sistem bütçe bilgisi: .*$/su)?.[0]:last?.findLast(block=>block.type==='text'&&block.text.startsWith('Sistem bütçe bilgisi: '))?.text;
-  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,researchOutcomeVersion,recordedAt:new Date(now()).toISOString()};
+  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,researchOutcomeVersion,researchClosureVersion,recordedAt:new Date(now()).toISOString()};
   return ledger.once(conversationKeys.turn(id,state.index)+(state.recoverFreeTurn?':recovered':''),{version:conversationVersion,id,index:state.index},0,async()=>value);
  }
 }
@@ -204,7 +226,10 @@ export async function readConversationResult(ledger,id){
 export async function persistConversationResult({brief,ledger,id,reason,now=Date.now}){
  const existing=await readConversationResult(ledger,id);if(complete(existing))return existing.value;
  const state=await readConversation(ledger,id);
- const result={conversationReport:state.final?.conversationReport||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate,conversationSources:state.sources,
+ const conversationReport=state.final?.conversationReport||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate;
+ const result={conversationReport,conversationSources:state.sources,
+  ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,
+   issues:state.final?.closureIssues||researchClosureIssues(state.researchProgress,state.sources,{report:conversationReport,views:state.sourceViews,includeUnavailable:true})}}:{}),
   ...(state.turns.some(turn=>turn.researchOutcomeVersion)?{researchOutcomeVersion,researchSummary:state.researchSummary,
    researchIssues:state.final?.researchIssues||researchOutcomeIssues(state.researchSummary,state.sources,brief)}:{}),
   toolIssues:state.toolIssues,reason:reason||state.final?.reason,researchedAt:new Date(now()).toISOString(),
