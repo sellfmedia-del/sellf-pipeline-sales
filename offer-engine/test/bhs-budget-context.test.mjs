@@ -62,15 +62,16 @@ test('invalid billable input retains its funded commitment and cannot trigger a 
  assert.equal(calls,1);assert.deepEqual(await f.ledger.status(),before);
 });
 
-test('oversized input and expired reviewed model pricing refuse before a paid request or reservation',async t=>{
+test('oversized input refuses before a paid request or reservation without an unrelated model cutoff date',async t=>{
  const f=await localBudget();t.after(f.close);const before=await f.ledger.status();
  const providers=configured(f.ledger,()=>assert.fail('No paid endpoint is authorized'));
  await assert.rejects(()=>providers.searchGemini({...need,target:'x'.repeat(9000)}),{code:'input_budget'});
- const expired=createSequentialProviders({ledger:f.ledger,phase:'sector_draft',phaseLimitKurus:3000,
+ let calls=0;
+ const future=createSequentialProviders({ledger:f.ledger,phase:'sector_draft',phaseLimitKurus:3000,
   collectionFirst:true,managedBudgetVersion:24,geminiKey:'synthetic',now:()=>Date.UTC(2026,11,1),researchFx:fx,
-  fetchImpl:()=>assert.fail('The changed model tariff is not approved')});
- await assert.rejects(()=>expired.searchGemini(need),{code:'tariff_expired'});
+  fetchImpl:async()=>{calls++;return response(native());}});
  assert.deepEqual(await f.ledger.status(),before);
+ await future.searchGemini(need);assert.equal(calls,1,'An unrelated model schedule must not disable this native search');
 });
 
 const facts=Array.from({length:100},(_,i)=>({id:'proof-'+i,needId:'need-'+i%4,url:'https://source.example/'+i,

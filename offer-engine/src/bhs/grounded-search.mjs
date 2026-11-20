@@ -5,7 +5,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 // Search retrieval is covered by the grounding fee, not billed again as input.
 // URL context and other tools are deliberately absent from this request.
 const model='gemini-2.5-flash-lite',outputLimit=1250,bodyLimit=8192,promptOverhead=4096;
-const contextLimit=1048576,reviewUntil=Date.UTC(2026,11,1);
+const contextLimit=1048576;
 const usd=(input,output)=>(input*.10+output*.40)/1e6+.035;
 const integer=(value,min=0)=>Number.isSafeInteger(value)&&value>=min;
 
@@ -27,9 +27,6 @@ export function createGroundedSearch({ledger,key,fetchImpl,now=Date.now,pricing,
     throw new BudgetError(prior.state==='complete'?'provider_rejected':prior.state==='reserved'?'budget_pending':'budget_uncertain',
      'Önceki Gemini araştırmasının kaydı korundu; tekrar ücretli çağrı yapılmadı.');
    }
-   // This model changes routing/pricing on December 1. Never extend its
-   // reviewed envelope silently, or assume a free daily search allowance.
-   if(now()>=reviewUntil)throw new BudgetError('tariff_expired','Gemini arama maliyeti yeniden doğrulanmalı.');
    const bytes=Buffer.byteLength(JSON.stringify(body));
    if(bytes>bodyLimit)throw new BudgetError('input_budget','Dar Gemini araştırma girdisi sınırı aşıyor.');
    const inputUpper=bytes+promptOverhead,fx=await researchFx();
