@@ -13,6 +13,7 @@ import {sequentialVersion,qualityAcceptance} from './sequential-contracts.mjs';
 import {managedCoverage,scopedCoverage} from './managed-report.mjs';
 import {scopedMetrics,scopedSupervision} from './research-status.mjs';
 import {presentResearch} from './research-presentation.mjs';
+import {conversationAuditResult} from './conversation-report.mjs';
 
 export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
@@ -37,6 +38,7 @@ reportExcerpt statement ile aynı olsun. Kaynak URL ve başlıklarını JSON iç
 
 // This is a format/transport adapter, not a second content reviewer.
 export function directAuditResult(brief,synthesis){
+ if(synthesis.report?.conversation||synthesis.conversationReport)return conversationAuditResult(brief,synthesis);
  const plan=synthesis.supervision?.researchPlan;
  const report=groundOfferReport(synthesis.report,{packet:synthesis.analysisPacket,searchEvidence:synthesis.searchEvidence||[],brief,
   preserveQualifiedImpacts:isExpertMethodology(synthesis.methodologyVersion),scopedFindings:plan?.taskReporting===true&&plan.readEvidenceOnly===true});

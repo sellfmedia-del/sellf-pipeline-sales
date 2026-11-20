@@ -1,0 +1,200 @@
+import {BudgetError,hash} from '../budget/ledger.mjs';
+import {conversationKeys,conversationVersion,publicResearchUrl,sourceId} from './conversation-contract.mjs';
+import {validateConversationReport} from './conversation-report.mjs';
+
+export const maximumConversationTurns=16;
+const complete=row=>row?.state==='complete';
+const safeIssue=(error,tool)=>({tool,code:/^[a-z0-9_]{1,80}$/u.test(error.code||'')?error.code:'provider_error',
+ ...(Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{})});
+
+export async function readConversation(ledger,id){
+ const pairs=await Promise.all(Array.from({length:maximumConversationTurns},async(_,index)=>{
+  const key=conversationKeys.turn(id,index);return Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
+ }));
+ const rows=pairs.map(([original,recovered])=>complete(original)?original:complete(recovered)?recovered:original||recovered);
+ const turns=[];
+ for(const row of rows){if(!complete(row))break;turns.push(row.value);}
+ const sources=new Map(),knownUrls=new Set(),readAttempts=new Set(),toolIssues=[];
+ for(const turn of turns){
+  for(const source of turn.sources||[]){sources.set(source.id,source);knownUrls.add(source.url);
+   for(const url of source.links||[])knownUrls.add(url);}
+  for(const url of turn.readAttempts||[])readAttempts.add(url);
+  toolIssues.push(...(turn.toolIssues||[]));
+ }
+ const final=turns.findLast(t=>t.conversationReport||t.closed);
+ const pending=pairs[turns.length];
+ return {turns,index:turns.length,sources:[...sources.values()],knownUrls,readAttempts,toolIssues,final,
+  interrupted:rows[turns.length]&&!complete(rows[turns.length]),
+  recoverFreeTurn:Boolean(pending?.[0]&&!complete(pending[0])&&pending[0].charge_kurus===0&&!pending[1])};
+}
+const publicSource=source=>({id:source.id,url:source.url,title:source.title,method:source.method,
+ text:source.text.slice(0,12000),characters:source.text.length,moreAvailable:source.text.length>12000,
+ retrievedAt:source.retrievedAt});
+
+function archiveSource(value,now){
+ const url=publicResearchUrl(value.url);
+ if(!url||typeof value.text!=='string')return null;
+ const links=[...value.text.matchAll(/\]\((https?:\/\/[^\s)]+)\)/gu)].map(m=>publicResearchUrl(m[1])).filter(Boolean);
+ return {id:sourceId(url),url,title:String(value.title||url),text:value.text,method:value.method,
+  links:[...new Set(links)],retrievedAt:new Date(now).toISOString()};
+}
+
+export function conversationMessages(brief,state,{forceFinish=false,cost,finalReserve=0}={}){
+ const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)}];
+ const addBudget=text=>{
+  if(messages.at(-1).role==='user'){
+   const last=messages.at(-1);last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
+  }else messages.push({role:'user',content:text});
+ };
+ for(const turn of state.turns){
+  if(turn.budgetText)addBudget(turn.budgetText);
+  if(turn.assistant?.content?.length)messages.push(turn.assistant);
+  if(turn.results?.length)messages.push({role:'user',content:turn.results});
+ }
+ const budget={committedKurus:cost?.chargedKurus,capKurus:5000,finalReportReserveKurus:finalReserve,
+  searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
+  instruction:forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor rezervini koru.'};
+ addBudget('Sistem bütçe bilgisi: '+JSON.stringify(budget));
+ return messages;
+}
+
+// One durable assistant turn at a time. Provider receipts are committed before
+// the zero-cost turn checkpoint, so a lost queue acknowledgement cannot buy it twice.
+export async function advanceConversation({brief,ledger,id,providers,now=Date.now,deadline=Infinity}){
+ const state=await readConversation(ledger,id);
+ if(state.final)return state.final;
+ if(state.interrupted&&!state.recoverFreeTurn)throw new BudgetError('stage_paused','Önceki konuşma kaydı kesildi; ücretli çağrı tekrarlanmadı.');
+ if(state.index>=maximumConversationTurns)throw new BudgetError('conversation_limit','Analiz tur sınırına ulaştı.');
+ const cost=await ledger.status();
+ const forceFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000||state.turns.some(t=>t.finishRequested);
+ let messages,quote,answer,finalMode=forceFinish,providerIssue;
+ const recoverySources=[],recoveryReads=[];
+ try{
+  let requestKey='audit:conversation:request:'+id+':'+state.index;
+  let request=await ledger.get(requestKey);
+  if(request&&!complete(request)&&request.charge_kurus===0){requestKey+=':recovered';request=await ledger.get(requestKey);}
+  if(request&&!complete(request))throw new BudgetError('stage_paused','Kaydedilmemiş model isteği yeniden başlatılmadı.');
+  if(complete(request))({messages,quote,finalMode}=request.value);
+  else{
+   messages=conversationMessages(brief,state,{forceFinish,cost});
+   quote=await providers.analystQuote(messages,{final:forceFinish});
+  // Fund a complete answer before authorizing further discovery. Its quote
+  // uses this actual conversation's token count, not a fixed 20 TRY partition.
+   if(!forceFinish&&cost.chargedKurus+quote.reservation+quote.finalReservation+400>5000){
+    finalMode=true;messages=conversationMessages(brief,state,{forceFinish:true,cost});
+    quote=await providers.analystQuote(messages,{final:true});
+   }
+   await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode}));
+  }
+  answer=await providers.analyst(messages,{final:finalMode,quote});
+ }catch(error){
+  providerIssue=safeIssue(error,'claude');
+  // A reserved/uncertain request remains charged. A separate provider may
+  // complete the answer only inside the same remaining capped account.
+  if(providers.fallbackReport){
+   try{
+    if(!state.sources.some(source=>source.method!=='search-snippet')&&providers.extract){
+     recoveryReads.push(brief.website);
+     const seed=await providers.extract({urls:[brief.website],purpose:'Ana analist erişilemedi; yedek analiz için markanın kendi sayfasını oku.'},
+      {remainingReserve:quote?.finalReservation||1000});
+     for(const row of seed.results||[]){const source=archiveSource(row,now());if(source)recoverySources.push(source);}
+    }
+    const report=await providers.fallbackReport({brief,sources:[...state.sources,...recoverySources],previous:state.turns.map(t=>t.assistant?.content).filter(Boolean)});
+    if(report.data)answer={content:[{type:'tool_use',id:'gemini_final_'+state.index,name:'finish_bhs',input:report.data}],stopReason:'tool_use',fallback:true};
+   }catch{/* The free, explicitly partial handoff below preserves all receipts. */}
+  }
+  if(!answer)return save({closed:true,reason:providerIssue.code,toolIssues:[providerIssue],sources:recoverySources,readAttempts:recoveryReads,results:[]});
+ }
+ const calls=(answer.content||[]).filter(block=>block.type==='tool_use');
+ const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use'].includes(b.type))};
+ const results=[],newSources=[...recoverySources],readAttempts=[...recoveryReads],toolIssues=providerIssue?[providerIssue]:[];
+ let report,reportCandidate,terminalReason,finishRequested=finalMode||answer.stopReason==='max_tokens';
+ const sourceMap=new Map([...state.sources,...recoverySources].map(s=>[s.id,s])),knownUrls=new Set([...state.knownUrls,brief.website]);
+ const add=(rows)=>rows.flatMap(row=>{
+  const source=archiveSource(row,now());if(!source)return [];
+  const previous=sourceMap.get(source.id);
+  if(previous&&previous.method!=='search-snippet'&&source.method==='search-snippet')return [publicSource(previous)];
+  sourceMap.set(source.id,source);knownUrls.add(source.url);for(const url of source.links)knownUrls.add(url);
+  newSources.push(source);return [publicSource(source)];
+ });
+ const finalReserve=(quote?.finalReservation||0)+400;
+ const toolOptions={remainingReserve:finalReserve};
+ for(let index=0;index<calls.length;index++){
+  const call=calls[index];let value,error;
+  try{
+   if(index>=4)throw new BudgetError('tool_batch_limit','Bu turdaki ek emir sonraki karara bırakıldı.');
+   if(call.name==='begin_report'){
+    if(![...sourceMap.values()].some(source=>source.method!=='search-snippet'))throw new BudgetError('research_needed','Rapor öncesi markayı ilgilendiren bir kaynağı oku veya kaynak erişiminin neden mümkün olmadığını belirle.');
+    finishRequested=true;value={accepted:true,instruction:'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
+   }else if(call.name==='finish_bhs'){
+    const issues=validateConversationReport(call.input,[...sourceMap.values()]);
+    if(!issues.includes('report_format')&&!issues.includes('report_size'))reportCandidate=call.input;
+    if(issues.length)throw new BudgetError('report_validation',issues.join(', '));
+    if(calls.length!==1)throw new BudgetError('report_validation','Araştırma sonuçlarını aldıktan sonra raporu ayrı bir yanıtta tamamla.');
+    report=call.input;value={accepted:true};
+   }else if(finalMode)throw new BudgetError('research_closed','Kalan bütçe ve süre tam rapor için korundu.');
+   else if(call.name==='search_web')value={sources:add((await providers.search(call.input,toolOptions)).results)};
+   else if(call.name==='read_pages'){
+    const urls=call.input.urls?.map(publicResearchUrl);
+    if(!urls?.length||urls.some(u=>!u||!knownUrls.has(u)))throw new BudgetError('unknown_source','Briefte veya sonuçlarda gözlemlenen bir URL seç.');
+    const cached=[],fresh=[];
+    for(const url of urls){
+     const existing=sourceMap.get(sourceId(url));
+     if(existing&&existing.method!=='search-snippet')cached.push(publicSource(existing));
+     else if(state.readAttempts.has(url))throw new BudgetError('source_already_failed','Bu URL daha önce okunamadı; başka kaynak veya uygun scraper seç.');
+     else fresh.push(url);
+    }
+    readAttempts.push(...fresh);
+    const extracted=fresh.length?await providers.extract({...call.input,urls:fresh},toolOptions):{results:[],failures:[]};
+    value={sources:[...cached,...add(extracted.results)],failures:extracted.failures};
+   }else if(call.name==='read_saved_source'){
+    const source=sourceMap.get(call.input.sourceId),offset=call.input.offset;
+    if(!source||!Number.isSafeInteger(offset)||offset<0)throw new BudgetError('unknown_source','Arşiv kaynağı veya metin aralığı geçersiz.');
+    value={...publicSource(source),text:source.text.slice(offset,offset+12000),offset,moreAvailable:offset+12000<source.text.length};
+   }else if(call.name==='consult_gemini'){
+    if(!Array.isArray(call.input.sourceIds)||!call.input.sourceIds.length||call.input.sourceIds.some(id=>!sourceMap.has(id)))throw new BudgetError('unknown_source','Gemini için bilinen kaynakları seç.');
+    value=await providers.consult({question:call.input.question,sources:call.input.sourceIds.map(id=>sourceMap.get(id))},toolOptions);
+   }else if(call.name==='specialist_read'){
+    const url=publicResearchUrl(call.input.url);
+    if(!url||!knownUrls.has(url))throw new BudgetError('unknown_source','Scraper için gözlemlenen kaynak gerekli.');
+    if(call.input.mode==='page'&&![...state.readAttempts,...readAttempts].includes(url))throw new BudgetError('source_not_tried','Sayfa için önce Tavily okumasını dene.');
+    if(!providers.specialist)throw new BudgetError('not_configured','Uygun maliyeti doğrulanmış scraper bu ortamda yok.');
+    const extracted=await providers.specialist(call.input,{brief,sources:[...sourceMap.values()]},toolOptions);
+    value={...extracted,sources:add(extracted.results||[])};
+   }else throw new BudgetError('unknown_tool','Bilinmeyen araştırma aracı.');
+  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:failure.code==='report_validation'?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.'};
+   if(['budget_limit','input_budget'].includes(error.code))finishRequested=true;
+   if(error.code==='report_validation'&&(answer.fallback||state.turns.some(turn=>turn.toolIssues?.some(issue=>issue.code==='report_validation'))))terminalReason='report_review_required';}
+  results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(value),...(error?{is_error:true}:{})});
+ }
+ if(!calls.length)finishRequested=true;
+ return save({assistant,results,sources:newSources,readAttempts,toolIssues,finishRequested,
+  ...(report?{closed:true,conversationReport:report}:{}),...(answer.fallback?{fallbackProvider:'gemini'}:{}),
+  ...(terminalReason&&!report?{closed:true,reason:terminalReason}:{}),
+  ...(!report&&reportCandidate?{reportCandidate}:{}),
+  ...(answer.stopReason==='max_tokens'?{outputInterrupted:true}:{})});
+
+ async function save(turn){
+  const last=messages?.at(-1)?.content;
+  const budgetText=typeof last==='string'?last.match(/Sistem bütçe bilgisi: .*$/su)?.[0]:last?.findLast(block=>block.type==='text'&&block.text.startsWith('Sistem bütçe bilgisi: '))?.text;
+  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,recordedAt:new Date(now()).toISOString()};
+  return ledger.once(conversationKeys.turn(id,state.index)+(state.recoverFreeTurn?':recovered':''),{version:conversationVersion,id,index:state.index},0,async()=>value);
+ }
+}
+
+export async function readConversationResult(ledger,id){
+ const key=conversationKeys.result(id),[original,recovered]=await Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
+ return complete(original)?original:complete(recovered)?recovered:original||recovered;
+}
+
+export async function persistConversationResult({brief,ledger,id,reason,now=Date.now}){
+ const existing=await readConversationResult(ledger,id);if(complete(existing))return existing.value;
+ const state=await readConversation(ledger,id);
+ const result={conversationReport:state.final?.conversationReport||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate,conversationSources:state.sources,
+  toolIssues:state.toolIssues,reason:reason||state.final?.reason,researchedAt:new Date(now()).toISOString(),
+  researchContext:{brief,briefHash:hash(brief)}};
+ // Result transport is free and can be reconstructed without replaying a
+ // provider call. Keep the abandoned row and all paid reservations intact.
+ const key=conversationKeys.result(id)+(existing&&existing.charge_kurus===0?':recovered':'');
+ return ledger.once(key,{version:conversationVersion,id},0,async()=>result);
+}
