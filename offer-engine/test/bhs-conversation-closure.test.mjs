@@ -131,6 +131,7 @@ test('the fallback analyst may quote its genuinely delivered source window and i
  const providers={analystQuote:async()=>({reservation:100,finalReservation:800}),analyst:async(_messages,options)=>{if(options.review)return assistantCall('review_bhs',semanticApproval(answer));throw new BudgetError('provider_error','Sentetik kesinti');},
   fallbackReport:async()=>({data:answer,observedSources})};
  const draft=await advanceConversation({brief,ledger,id,providers,now});assert.equal(draft.closed,undefined);
+ assert.ok(JSON.parse(draft.results[0].content).sources.find(row=>row.id===source.id).text.includes(hidden));
  const turn=await advanceConversation({brief,ledger,id,providers,now});assert.equal(turn.closed,true);assert.deepEqual(turn.closureIssues,[]);
  const saved=await persistConversationResult({brief,ledger,id,now});assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,true);
  assert.ok((await readConversation(ledger,id)).sourceViews.get(source.id).ranges.some(row=>row.end===rows[0].text.length));

@@ -82,7 +82,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
  let reviewMode=Boolean(state.reportDraft)&&(state.semanticReview?.status!=='research_needed'||closureReady||hardFinish);
  let messages,quote,answer,finalMode=forceFinish&&!state.reportDraft,providerIssue;
- const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews;
+ const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews,fallbackObservations=[];
  try{
   let requestKey='audit:conversation:request:'+id+':'+state.index;
   let request=await ledger.get(requestKey);
@@ -124,6 +124,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     const report=await providers.fallbackReport({brief,sources:[...state.sources,...recoverySources],previous:state.turns.map(t=>t.assistant?.content).filter(Boolean)},
      {remainingReserve:quote?.reviewReservation||0});
     if(report.observedSources){
+     fallbackObservations=report.observedSources.filter(source=>source.passages?.some(range=>!state.sourceViews.get(source.id)?.ranges.some(seen=>seen.start<=range.start&&seen.end>=range.end)));
      collectSourceViews({results:[{content:JSON.stringify({sources:report.observedSources})}]},new Map([...state.sources,...recoverySources].map(source=>[source.id,source])),fallbackViews);
      observedSourceViews=[...fallbackViews].map(([sourceId,view])=>({sourceId,...view}));
     }
@@ -204,6 +205,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:call.input,views:answer.fallback?fallbackViews:state.sourceViews,includeUnavailable:true});
     reportDraft=call.input;semanticReview={version:semanticReviewVersion,status:'pending',draftDigest:hash(reportDraft),reportDigest:hash(reportDraft),attempts:0,mechanicalIssues:issues};
     value={accepted:true,draftSaved:true,reviewRequired:true,draftDigest:hash(reportDraft),issues,
+     ...(answer.fallback?{sources:fallbackObservations}:{}),
      instruction:'Tam taslak kaydedildi. Şimdi aynı konuşmada review_bhs ile anlam denetimi yap; yalnız sorunlu bölümü düzelt, iyi anlatımı aynen koru.'};
    }else if(finalMode)throw new BudgetError('research_closed','Kalan bütçe ve süre tam rapor için korundu.');
    else if(call.name==='search_web')value={sources:add((await providers.search(call.input,toolOptions)).results,call.input.purpose)};
