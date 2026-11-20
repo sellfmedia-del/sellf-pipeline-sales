@@ -12,6 +12,7 @@ import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {brief,source,peerSource,researchSources,researchSummary,researchProgressInput,completeResearchProgress,fixtureSourceResults,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 import {strongNarrativeReport,weakClaim,correctedClaim} from './fixtures/bhs-strong-narrative.mjs';
+import {canonicalConversationHash} from '../src/bhs/conversation-context.mjs';
 
 const id='f'.repeat(64),now=()=>Date.parse('2026-11-20T16:00:00Z');
 const issue=()=>({id:'performance',reason:'Görülemeyen ölçüm etiketi reklam verimsizliğini kanıtlamaz.',resolution:'Kesin kayıp iddiasını doğrulanacak hipotez ve olay testi olarak düzelt.',sourceIds:[source.id],question:'',access:'analysis'});
@@ -26,7 +27,7 @@ async function seed(ledger,{draft,thinking}={}){
 }
 test('an approved rich narrative keeps every original character, SWOT, eight actions, alternatives and timeline',()=>{
  const draft=strongNarrativeReport(),before=structuredClone(draft),assessed=applySemanticDecision(draft,semanticApproval(draft),{sources:researchSources});
- assert.deepEqual(assessed.report,before);assert.deepEqual(draft,before);assert.equal(assessed.review.reportDigest,hash(before));
+ assert.deepEqual(assessed.report,before);assert.deepEqual(draft,before);assert.equal(assessed.review.reportDigest,canonicalConversationHash(before));
  assert.deepEqual(semanticReviewIssues(assessed.review,assessed.report),[]);assert.match(assessed.report.reportMarkdown,/8\. Büyütme/);assert.match(assessed.report.reportMarkdown,/90 günlük/);
 });
 test('one targeted semantic patch preserves the whole good SWOT, action/measurement plan, alternatives and compatibility fields',()=>{

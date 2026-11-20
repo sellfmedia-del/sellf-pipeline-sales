@@ -14,6 +14,8 @@ A free durable context receipt binds the complete brief, conversation ID and ori
 
 Gemini fallback now receives the entire original conversation, including tool observations, research answers, candidates and open questions. Its input is frozen before dispatch. A legacy completed or uncertain fallback receipt still owns that work and prevents repurchase after the context addition. Source archives and opaque Claude thinking remain in the original record. No database, RLS/auth, schema, dependency or pricing change is needed.
 
+JSONB reorders object keys. Context/report fingerprints are now order-independent, and paid native writing/review requests use a frozen request ID rather than a hash of reloaded message objects. Native JSONB regression tests verify complete quality after reload and no second token count or generation after losing a free turn acknowledgement. Historical requests with no verifiable frozen paid ID pause rather than risking repurchase; old semantic digest encoding remains readable.
+
 ## 9. Acceptance and release
 
 `node offer-engine/scripts/bhs-offline-acceptance.mjs /absolute/path/to/export.json` accepts `{brief, stored, cost, reference?}` from retained results. It performs objective/source/research/semantic-state/account checks without providers, queue mutation or network access. It reports the reference digest and report sizes for review; length is not a quality score. Even a technical pass remains `technical_pass_human_pending` and lists the user's Doku comparison criteria. The Preview demonstrates this with explicitly synthetic data; it never represents real-brand acceptance.

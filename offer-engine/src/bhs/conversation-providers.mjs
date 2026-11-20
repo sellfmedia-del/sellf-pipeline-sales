@@ -76,9 +76,9 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
   analystQuote,
-  async analyst(messages,{final=false,writingOnly=false,review=false,hasDraft=false,quote,remainingReserve=0}={}){
+  async analyst(messages,{final=false,writingOnly=false,review=false,hasDraft=false,quote,remainingReserve=0,receiptKey}={}){
    const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,...(review?{review:true}:{}),output:quote?.output??(review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final};
-   const step='model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
+   const step=receiptKey||'model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
    quote??=await analystQuote(messages,{final,writingOnly,review,hasDraft});
    const currency=await fx();
    const body={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),
@@ -163,7 +163,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
    const legacy=await prior('model:conversation:gemini-final:'+hash({model,body:legacyBody}));if(legacy)return legacy;
    const contents=conversation?[{role:'user',parts:[{text:JSON.stringify({brief,sources:observedSources,previous,conversation,researchSummary,researchProgress,outputContract:finalReportSchema})}]}]:legacyContents;
    const body={...legacyBody,contents};
-   const identity={model,body},key='model:conversation:gemini-final:'+hash(identity),saved=await prior(key);if(saved)return saved;
+   const identity={model,body},key=options.receiptKey||'model:conversation:gemini-final:'+hash(identity),saved=await prior(key);if(saved)return saved;
    const count=await json('https://generativelanguage.googleapis.com/v1beta/models/'+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey,'content-type':'application/json'},10000);
    if(!integer(count.totalTokens,1)||count.totalTokens>120000)throw new BudgetError('token_count','Yedek analist girdisi doğrulanamadı.');
    const inputUpper=upper(count.totalTokens),reservation=Math.ceil((inputUpper*1.5+20000*7.5)/1e6*60*allowance*100)+2,currency=await fx();

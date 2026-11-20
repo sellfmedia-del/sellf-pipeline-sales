@@ -2,6 +2,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 import {semanticReviewSchema} from './conversation-contract.mjs';
 import {assertSchema} from './schema.mjs';
 import {qualifiedResearchSources,quoteWasSeen} from './conversation-progress.mjs';
+import {canonicalConversationHash} from './conversation-context.mjs';
 
 export const semanticReviewVersion='same-conversation-targeted-review-v1';
 export const semanticReviewOutputTokens=6000;
@@ -57,12 +58,12 @@ export function applySemanticDecision(draft,decision,{sources=[],attempts=1}={})
  }
  if(decision.verdict==='patch'&&[...issues.keys()].some(id=>!patched.has(id)))fail('Bütün işaretli sorunların hedefli çözümü gerekli.');
  return {report:result,review:{version:semanticReviewVersion,status:decision.verdict==='research_needed'?'research_needed':'approved',
-  draftDigest:hash(draft),reportDigest:hash(result),rationale:decision.rationale,issues:decision.issues,patches:decision.patches,attempts}};
+  draftDigest:hash(draft),reportDigest:canonicalConversationHash(result),digestEncoding:'canonical-json-v1',rationale:decision.rationale,issues:decision.issues,patches:decision.patches,attempts}};
 }
 export function semanticReviewIssues(review,report){
  if(!review)return ['semantic_review_pending'];
  if(review.status!=='approved')return [review.status==='research_needed'?'semantic_research_needed':'semantic_review_pending'];
- return review.reportDigest===hash(report)?[]:['semantic_review_stale'];
+ return review.reportDigest===(review.digestEncoding==='canonical-json-v1'?canonicalConversationHash(report):hash(report))?[]:['semantic_review_stale'];
 }
 export function introducedReadIssues(original,patched,{sources,progress,views}){
  const qualified=new Set(qualifiedResearchSources(progress,sources).map(row=>row.sourceId)),known=new Map(sources.map(row=>[row.id,row]));

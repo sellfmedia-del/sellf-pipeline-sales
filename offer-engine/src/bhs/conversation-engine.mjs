@@ -84,14 +84,17 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
  let reviewMode=Boolean(state.reportDraft)&&(state.semanticReview?.status!=='research_needed'||closureReady||hardFinish);
- let messages,quote,answer,finalMode=forceFinish&&!state.reportDraft,providerIssue;
+ let messages,quote,answer,providerReceiptKey,finalMode=forceFinish&&!state.reportDraft,providerIssue;
  const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews,fallbackObservations=[];
  try{
   let requestKey='audit:conversation:request:'+id+':'+state.index;
   let request=await ledger.get(requestKey);
   if(request&&!complete(request)&&request.charge_kurus===0){requestKey+=':recovered';request=await ledger.get(requestKey);}
   if(request&&!complete(request))throw new BudgetError('stage_paused','Kaydedilmemiş model isteği yeniden başlatılmadı.');
-  if(complete(request))({messages,quote,finalMode,reviewMode=false}=request.value);
+  if(complete(request)){
+   ({messages,quote,finalMode,reviewMode=false,providerReceiptKey}=request.value);
+   if(!providerReceiptKey)throw new BudgetError('stage_paused','Eski isteğin ücretli kimliği doğrulanamadı; tekrar başlatılmadı.');
+  }
   else{
    if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)throw new BudgetError('semantic_review_limit','Anlam denetimi sınırına ulaşıldı; taslak korundu.');
    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
@@ -106,14 +109,16 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    // Only the reserve's digits change after counting; the quote already has
    // 512 tokens of input headroom. Freeze the truthful reserve with the request.
    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost,finalReserve:quote.completionReservation??quote.finalReservation});
-   await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode,reviewMode}));
+   providerReceiptKey='model:conversation:claude-request:'+id+':'+state.index;
+   await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode,reviewMode,providerReceiptKey}));
   }
-  answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,
+  answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,receiptKey:providerReceiptKey,
    remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+400:(quote.completionReservation??quote.finalReservation??0)+400});
  }catch(error){
   providerIssue=safeIssue(error,'claude');
   if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,reason:'semantic_review_unavailable',
    semanticReview:{...state.semanticReview,version:semanticReviewVersion,status:'pending',lastError:providerIssue.code},toolIssues:[providerIssue],results:[]});
+  if(error.code==='stage_paused')return save({closed:true,reason:'stage_paused',toolIssues:[providerIssue],results:[]});
   // A reserved/uncertain request remains charged. A separate provider may
   // complete the answer only inside the same remaining capped account.
   if(providers.fallbackReport){
@@ -129,7 +134,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      previous:state.turns.map(t=>t.assistant?.content).filter(Boolean),conversation:messages||conversationMessages(brief,state,{forceFinish:true,cost}),
      researchSummary:state.researchSummary,researchProgress:state.researchProgress}));
     const report=await providers.fallbackReport(fallbackInput,
-     {remainingReserve:quote?.reviewReservation||0});
+     {remainingReserve:quote?.reviewReservation||0,receiptKey:'model:conversation:gemini-request:'+id+':'+state.index});
     if(report.observedSources){
      fallbackObservations=report.observedSources.filter(source=>source.passages?.some(range=>!state.sourceViews.get(source.id)?.ranges.some(seen=>seen.start<=range.start&&seen.end>=range.end)));
      collectSourceViews({results:[{content:JSON.stringify({sources:report.observedSources})}]},new Map([...state.sources,...recoverySources].map(source=>[source.id,source])),fallbackViews);

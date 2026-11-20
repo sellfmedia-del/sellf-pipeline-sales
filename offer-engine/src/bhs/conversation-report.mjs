@@ -10,6 +10,7 @@ import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
 import {semanticReviewIssues} from './conversation-semantic.mjs';
 import {objectiveReportIssues,captureSourcePassages} from './conversation-objective.mjs';
+import {canonicalConversationHash} from './conversation-context.mjs';
 
 export function validateConversationReport(report,sources,{semantic=false,objective=false}={}){
  const issues=[];
@@ -52,7 +53,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const objectiveValidationVersion=stored.objectiveValidationVersion||stored.report?.objectiveValidationVersion;
  const conversationContext=stored.conversationContext||stored.report?.conversationContext;
  const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview),objective:Boolean(objectiveValidationVersion)}):['report_unavailable'];
- if(conversationContext?.briefDigest&&conversationContext.briefDigest!==hash(brief))issues.push('conversation_brief_changed');
+ if(conversationContext?.briefDigest&&conversationContext.briefDigest!==canonicalConversationHash(brief))issues.push('conversation_brief_changed');
  if(raw&&semanticReview)issues.push(...semanticReviewIssues(semanticReview,raw));
  const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
   researchSummary=stored.researchSummary||stored.report?.researchSummary;

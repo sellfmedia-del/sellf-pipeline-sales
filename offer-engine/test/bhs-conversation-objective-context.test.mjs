@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {hash} from '../src/budget/ledger.mjs';
 import {sourceId,conversationKeys} from '../src/bhs/conversation-contract.mjs';
 import {objectiveValidationVersion,sourceIdentityIssues} from '../src/bhs/conversation-objective.mjs';
-import {ensureConversationContext,contextKey} from '../src/bhs/conversation-context.mjs';
+import {ensureConversationContext,contextKey,canonicalConversationHash} from '../src/bhs/conversation-context.mjs';
 import {validateConversationReport,conversationAuditResult} from '../src/bhs/conversation-report.mjs';
 import {advanceConversation,persistConversationResult} from '../src/bhs/conversation-engine.mjs';
 import {createConversationProviders} from '../src/bhs/conversation-providers.mjs';
@@ -13,6 +13,7 @@ import {researchOutcomeVersion} from '../src/bhs/conversation-research.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {inspectConversationAcceptance} from '../src/bhs/conversation-acceptance.mjs';
 import {assertResult} from '../src/contracts.mjs';
+import {localBudget} from './fixtures/local-budget.mjs';
 import {brief,source,researchSources,researchSummary,completeResearchProgress,fixtureSourceResults,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 import {strongNarrativeReport} from './fixtures/bhs-strong-narrative.mjs';
 
@@ -76,7 +77,7 @@ test('a conversation binds its full brief to one existing capped account; neithe
  await assert.rejects(()=>advanceConversation({brief:{...brief,goals:'A different market'},ledger,id,providers}),{code:'budget_context'});
  const other={...ledger,status:async()=>({...await ledger.status(),id:'different-account'})};
  await assert.rejects(()=>advanceConversation({brief,ledger:other,id,providers}),{code:'budget_context'});
- assert.equal(total(),before);assert.equal((await ledger.get(contextKey(id))).value.briefDigest,hash(brief));
+ assert.equal(total(),before);assert.equal((await ledger.get(contextKey(id))).value.briefDigest,canonicalConversationHash(brief));
 });
 test('an interrupted free context checkpoint recovers without replacing or refunding its first record',async()=>{
  const {ledger,rows,total}=memoryLedger();try{await ledger.once(contextKey(id),{},0,async()=>{throw Error('Lost free write');});}catch{}
@@ -123,4 +124,35 @@ test('offline acceptance checks real retained payloads mechanically but always l
  assert.equal(result.paidCalls,0);assert.equal(result.productionWrites,0);assert.equal(result.report.readSources,4);assert.deepEqual(input,before);
  const bad=inspectConversationAcceptance({brief,stored:input,cost:{id:'different-account',capKurus:5000,chargedKurus:5001}});
  assert.ok(bad.issues.includes('acceptance_cost_unverified'));assert.ok(bad.issues.includes('acceptance_account_unverified'));
+});
+
+test('actual JSONB round trips keep brief identity, semantic approval and saved-offer quality across process-shaped reloads',async t=>{
+ const db=await localBudget();t.after(db.close);const ledger=db.ledger;await seed(ledger);
+ const reordered=Object.fromEntries(Object.entries(brief).reverse());
+ const first=await ensureConversationContext({brief,ledger,id});
+ assert.deepEqual(await ensureConversationContext({brief:reordered,ledger,id}),first);
+ const providers=scriptedProviders(ledger,[assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',strongNarrativeReport())]);
+ for(let at=0;at<3;at++)await advanceConversation({brief:reordered,ledger,id,providers});
+ await persistConversationResult({brief:reordered,ledger,id});
+ const final=(await ledger.get(conversationKeys.result(id))).value;
+ const audit=conversationAuditResult(brief,final);assert.equal(audit.data.quality.contentComplete,true,JSON.stringify(audit.data.quality.issues));
+ assertResult('audit',audit);assert.ok(createResearchSnapshot(audit.data,brief));
+});
+
+test('a lost free turn after a real JSONB provider receipt reuses its frozen native request ID without another count/generation charge',async t=>{
+ const db=await localBudget();t.after(db.close);await seed(db.ledger);let generated=0,counted=0;
+ const config={ledger:db.ledger,anthropicKey:'synthetic',geminiKey:null,researchFx:async()=>({usdTry:40}),fetchImpl:async(url)=>{
+  if(String(url).endsWith('/count_tokens')){counted++;return new Response(JSON.stringify({input_tokens:1000}));}
+  generated++;return new Response(JSON.stringify({...assistantCall('begin_report',researchSummary()),model:'claude-sonnet-5-5',
+   stop_reason:'tool_use',usage:{input_tokens:100,output_tokens:100}}));
+ }};
+ let failed=false;
+ const interrupted={...db.ledger,once:(key,input,amount,run,options)=>db.ledger.once(key,input,amount,async()=>{
+  const value=await run();if(key===conversationKeys.turn(id,1)&&!failed){failed=true;throw Error('Lost free turn acknowledgement');}return value;
+ },options)};
+ await assert.rejects(()=>advanceConversation({brief,ledger:interrupted,id,providers:createConversationProviders({...config,ledger:interrupted})}));
+ const before=await db.ledger.status();
+ const recovered=await advanceConversation({brief,ledger:db.ledger,id,providers:createConversationProviders({...config,fetchImpl:()=>assert.fail('No repeated native call')})});
+ assert.equal(recovered.finishRequested,true);assert.equal(generated,1);assert.equal(counted,1);assert.deepEqual(await db.ledger.status(),before);
+ assert.equal((await db.receipts()).filter(row=>row.step_key.startsWith('model:conversation:claude-request:')).length,1);
 });
