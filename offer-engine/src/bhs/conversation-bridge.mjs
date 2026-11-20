@@ -80,6 +80,7 @@ export async function handleConversationAudit({action,brief,job,ledger,queue,id,
   const value=await repairConversationReport({brief,job,ledger,id,getProviders,now,meter});
   return finish(conversationAuditResult(brief,value,{reason:value.reason}));
  }
+ if(repair?.state==='uncertain'&&complete(stored)&&stored.value.repair?.semanticDraft)return finish(conversationAuditResult(brief,stored.value,{reason:stored.value.reason}));
  if(repair&&!complete(repair))return res.status(202).json({phase:'conversation',status:'in_progress',ticket:codec.encode(job,session,host),cost:await cost(),execution:'background',
   acceptedWebsite:brief.website,researchRunId:job.researchRunId,message:'Korunmuş kaynaklardan rapor yazımı sürüyor; aynı ücretli istek tekrarlanmadı.'});
  if(complete(stored))return finish(conversationAuditResult(brief,stored.value,{reason:stored.value.reason}));

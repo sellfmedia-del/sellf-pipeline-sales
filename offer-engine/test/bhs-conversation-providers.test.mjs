@@ -39,6 +39,16 @@ test('Gemini fallback counts the complete generate request in its supported enve
   return reply({modelVersion:'gemini-3.8-flash',candidates:[{content:{parts:[{text:JSON.stringify(report())}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:2000}});
  }));
  const result=await providers.fallbackReport({brief,sources:[source],previous:[]});assert.ok(counted.generateContentRequest.systemInstruction);assert.equal(result.data.summary,report().summary);
+ assert.deepEqual(result.observedSources,JSON.parse(counted.generateContentRequest.contents[0].parts[0].text).sources);
+});
+test('Gemini assistance returns the exact body passages it received and reuses the same paid receipt',async()=>{
+ const {ledger}=memoryLedger();let calls=0,body;
+ const providers=createConversationProviders(config(ledger,async(_url,init)=>{
+  calls++;body=JSON.parse(init.body);return reply({modelVersion:'gemini-3.1-flash-lite',candidates:[{content:{parts:[{text:'Yanıt verilen sipariş açıklamasına dayanır.'}]}}],usageMetadata:{promptTokenCount:1000,candidatesTokenCount:50}});
+ }));
+ const request={question:'Ürün ve sipariş yolunu açıkla',sources:[source]};
+ const first=await providers.consult(request),cached=await providers.consult(request);
+ assert.deepEqual(first.sources,JSON.parse(body.contents[0].parts[0].text).sources);assert.deepEqual(cached,first);assert.equal(calls,1);
 });
 test('an uncertain paid Claude request retains its reservation and is never dispatched twice',async()=>{
  const {ledger,total}=memoryLedger();let paid=0;

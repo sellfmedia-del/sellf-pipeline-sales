@@ -5,17 +5,23 @@ import {guardResearchScope} from './scope-authority.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {conversationVersion,finalReportSchema,publicResearchUrl} from './conversation-contract.mjs';
 import {assertSchema} from './schema.mjs';
+import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
+import {researchReportIssues} from './conversation-research.mjs';
+import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
+import {semanticReviewIssues} from './conversation-semantic.mjs';
+import {objectiveReportIssues,captureSourcePassages} from './conversation-objective.mjs';
+import {canonicalConversationHash} from './conversation-context.mjs';
 
-export function validateConversationReport(report,sources){
+export function validateConversationReport(report,sources,{semantic=false,objective=false}={}){
  const issues=[];
  try{assertSchema(report,finalReportSchema);}catch{return ['report_format'];}
  if(!report.reportMarkdown.trim()||!report.summary.trim())issues.push('empty_report');
  const prose=report.reportMarkdown.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replaceAll('ı','i');
- for(const [key,pattern]of [['brand',/marka|is modeli/u],['market',/pazar|sektor/u],['competition',/rakip|rekabet/u],
+ if(!semantic)for(const [key,pattern]of [['brand',/marka|is modeli/u],['market',/pazar|sektor/u],['competition',/rakip|rekabet/u],
   ['swot',/swot/u],['strength',/guclu/u],['weakness',/zayif/u],['opportunity',/firsat/u],['threat',/tehdit/u],['actions',/aksiyon|eylem|yol haritasi/u]])
   if(!pattern.test(prose))issues.push('missing_'+key);
  if(Buffer.byteLength(JSON.stringify(report))>350000)issues.push('report_size');
- const known=new Map(sources.map(s=>[s.id,s])),read=id=>known.has(id)&&known.get(id).method!=='search-snippet';
+ const known=new Map(sources.map(s=>[s.id,s])),read=id=>usableConversationSource(known.get(id));
  const citations=[...report.reportMarkdown.matchAll(/\[(S[a-f0-9]{8})\]/gu)].map(m=>m[1]);
  if(citations.some(id=>!known.has(id)))issues.push('unknown_citation');
  for(const finding of report.highlights){
@@ -33,6 +39,7 @@ export function validateConversationReport(report,sources){
  }
  const used=[...citations,...report.highlights.flatMap(row=>row.sourceIds),...report.competitors.flatMap(row=>row.sourceIds)];
  if(used.some(id=>!quotes.has(id)))issues.push('citation_quote_missing');
+ if(objective)issues.push(...objectiveReportIssues(report,sources));
  return [...new Set(issues)];
 }
 
@@ -42,7 +49,18 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const raw=stored.conversationReport||stored.report?.conversation||stored.conversation;
  const retained=stored.conversationSources||stored.sources||stored.report?.conversationSources||[];
  const sourceRows=new Map(retained.map(source=>[source.id,source]));
- const issues=raw?validateConversationReport(raw,retained):['report_unavailable'];
+ const semanticReview=stored.semanticReview||stored.report?.semanticReview;
+ const objectiveValidationVersion=stored.objectiveValidationVersion||stored.report?.objectiveValidationVersion;
+ const conversationContext=stored.conversationContext||stored.report?.conversationContext;
+ const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview),objective:Boolean(objectiveValidationVersion)}):['report_unavailable'];
+ if(conversationContext?.briefDigest&&conversationContext.briefDigest!==canonicalConversationHash(brief))issues.push('conversation_brief_changed');
+ if(raw&&semanticReview)issues.push(...semanticReviewIssues(semanticReview,raw));
+ const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
+  researchSummary=stored.researchSummary||stored.report?.researchSummary;
+ if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief));
+ const researchClosure=stored.researchClosure||stored.report?.researchClosure;
+ if(raw&&researchClosure)issues.push(...(researchClosure.issues||[]),...researchClosureIssues(researchClosure.progress,retained,{report:raw,includeUnavailable:true}));
+ reason??=stored.reason;
  const report=raw||{summary:brief.brandName+' için araştırma kayıtları korundu; tamamlanmış analiz henüz oluşmadı.',
   reportMarkdown:brief.brandName+' için tamamlanmış BHS oluşmadı. '+(reason?'İşlem durumu: '+reason+'.':''),highlights:[],competitors:[],sourceQuotes:[],questions:[],limitations:[]};
  const findings=report.highlights.map((row,index)=>({id:'conversation_'+hash(row).slice(0,20),kind:row.kind,dimension:row.dimension,
@@ -59,7 +77,16 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   if(source&&source.text.replace(/\s+/gu,' ').includes(row.quote.replace(/\s+/gu,' ').trim())&&row.quote.length<=240)
    quoteMap.set(row.sourceId,[...(quoteMap.get(row.sourceId)||[]),row.quote]);
  }
- const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,text:quoteMap.get(source.id).join('\n'),links:[]}));
+ for(const proof of qualifiedResearchSources(researchClosure?.progress,retained)){
+  const source=sourceRows.get(proof.sourceId);
+  if(source&&proof.quote.length<=240&&source.text.replace(/\s+/gu,' ').includes(proof.quote.replace(/\s+/gu,' ').trim())){
+   used.add(source.id);quoteMap.set(source.id,[...(quoteMap.get(source.id)||[]),proof.quote]);
+  }
+ }
+ const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>{
+  const original={...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)},text=[...new Set(quoteMap.get(source.id))].join('\n');
+  return objectiveValidationVersion?captureSourcePassages(original,text):{...original,text,links:[]};
+ });
  const sources=captured.map(source=>({id:source.id,url:source.url,title:source.title||source.url,
   quote:source.text,scope:source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.',
   sourceType:'secondary',publishedAt:source.publishedAt||null,period:null,
@@ -69,6 +96,10 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const sections=[...new Set(findings.map(f=>f.bhsSection))].map(id=>({id,title:findings.find(f=>f.bhsSection===id).bhsSectionTitle,
   count:findings.filter(f=>f.bhsSection===id).length,findingIds:findings.filter(f=>f.bhsSection===id).map(f=>f.id),complete,missingQuadrants:[]}));
  const reportData={summary:report.summary,findings,sources,
+  ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
+  ...(researchClosure?{researchClosure}:{}),
+  ...(semanticReview?{semanticReview}:{}),
+  ...(objectiveValidationVersion?{objectiveValidationVersion}:{}),...(conversationContext?{conversationContext}:{}),
   competitors:report.competitors.map(peer=>({id:'peer_'+hash(peer.url).slice(0,18),name:peer.name,website:peer.url,
    scaleReason:peer.reason,audienceReason:'',geographyReason:'',sourceIds:peer.sourceIds})),
   dimensions:dimensions.map(d=>({id:d.id,score:null,rationale:'Nitel değerlendirme tam BHS raporunda yer alır.',dataStatus:'partial',findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonCompetitorIds:[],strengths:[],gaps:[],onboardingQuestions:[]})),
@@ -80,7 +111,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   researchMethod:'claude-conversation',researchAsOf:stored.researchedAt||stored.reuse?.researchedAt||null,
   researchContext:{brandName:brief.brandName,website:brief.website,briefHash:briefHash(brief)},
   scoring:{total:null,weights:dimensions.map(({id,weight})=>({id,weight})),note:'Bu rapor nitel stratejik analizdir; ölçülmüş performans puanı üretilmedi.'},
-  quality:{checksPassed:complete,contentComplete:complete,semanticBenchmark:'not_requested',scope:'conversation-format-and-source-provenance',customerApproval:'pending',
+  quality:{checksPassed:complete,contentComplete:complete,semanticBenchmark:'not_requested',semanticAssessment:semanticReview?.status||'legacy',scope:semanticReview?'conversation-provenance-and-analyst-review':'conversation-format-and-source-provenance',customerApproval:'pending',
    issues:[...issues.map(reason=>({path:'conversation',reason})),...(reason?[{path:'research',reason}]:[])]},
   researchDiagnostics:(stored.toolIssues||[]).map(row=>({stage:'tools',code:row.code,message:row.tool+' · '+row.code+(row.providerStatus?' (HTTP '+row.providerStatus+')':'')})),
   ...(stored.reuse?{researchReuse:stored.reuse}:{}),services:[],

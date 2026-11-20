@@ -1,0 +1,17 @@
+# BHS corrections 1–2 — 20 November 2026
+
+The previous engine could move to report writing after one homepage read and present the first 12,000 characters of a long page, including navigation. This change makes the market/competition task return explicit outcomes and selects relevant source body passages inside the existing presentation window.
+
+`begin_report` now carries short market conclusions on channels, customer behavior and competitive dynamics, plus named competitors with selection reasons, comparison, commercial implications and read-source IDs. The runtime checks the handoff, requires outside research, and returns the missing task to the same analyst conversation. It imposes no page count or market-size requirement. Analytical inference remains allowed. These are structural checks, not proof of semantic quality. The later semantic-review and four-source corrections remain separate work.
+
+Research cannot consume the funded report reserve: the existing aggregate 5,000 kuruş cap, turn limit, deadline and provider receipts remain authoritative. A budget/time/provider-limited report is preserved for the existing pricing handoff and is marked partial when research outcomes are missing. A report cannot silently omit a researched named competitor and still claim complete research. Outcome metadata survives saved-offer reuse; existing reports without this new metadata remain readable.
+
+Source presentation selects body passages according to the requested purpose, with original offsets. Menu-only pages are explicitly unsuccessful research inputs. Full originals stay in the paid receipt and durable source archive. Cached reads can select different passages without buying the page again; `read_saved_source` still provides raw continuation by offset. `moreAvailable` and `nextOffset` refer to unseen body content, while `archiveMoreAvailable` also includes omitted navigation. Claude, Gemini assistance/fallback and report-only recovery use the same source presentation. A specialist result no longer duplicates its full raw body in the model observation.
+
+No price calculation, service selection, customer UI, dependency, database schema, RLS/auth, environment setting or production deployment change is included. The existing synthetic Preview example now shows named competition and market conclusions; it makes no API or database requests.
+
+Validation uses synthetic providers and local browser routes only. No paid model, search or scraper call is authorized or executed by this work. Real-brand business quality and actual runtime cost remain for the user's production acceptance.
+
+Local validation: root suite 54 passed; engine suite 891 passed, 25 conditional tests skipped, zero failures. The final focused conversation suite passed 46 tests with one browser-only skip; seven browser regressions passed separately on the bundled headless Chromium, and the refreshed synthetic review passed at desktop/tablet/mobile widths. Production and Preview builds, syntax checks and whitespace checks passed. The system Chromium executable could not launch under host socket restrictions; the bundled headless executable completed the browser checks. This JavaScript project has no separate lint/typecheck script.
+
+Rollback: close the unmerged PR or revert its two commits. Retained production baseline: main `fced9bebf7990eccd4f49b87cae1ea6ed3ec3ccc`, deployment `dpl_A3mFvrFNr1eba7YMLhCZGRPp8yTu`. A later production release needs separate user approval; no data rollback is required.
