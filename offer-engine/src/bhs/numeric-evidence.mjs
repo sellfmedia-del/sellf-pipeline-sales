@@ -49,6 +49,10 @@ export function numericEvidence(text,{locale='auto',claims=false}={}){
   // "bir fırsat" is an indefinite article, not a measured one. Written
   // quantities in claims need a count/measurement noun or an explicit scale.
   if(claims&&!/\d/.test(raw)&&!scaled&&!/^\s+(?:adet|ürün|bayi|kişi|çalışan|yıldız|takipçi|gün|mağaza|şube|ürünün|ürünle|ürüne|üründen|product|dealer|star|user|day)/iu.test(value.slice(end)))continue;
+  // In "bir ürün sunuyor" the article does not assert a catalogue count.
+  // Explicit counts, digits, durations and scaled amounts remain quantities.
+  if(claims&&word==='bir'&&!scaled&&/^\s+ürün\p{L}*(?!\p{L})/iu.test(value.slice(end))&&
+   !/(?:yalnız(?:ca)?|sadece|tek|tam(?: olarak)?|toplam|en az|en fazla|en çok|minimum|maksimum)\s*$/iu.test(value.slice(0,match.index)))continue;
   const number=canonical(total+group);if(number!==null)result.push({number,literal:literal.replace('−','-').replace(/^\+/,'')});
  }
  return result;

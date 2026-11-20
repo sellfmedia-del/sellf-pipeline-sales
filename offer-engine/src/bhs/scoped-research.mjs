@@ -98,7 +98,8 @@ const scopedReceiptsFrom=(plan,rounds,needs)=>{
  return receipts.filter(receipt=>byId.has(receipt.id)&&queryWithinBrief(plan,byId.get(receipt.id),receipt.query));
 };
 const siteLinks=s=>[...(s.technicalSignals?.identityLinks||[]),...(s.technicalSignals?.navigation||[])];
-const comparisonNeed=need=>/rakip|rekabet|competit/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '));
+const comparisonNeed=need=>need.comparisonRole==='reference'?false:need.comparisonRole==='rivals'||
+ /rakip|rekabet|competit/iu.test([need.section,need.sectionTitle].filter(Boolean).join(' '));
 const quantitativeMarketNeed=(need,counts)=>!buyerNeed(need)&&marketMeasureNeed(need,counts);
 const peerHosts=(peers,website,targeted=false,packet)=>{
  const owned=brandPublisherHosts(website,packet);

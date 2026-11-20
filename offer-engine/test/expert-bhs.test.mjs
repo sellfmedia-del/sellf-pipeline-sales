@@ -261,11 +261,15 @@ test('new signed jobs use v6 while already signed v5 jobs retain their original 
 test('BHS public acceptance is confined to its explicit preview commit; ordinary builds remove QA output',async()=>{
  await runExpertAcceptance();
 });
-test('the recorded real Humm research preserves ten facts while rejecting three unproven commercial conclusions',()=>{
- const s=replayExpertAcceptance(),d=s.audit.data;assert.equal(d.findings.length,10);assert.equal(d.competitors.length,1);assert.ok(d.sources.every(s=>s.verification.status==='quote_matched'));assert.ok(JSON.stringify(s.audit).length<600000);
+test('the recorded real Humm research preserves twelve facts without treating indefinite articles as quantities or unproven commercial conclusions as facts',()=>{
+ const s=replayExpertAcceptance(),d=s.audit.data;assert.equal(d.findings.length,12);assert.equal(d.competitors.length,1);assert.ok(d.sources.every(s=>s.verification.status==='quote_matched'));assert.ok(JSON.stringify(s.audit).length<600000);
  assert.match(d.findings.find(f=>f.id==='find-multichannel-distribution').impact,/listelenmesi.*kanıtlamaz/);
  assert.match(d.findings.find(f=>f.id==='find-ceres-certification').impact,/uluslararası geçerliliği.*kanıtlamaz/);
  assert.match(d.findings.find(f=>f.id==='find-no-reviews-on-site').impact,/yorum toplamadığını.*kanıtlamaz/);
+ assert.ok(d.findings.some(f=>f.id==='peer-fropie-product-range'));
+ const reviews=d.findings.find(f=>f.id==='peer-fropie-reviews');assert.ok(reviews);
+ assert.match(reviews.statement,/46 değerlendirme/);assert.match(reviews.impact,/yorum toplamadığını.*kanıtlamaz/);
+ assert.doesNotMatch(reviews.goalConnection,/neden tercih etmedi/);
  assert.equal(s.summary.newPaidCalls,0);assert.equal(d.researchCoverage.length,24);
 });
 

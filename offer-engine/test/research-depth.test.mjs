@@ -32,7 +32,7 @@ test('irrelevant tool landing pages and other companies cannot crowd out brand r
  const brief={brandName:'One More Global Inc.',website:'https://onemoreglobalinc.com/'},sources=[{id:'brand',finalUrl:brief.website,title:'Official brand',excerpts:[{text:'Products and delivery'}]},{id:'unrelated',finalUrl:'https://linkedin.com/jobs/energy',title:'ON.energy logistics jobs',excerpts:[{text:'Logistics role'}]},{id:'tool',finalUrl:'https://similarweb.com/website/',title:'Website Traffic Checker',excerpts:[{text:'Try our generic analytics platform'}]},{id:'news',finalUrl:'https://publisher.example/news',title:'One More Global opens a new market',excerpts:[{text:'Reported brand event'}]}];
  const out=prepareResearchInput(brief,{packet:{entities:[],sources},searches:[{query:'q',results:[{url:'https://generic.example/',title:'Search engine tools',content:'No specific brand data'},{url:'https://publisher.example/social',title:'One More Global Inc. social channels',content:'Brand-specific signals'}]}]});
  assert.deepEqual(out.packet.sources.map(s=>s.id),['brand','news']);assert.equal(out.searchEvidence[0].results.length,1);assert.equal(sources.length,4);
- assert.equal(researchHtmlText('<header>MENU MENU</header><nav>MENU</nav><main><p>Actual product subscription terms</p></main><footer>MENU MENU</footer>'),'Actual product subscription terms');
+ assert.equal(researchHtmlText('<header><nav>MENU MENU</nav></header><nav>MENU</nav><main><p>Actual product subscription terms</p></main><footer><nav>MENU MENU</nav><p>Contact our sales team.</p></footer>'),'Actual product subscription terms Contact our sales team.');
 });
 
 test('research transport keeps source facts and navigation while removing duplicate metadata and overlapping text',()=>{

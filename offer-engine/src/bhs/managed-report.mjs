@@ -174,6 +174,7 @@ export async function synthesizeScopedReport({providers,context,input,reverse,co
   (input.plan.verifiedResults?' Araştırmada doğrulanan rakipler ve ölçümler korunur. Bunları brief açısından analiz et ve hangi aksiyonu desteklediklerini yaz. Sayısal pazar bulgusunda coverage.marketMeasures içindeki doğrulanmış tutarı, birimi, yılı ve kategori ifadesini aynen ve aynı kaynağa bağlı kullan.':'')+
   (input.plan.readEvidenceOnly?' Araştırma ihtiyacına bağlı bulguda coverage.sources içindeki okunmuş kanıtı kullan. Fiyat, doz, mevzuat, pazar, rakip ve sosyal ölçüm için ilgili ürün veya hesap, coğrafya, veri dönemi ve birimi kanıtın izin verdiği kapsamda açıkça yaz. Yayın veya erişim tarihini veri dönemi yerine koyma. Kanıt yalnız örneklem veriyorsa ölçümü o örneklemle sınırla. Rakip adayını kesin rakip olarak kullanma.':'')+
   (input.plan.taskReporting?' Önemli, doğrulanmış ve brief hedefini etkileyen bulguları, araştırma görevinin başlığına veya hazır BHS başlıklarına birebir sığmasa da rapora al. section alanına bulgunun raporda en iyi anlaşılacağı başlığı yaz. Örneğin kullanıcıyı satış noktasına yönlendiren, mevzuattan da etkilenen bir eczane bulucu, etkisi operasyonelse Operasyonel verimlilik altında yer alabilir. Görevin needIds ve proof bağlantılarını aynen koru.':'')+
+  (input.plan.taskReporting?' Markanın kendi bulgusunda peerId boş olsun; brand kimliği rakip değildir. Kıyas henüz doğrulanmamış olsa da tek ürünün kaynaklı özelliğini yazabilirsin; eksik fiyatı veya rakiplik ilişkisini çıkarma. Sayfadaki ürün örnekleri, ekip rolleri, iletişim metni ve açık satış bağlantıları hedefe katkı sağlıyorsa bunları kendi kapsamlarıyla değerlendir. Bağlantıyı görmek ödeme, mesaj iletimi, kanal sahipliği veya satış sonucu testi değildir.':'')+
   (input.plan.qualifyReportFindings?' Her bulgu müşterinin bağlamı bilmeden okuyabileceği tam ve kendi başına anlaşılır bir cümle olsun. Alıntı, menü, başlık veya kesik metni bulgu olarak kopyalama. Her iddiayı doğrudan ilgili kanıtla eşleştir ve farklı ifade edilmiş tekrarları birleştir. Kullanım şekli, özellik ve fayda bilgisini uygun bir kullanım başlığında değerlendir. Talep için hedef kitlenin gözlenen satın alma davranışı, sipariş, bütçe, alıcı araştırması veya benzer doğrudan kanıt gerekir. Yalnız kullanımı gösteren kanıtla talep ihtiyacını karşılandı olarak işaretleme.':'')+
   (input.plan.focusedProductComparison?' Adı belirtilmiş ürün kıyaslarında verifiedProductProofs içindeki aynı peerId kaydını kullan. Her bulgu o kaydın required kanıtlarından en az birini ve yalnız allowed kanıtlarını kullanır. Referans SKU, parça adedi, kapladığı alan, hedef yaş, yerel liste fiyatı, KDV ve teslimatı ayrı tut. Farklı ürün, paket, para birimi veya vergi koşulunu eşdeğer fiyat diye yazma. Dolaylı alternatiften doğrudan rakip sonucu çıkarma.':'')+
   (buyerMetrics.length?' buyerProcurement işaretli satın alma soruları kaynaklı gözlem ve pilot hipotezi olarak ayrı gösterilir. Bu satırları bulgu olarak tekrarlama. Eksik karar verici, onay veya sipariş kanalının cevabını çıkarma.':'')+
@@ -531,6 +532,8 @@ function recoverDraftProofs(row,proofs,context){
 function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDirected=false,modelSelectedPeers=false,adaptive=false,needsById,targeted=false,verifiedPeers,marketCoverage,metricCoverage,focusedProductProofs,swotId,taskReporting=false,qualifyReportFindings=false}){
  const decoded=ids=>unique(list(ids).filter(id=>Object.hasOwn(usedInput.sources,id)).map(id=>reverse.get(id)).filter(Boolean));
  const rivals=(context.input.entities||[]).filter(e=>e.role==='competitor');
+ const brand=(context.input.entities||[]).find(e=>e.role==='brand');
+ const ownIdentity=value=>Boolean(value&&brand&&(value===brand.id||customerQuoteKey(value)===customerQuoteKey(brand.name)));
  const peerId=value=>{
   if(!needsById)return value;
   const exact=rivals.find(e=>e.id===value);
@@ -548,8 +551,10 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
    const needIds=list(row.needIds).filter(id=>needsById.has(id));
    const section=swotId&&quadrants.includes(row.quadrant)?swotId:taskReporting?
     reportHeadings.get(customerQuoteKey(row.section))||row.section:needsById.get(needIds[0])?.section||row.section;
-   const resolvedPeerId=peerId(row.peerId);
-   if(metricCoverage&&row.peerId&&!verifiedPeers?.some(peer=>peer.entityId===resolvedPeerId))continue;
+   // The writer sometimes uses the brand entity ID to identify the subject.
+   // It is not a rejected competitor and must never become a comparison peer.
+   const resolvedPeerId=ownIdentity(row.peerId)?'':peerId(row.peerId);
+   if(metricCoverage&&row.peerId&&!ownIdentity(row.peerId)&&!verifiedPeers?.some(peer=>peer.entityId===resolvedPeerId))continue;
    row={...row,section,sectionTitle:row.section,needIds,peerId:resolvedPeerId};
   }
   if(usedInput.plan?.classifyReportFindings&&classificationIssue(row))continue;
@@ -561,8 +566,10 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   if(!adaptive&&(!areas.has(row.area)||(row.section==='swot')!==(row.quadrant!=='none')||selected.filter(f=>f.section===row.section).length>=10))continue;
   if(managerDirected&&!mergeNeedLinks&&seenObservations.has(observationKey))continue;
   if(metricCoverage&&list(row.needIds).some(id=>!metricCoverage.get(id)?.some(alias=>row.proof.includes(alias))))continue;
+  // A verified comparison needs both products. A source-backed observation
+  // about one product remains useful while that comparison is still open.
   if(focusedProductProofs?.size&&list(row.needIds).some(id=>focusedProductProofs.has(id)&&
-   !focusedProductProofs.get(id).some(match=>match.peerId===row.peerId&&match.required.some(alias=>row.proof.includes(alias))&&
+   (row.peerId||focusedProductProofs.get(id).length)&&!focusedProductProofs.get(id).some(match=>match.peerId===row.peerId&&match.required.some(alias=>row.proof.includes(alias))&&
     row.proof.every(alias=>match.allowed.includes(alias)))))continue;
   if(targeted)({row,proofs}=recoverDraftProofs(row,proofs,context));
   if(marketCoverage?.length){
@@ -573,7 +580,13 @@ function projectManagedDraft({context,reverse,accepted,usedInput,data,managerDir
   }
   const sourceCards=proofs.flatMap(id=>context.proofGroups.get(id)||[id]).map(id=>context.known.get(id)).filter(Boolean);
   if(usedInput.plan?.cleanResearchEvidence&&researchGapStatement(row.observation,{sources:sourceCards})){
-   openQuestions.push(researchGapQuestion(row,needsById));continue;
+   openQuestions.push(researchGapQuestion(row,needsById));
+   // A separate research-status sentence must not erase an otherwise useful
+   // observation. Retained sentences still pass every normal evidence gate.
+   const supportedParts=[...statements.segment(row.observation)].map(part=>part.segment.trim())
+    .filter(part=>part&&!researchGapStatement(part,{sources:sourceCards}));
+   if(!supportedParts.length)continue;
+   row={...row,observation:supportedParts.join(' ')};
   }
   if(qualifyReportFindings){
    row=qualifyScopedFinding(row,sourceCards,needsById,{excludeLiteral:true,contentQuality:usedInput.plan?.cleanResearchEvidence===true,

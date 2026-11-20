@@ -24,10 +24,19 @@ export function publicMetadata(html){
  return [...new Set(values)].join(' ');
 }
 export function researchHtmlText(html,{preserveConsent=false}={}){
- const body=html.replace(/<(header|nav|footer|aside|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ');
+ // Contact details, team roles and sales routes can live in any page region.
+ // Keep their read text; the controller decides what matters for this brief.
+ const body=html.replace(/<(nav|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ');
  if(preserveConsent)return normalized(plainHtml(Buffer.from(body)));
  const visible=body.replace(/<!--[\s\S]*?-->/gu,' ').replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/giu,' ');
- const view=stripConsentUi(visible).replace(/<\/(?:p|div|section|li|h[1-6])\s*>/giu,'$&\n');
+ const linked=stripConsentUi(visible).replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/giu,(anchor,attributes,label)=>{
+  const href=attributes.match(/\bhref\s*=\s*["']([^"']+)["']/iu)?.[1];
+  const target=href&&publicUrl(href.replaceAll('&amp;','&'));
+  // The destination is an observation of the link, never a checkout test or
+  // proof of who owns the destination. Relative links retain their text.
+  return target&&normalized(plainHtml(Buffer.from(label)))?anchor+' ['+target.replaceAll('<','&lt;').replaceAll('>','&gt;')+']':anchor;
+ });
+ const view=linked.replace(/<\/(?:p|div|section|li|h[1-6])\s*>/giu,'$&\n');
  return normalized(cleanEvidenceText(plainHtml(Buffer.from(view))));
 }
 export function sourceLinks(html,url,{identity=false}={}){
