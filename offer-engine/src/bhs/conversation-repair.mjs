@@ -55,7 +55,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote,remainingReserve:needsSemantic?(request.quote.reviewReservation||0)+400:0});
     const candidate=answer.content?.find(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
     issues=candidate?validateConversationReport(candidate,sources,{semantic:needsSemantic}):['report_unavailable'];
-    if(!issues.includes('report_format')&&!issues.includes('report_size'))report=candidate;
+    if(!issues.includes('report_format')&&!issues.includes('report_size')&&typeof candidate?.reportMarkdown==='string'&&candidate.reportMarkdown.trim())report=candidate;
     if(needsSemantic&&report){
      await ledger.once(key+':semantic-draft',{draftDigest:hash(report)},0,async()=>({conversationReport:report,conversationSources:sources,semanticReview,reason:'semantic_review_unavailable',
       researchOutcomeVersion,researchSummary:state.researchSummary,researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues},repair:{kind:'retained-source-writing',semanticDraft:true,newResearchCalls:0}}));

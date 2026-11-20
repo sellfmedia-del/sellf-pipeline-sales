@@ -57,6 +57,21 @@ test('a genuine source link can be added to the single affected compatibility fi
  const assessed=applySemanticDecision(draft,decision,{sources:researchSources});assert.deepEqual(assessed.report.highlights[0].sourceIds,[source.id]);
  assert.equal(assessed.report.highlights[0].analysis,draft.highlights[0].analysis);assert.equal(assessed.report.reportMarkdown,draft.reportMarkdown);
 });
+test('an empty summary can be repaired without regenerating its complete strong narrative',async()=>{
+ const {ledger}=memoryLedger(),draft=strongNarrativeReport(),summary=draft.summary;draft.summary='';await seed(ledger,{draft});
+ const decision={...patchDecision(draft),patches:[{issueId:'performance',path:'summary',operation:'replace_text',before:'',after:summary}]};
+ const providers=scriptedProviders(ledger,[assistantCall('review_bhs',decision)]),final=await advanceConversation({brief,ledger,id,providers,now});
+ assert.equal(final.closed,true);assert.equal(final.conversationReport.summary,summary);assert.equal(final.conversationReport.reportMarkdown,draft.reportMarkdown);
+ assert.equal(final.semanticReview.status,'approved');
+});
+test('an entirely empty narrative is not frozen as a good draft that targeted patches can never repair',async()=>{
+ const {ledger}=memoryLedger(),draft=strongNarrativeReport(),empty={...draft,reportMarkdown:''};await seed(ledger);
+ const providers=scriptedProviders(ledger,[assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',empty),assistantCall('finish_bhs',draft),assistantCall('review_bhs',semanticApproval(draft))]);
+ await advanceConversation({brief,ledger,id,providers,now});const rejected=await advanceConversation({brief,ledger,id,providers,now});
+ assert.equal(rejected.toolIssues[0].code,'report_validation');assert.equal(rejected.reportDraft,undefined);
+ await advanceConversation({brief,ledger,id,providers,now});const final=await advanceConversation({brief,ledger,id,providers,now});
+ assert.equal(final.closed,true);assert.equal(final.conversationReport.reportMarkdown,draft.reportMarkdown);assert.equal(final.semanticReview.status,'approved');
+});
 test('semantic approval accepts equivalent section language without a keyword-based quality gate',()=>{
  const report=strongNarrativeReport();report.reportMarkdown=report.reportMarkdown.replaceAll('SWOT','İç ve dış koşullar').replaceAll('Güçlü yönler','İç avantajlar').replaceAll('Zayıf yönler','İç sınırlamalar');
  assert.ok(validateConversationReport(report,researchSources).includes('missing_swot'));assert.deepEqual(validateConversationReport(report,researchSources,{semantic:true}),[]);

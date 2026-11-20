@@ -39,7 +39,8 @@ export function applySemanticDecision(draft,decision,{sources=[],attempts=1}={})
   if(patch.operation==='replace_text'){
    if(!leaf.test(patch.path))fail('Yalnız izinli metin alanı düzeltilebilir.');
    const target=atPath(result,patch.path),before=patch.before;
-   if(typeof target.value!=='string'||!before||target.value.indexOf(before)<0||target.value.indexOf(before)!==target.value.lastIndexOf(before))fail('Yamanın eski metni tek ve tam eşleşmeli.');
+   if(typeof target.value!=='string'||(before===''?(target.value!==''||patch.path==='reportMarkdown'):
+    target.value.indexOf(before)<0||target.value.indexOf(before)!==target.value.lastIndexOf(before)))fail('Yamanın eski metni tek ve tam eşleşmeli.');
    const start=target.value.indexOf(before);
    if(patch.path==='reportMarkdown'&&(before===target.value||!oneNarrativeBlock(target.value,start,start+before.length)))fail('Bütün raporu veya birden fazla bölümü yeniden yazma.');
    target.owner[target.key]=target.value.slice(0,start)+patch.after+target.value.slice(start+before.length);

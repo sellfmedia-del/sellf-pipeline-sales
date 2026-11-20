@@ -196,8 +196,9 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){
     const issues=validateConversationReport(call.input,[...sourceMap.values()],{semantic:true});
-    if(!issues.includes('report_format')&&!issues.includes('report_size'))reportCandidate=call.input;
-    if(issues.includes('report_format')||issues.includes('report_size'))throw new BudgetError('report_validation',issues.join(', '));
+    const unusable=issues.includes('report_format')||issues.includes('report_size')||typeof call.input?.reportMarkdown!=='string'||!call.input.reportMarkdown.trim();
+    if(!unusable)reportCandidate=call.input;
+    if(unusable)throw new BudgetError('report_validation',issues.join(', '));
     if(calls.length!==1)throw new BudgetError('report_validation','Araştırma sonuçlarını aldıktan sonra raporu ayrı bir yanıtta tamamla.');
     researchIssues=researchReportIssues(call.input,researchSummary,[...sourceMap.values()],brief);
     closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:call.input,views:answer.fallback?fallbackViews:state.sourceViews,includeUnavailable:true});
