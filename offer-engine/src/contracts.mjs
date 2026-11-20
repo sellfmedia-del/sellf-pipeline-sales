@@ -20,7 +20,7 @@ export function assertResult(stage,result){
   if(stage==='audit'&&['conversation-format-and-source-provenance','conversation-provenance-and-analyst-review'].includes(result.data.quality?.scope)){
     const data=result.data;
     if(data.fullReport!==data.report.conversation?.reportMarkdown||data.rawReport!==data.fullReport||
-      data.quality.contentComplete&&(validateConversationReport(data.report.conversation,data.report.conversationSources||[],{semantic:Boolean(data.report.semanticReview)}).length||
+      data.quality.contentComplete&&(validateConversationReport(data.report.conversation,data.report.conversationSources||[],{semantic:Boolean(data.report.semanticReview),objective:Boolean(data.report.objectiveValidationVersion)}).length||
        data.quality.scope==='conversation-provenance-and-analyst-review'&&semanticReviewIssues(data.report.semanticReview,data.report.conversation).length))
       throw Error('BHS konuşma raporu veya kaynak aktarımı doğrulanamadı.');
   }

@@ -12,6 +12,7 @@ import {researchClosureVersion} from '../src/bhs/conversation-progress.mjs';
 import {researchOutcomeVersion} from '../src/bhs/conversation-research.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {inspectConversationAcceptance} from '../src/bhs/conversation-acceptance.mjs';
+import {assertResult} from '../src/contracts.mjs';
 import {brief,source,researchSources,researchSummary,completeResearchProgress,fixtureSourceResults,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 import {strongNarrativeReport} from './fixtures/bhs-strong-narrative.mjs';
 
@@ -61,11 +62,13 @@ test('compatibility records require measurements and named, reasoned competitors
 });
 test('new saved-offer passage captures bind their text while preserving original source identities and report bytes',()=>{
  const input=stored(),audit=conversationAuditResult(brief,input);assert.equal(audit.data.quality.contentComplete,true);
+ assertResult('audit',audit);
  assert.ok(audit.data.conversationSources.every(row=>row.capture?.kind==='verified-passages'&&!sourceIdentityIssues(row).length));
  const snapshot=createResearchSnapshot(audit.data,brief),read=readResearchSnapshot(snapshot);
  assert.equal(read.report.conversation.reportMarkdown,input.conversationReport.reportMarkdown);
  const tampered=structuredClone(audit.data);tampered.report.conversationSources[0].text+=' Added invented quote.';
  assert.equal(createResearchSnapshot(tampered,brief),null);
+ assert.throws(()=>assertResult('audit',{...audit,data:tampered}),/doğrulanamadı/u);
 });
 test('a conversation binds its full brief to one existing capped account; neither a changed brief nor account can dispatch a model',async()=>{
  const {ledger,total}=memoryLedger();await ensureConversationContext({brief,ledger,id});const before=total();
