@@ -120,7 +120,7 @@ test('post-source-check demotion reaches report headings, public supervision and
  assert.equal(audit.supervision.metricCoverage[0].status,'open');assert.equal(audit.supervision.researchApproved,false);
  assert.equal(audit.supervision.evidenceCoverage.complete,false);
  assert.ok(audit.bhsSections.every(section=>!section.complete));
- assert.deepEqual(audit.quality.methodologyCoverage,{expected:1,present:0,scope:'planned_needs'});
+ assert.deepEqual(audit.quality.methodologyCoverage,{expected:1,present:0,reported:0,scope:'planned_needs'});
  assert.deepEqual(input,before);
 });
 

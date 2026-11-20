@@ -14,6 +14,7 @@ import {runtimeStore,bearer} from '../runtime.mjs';
 import {recoveryKey,recoveryRound,recoverableAuditCodes} from '../budget/recovery.mjs';
 import {canContinue,abandonedStage,continuationAudit,restoreContinuation} from './continuity.mjs';
 import {validateScope,fallbackScope} from '../pricing/scope.mjs';
+import {guardResearchScope} from './scope-authority.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {createSupervisedProviders,supervisedModels} from './supervised-providers.mjs';
 import {supervisedPhases} from './supervised-research.mjs';
@@ -159,6 +160,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    if(!['start','status','advance','recover','continue','complete_gaps'].includes(action))throw Error();
    if(action==='complete_gaps'&&(!queue||!job.backgroundJobId))throw new BudgetError('completion_unavailable','Tamamlanmış BHS kaydı gerekli.');
    const finish=async (final,gapCompletion)=>{
+    if(final.data?.scopePlan)final={...final,data:{...final.data,scopePlan:guardResearchScope(final.data.scopePlan,brief,final.data)}};
     const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});

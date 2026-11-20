@@ -14,6 +14,7 @@ export async function buildRecoveryReview(output,{production=false}={}){
  const {continuationAudit,restoreContinuation}=await import('../bhs/continuity.mjs');
  const {researchCacheKey}=await import('../bhs/reuse.mjs');
  const {briefHash}=await import('../bhs/brief.mjs');
+ const {statusFixture}=await import('../../test/fixtures/bhs-status-diagnostics.mjs');
  const {context}=await import('../../test/fixtures/evidence.mjs');
  const {pricingEngine}=await import('../engines/pricing-engine.mjs');
  const {proposalEngine}=await import('../engines/proposal-engine.mjs');
@@ -29,7 +30,13 @@ export async function buildRecoveryReview(output,{production=false}={}){
  const restoredPricing=addQuote(await pricingEngine.run({brief:f.brief,scope:restoredAudit.data.scopePlan},{audit:restoredAudit}),{currency:'TRY'});
  const restoredProposal=await proposalEngine.run({brief:f.brief,copy:restoredAudit.data.proposalCopy},{audit:restoredAudit,pricing:restoredPricing,logo});
  restoredProposal.data.brand={name:'Örnek Marka',website:'https://brand.example/'};
- await writeFile(output+'/offers/recovery-review-continuity.json',JSON.stringify({audit,pricing,proposal,restored:{audit:restoredAudit,pricing:restoredPricing,proposal:restoredProposal}}));
+ const statusAudit={stage:'audit',...continuationAudit(f.brief,{synthesis:statusFixture(),reason:'quality_review'})};
+ const statusPricing=addQuote(await pricingEngine.run({brief:f.brief,scope:statusAudit.data.scopePlan},{audit:statusAudit}),{currency:'TRY'});
+ const statusProposal=await proposalEngine.run({brief:f.brief,copy:statusAudit.data.proposalCopy},{audit:statusAudit,pricing:statusPricing,logo});
+ statusProposal.data.brand={name:'Örnek Marka',website:'https://brand.example/'};
+ await writeFile(output+'/offers/recovery-review-continuity.json',JSON.stringify({audit,pricing,proposal,
+  restored:{audit:restoredAudit,pricing:restoredPricing,proposal:restoredProposal},
+  status:{audit:statusAudit,pricing:statusPricing,proposal:statusProposal}}));
  const finalHtml=await readFile(output+'/offers/recovery-review.html','utf8');
- await writeFile(output+'/offers/recovery-review.html',finalHtml.replace('<button class="btn" id="review-continuity">','<button class="btn btn-primary" id="review-restored">Okuma hatasına rağmen kayıtlı BHS’yi koru</button><button class="btn" id="review-empty">Boş model yanıtı kontrolü</button><button class="btn" id="review-continuity">'));
+ await writeFile(output+'/offers/recovery-review.html',finalHtml.replace('<button class="btn" id="review-continuity">','<button class="btn btn-primary" id="review-status">Kısmi araştırma, açık ihtiyaçlar ve ayrı hata nedenleri</button><button class="btn btn-primary" id="review-restored">Okuma hatasına rağmen kayıtlı BHS’yi koru</button><button class="btn" id="review-empty">Boş model yanıtı kontrolü</button><button class="btn" id="review-continuity">'));
 }

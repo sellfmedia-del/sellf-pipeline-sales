@@ -20,6 +20,7 @@ import {balancedScopedProofs,boundScopedEvidence,indexScopedEvidence} from './sc
 import {evidenceGeographies,marketObservationSupported} from './scoped-market.mjs';
 import {comparisonFields} from './product-comparison.mjs';
 import {supportsStatisticalNeed} from './scoped-findings.mjs';
+import {knownResearchIssue} from './research-presentation.mjs';
 import {managedDiscoveryCeilingKurus,managedFocusedInventoryCeilingKurus,managedGeneralSearchCeilingKurus,managedInventoryCeilingKurus,managedReviewPhases,researchCapKurus} from './managed-budget.mjs';
 import {customerEvidence,customerQuoteKey,directCustomerExperience,managedReviewUsesHaiku,planDirectedEvidenceReview,planManagedEvidenceReview,planPositionalEvidenceReview,prioritizeManagedProofs,recoverPositionalEvidence,reviewManagedEvidenceBatch,reviewPositionalEvidenceBatch,reviewedManagedEvidence} from './managed-evidence-review.mjs';
 
@@ -1259,6 +1260,8 @@ export async function writeScopedSynthesis({brief,brand,plan,rounds,providers,al
    ...(written.completion?{reportModel:written.completion.model}:{}),...(written.completion?.providerHandoff?{reportHandoff:written.completion.providerHandoff}:{}),
    ...(plan.targetedEvidence&&terminal?.stopReason?{researchStopReason:terminal.stopReason}:{}),
    ...(rounds.some(round=>round.sourceReaderIssue==='source_plan_invalid')?{sourceReaderIssue:'source_plan_invalid'}:{}),
+   researchIssues:unique(rounds.flatMap(round=>[round.issue,...(round.receipts||[]).flatMap(receipt=>
+    [...(receipt.issues||[]),...(receipt.attempts||[]).map(attempt=>attempt.issue)])]).filter(knownResearchIssue)),
    researchApproved:evidence.approved,metricCoverage:evidence.coverage.map(({proofs,...c})=>({...c,proofIds:proofIds[c.id]})),
    evidenceCoverage:{complete:evidence.approved,reviewedEvidenceRows:reviewed.length,evidenceRows:Object.keys(input.sources).length},
    ...(written.reportIssue||recoveryIssue?{reportIssue:recoveryIssue||written.reportIssue}:{}),...(written.reportDiagnostic?{reportDiagnostic:written.reportDiagnostic}:{})}};

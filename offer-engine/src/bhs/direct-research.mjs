@@ -16,6 +16,7 @@ import {researchUrl,researchHost} from './research-url.mjs';
 import {recoverableModelFailure} from '../budget/model-recovery.mjs';
 import {validateGroundedOutput} from './source-gate.mjs';
 import {runExpertStage} from './expert-research.mjs';
+import {guardResearchScope,scopeAuthorityInstruction} from './scope-authority.mjs';
 import {runSupervisedStage} from './supervised-research.mjs';
 import {runSequentialStage} from './sequential-research.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
@@ -177,7 +178,8 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
    return synthesis;
   }
   if(phase==='scope'){
-   const synthesis=await previous('synthesis'),report=directAuditResult(brief,synthesis).data.report,guide=scopeEnvelope(brief,report);
+   const synthesis=await previous('synthesis'),audit=directAuditResult(brief,synthesis).data,report=audit.report,guide=scopeEnvelope(brief,report);
+   if(audit.supervision?.researchPlan?.taskReporting)guide.instructions.push(scopeAuthorityInstruction);
    if(synthesis.reuse?.contextNeedsConfirmation){guide.audit.findings=guide.audit.findings.filter(f=>f.kind!=='brief');guide.audit.researchReuse=synthesis.reuse;guide.instructions.push('Bu markanın saklanan ön araştırması kullanılıyor. Eski rapordaki görüşme/hedef beyanlarını güncel müşterinin beyanı sayma. Kapsamı yalnız güncel brief ile seç; eski rakip/pazar değerlendirmesinin yeni bağlama uygunluğunu varsayma. Uygunluğu belirsiz bulgular doğrulanacak hipotezdir.');}
    guide.audit.researchCoverage=report.researchCoverage||[];
    const writeScope=providers.modelHandoff?'worker':'generate';
@@ -187,7 +189,7 @@ export async function runBoundedStage({phase,brief,checkpointHash=hash(brief),le
     const scope=normalizeGeneratedScope(generated.data?.scope,brief,report,{omitUnsupported:true});
     scopePlan=scope?.services?.length?validateScope(scope,brief,report):fallbackScope(brief);
    }catch{scopePlan=fallbackScope(brief);}
-   return {scopePlan,proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(ledger.issues?.size?{toolIssues:[...ledger.issues]}:{}),...(generated.originalText?{originalModelText:generated.originalText}:{})};
+   return {scopePlan:guardResearchScope(scopePlan,brief,audit),proposalCopy:offerCopy(generated.data?.copy,report),usage:generated.usage,...(ledger.issues?.size?{toolIssues:[...ledger.issues]}:{}),...(generated.originalText?{originalModelText:generated.originalText}:{})};
   }
   throw new BudgetError('invalid_phase','Araştırma aşaması geçersiz.');
   }catch(error){error.recoveryRound=providers.recoveryRound||0;throw error;}

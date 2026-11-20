@@ -15,6 +15,10 @@ export function scopedMetrics(report,fallback=[]){
   const metric={...metadata.get(row.id),...row};
   if(metric.status!=='confirmed')metric.status='open';
   const buyer=list(report.verifiedResearch?.buyerProcurement).find(item=>item.needId===row.id);
+  const proofs=[...list(metric.sourceIds),...list(metric.marketMeasures).flatMap(measure=>list(measure.sourceIds)),...list(buyer?.evidence?.sourceIds)];
+  if(metric.status==='confirmed'&&Array.isArray(metric.sourceIds)&&!proofs.length){
+   metric.status='open';metric.researchStatus=metric.researchStatus||'searched';
+  }
   if(buyer&&(!buyer.evidence?.coversTarget||buyer.hypothesis)){
    metric.status='open';
    metric.researchStatus=list(buyer.evidence?.sourceIds).length?'partially_verified':metric.researchStatus||'searched';

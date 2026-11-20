@@ -12,6 +12,7 @@ import {isExpertMethodology} from './expert-report.mjs';
 import {sequentialVersion,qualityAcceptance} from './sequential-contracts.mjs';
 import {managedCoverage,scopedCoverage} from './managed-report.mjs';
 import {scopedMetrics,scopedSupervision} from './research-status.mjs';
+import {presentResearch} from './research-presentation.mjs';
 
 export const directMethodologyVersion='sellf-pre-bhs-2026-10-21-research-v5';
 export const approvedMethodology=readFileSync(new URL('./methodology.txt',import.meta.url),'utf8');
@@ -51,7 +52,9 @@ export function directAuditResult(brief,synthesis){
  const byId=new Map(report.dimensions.map(d=>[d.id,d]));
  if(byId.size!==6||dimensions.some(d=>!byId.has(d.id)))throw Error('BHS JSONunda altı boyut gerekli.');
  const total=dimensions.every(d=>byId.get(d.id).score!==null)?Math.round(dimensions.reduce((sum,d)=>sum+byId.get(d.id).score*d.weight,0)*100)/100:null;
- const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?'Veri bulunamadı — onboarding’de tamamlanacak.':'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
+ const scoring={total,weights:dimensions.map(({id,weight})=>({id,weight})),note:total===null?
+  plan?.taskReporting?'Bu araştırmada sayısal ön BHS skoru hesaplanmadı; bu durum markanın düşük performanslı olduğunu göstermez.':'Veri bulunamadı — onboarding’de tamamlanacak.':
+  'Bu skor dışsal sinyallere dayalı ön tahmindir. Onboarding zeka kartı tamamlandığında BHS skoru güncellenecektir.'};
  const scoreText=dimensions.map(d=>`${d.name}: ${byId.get(d.id).score??'Yanıt Bekliyor'}/100 · Ağırlık ${d.weight}`).join('\n')+'\nÖn BHS: '+(total??'Yanıt Bekliyor')+'/100\n'+scoring.note;
  const managed=synthesis.supervision?.reviewMode==='managed-audit';
  const adaptive=managed&&synthesis.supervision?.researchPlan?.adaptiveResearch===true;
@@ -60,17 +63,19 @@ export function directAuditResult(brief,synthesis){
  const researchOpen=adaptive&&metrics.some(metric=>metric.status==='open');
  if(managed)report.bhsSections=adaptive?scopedCoverage(report,synthesis.supervision.metricCoverage,synthesis.supervision.researchPlan.qualityReport===true,
   synthesis.supervision.researchPlan.targetedEvidence===true,synthesis.supervision.researchPlan.sectionedSynthesis===true,synthesis.supervision.researchPlan.taskReporting===true):managedCoverage(report);
+ if(plan?.taskReporting)presentResearch(report,synthesis.supervision);
  const rawReport=renderGroundedReport(report).replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.',scoreText);
  const useful=hasGroundedResearch(report);
  const missingSections=managed?report.bhsSections.filter(section=>!section.complete).map(section=>section.id):[];
  const managedIssues=[...missingSections.map(id=>'incomplete_'+id),...(synthesis.supervision?.scopedResearch&&(!synthesis.supervision.researchApproved||researchOpen)?['research_needs_open']:[]),...(managed&&(synthesis.supervision.evidenceCoverage?.complete===false||researchOpen)?['incomplete_evidence_review']:[]),
+  ...(report.researchProgress&&report.researchProgress.state!=='complete'?['incomplete_research_report']:[]),
   ...(synthesis.supervision?.reportIssue&&(plan?.reportRecovery||synthesis.supervision.reportIssue==='partial_model_document')?[synthesis.supervision.reportIssue]:[])];
  const acceptance=managed?{passed:!managedIssues.length,issues:managedIssues}:synthesis.methodologyVersion===sequentialVersion?qualityAcceptance(report,{stages:synthesis.supervision?.stageDecisions||[],swot:synthesis.supervision?.swot||[],budget:synthesis.supervision?.costUpperBound,finalDecision:synthesis.supervision?.finalDecision,reviewMode:synthesis.supervision?.reviewMode}):null;
  if(managed&&managedIssues.length)report.transfer.contentComplete=false;
  const ready=useful&&(!acceptance||acceptance.passed);
  const supervision=adaptive?scopedSupervision(report,synthesis.supervision):synthesis.supervision;
  return {status:ready?'ready':'review',data:{...report,report,...(synthesis.reuse?{researchReuse:synthesis.reuse}:{}),...(supervision?{supervision:{...supervision,...(acceptance?{acceptance}:{} )}}:{}),schemaVersion:'bhs-v2-direct',methodologyVersion:synthesis.methodologyVersion||'stored-report-reused',briefHash:briefHash(brief),rawReport,scoring,services:report.serviceRecommendations.map(s=>s.name),
-  quality:{checksPassed:ready,contentComplete:managed?ready:report.transfer.contentComplete&&(!acceptance||acceptance.passed),issues:[...report.transfer.issues,...(acceptance?.issues||[]).map(reason=>({path:'sequentialAcceptance',reason}))],scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:adaptive&&Array.isArray(report.verifiedResearch?.metrics)?{expected:metrics.length,present:metrics.filter(metric=>metric.status==='confirmed').length,scope:'planned_needs'}:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
+  quality:{checksPassed:ready,contentComplete:managed?ready:report.transfer.contentComplete&&(!acceptance||acceptance.passed),issues:[...report.transfer.issues,...(acceptance?.issues||[]).map(reason=>({path:'sequentialAcceptance',reason}))],scope:'read-source-and-quote-filter',semanticBenchmark:'not_requested',customerApproval:'pending',methodologyCoverage:adaptive&&Array.isArray(report.verifiedResearch?.metrics)?{expected:metrics.length,present:metrics.filter(metric=>metric.status==='confirmed').length,...(report.researchProgress?{reported:report.researchProgress.reported}:{}),scope:'planned_needs'}:{expected:methodologyAreas.length,present:methodologyAreas.filter(a=>report.researchCoverage?.some(c=>c.dimension===a.dimension&&c.topic===a.topic)).length}},
   researchAsOf:synthesis.reuse?.researchedAt||synthesis.analysisPacket?.asOf||null,
   researchContext:synthesis.researchContext?.brief?{brandName:synthesis.researchContext.brief.brandName,website:synthesis.researchContext.brief.website,briefHash:synthesis.researchContext.briefHash}:null,
   researchMethod:synthesis.supervision?'claude-gemini-supervised':'tavily-gemini-direct',packetHash:synthesis.analysisPacket?evidenceHash(synthesis.analysisPacket):synthesis.fullPacketHash,

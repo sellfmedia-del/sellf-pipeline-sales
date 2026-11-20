@@ -5,6 +5,7 @@ import {readReusableResearch} from './reuse.mjs';
 import {salesMetricName,salesSectionTitle} from './sales-research-labels.mjs';
 import {scopedCoverage,scopedMetrics,scopedSupervision} from './research-status.mjs';
 import {renderGroundedReport} from './grounded-report.mjs';
+import {presentResearch} from './research-presentation.mjs';
 export const continuationCodes=new Set(['research_empty','model_temporarily_unavailable','model_content_invalid','model_deadline','model_output_invalid','model_timeout','model_network','budget_limit','budget_uncertain','quota','provider_error','provider_unavailable','provider_format','provider_accounting','invalid_report','stage_failed','stage_abandoned','search_unavailable','tariff_expired','fx_unavailable','fx_limit','not_configured','claude_spend_limit']);
 export function abandonedStage(step,now){
  return step?.state==='reserved'&&step.charge_kurus===0&&Number.isFinite(Date.parse(step.created_at))&&now-Date.parse(step.created_at)>360000;
@@ -16,6 +17,8 @@ export function canContinue(step,now){
 export function continuationAudit(brief,{synthesis,reason,verifiedAudit,managed=false}){
  const saved=synthesis||{report:{summary:'',sources:[],findings:[]},methodologyVersion:'research-unavailable'};
  const audit=verifiedAudit||directAuditResult(brief,managed?{...saved,supervision:{...saved.supervision,reviewMode:'managed-audit'}}:saved);
+ if(verifiedAudit&&audit.data.researchProgress?.state==='complete'&&audit.data.quality?.checksPassed&&audit.data.quality?.contentComplete)
+  return audit;
  const partial=hasGroundedResearch(audit.data);
  audit.status='ready';
  const missing=audit.data.bhsSections?.filter(section=>!section.complete)||[];
@@ -25,7 +28,15 @@ export function continuationAudit(brief,{synthesis,reason,verifiedAudit,managed=
   +(missing.length&&!detailed?' Ek kanıt gereken bölümler: '+missing.map(section=>section.title).join(', ')+'.':'')
   +(reason==='claude_spend_limit'?' Claude API hesabının harcama sınırına ulaşıldı. Önceki araştırma kayıtları korundu.':'');
  audit.data.researchContinuity={status:partial?'partial':'unavailable',reason,additionalPaidCalls:0,notice};
- audit.data.quality.contentComplete=false;audit.data.quality.issues.push({path:'research',reason:'incomplete_handoff'});
+ if(Array.isArray(audit.data.verifiedResearch?.metrics)&&(audit.data.supervision?.researchPlan?.taskReporting||audit.data.researchProgress)){
+  presentResearch(audit.data.report,audit.data.supervision);
+  audit.data.meetingQuestions=audit.data.report.meetingQuestions;
+  audit.data.bhsSections=audit.data.report.bhsSections;
+  audit.data.verifiedResearch=audit.data.report.verifiedResearch;
+  audit.data.researchProgress=audit.data.report.researchProgress;
+  audit.data.researchDiagnostics=audit.data.report.researchDiagnostics;
+ }
+ audit.data.quality.checksPassed=false;audit.data.quality.contentComplete=false;audit.data.quality.issues.push({path:'research',reason:'incomplete_handoff'});
  audit.data.report.transfer.contentComplete=false;
  if(verifiedAudit)return audit;
  audit.data.scopePlan=fallbackScope(brief);
@@ -45,13 +56,16 @@ export async function restoreContinuation(brief,audit,ledger,now=Date.now()){
   const researchCoverage=(prior.researchCoverage||[]).filter(row=>row.status!=='unavailable');
   const report=prior.report?{...prior.report,bhsSections,researchCoverage,verifiedResearch,
    ...(prior.report.transfer&&incomplete?{transfer:{...prior.report.transfer,contentComplete:false}}:{})}:undefined;
+  if(report&&(prior.supervision?.researchPlan?.taskReporting||prior.researchProgress))presentResearch(report,prior.supervision);
   const quality=prior.quality?{...prior.quality,...(incomplete?{checksPassed:false,contentComplete:false}:{}),
-   methodologyCoverage:{expected:metrics.length,present:metrics.filter(metric=>metric.status==='confirmed').length,scope:'planned_needs'},
+   methodologyCoverage:{expected:metrics.length,present:metrics.filter(metric=>metric.status==='confirmed').length,
+    ...(report?.researchProgress?{reported:report.researchProgress.reported}:{}),scope:'planned_needs'},
    issues:(prior.quality.issues||[]).filter(issue=>!(issue.path?.startsWith('researchCoverage.')&&issue.reason==='unavailable_or_unverified'))}:undefined;
   const renderable=report&&['findings','dimensions','competitors','benchmarks','sources','meetingQuestions','serviceRecommendations'].every(key=>Array.isArray(report[key]));
   const rawReport=typeof prior.rawReport==='string'&&renderable?renderGroundedReport(report)
    .replace('Toplam puan sunucu kontrollerinden sonra hesaplanır.','Ön BHS: '+(prior.scoring?.total??'Yanıt Bekliyor')+'/100\n'+(prior.scoring?.note||'')):prior.rawReport;
   audit={...audit,data:{...prior,bhsSections,researchCoverage,verifiedResearch,...(report?{report}:{}),...(quality?{quality}:{}),
+   ...(report?.researchProgress?{meetingQuestions:report.meetingQuestions,researchProgress:report.researchProgress,researchDiagnostics:report.researchDiagnostics}:{}),
    ...(prior.supervision?{supervision:scopedSupervision(prior,prior.supervision)}:{}),
    ...(rawReport!==undefined?{rawReport}:{})}};
  }

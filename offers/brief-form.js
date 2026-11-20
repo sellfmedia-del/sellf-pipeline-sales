@@ -178,15 +178,17 @@
       function paragraph(text,parent=box){const p=document.createElement('p');p.textContent=text;parent.appendChild(p);}
       function heading(text){const h=document.createElement('h3');h.textContent=text;box.appendChild(h);}
       const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
+      const shownMetrics=new Set();
       function renderSections(sections){
         const findings=new Map(data.findings.map(f=>[f.id,f]));
         const gapLabels={not_searched:'Aranmadı',insufficient_sources:'Kaynak yetersiz',missing_from_report:'Kanıt bulundu, rapora aktarılamadı'};
         for(const section of sections){
           heading(section.title);
           if(section.openMetrics?.length){
-            for(const metric of section.openMetrics)paragraph(
-              metric.name+' — '+(metric.statusLabel||(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil'))
-            );
+            for(const metric of section.openMetrics){
+              const key=metric.id||metric.name;if(shownMetrics.has(key))continue;shownMetrics.add(key);
+              paragraph(metric.name+' — '+(metric.statusLabel||(Object.hasOwn(gapLabels,metric.status)?gapLabels[metric.status]:'Araştırma durumu kayıtlı değil')));
+            }
           }else if(!section.complete)paragraph('Bu bölümde doğrulanacak bulgu eksiği var.');
           if(section.missingQuadrants?.length)paragraph('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));
           for(const id of section.findingIds){
@@ -201,10 +203,22 @@
         }
       }
       paragraph(data.summary);
+      const progress=data.researchProgress;
+      if(progress){
+        heading('Araştırma ve rapor durumu');
+        paragraph(({complete:'Araştırma ve rapor tamamlandı.',partial:'Kaynaklı kısmi BHS; doğrulanacak veya rapora aktarılacak alanlar var.',unavailable:'Bu araştırmada kullanılabilir kaynaklı bulgu oluşmadı.'})[progress.state]);
+        paragraph(progress.confirmed+'/'+progress.planned+' ihtiyaç doğrulandı · '+progress.reported+' doğrulanmış ihtiyaç rapora aktarıldı · '+progress.findings+' kaynaklı bulgu korundu · '+progress.open+' ihtiyaç açık.');
+      }
+      if(data.researchDiagnostics?.length){
+        heading('Araştırma işlem durumu');
+        const stages={research:'Araştırma',report:'Rapor yazımı',reading:'Kaynak okuma',tools:'Araçlar'};
+        data.researchDiagnostics.forEach(row=>paragraph((stages[row.stage]||'Araştırma')+' · '+row.message));
+      }
       if(data.researchReuse?.researchedAt)paragraph('Araştırma tarihi: '+data.researchReuse.researchedAt+' · Saklanan araştırma; yeni tarama yapılmadı.');
       if(data.researchReuse)paragraph('Mevcut marka araştırması korundu; teklif kapsamı güncel brief üzerinden seçilecek. '+(data.researchReuse.contextNeedsConfirmation?'Bulguların güncel hedef pazar ve görüşme bağlamına uygunluğunu kapsam onayında kontrol et.':''));
       if(data.schemaVersion!=='bhs-v2-direct'&&data.quality.semanticBenchmark!=='passed')paragraph('İçerik doğrulaması tamamlanmadı: şirket, pazar, dönem ve çıkarımların dayanakları kontrol edilmeli.');
       if(data.researchContinuity?.status!=='unavailable'){
+      if(!progress){
       heading('Ön BHS boyutları');
       const names={financial:'Finansal sağlık',operations:'Operasyonel verimlilik',funnel:'Funnel bütünlüğü',digital:'Dijital varlıklar',perception:'Marka algısı',competition:'Rekabetçi pozisyon'};
       data.dimensions.forEach(d=>{
@@ -213,6 +227,7 @@
         paragraph(d.rationale,article);
         if(d.gaps.length)paragraph('Eksikler: '+d.gaps.join(' · '),article);
       });
+      }
       paragraph('Ön BHS toplamı: '+(data.scoring.total===null?'Hesaplanmadı':data.scoring.total+'/100'));
       paragraph(data.scoring.note);
       heading('Rakip seti');data.competitors.forEach(p=>paragraph(p.name+' — '+p.scaleReason+' '+p.audienceReason+' '+p.geographyReason));
@@ -334,7 +349,11 @@
           stop==='research_engine_failure'?'Araştırma aynı işlem hatası tekrar ettiği için durdu. ':
           stop==='research_source_plan_invalid'?'Kaynak planı doğrulanamadı ve kalan araştırma bağımsız bir araçla sürdürülemedi. ':
           data.supervision?.sourceReaderIssue==='source_plan_invalid'?'Kaynak planı doğrulanamadığı için bazı sayfalar okunamadı. ':'';
-        dialog.querySelector('.ob-review-notice').textContent=reason+data.researchContinuity.notice;
+        const stages={research:'Araştırma',report:'Rapor yazımı',reading:'Kaynak okuma'};
+        const diagnosticNotice=(data.researchDiagnostics||[]).filter(row=>Object.hasOwn(stages,row.stage))
+          .map(row=>stages[row.stage]+': '+row.message).join(' ');
+        const progressNotice=progress?progress.confirmed+'/'+progress.planned+' ihtiyaç doğrulandı; '+progress.reported+' doğrulanmış ihtiyaç raporda, '+progress.findings+' kaynaklı bulgu korundu, '+progress.open+' ihtiyaç açık. ':'';
+        dialog.querySelector('.ob-review-notice').textContent=progressNotice+(diagnosticNotice?diagnosticNotice+' ':reason)+data.researchContinuity.notice;
       }
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
       dialog.querySelector('.ob-service-selection').hidden=result.status!=='ready';

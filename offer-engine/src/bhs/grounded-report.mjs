@@ -1,6 +1,7 @@
 import {briefHash,dimensions} from './brief.mjs';
 import {assertSchema,reportSchema} from './schema.mjs';
 import {assertEvidencePacket,evidenceHash} from './evidence.mjs';
+import {researchQuestions} from './research-presentation.mjs';
 
 export function synthesisEnvelope(brief,packet){
  assertEvidencePacket(packet,brief);
@@ -28,13 +29,22 @@ export function readStoredEnvelope(interaction,kind,brief){
 export function parseGroundedReport(text){const report=JSON.parse(text);assertSchema(report,reportSchema);return report;}
 export function renderGroundedReport(report){
  const rows=['# Ön BHS analizi','## 1. Marka genel bakış',report.summary];
+ const progress=report.researchProgress;
+ if(progress)rows.push('## Araştırma ve rapor durumu',
+  ({complete:'Araştırma ve rapor tamamlandı.',partial:'Kaynaklı kısmi BHS; doğrulanacak veya rapora aktarılacak alanlar var.',unavailable:'Bu araştırmada kullanılabilir kaynaklı bulgu oluşmadı.'}[progress.state]),
+  progress.confirmed+'/'+progress.planned+' ihtiyaç doğrulandı · '+progress.reported+' doğrulanmış ihtiyaç rapora aktarıldı · '+progress.findings+' kaynaklı bulgu korundu · '+progress.open+' ihtiyaç açık.');
+ const stages={research:'Araştırma',report:'Rapor yazımı',reading:'Kaynak okuma',tools:'Araçlar'};
+ if(report.researchDiagnostics?.length)rows.push('## Araştırma işlem durumu',...report.researchDiagnostics.map(row=>(stages[row.stage]||'Araştırma')+' · '+row.message));
  const quadrants={strength:'Güçlü yön',weakness:'Zayıf yön',opportunity:'Fırsat',threat:'Tehdit'};
  if(report.bhsSections){
   const byId=new Map(report.findings.map(f=>[f.id,f]));
+  const shownMetrics=new Set();
   for(const section of report.bhsSections){
    rows.push('## '+section.title);
    if(!section.complete)rows.push('Bu bölümde doğrulanacak bulgular var.');
-   for(const metric of section.openMetrics||[])if(metric.statusLabel)rows.push(metric.name+' · '+metric.statusLabel);
+   for(const metric of section.openMetrics||[])if(metric.statusLabel&&!shownMetrics.has(metric.id||metric.name)){
+    rows.push(metric.name+' · '+metric.statusLabel);shownMetrics.add(metric.id||metric.name);
+   }
    if(section.missingQuadrants?.length)rows.push('Kanıt bekleyen SWOT kolları · '+section.missingQuadrants.map(q=>quadrants[q]).filter(Boolean).join(', '));
    for(const id of section.findingIds){
     const f=byId.get(id);
@@ -52,9 +62,13 @@ export function renderGroundedReport(report){
  }
  if(recovery?.hypotheses.length)rows.push('## Görüşmede sınanacak ticari ve SWOT hipotezleri',
   ...recovery.hypotheses.map(row=>(quadrants[row.quadrant]||'Ticari karar')+' · '+row.question+' ['+row.sourceIds.join(', ')+']'));
+ if(!progress){
  rows.push('## 2. Boyut analizleri');
  for(const d of report.dimensions){rows.push('### '+(dimensions.find(x=>x.id===d.id)?.name||d.id),d.rationale,'Puan: '+(d.score===null?'Yeterli veri yok':d.score+'/100'),'Güçlü yönler: '+d.strengths.join(' · '),'Açıklar: '+d.gaps.join(' · '));for(const f of report.findings.filter(f=>f.dimension===d.id))rows.push(f.statement,f.impact,'Hedef bağlantısı: '+f.goalConnection,'Kaynaklar: '+f.sourceIds.join(', '));for(const area of (report.researchCoverage||[]).filter(a=>a.dimension===d.id))rows.push(area.topic+' · '+({observed:'Kaynaklı gözlem',partial:'Kısmi veri',unavailable:'Veri bulunamadı'}[area.status]||area.status),area.observation,'Kaynaklar: '+area.sourceIds.join(', '));}
- rows.push('## 3. Toplam değerlendirme','Toplam puan sunucu kontrollerinden sonra hesaplanır.','## 4. Onboarding soruları',...report.dimensions.flatMap(d=>d.onboardingQuestions),'## 5. Kritik fırsat',report.findings.find(f=>f.id===report.criticalOpportunityFindingId)?.statement||'Ek kanıt gerekli.','## 6. Risk hipotezi',report.findings.find(f=>f.id===report.criticalRiskFindingId)?.statement||'Ek kanıt gerekli.','## 7. Toplantı soruları',...report.meetingQuestions.map(q=>q.question),'## 8. Rakip karşılaştırması');
+ }
+ rows.push('## 3. Toplam değerlendirme','Toplam puan sunucu kontrollerinden sonra hesaplanır.');
+ if(!progress)rows.push('## 4. Onboarding soruları',...report.dimensions.flatMap(d=>d.onboardingQuestions));
+ rows.push('## 5. Kritik fırsat',report.findings.find(f=>f.id===report.criticalOpportunityFindingId)?.statement||'Ek kanıt gerekli.','## 6. Risk hipotezi',report.findings.find(f=>f.id===report.criticalRiskFindingId)?.statement||'Ek kanıt gerekli.','## 7. Toplantı soruları',...researchQuestions(report.meetingQuestions,report.verifiedResearch?.metrics).map(q=>q.question),'## 8. Rakip karşılaştırması');
  report.competitors.forEach(p=>rows.push(p.name,p.scaleReason,p.audienceReason,p.geographyReason,'Kaynaklar: '+p.sourceIds.join(', ')));
  if(report.verifiedResearch?.competitorCandidates?.length){
   rows.push('### Doğrulanacak rakip adayları',...report.verifiedResearch.competitorCandidates.map(p=>p.name+' · '+p.url));
@@ -85,7 +99,7 @@ export function renderGroundedReport(report){
    if(task.additionalEvidence)rows.push('Ek bağlantılar araştırma kayıtlarında saklandı.');
   }
  }
- report.benchmarks.forEach(b=>rows.push(b.metric,...b.entries.map(e=>e.entityId+': '+(e.value===null?'Veri bulunamadı — onboarding’de tamamlanacak':e.value+' · Birim: '+(e.unit||'Nitel gözlem')+' · Dönem: '+(e.period||'Belirtilmemiş')+' · Kaynaklar: '+e.sourceIds.join(', ')))));
+ report.benchmarks.filter(b=>!progress||b.entries.some(e=>e.value!==null)).forEach(b=>rows.push(b.metric,...b.entries.map(e=>e.entityId+': '+(e.value===null?(progress?'Bu karşılaştırma için ölçüm kayıtlı değil.':'Veri bulunamadı — onboarding’de tamamlanacak'):e.value+' · Birim: '+(e.unit||'Nitel gözlem')+' · Dönem: '+(e.period||'Belirtilmemiş')+' · Kaynaklar: '+e.sourceIds.join(', ')))));
  rows.push('## 9. Kaynaklar');report.sources.forEach(s=>rows.push(s.id+' '+s.title+' '+s.url,s.quote,'Yayın tarihi: '+(s.publishedAt||'Belirtilmemiş'),'Kapsam: '+s.scope,'Veri dönemi: '+(s.period||'Belirtilmemiş')));
  rows.push('## Hizmet hipotezleri');report.serviceRecommendations.forEach(s=>rows.push(s.name,s.hypothesis,'Ölçüm: '+s.measurement));
  return rows.join('\n\n');
