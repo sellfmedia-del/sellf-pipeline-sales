@@ -7,6 +7,7 @@ import {stageKey} from './direct-research.mjs';
 import {meteredBhsStage} from './job-infrastructure.mjs';
 import {sequentialPhases} from './sequential-contracts.mjs';
 import {randomUUID} from 'node:crypto';
+import {reportRepairKey,repairableReport,repairConversationReport} from './conversation-repair.mjs';
 
 const complete=row=>row?.state==='complete';
 export const conversationPolicy=async(ledger,id)=>(await ledger.get(conversationKeys.policy(id)))?.value?.engine===conversationVersion;
@@ -69,6 +70,18 @@ export async function handleConversationAudit({action,brief,job,ledger,queue,id,
   if(background.budgetId!==(await ledger.status()).id||(background.queueBriefHash||background.briefHash)!==id)throw new BudgetError('invalid_job','Analiz kaydı eşleşmiyor.');
  }
  let stored=await readConversationResult(ledger,id);
+ const repair=await ledger.get(reportRepairKey(id));
+ if(action==='start'&&complete(stored)&&repairableReport(stored.value)&&!repair){
+  job.reportRepair='retained-source-writing-v1';
+  return res.status(202).json({phase:'conversation',status:'in_progress',ticket:codec.encode(job,session,host),cost:await cost(),execution:'browser',nextAction:'advance',
+   acceptedWebsite:brief.website,researchRunId:job.researchRunId,message:'Korunmuş kaynaklardan yalnız rapor tamamlanıyor; yeni araştırma yapılmayacak.'});
+ }
+ if(action==='advance'&&job.reportRepair==='retained-source-writing-v1'&&complete(stored)&&repairableReport(stored.value)&&!repair){
+  const value=await repairConversationReport({brief,job,ledger,id,getProviders,now,meter});
+  return finish(conversationAuditResult(brief,value,{reason:value.reason}));
+ }
+ if(repair&&!complete(repair))return res.status(202).json({phase:'conversation',status:'in_progress',ticket:codec.encode(job,session,host),cost:await cost(),execution:'background',
+  acceptedWebsite:brief.website,researchRunId:job.researchRunId,message:'Korunmuş kaynaklardan rapor yazımı sürüyor; aynı ücretli istek tekrarlanmadı.'});
  if(complete(stored))return finish(conversationAuditResult(brief,stored.value,{reason:stored.value.reason}));
  if(action==='continue'||background&&['paused','cancelled'].includes(background.state)){
   if(background&&['queued','running'].includes(background.state))await queue.cancel(job);

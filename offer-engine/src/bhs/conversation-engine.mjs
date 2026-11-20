@@ -186,6 +186,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
 }
 
 export async function readConversationResult(ledger,id){
+ const repaired=await ledger.get(conversationKeys.result(id)+':writing-repair-v1');
+ if(complete(repaired))return repaired;
  const key=conversationKeys.result(id),[original,recovered]=await Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
  return complete(original)?original:complete(recovered)?recovered:original||recovered;
 }

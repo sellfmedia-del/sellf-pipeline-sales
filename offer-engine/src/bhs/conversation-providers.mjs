@@ -59,27 +59,27 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   if(reservation>4500||cost.chargedKurus+reservation>limit)throw new BudgetError('budget_limit','Çağrı ve rapor rezervi kalan bütçeye sığmıyor.');
   return ledger.once(key,input,reservation,run,{settle:v=>v.accountedKurus,limitKurus:limit});
  }
- async function analystQuote(messages,{final=false}={}){
+ async function analystQuote(messages,{final=false,writingOnly=false}={}){
   if(!anthropicKey)throw new BudgetError('not_configured','Claude bağlantısı gerekli.');
-  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})}};
+  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})},...(writingOnly?{thinking:{type:'between_tools'}}:{})};
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  const inputUpper=upper(counted.input_tokens),output=final?20000:1800;
+  const inputUpper=upper(counted.input_tokens),output=writingOnly?8000:final?20000:1800;
   return {inputUpper,output,reservation:modelReservation('analyst',inputUpper,output),
    finalReservation:modelReservation('analyst',inputUpper,20000)};
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
   analystQuote,
-  async analyst(messages,{final=false,quote}={}){
-   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',output:quote?.output??(final?20000:1800),model:conversationModels.analyst,messages,final};
+  async analyst(messages,{final=false,writingOnly=false,quote}={}){
+   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,output:quote?.output??(writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final};
    const step='model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
-   quote??=await analystQuote(messages,{final});
+   quote??=await analystQuote(messages,{final,writingOnly});
    const currency=await fx();
    const body={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),
     max_tokens:quote.output,cache_control:{type:'ephemeral'},
-    output_config:{effort:final?'high':'medium'},tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})}};
+    output_config:{effort:writingOnly?'medium':final?'high':'medium'},tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})},...(writingOnly?{thinking:{type:'between_tools'}}:{})};
    return paid(step,identity,quote.reservation,async()=>{
     const response=await json('https://api.anthropic.com/v1/messages',body,headers,final?165000:55000);
     const usage=response.usage||{},input=usage.input_tokens,output=usage.output_tokens,
