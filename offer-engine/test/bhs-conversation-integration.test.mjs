@@ -47,10 +47,10 @@ test('a Claude outage uses a separately funded Gemini answer over retained Tavil
 });
 test('two invalid final answers retain the whole draft for honest review rather than buying an unlimited repair loop',async()=>{
  const {ledger}=memoryLedger(),invalid=report();invalid.sourceQuotes[0].quote='Uydurma bir kaynak cümlesi.';
- const providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Kaynağı oku'}),assistantCall('finish_bhs',invalid),assistantCall('finish_bhs',invalid)]);
- for(let at=0;at<3;at++)await advanceConversation({brief,ledger,id,providers,now});
+ const providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Kaynağı oku'}),assistantCall('begin_report',{reason:'Kaynak hazır'}),assistantCall('finish_bhs',invalid),assistantCall('finish_bhs',invalid)]);
+ for(let at=0;at<4;at++)await advanceConversation({brief,ledger,id,providers,now});
  const state=await readConversation(ledger,id);assert.equal(state.final.reason,'report_review_required');
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved,{reason:saved.reason});
  assert.equal(audit.data.fullReport,invalid.reportMarkdown);assert.equal(audit.data.quality.contentComplete,false);assert.equal(audit.data.sources.length,0);
- assert.equal(providers.calls.length,3);
+ assert.equal(providers.calls.length,4);
 });

@@ -10,6 +10,19 @@ import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {brief,source,report,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
 
 const id='a'.repeat(64),now=()=>Date.parse('2026-11-20T10:00:00Z');
+test('opaque provider thinking blocks are retained unchanged in the next tool-use turn',async()=>{
+ const {ledger}=memoryLedger(),thinking={type:'thinking',thinking:'',signature:'synthetic-opaque-signature'};
+ const first=assistantCall('read_pages',{urls:[brief.website],purpose:'Kaynağı oku'});first.content.unshift(thinking);
+ const providers=scriptedProviders(ledger,[first,assistantCall('begin_report',{reason:'Hazır'})]);
+ await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
+ const assistant=providers.calls[1].messages.find(row=>row.role==='assistant');assert.deepEqual(assistant.content[0],thinking);
+});
+test('an early report tool call requests full writing capacity before it can complete the BHS',async()=>{
+ const {ledger}=memoryLedger();await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources:[source],readAttempts:[],results:[],toolIssues:[]}));
+ const providers=scriptedProviders(ledger,[assistantCall('finish_bhs',report()),assistantCall('finish_bhs',report())]);
+ const early=await advanceConversation({brief,ledger,id,providers,now});assert.equal(early.closed,undefined);assert.equal(early.finishRequested,true);
+ const final=await advanceConversation({brief,ledger,id,providers,now});assert.equal(final.closed,true);assert.equal(providers.calls[1].options.final,true);
+});
 test('the same conversation carries the full brief, tool observations and a whole report without the old need gates',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı ve mevcut satın alma yolunu anla.'}),
   assistantCall('begin_report',{reason:'Ürün ve kanal gözlemini sınırlı ama somut aksiyona dönüştür.'}),assistantCall('finish_bhs',report())]);

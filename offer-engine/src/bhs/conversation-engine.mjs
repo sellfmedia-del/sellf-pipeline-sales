@@ -5,6 +5,7 @@ import {validateConversationReport} from './conversation-report.mjs';
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
 const safeIssue=(error,tool)=>({tool,code:/^[a-z0-9_]{1,80}$/u.test(error.code||'')?error.code:'provider_error',
+ ...(error.code==='report_validation'?{validationIssues:error.message.split(', ').filter(value=>/^[a-z0-9_]{1,80}$/u.test(value))}:{}),
  ...(Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{})});
 
 export async function readConversation(ledger,id){
@@ -106,7 +107,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   if(!answer)return save({closed:true,reason:providerIssue.code,toolIssues:[providerIssue],sources:recoverySources,readAttempts:recoveryReads,results:[]});
  }
  const calls=(answer.content||[]).filter(block=>block.type==='tool_use');
- const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use'].includes(b.type))};
+ const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use','thinking','redacted_thinking'].includes(b.type))};
  const results=[],newSources=[...recoverySources],readAttempts=[...recoveryReads],toolIssues=providerIssue?[providerIssue]:[];
  let report,reportCandidate,terminalReason,finishRequested=finalMode||answer.stopReason==='max_tokens';
  const sourceMap=new Map([...state.sources,...recoverySources].map(s=>[s.id,s])),knownUrls=new Set([...state.knownUrls,brief.website]);
@@ -126,6 +127,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    if(call.name==='begin_report'){
     if(![...sourceMap.values()].some(source=>source.method!=='search-snippet'))throw new BudgetError('research_needed','Rapor öncesi markayı ilgilendiren bir kaynağı oku veya kaynak erişiminin neden mümkün olmadığını belirle.');
     finishRequested=true;value={accepted:true,instruction:'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
+   }else if(call.name==='finish_bhs'&&!finalMode&&!answer.fallback){
+    finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){
     const issues=validateConversationReport(call.input,[...sourceMap.values()]);
     if(!issues.includes('report_format')&&!issues.includes('report_size'))reportCandidate=call.input;
@@ -183,6 +186,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
 }
 
 export async function readConversationResult(ledger,id){
+ const repaired=await ledger.get(conversationKeys.result(id)+':writing-repair-v1');
+ if(complete(repaired))return repaired;
  const key=conversationKeys.result(id),[original,recovered]=await Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
  return complete(original)?original:complete(recovered)?recovered:original||recovered;
 }
