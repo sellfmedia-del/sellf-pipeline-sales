@@ -5,6 +5,7 @@ import {validateConversationReport} from './conversation-report.mjs';
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
 const safeIssue=(error,tool)=>({tool,code:/^[a-z0-9_]{1,80}$/u.test(error.code||'')?error.code:'provider_error',
+ ...(error.code==='report_validation'?{validationIssues:error.message.split(', ').filter(value=>/^[a-z0-9_]{1,80}$/u.test(value))}:{}),
  ...(Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{})});
 
 export async function readConversation(ledger,id){

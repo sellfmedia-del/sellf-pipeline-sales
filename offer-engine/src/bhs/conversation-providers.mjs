@@ -65,15 +65,15 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  const inputUpper=upper(counted.input_tokens),output=final?10000:1800;
+  const inputUpper=upper(counted.input_tokens),output=final?20000:1800;
   return {inputUpper,output,reservation:modelReservation('analyst',inputUpper,output),
-   finalReservation:modelReservation('analyst',inputUpper,10000)};
+   finalReservation:modelReservation('analyst',inputUpper,20000)};
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
   analystQuote,
   async analyst(messages,{final=false,quote}={}){
-   const identity={version:conversationVersion,transport:'sonnet55-auto-v2',model:conversationModels.analyst,messages,final};
+   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',output:quote?.output??(final?20000:1800),model:conversationModels.analyst,messages,final};
    const step='model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
    quote??=await analystQuote(messages,{final});
    const currency=await fx();
@@ -152,15 +152,15 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
    const model='gemini-3.8-flash';
    const contents=[{role:'user',parts:[{text:JSON.stringify({brief,sources,previous,outputContract:finalReportSchema})}]}];
    const systemInstruction={parts:[{text:analystInstruction+' Claude erişilemedi. Aynı araştırma kaydından bütün raporu üret. Araç çağrısı yapma. Yanıt yalnız outputContract alanlarını içeren tamamlanmış JSON olsun.'}]};
-   const body={systemInstruction,contents,generationConfig:{maxOutputTokens:12000,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'LOW'}}};
+   const body={systemInstruction,contents,generationConfig:{maxOutputTokens:20000,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'LOW'}}};
    const identity={model,body},key='model:conversation:gemini-final:'+hash(identity),saved=await prior(key);if(saved)return saved;
    const count=await json('https://generativelanguage.googleapis.com/v1beta/models/'+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey,'content-type':'application/json'},10000);
    if(!integer(count.totalTokens,1)||count.totalTokens>120000)throw new BudgetError('token_count','Yedek analist girdisi doğrulanamadı.');
-   const inputUpper=upper(count.totalTokens),reservation=Math.ceil((inputUpper*1.5+12000*7.5)/1e6*60*allowance*100)+2,currency=await fx();
+   const inputUpper=upper(count.totalTokens),reservation=Math.ceil((inputUpper*1.5+20000*7.5)/1e6*60*allowance*100)+2,currency=await fx();
    return paid(key,identity,reservation,async()=>{
     const response=await json('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',body,{'x-goog-api-key':geminiKey,'content-type':'application/json'},150000);
     const usage=response.usageMetadata||{},input=usage.promptTokenCount,output=(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0);
-    if(response.modelVersion!==model||!integer(input,1)||input>inputUpper||!integer(output)||output>12000)throw new BudgetError('provider_accounting','Yedek analist tüketimi doğrulanamadı.');
+    if(response.modelVersion!==model||!integer(input,1)||input>inputUpper||!integer(output)||output>20000)throw new BudgetError('provider_accounting','Yedek analist tüketimi doğrulanamadı.');
     const text=(response.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought).map(p=>p.text||'').join('');
     let data;try{data=JSON.parse(text);}catch{/* Settle verified model usage even if its content cannot be used. */}
     return {data,usage,model,accountedKurus:Math.ceil((input*1.5+output*7.5)/1e6*currency.usdTry*allowance*100),fx:currency};

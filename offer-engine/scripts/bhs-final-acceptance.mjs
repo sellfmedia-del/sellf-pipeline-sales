@@ -51,6 +51,12 @@ const result={kind:'retained-source-final-acceptance',runId:seed.runId,originJob
  priorCommittedKurus:seed.committedKurus,buildReserveKurus:2225,cost,
  elapsedSeconds:Math.round((Date.now()-started)/1000),newResearchCalls:0,productionWrites:0,
  semanticReview:'pending',audit};
+// Preserve inspectable paid output even if schema validation fails. Opaque
+// thinking/signatures stay private; ordinary and production builds remove this.
+const receipts=(await db.receipts()).filter(row=>row.step_key.startsWith('model:')).map(row=>({
+ key:row.step_key,state:row.state,chargedKurus:row.charge_kurus,stopReason:row.value?.stopReason,usage:row.value?.usage,
+ content:row.value?.content?.filter(block=>['text','tool_use'].includes(block.type))}));
+await writeFile('public/bhs-final-receipts.json',JSON.stringify(receipts));
 await writeFile('public/bhs-final-acceptance.json',JSON.stringify(result));
 await writeFile('public/bhs-final-report.md',audit.data.fullReport);
 console.info(JSON.stringify({event:'bhs_retained_final_qa',status:result.status,reason,issues,cost,
