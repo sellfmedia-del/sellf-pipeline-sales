@@ -9,7 +9,7 @@ import {assertSchema} from '../src/bhs/schema.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
 import {repairConversationReport} from '../src/bhs/conversation-repair.mjs';
-import {brief,source,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSources,researchSummary,report,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
+import {brief,source,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSources,researchSummary,report,researchedReport,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 
 const id='c'.repeat(64),now=()=>Date.parse('2026-11-20T14:00:00Z');
 const menu=Array.from({length:700},()=>'* [Home](https://pet.example.com/)\n* [Products](https://pet.example.com/products)\n').join('');
@@ -82,7 +82,8 @@ test('a specialist body is archived in full but its raw result is not duplicated
 test('the shared cap closes research, retains the useful whole report, and exposes missing work without buying another call',async()=>{
  const {ledger,total}=memoryLedger({charged:4100});await ledger.once(conversationKeys.turn(id,0),{},0,async()=>({sources:[source],results:[],toolIssues:[],researchOutcomeVersion}));
  let research=0;const providers={analystQuote:async(_,{final})=>({reservation:final?800:100,finalReservation:800}),
-  analyst:async()=>assistantCall('finish_bhs',report()),search:async()=>{research++;throw Error('No new research');}};
+  analyst:async(_messages,options)=>options.review?assistantCall('review_bhs',semanticApproval(report())):assistantCall('finish_bhs',report()),search:async()=>{research++;throw Error('No new research');}};
+ const draft=await advanceConversation({brief,ledger,id,providers,now});assert.equal(draft.closed,undefined);
  const turn=await advanceConversation({brief,ledger,id,providers,now});assert.equal(turn.closed,true);assert.equal(turn.reason,'research_incomplete');
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
  assert.equal(audit.data.fullReport,report().reportMarkdown);assert.equal(audit.data.quality.contentComplete,false);assert.equal(audit.status,'ready');
@@ -93,7 +94,7 @@ test('the shared cap closes research, retains the useful whole report, and expos
 test('a final answer cannot silently drop the researched named competitor while claiming complete research',async()=>{
  const {ledger}=memoryLedger();await seed(ledger);
  const providers=scriptedProviders(ledger,[assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',report())]);
- await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
+ await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now});assert.ok(saved.researchIssues.includes('researched_competitor_omitted'));
  assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,false);assert.equal(saved.conversationReport.reportMarkdown,report().reportMarkdown);
 });
@@ -103,14 +104,14 @@ test('a provider outage cannot bypass research status through a later writing-on
  const failed=await advanceConversation({brief,ledger,id,now,providers:{analystQuote:async()=>{throw Object.assign(Error('Synthetic outage'),{code:'provider_error'});}}});
  assert.equal(failed.researchOutcomeVersion,researchOutcomeVersion);
  const restored=await repairConversationReport({brief,job:{researchRunId:'synthetic'},ledger,id,now,meter:async({run})=>run(),getProviders:()=>({
-  analystQuote:async()=>({reservation:100,output:8000}),analyst:async()=>assistantCall('finish_bhs',report())})});
+  analystQuote:async()=>({reservation:100,output:8000}),analyst:async(_messages,options)=>options.review?assistantCall('review_bhs',semanticApproval(report())):assistantCall('finish_bhs',report())})});
  assert.equal(restored.reason,'research_incomplete');assert.equal(conversationAuditResult(brief,restored).data.quality.contentComplete,false);
  assert.equal(restored.repair.newResearchCalls,0);assert.equal(restored.conversationReport.reportMarkdown,report().reportMarkdown);
 });
 test('complete research outcomes survive the same durable checkpoint into pricing with the full narrative intact',async()=>{
  const {ledger}=memoryLedger();await seed(ledger);
  const providers=scriptedProviders(ledger,[assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
- await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
+ await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
  assert.equal(saved.researchOutcomeVersion,researchOutcomeVersion);assert.deepEqual(saved.researchSummary,researchSummary());
  assert.equal(audit.data.quality.contentComplete,true);assert.equal(audit.data.competitors[0].website,peerSource.url);

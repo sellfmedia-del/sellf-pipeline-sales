@@ -4,6 +4,7 @@ import {validateConversationReport} from './conversation-report.mjs';
 import {presentConversationSource,usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
 import {researchOutcomeVersion,researchOutcomeIssues,researchReportIssues} from './conversation-research.mjs';
 import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateResearchProgress,researchClosureIssues,researchStatus,sourceReadIdentity} from './conversation-progress.mjs';
+import {semanticReviewVersion,maximumSemanticReviews,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -31,6 +32,7 @@ export async function readConversation(ledger,id){
  return {turns,index:turns.length,sources:[...sources.values()],knownUrls,readAttempts,toolIssues,final,
   researchSummary:turns.findLast(turn=>turn.researchSummary)?.researchSummary,
   researchProgress:turns.findLast(turn=>turn.researchProgress)?.researchProgress||emptyResearchProgress(),sourceViews,
+  reportDraft:turns.findLast(turn=>turn.reportDraft)?.reportDraft,semanticReview:turns.findLast(turn=>turn.semanticReview)?.semanticReview,
   interrupted:rows[turns.length]&&!complete(rows[turns.length]),
   recoverFreeTurn:Boolean(pending?.[0]&&!complete(pending[0])&&pending[0].charge_kurus===0&&!pending[1])};
 }
@@ -43,7 +45,7 @@ function archiveSource(value,now){
  return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
 }
 
-export function conversationMessages(brief,state,{forceFinish=false,cost,finalReserve=0}={}){
+export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0}={}){
  const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
@@ -55,10 +57,14 @@ export function conversationMessages(brief,state,{forceFinish=false,cost,finalRe
   if(turn.assistant?.content?.length)messages.push(turn.assistant);
   if(turn.results?.length)messages.push({role:'user',content:turn.results});
  }
+ if(state.reportDraft&&!state.turns.some(turn=>turn.assistant?.content?.some(block=>block.type==='tool_use'&&block.name==='finish_bhs')))
+  addBudget('Korunmuş taslak: '+JSON.stringify(state.reportDraft));
  const budget={committedKurus:cost?.chargedKurus,capKurus:5000,finalReportReserveKurus:finalReserve,
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
   research:researchStatus(state.researchProgress,state.sources),
-  instruction:forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor rezervini koru.'};
+  instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0):state.reportDraft?
+   'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
+   forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor ve anlam denetimi rezervini koru.'};
  addBudget('Sistem bütçe bilgisi: '+JSON.stringify(budget));
  return messages;
 }
@@ -74,31 +80,37 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const hardFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000;
  const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
- let messages,quote,answer,finalMode=forceFinish,providerIssue;
+ let reviewMode=Boolean(state.reportDraft)&&(state.semanticReview?.status!=='research_needed'||closureReady||hardFinish);
+ let messages,quote,answer,finalMode=forceFinish&&!state.reportDraft,providerIssue;
  const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews;
  try{
   let requestKey='audit:conversation:request:'+id+':'+state.index;
   let request=await ledger.get(requestKey);
   if(request&&!complete(request)&&request.charge_kurus===0){requestKey+=':recovered';request=await ledger.get(requestKey);}
   if(request&&!complete(request))throw new BudgetError('stage_paused','Kaydedilmemiş model isteği yeniden başlatılmadı.');
-  if(complete(request))({messages,quote,finalMode}=request.value);
+  if(complete(request))({messages,quote,finalMode,reviewMode=false}=request.value);
   else{
-   messages=conversationMessages(brief,state,{forceFinish,cost});
-   quote=await providers.analystQuote(messages,{final:forceFinish});
+   if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)throw new BudgetError('semantic_review_limit','Anlam denetimi sınırına ulaşıldı; taslak korundu.');
+   messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
+   quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft)});
   // Fund a complete answer before authorizing further discovery. Its quote
   // uses this actual conversation's token count, not a fixed 20 TRY partition.
-   if(!forceFinish&&cost.chargedKurus+quote.reservation+quote.finalReservation+400>5000){
-    finalMode=true;messages=conversationMessages(brief,state,{forceFinish:true,cost});
-    quote=await providers.analystQuote(messages,{final:true});
+   if(!finalMode&&!reviewMode&&cost.chargedKurus+quote.reservation+(quote.completionReservation??quote.finalReservation)+400>5000){
+    if(state.reportDraft)reviewMode=true;else finalMode=true;
+    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
+    quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft)});
    }
    // Only the reserve's digits change after counting; the quote already has
    // 512 tokens of input headroom. Freeze the truthful reserve with the request.
-   messages=conversationMessages(brief,state,{forceFinish:finalMode,cost,finalReserve:quote.finalReservation});
-   await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode}));
+   messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost,finalReserve:quote.completionReservation??quote.finalReservation});
+   await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode,reviewMode}));
   }
-  answer=await providers.analyst(messages,{final:finalMode,quote});
+  answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,
+   remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+400:(quote.completionReservation??quote.finalReservation??0)+400});
  }catch(error){
   providerIssue=safeIssue(error,'claude');
+  if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,reason:'semantic_review_unavailable',
+   semanticReview:{...state.semanticReview,version:semanticReviewVersion,status:'pending',lastError:providerIssue.code},toolIssues:[providerIssue],results:[]});
   // A reserved/uncertain request remains charged. A separate provider may
   // complete the answer only inside the same remaining capped account.
   if(providers.fallbackReport){
@@ -109,7 +121,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
       {remainingReserve:quote?.finalReservation||1000});
      for(const row of seed.results||[]){const source=archiveSource(row,now());if(source)recoverySources.push(source);}
     }
-    const report=await providers.fallbackReport({brief,sources:[...state.sources,...recoverySources],previous:state.turns.map(t=>t.assistant?.content).filter(Boolean)});
+    const report=await providers.fallbackReport({brief,sources:[...state.sources,...recoverySources],previous:state.turns.map(t=>t.assistant?.content).filter(Boolean)},
+     {remainingReserve:quote?.reviewReservation||0});
     if(report.observedSources){
      collectSourceViews({results:[{content:JSON.stringify({sources:report.observedSources})}]},new Map([...state.sources,...recoverySources].map(source=>[source.id,source])),fallbackViews);
      observedSourceViews=[...fallbackViews].map(([sourceId,view])=>({sourceId,...view}));
@@ -123,7 +136,9 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use','thinking','redacted_thinking'].includes(b.type))};
  const results=[],newSources=[...recoverySources],readAttempts=[...recoveryReads],toolIssues=providerIssue?[providerIssue]:[];
  let report,reportCandidate,terminalReason,researchSummary=state.researchSummary,researchIssues,
-  researchProgress=state.researchProgress,closureIssues,finishRequested=finalMode;
+  researchProgress=state.researchProgress,closureIssues,finishRequested=finalMode,reportDraft=state.reportDraft,
+  semanticReview=state.semanticReview;
+ if(reviewMode)semanticReview={...state.semanticReview,version:semanticReviewVersion,status:'pending',attempts:(state.semanticReview?.attempts||0)+1};
  const sourceMap=new Map([...state.sources,...recoverySources].map(s=>[s.id,s])),knownUrls=new Set([...state.knownUrls,brief.website]);
  const add=(rows,purpose)=>rows.flatMap(row=>{
   const source=archiveSource(row,now());if(!source)return [];
@@ -132,13 +147,39 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   sourceMap.set(source.id,source);knownUrls.add(source.url);for(const url of source.links)knownUrls.add(url);
   newSources.push(source);return [presentConversationSource(source,{purpose})];
  });
- const finalReserve=(quote?.finalReservation||0)+400;
+ const finalReserve=(quote?.completionReservation??quote?.finalReservation??0)+400;
  const toolOptions={remainingReserve:finalReserve};
  for(let index=0;index<calls.length;index++){
   const call=calls[index];let value,error;
   try{
    if(index>=4)throw new BudgetError('tool_batch_limit','Bu turdaki ek emir sonraki karara bırakıldı.');
-   if(call.name==='review_research'){
+   if(reviewMode&&call.name!=='review_bhs')throw new BudgetError(call.name==='finish_bhs'?'draft_preserved':'semantic_review_invalid',
+    'Denetimde yalnız review_bhs kullan. Taslağı yeniden yazma veya doğrudan ücretli araştırma açma; gereken dar kamu sorusunu research_needed ile belirt.');
+   if(call.name==='review_bhs'){
+    if(!reviewMode)throw new BudgetError('research_needed','Denetimin açtığı önemli kamu sorusu hâlâ açık; önce o araştırmayı tamamla.');
+    if(!reportDraft||calls.length!==1)throw new BudgetError('semantic_review_invalid','Önce korunmuş tek taslağı ayrı bir denetim yanıtında değerlendir.');
+    const attempts=reviewMode?semanticReview.attempts:(state.semanticReview?.attempts||0)+1;
+    if(attempts>maximumSemanticReviews)throw new BudgetError('semantic_review_invalid','Denetim tur sınırı aşılamaz.');
+    const assessed=applySemanticDecision(reportDraft,call.input,{sources:[...sourceMap.values()],attempts});
+    const mechanical=validateConversationReport(assessed.report,[...sourceMap.values()],{semantic:true});
+    if(mechanical.length&&assessed.review.status!=='research_needed')throw new BudgetError('semantic_review_invalid',mechanical.join(', '));
+    const proofIssues=introducedReadIssues(reportDraft,assessed.report,{sources:[...sourceMap.values()],progress:researchProgress,views:state.sourceViews});
+    if(proofIssues.length&&assessed.review.status!=='research_needed')throw new BudgetError('semantic_review_invalid',proofIssues.join(', '));
+    semanticReview=assessed.review;reportDraft=assessed.report;
+    if(semanticReview.status==='research_needed'){
+     const questions=new Map(researchProgress.questions.map(row=>[row.id,row]));
+     for(const issue of semanticReview.issues)questions.set('semantic_'+issue.id,{id:'semantic_'+issue.id,question:issue.question,access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:issue.reason});
+     researchProgress={...researchProgress,questions:[...questions.values()]};finishRequested=false;
+     if(hardFinish||attempts>=maximumSemanticReviews){report=reportDraft;terminalReason='semantic_research_needed';}
+     value={accepted:true,draftPreserved:true,semanticReview,instruction:'Taslağı koru; yalnız belirtilen kamu sorusunu araştır ve ardından hedefli denetime dön.'};
+    }else{
+     researchIssues=researchReportIssues(reportDraft,researchSummary,[...sourceMap.values()],brief);
+     closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:reportDraft,views:state.sourceViews,includeUnavailable:true});
+     report=reportDraft;if(researchIssues.length||closureIssues.length)terminalReason='research_incomplete';
+     value={accepted:true,semanticReview};
+    }
+   }else if(call.name==='finish_bhs'&&reportDraft)throw new BudgetError('draft_preserved','Taslağı bütünüyle yeniden yazma. review_bhs ile yalnız işaretlenen kısmı düzelt.');
+   else if(call.name==='review_research'){
     researchProgress=updateResearchProgress(researchProgress,call.input,{sources:[...sourceMap.values()],views:state.sourceViews,knownUrls,
      readAttempts:state.readAttempts,toolIssues:state.toolIssues});
     value={accepted:true,...researchStatus(researchProgress,[...sourceMap.values()])};
@@ -154,14 +195,15 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     if(missing.length)throw new BudgetError('research_needed',missing.join(', '));
     finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){
-    const issues=validateConversationReport(call.input,[...sourceMap.values()]);
+    const issues=validateConversationReport(call.input,[...sourceMap.values()],{semantic:true});
     if(!issues.includes('report_format')&&!issues.includes('report_size'))reportCandidate=call.input;
-    if(issues.length)throw new BudgetError('report_validation',issues.join(', '));
+    if(issues.includes('report_format')||issues.includes('report_size'))throw new BudgetError('report_validation',issues.join(', '));
     if(calls.length!==1)throw new BudgetError('report_validation','Araştırma sonuçlarını aldıktan sonra raporu ayrı bir yanıtta tamamla.');
     researchIssues=researchReportIssues(call.input,researchSummary,[...sourceMap.values()],brief);
     closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:call.input,views:answer.fallback?fallbackViews:state.sourceViews,includeUnavailable:true});
-    if(researchIssues.length||closureIssues.length)terminalReason='research_incomplete';
-    report=call.input;value={accepted:true,...(researchIssues.length?{researchIssues}: {})};
+    reportDraft=call.input;semanticReview={version:semanticReviewVersion,status:'pending',draftDigest:hash(reportDraft),reportDigest:hash(reportDraft),attempts:0,mechanicalIssues:issues};
+    value={accepted:true,draftSaved:true,reviewRequired:true,draftDigest:hash(reportDraft),issues,
+     instruction:'Tam taslak kaydedildi. Şimdi aynı konuşmada review_bhs ile anlam denetimi yap; yalnız sorunlu bölümü düzelt, iyi anlatımı aynen koru.'};
    }else if(finalMode)throw new BudgetError('research_closed','Kalan bütçe ve süre tam rapor için korundu.');
    else if(call.name==='search_web')value={sources:add((await providers.search(call.input,toolOptions)).results,call.input.purpose)};
    else if(call.name==='read_pages'){
@@ -193,15 +235,20 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     const {results:extractedRows,...details}=extracted;
     value={...details,sources:add(extractedRows||[],call.input.purpose)};
    }else throw new BudgetError('unknown_tool','Bilinmeyen araştırma aracı.');
-  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed','research_progress_invalid'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
+  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed','research_progress_invalid','semantic_review_invalid','draft_preserved'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
     ...(['research_needed','research_progress_invalid','budget_limit','input_budget'].includes(failure.code)?{research:researchStatus(researchProgress,[...sourceMap.values()]),instruction:'Önemli public soruyu veya ilgili kaynak okumasını tamamla; review_research ile gerçek ilerlemeyi kaydet. Bir aracın reddi tüm araştırmayı bitirmez; daha dar veya ücretsiz arşiv okumasını değerlendir. Müşteriden alınacak iç bilgiler araştırmayı kilitlemez. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
    if(error.code==='report_validation'&&(answer.fallback||state.turns.some(turn=>turn.toolIssues?.some(issue=>issue.code==='report_validation'))))terminalReason='report_review_required';}
   results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(value),...(error?{is_error:true}:{})});
  }
  if(!calls.length)finishRequested=closureReady||finalMode;
+ if(reviewMode&&(!report&&semanticReview?.status==='pending')){
+  semanticReview={...semanticReview,lastError:toolIssues.at(-1)?.code||'semantic_review_missing'};
+  if(semanticReview.attempts>=maximumSemanticReviews){report=reportDraft;terminalReason='semantic_review_unavailable';}
+ }
  return save({assistant,results,sources:newSources,readAttempts,toolIssues,finishRequested,
   ...(researchSummary?{researchSummary}:{}),...(researchIssues?{researchIssues}:{}),researchOutcomeVersion,
   researchProgress,...(closureIssues?{closureIssues}:{}),
+  ...(reportDraft?{reportDraft}:{}),...(semanticReview?{semanticReview}:{}),
   ...(observedSourceViews?{observedSourceViews}:{}),
   ...(report?{closed:true,conversationReport:report,...(terminalReason?{reason:terminalReason}:{})}:{}),...(answer.fallback?{fallbackProvider:'gemini'}:{}),
   ...(terminalReason&&!report?{closed:true,reason:terminalReason}:{}),
@@ -211,7 +258,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  async function save(turn){
   const last=messages?.at(-1)?.content;
   const budgetText=typeof last==='string'?last.match(/Sistem bütçe bilgisi: .*$/su)?.[0]:last?.findLast(block=>block.type==='text'&&block.text.startsWith('Sistem bütçe bilgisi: '))?.text;
-  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,researchOutcomeVersion,researchClosureVersion,recordedAt:new Date(now()).toISOString()};
+  const value={...turn,...(budgetText?{budgetText}:{}),index:state.index,version:conversationVersion,researchOutcomeVersion,researchClosureVersion,semanticReviewVersion,recordedAt:new Date(now()).toISOString()};
   return ledger.once(conversationKeys.turn(id,state.index)+(state.recoverFreeTurn?':recovered':''),{version:conversationVersion,id,index:state.index},0,async()=>value);
  }
 }
@@ -219,6 +266,10 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
 export async function readConversationResult(ledger,id){
  const repaired=await ledger.get(conversationKeys.result(id)+':writing-repair-v1');
  if(complete(repaired))return repaired;
+ if(repaired?.state==='uncertain'){
+  const draft=await ledger.get(conversationKeys.result(id)+':writing-repair-v1:semantic-draft');
+  if(complete(draft))return draft;
+ }
  const key=conversationKeys.result(id),[original,recovered]=await Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
  return complete(original)?original:complete(recovered)?recovered:original||recovered;
 }
@@ -226,8 +277,9 @@ export async function readConversationResult(ledger,id){
 export async function persistConversationResult({brief,ledger,id,reason,now=Date.now}){
  const existing=await readConversationResult(ledger,id);if(complete(existing))return existing.value;
  const state=await readConversation(ledger,id);
- const conversationReport=state.final?.conversationReport||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate;
+ const conversationReport=state.final?.conversationReport||state.reportDraft||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate;
  const result={conversationReport,conversationSources:state.sources,
+  ...(state.turns.some(turn=>turn.semanticReviewVersion)?{semanticReview:state.semanticReview||{version:semanticReviewVersion,status:'pending'}}:{}),
   ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,
    issues:state.final?.closureIssues||researchClosureIssues(state.researchProgress,state.sources,{report:conversationReport,views:state.sourceViews,includeUnavailable:true})}}:{}),
   ...(state.turns.some(turn=>turn.researchOutcomeVersion)?{researchOutcomeVersion,researchSummary:state.researchSummary,

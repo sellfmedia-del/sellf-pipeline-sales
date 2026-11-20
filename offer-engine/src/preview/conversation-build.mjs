@@ -2,7 +2,10 @@ import {readFile,writeFile,cp,rm} from 'node:fs/promises';
 import {conversationAuditResult} from '../bhs/conversation-report.mjs';
 import {researchOutcomeVersion} from '../bhs/conversation-research.mjs';
 import {researchClosureVersion} from '../bhs/conversation-progress.mjs';
-import {brief,researchSources,researchSummary,researchedReport,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
+import {brief,researchSources,researchSummary,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
+import {applySemanticDecision} from '../bhs/conversation-semantic.mjs';
+import {hash} from '../budget/ledger.mjs';
+import {strongNarrativeReport,weakClaim,correctedClaim} from '../../test/fixtures/bhs-strong-narrative.mjs';
 
 export async function buildConversationReview(output,{production=false}={}){
  const names=['conversation-review.html','conversation-review.js','conversation-review-data.json'];
@@ -13,11 +16,16 @@ export async function buildConversationReview(output,{production=false}={}){
  await writeFile(output+'/offers/conversation-review.html',(base.slice(0,start)+main+base.slice(end))
   .replace('Teklif geliştirmeleri · Önizleme','Yeni BHS · Önizleme').replace('<script src="/offers/variants-review.js"></script>','<script src="/offers/conversation-review.js"></script>'));
  await cp(new URL('./conversation-review.js',import.meta.url),output+'/offers/conversation-review.js');
- const fixture=researchedReport();fixture.reportMarkdown+='\n## Kanal karşılaştırması\n| Kanal | Mevcut gözlem | Ölçülecek ilişki |\n|---|---|---|\n| Web sitesi | Ürün keşfi | Ürün ziyareti → yönlendirme |\n| Shopier / WhatsApp | Harici sipariş yönlendirmesi | Yönlendirme → sipariş |';
+ const original=strongNarrativeReport({flawed:true});original.reportMarkdown+='\n## Kanal karşılaştırması\n| Kanal | Mevcut gözlem | Ölçülecek ilişki |\n|---|---|---|\n| Web sitesi | Ürün keşfi | Ürün ziyareti → yönlendirme |\n| Shopier / WhatsApp | Harici sipariş yönlendirmesi | Yönlendirme → sipariş |';
+ const assessed=applySemanticDecision(original,{draftDigest:hash(original),verdict:'patch',rationale:'Sentetik örnekte yalnız kanıtsız performans iddiası düzeltilir; SWOT, aksiyon/ölçüm, alternatifler ve zaman planı aynen korunur.',
+  issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'}],
+  patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim}]},{sources:researchSources});
+ const fixture=assessed.report;
  const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion,researchSummary:researchSummary(),
-  researchClosure:{version:researchClosureVersion,progress:completeResearchProgress(),issues:[]},researchedAt:'2026-11-20T10:00:00.000Z'};
+  researchClosure:{version:researchClosureVersion,progress:completeResearchProgress(),issues:[]},semanticReview:{...assessed.review,synthetic:true},researchedAt:'2026-11-20T10:00:00.000Z'};
  const limited=structuredClone(saved);limited.researchClosure.progress.questions.push({id:'remaining',question:'İlgili ürünün alternatif sipariş yolu nedir?',access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:''});
  limited.researchClosure.issues=['important_public_questions_open'];
+ limited.semanticReview={...limited.semanticReview,status:'pending'};
  const audit=conversationAuditResult(brief,saved),partial=conversationAuditResult(brief,limited,{reason:'research_incomplete'});
  await writeFile(output+'/offers/conversation-review-data.json',JSON.stringify({brief,audit,partial}));
 }

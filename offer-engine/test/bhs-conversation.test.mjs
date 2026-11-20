@@ -21,13 +21,14 @@ test('an early report tool call requests full writing capacity before it can com
  const {ledger}=memoryLedger();await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources:researchSources,researchSummary:researchSummary(),researchProgress:completeResearchProgress(),readAttempts:[],results:fixtureSourceResults(),toolIssues:[]}));
  const providers=scriptedProviders(ledger,[assistantCall('finish_bhs',report()),assistantCall('finish_bhs',report())]);
  const early=await advanceConversation({brief,ledger,id,providers,now});assert.equal(early.closed,undefined);assert.equal(early.finishRequested,true);
- const final=await advanceConversation({brief,ledger,id,providers,now});assert.equal(final.closed,true);assert.equal(providers.calls[1].options.final,true);
+ const draft=await advanceConversation({brief,ledger,id,providers,now});assert.equal(draft.closed,undefined);assert.ok(draft.reportDraft);
+ const final=await advanceConversation({brief,ledger,id,providers,now});assert.equal(final.closed,true);assert.equal(providers.calls[1].options.final,true);assert.equal(providers.calls[2].options.review,true);
 });
 test('the same conversation carries brand, market and competitor research into the full report without legacy quotas',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı ve mevcut satın alma yolunu anla.'}),
   assistantCall('search_web',{query:'Türkiye pet bakım pazarı ve rakipler',purpose:'Pazar ve rakip araştırması',maxResults:3}),
   assistantCall('read_pages',{urls:[marketSource.url,peerSource.url,usageSource.url],purpose:'Pazar ve rakip sonuçlarını oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
- for(let i=0;i<6;i++)await advanceConversation({brief,ledger,id,providers,now});
+ for(let i=0;i<7;i++)await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
  assert.equal(audit.data.fullReport,researchedReport().reportMarkdown);
  assert.equal(audit.data.findings[0].impact,report().highlights[0].analysis);
@@ -47,7 +48,7 @@ test('cached source reads do not call the source provider again and the full arc
 test('web discovery becomes a read source and every previous request remains a stable prefix of the next conversation',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('search_web',{query:'Örnek Pet ürünleri',maxResults:1,purpose:'Doğru ürünü bul'}),
   assistantCall('read_pages',{urls:researchSources.map(row=>row.url),purpose:'Kaynakları oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
- for(let at=0;at<5;at++)await advanceConversation({brief,ledger,id,providers,now});
+ for(let at=0;at<6;at++)await advanceConversation({brief,ledger,id,providers,now});
  const state=await readConversation(ledger,id);assert.equal(state.sources[0].method,'extracted');assert.equal(state.final.conversationReport.reportMarkdown,researchedReport().reportMarkdown);
  for(let at=1;at<providers.calls.length;at++){
   const previous=providers.calls[at-1].messages,next=providers.calls[at].messages;

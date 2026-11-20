@@ -8,7 +8,7 @@ import {canonicalSourceUrl,collectSourceViews,quoteWasSeen,emptyResearchProgress
 import {presentConversationSource} from '../src/bhs/conversation-source.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
-import {brief,source,peerSource,researchSources,researchSummary,researchProgressInput,completeResearchProgress,fixtureSourceResults,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
+import {brief,source,peerSource,researchSources,researchSummary,researchProgressInput,completeResearchProgress,fixtureSourceResults,researchedReport,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 
 const id='d'.repeat(64),now=()=>Date.parse('2026-11-20T15:00:00Z');
 const delta=changes=>({objective:researchProgressInput().objective,questions:[],sources:[],candidates:[],...changes});
@@ -60,7 +60,7 @@ test('important public gaps survive omitted updates, block early writing and clo
   assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
  await advanceConversation({brief,ledger,id,providers,now});
  const early=await advanceConversation({brief,ledger,id,providers,now});assert.equal(early.finishRequested,false);assert.match(early.results[0].content,/important_public_questions_open/);
- for(let at=0;at<3;at++)await advanceConversation({brief,ledger,id,providers,now});
+ for(let at=0;at<4;at++)await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now});assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,true);
  assert.ok(saved.researchClosure.progress.questions.some(q=>q.access==='client'&&q.status==='open'));
 });
@@ -96,7 +96,8 @@ for(const stopReason of ['end_turn','max_tokens'])test('a '+stopReason+' reply c
 for(const limit of ['budget','deadline','turns'])test('the '+limit+' ceiling preserves useful output and partial source/gap status without extra research',async()=>{
  const {ledger,total}=memoryLedger({charged:limit==='budget'?4100:500});await seed(ledger,{progress:withGap(),count:limit==='turns'?maximumConversationTurns-2:1});
  const providers=scriptedProviders(ledger,[assistantCall('finish_bhs',researchedReport())]);providers.search=()=>assert.fail('Araştırma penceresi kapalı');
- const turn=await advanceConversation({brief,ledger,id,providers,now,...(limit==='deadline'?{deadline:now()+10000}:{})});
+ const draft=await advanceConversation({brief,ledger,id,providers,now,...(limit==='deadline'?{deadline:now()+10000}:{})});assert.equal(draft.closed,undefined);
+ const turn=await advanceConversation({brief,ledger,id,providers,now});
  assert.equal(turn.closed,true);assert.equal(turn.reason,'research_incomplete');assert.equal(providers.calls[0].options.final,true);assert.ok(total()<=5000);
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
  assert.equal(audit.status,'ready');assert.equal(audit.data.fullReport,researchedReport().reportMarkdown);assert.equal(audit.data.quality.contentComplete,false);
@@ -127,8 +128,9 @@ test('the fallback analyst may quote its genuinely delivered source window and i
  await seed(ledger,{sources:rows,progress,results});
  const answer=researchedReport();answer.sourceQuotes[0].quote=hidden;
  const observedSources=rows.map(row=>presentConversationSource(row,{purpose:brief.goals+' '+brief.needs}));assert.ok(observedSources[0].text.includes(hidden));
- const providers={analystQuote:async()=>({reservation:100,finalReservation:800}),analyst:async()=>{throw new BudgetError('provider_error','Sentetik kesinti');},
+ const providers={analystQuote:async()=>({reservation:100,finalReservation:800}),analyst:async(_messages,options)=>{if(options.review)return assistantCall('review_bhs',semanticApproval(answer));throw new BudgetError('provider_error','Sentetik kesinti');},
   fallbackReport:async()=>({data:answer,observedSources})};
+ const draft=await advanceConversation({brief,ledger,id,providers,now});assert.equal(draft.closed,undefined);
  const turn=await advanceConversation({brief,ledger,id,providers,now});assert.equal(turn.closed,true);assert.deepEqual(turn.closureIssues,[]);
  const saved=await persistConversationResult({brief,ledger,id,now});assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,true);
  assert.ok((await readConversation(ledger,id)).sourceViews.get(source.id).ranges.some(row=>row.end===rows[0].text.length));

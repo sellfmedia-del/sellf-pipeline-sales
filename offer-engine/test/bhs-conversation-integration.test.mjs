@@ -9,7 +9,7 @@ import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {advanceConversation,readConversation,persistConversationResult} from '../src/bhs/conversation-engine.mjs';
 import {conversationAuditResult} from '../src/bhs/conversation-report.mjs';
-import {brief,source,report,marketSource,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSummary,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
+import {brief,source,report,marketSource,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSummary,researchedReport,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 import {offerFixture,response} from './fixtures/offer.mjs';
 
 const secret='A'.repeat(43),now=()=>Date.parse('2026-11-20T10:00:00Z'),id=briefHash(brief);
@@ -28,9 +28,9 @@ test('authenticated background start/reconnect/finalize keeps one new engine and
   let out=response();await handler(req,out);assert.equal(out.code,202,JSON.stringify(out.data));assert.equal(out.data.phase,'conversation');
   const ticket=out.data.ticket;out=response();await handler(req,out);assert.equal(out.code,202);assert.equal(enqueues,1);
   const providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı anla'}),assistantCall('search_web',{query:'Pet bakım pazar ve rakipleri',purpose:'Pazar ve rekabet',maxResults:3}),assistantCall('read_pages',{urls:[marketSource.url,peerSource.url,usageSource.url],purpose:'Pazar/rakip gövdesini oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
-  for(let at=0;at<6;at++)await runConversationJob({job,queue,ledger,getProviders:()=>providers,meter:({run})=>run(),now});
+  for(let at=0;at<7;at++)await runConversationJob({job,queue,ledger,getProviders:()=>providers,meter:({run})=>run(),now});
   out=response();await handler({...req,body:{action:'status',brief,ticket}},out);assert.equal(out.code,200,JSON.stringify(out.data));
-  assert.equal(out.data.result.data.fullReport,researchedReport().reportMarkdown);assert.equal(providers.calls.length,6);
+  assert.equal(out.data.result.data.fullReport,researchedReport().reportMarkdown);assert.equal(providers.calls.length,7);
   const proof=createPricingProof(secret).decode(out.data.pricingProof,secret,'preview.vercel.app',now());assert.equal(proof.kind,'audit_ready');
   const audit=out.data.result,pricing={stage:'pricing',...await pricingEngine.run({brief,serviceSelection:{services:[{serviceId:'meta'}],projects:[]}},{audit})};
   assert.deepEqual(pricing.data.scope.selected.map(row=>row.serviceId),['meta']);assertResult('pricing',pricing);
@@ -45,13 +45,13 @@ test('a Claude outage uses a separately funded Gemini answer over retained Tavil
  await advanceConversation({brief,ledger,id,providers,now});const saved=await persistConversationResult({brief,ledger,id,now});
  assert.equal(claude,1);assert.equal(gemini,1);assert.equal(read,1);assert.equal(conversationAuditResult(brief,saved).data.quality.contentComplete,false);
 });
-test('two invalid final answers retain the whole draft for honest review rather than buying an unlimited repair loop',async()=>{
+test('two invalid semantic approvals retain the draft without another whole-report generation',async()=>{
  const {ledger}=memoryLedger(),invalid=researchedReport();invalid.sourceQuotes[0].quote='Uydurma bir kaynak cümlesi.';
- const providers=scriptedProviders(ledger,[assistantCall('search_web',{query:'Pet bakım pazar ve rakip',purpose:'Keşif',maxResults:3}),assistantCall('read_pages',{urls:[brief.website,marketSource.url,peerSource.url,usageSource.url],purpose:'Kaynakları oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',invalid),assistantCall('finish_bhs',invalid)]);
- for(let at=0;at<6;at++)await advanceConversation({brief,ledger,id,providers,now});
- const state=await readConversation(ledger,id);assert.equal(state.final.reason,'report_review_required');
+ const providers=scriptedProviders(ledger,[assistantCall('search_web',{query:'Pet bakım pazar ve rakip',purpose:'Keşif',maxResults:3}),assistantCall('read_pages',{urls:[brief.website,marketSource.url,peerSource.url,usageSource.url],purpose:'Kaynakları oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',invalid),assistantCall('review_bhs',semanticApproval(invalid)),assistantCall('review_bhs',semanticApproval(invalid))]);
+ for(let at=0;at<7;at++)await advanceConversation({brief,ledger,id,providers,now});
+ const state=await readConversation(ledger,id);assert.equal(state.final.reason,'semantic_review_unavailable');
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved,{reason:saved.reason});
  assert.equal(audit.data.fullReport,invalid.reportMarkdown);assert.equal(audit.data.quality.contentComplete,false);
  assert.equal(audit.data.sources.length,4);assert.ok(audit.data.sources.some(row=>row.id===source.id&&row.quote.includes(source.text)));assert.ok(audit.data.sources.every(row=>!row.quote.includes(invalid.sourceQuotes[0].quote)));
- assert.equal(providers.calls.length,6);
+ assert.equal(providers.calls.length,7);
 });

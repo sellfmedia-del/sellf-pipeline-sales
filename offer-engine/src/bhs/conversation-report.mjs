@@ -8,13 +8,14 @@ import {assertSchema} from './schema.mjs';
 import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
 import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
+import {semanticReviewIssues} from './conversation-semantic.mjs';
 
-export function validateConversationReport(report,sources){
+export function validateConversationReport(report,sources,{semantic=false}={}){
  const issues=[];
  try{assertSchema(report,finalReportSchema);}catch{return ['report_format'];}
  if(!report.reportMarkdown.trim()||!report.summary.trim())issues.push('empty_report');
  const prose=report.reportMarkdown.toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replaceAll('ı','i');
- for(const [key,pattern]of [['brand',/marka|is modeli/u],['market',/pazar|sektor/u],['competition',/rakip|rekabet/u],
+ if(!semantic)for(const [key,pattern]of [['brand',/marka|is modeli/u],['market',/pazar|sektor/u],['competition',/rakip|rekabet/u],
   ['swot',/swot/u],['strength',/guclu/u],['weakness',/zayif/u],['opportunity',/firsat/u],['threat',/tehdit/u],['actions',/aksiyon|eylem|yol haritasi/u]])
   if(!pattern.test(prose))issues.push('missing_'+key);
  if(Buffer.byteLength(JSON.stringify(report))>350000)issues.push('report_size');
@@ -45,7 +46,9 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const raw=stored.conversationReport||stored.report?.conversation||stored.conversation;
  const retained=stored.conversationSources||stored.sources||stored.report?.conversationSources||[];
  const sourceRows=new Map(retained.map(source=>[source.id,source]));
- const issues=raw?validateConversationReport(raw,retained):['report_unavailable'];
+ const semanticReview=stored.semanticReview||stored.report?.semanticReview;
+ const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview)}):['report_unavailable'];
+ if(raw&&semanticReview)issues.push(...semanticReviewIssues(semanticReview,raw));
  const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
   researchSummary=stored.researchSummary||stored.report?.researchSummary;
  if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief));
@@ -86,6 +89,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const reportData={summary:report.summary,findings,sources,
   ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
   ...(researchClosure?{researchClosure}:{}),
+  ...(semanticReview?{semanticReview}:{}),
   competitors:report.competitors.map(peer=>({id:'peer_'+hash(peer.url).slice(0,18),name:peer.name,website:peer.url,
    scaleReason:peer.reason,audienceReason:'',geographyReason:'',sourceIds:peer.sourceIds})),
   dimensions:dimensions.map(d=>({id:d.id,score:null,rationale:'Nitel değerlendirme tam BHS raporunda yer alır.',dataStatus:'partial',findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonCompetitorIds:[],strengths:[],gaps:[],onboardingQuestions:[]})),
@@ -97,7 +101,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   researchMethod:'claude-conversation',researchAsOf:stored.researchedAt||stored.reuse?.researchedAt||null,
   researchContext:{brandName:brief.brandName,website:brief.website,briefHash:briefHash(brief)},
   scoring:{total:null,weights:dimensions.map(({id,weight})=>({id,weight})),note:'Bu rapor nitel stratejik analizdir; ölçülmüş performans puanı üretilmedi.'},
-  quality:{checksPassed:complete,contentComplete:complete,semanticBenchmark:'not_requested',scope:'conversation-format-and-source-provenance',customerApproval:'pending',
+  quality:{checksPassed:complete,contentComplete:complete,semanticBenchmark:'not_requested',semanticAssessment:semanticReview?.status||'legacy',scope:semanticReview?'conversation-provenance-and-analyst-review':'conversation-format-and-source-provenance',customerApproval:'pending',
    issues:[...issues.map(reason=>({path:'conversation',reason})),...(reason?[{path:'research',reason}]:[])]},
   researchDiagnostics:(stored.toolIssues||[]).map(row=>({stage:'tools',code:row.code,message:row.tool+' · '+row.code+(row.providerStatus?' (HTTP '+row.providerStatus+')':'')})),
   ...(stored.reuse?{researchReuse:stored.reuse}:{}),services:[],

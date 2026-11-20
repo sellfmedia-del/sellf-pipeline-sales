@@ -4,6 +4,7 @@ import {offerGeminiKey} from '../config.mjs';
 import {createApifyAdapter} from './apify-adapter.mjs';
 import {analystInstruction,conversationTools,conversationVersion,publicResearchUrl,finalReportSchema} from './conversation-contract.mjs';
 import {presentConversationSource} from './conversation-source.mjs';
+import {semanticReviewOutputTokens} from './conversation-semantic.mjs';
 
 export const conversationModels=Object.freeze({analyst:'claude-sonnet-5-5',helper:'gemini-3.1-flash-lite'});
 // First-party standard tariffs reviewed 2026-11-20. Quote uncached creation at
@@ -22,7 +23,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
  const headers={'content-type':'application/json','anthropic-version':'2023-06-01','x-api-key':anthropicKey};
  // Sonnet 5.5 rejects forced tool choice. Keep the tool prefix stable across
  // thinking turns and use a strict report schema with an explicit instruction.
- const toolsFor=()=>conversationTools.map(tool=>tool.name==='finish_bhs'?{...tool,strict:true}:tool);
+ const toolsFor=()=>conversationTools.map(tool=>['finish_bhs','review_bhs'].includes(tool.name)?{...tool,strict:true}:tool);
  const safeError=(error)=>({code:error.code||'provider_error',...(error.providerStatus?{providerStatus:error.providerStatus}:{}),
   ...(error.providerReason?{providerReason:error.providerReason}:{}),...(error.providerRequestId?{requestId:error.providerRequestId}:{})});
  async function json(url,body,headers,timeout){
@@ -60,29 +61,31 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   if(reservation>4500||cost.chargedKurus+reservation>limit)throw new BudgetError('budget_limit','Çağrı ve rapor rezervi kalan bütçeye sığmıyor.');
   return ledger.once(key,input,reservation,run,{settle:v=>v.accountedKurus,limitKurus:limit});
  }
- async function analystQuote(messages,{final=false,writingOnly=false}={}){
+ async function analystQuote(messages,{final=false,writingOnly=false,review=false,hasDraft=false}={}){
   if(!anthropicKey)throw new BudgetError('not_configured','Claude bağlantısı gerekli.');
-  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})},...(writingOnly?{thinking:{type:'between_tools'}}:{})};
+  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  const inputUpper=upper(counted.input_tokens),output=writingOnly?8000:final?20000:1800;
+  const inputUpper=upper(counted.input_tokens),output=review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800;
+  const finalReservation=modelReservation('analyst',inputUpper,20000);
+  const reviewReservation=modelReservation('analyst',inputUpper+(hasDraft||review?512:(writingOnly?8000:20000)+512),semanticReviewOutputTokens);
   return {inputUpper,output,reservation:modelReservation('analyst',inputUpper,output),
-   finalReservation:modelReservation('analyst',inputUpper,20000)};
+   finalReservation,reviewReservation,completionReservation:review?0:hasDraft?reviewReservation:finalReservation+reviewReservation};
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
   analystQuote,
-  async analyst(messages,{final=false,writingOnly=false,quote}={}){
-   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,output:quote?.output??(writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final};
+  async analyst(messages,{final=false,writingOnly=false,review=false,hasDraft=false,quote,remainingReserve=0}={}){
+   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,...(review?{review:true}:{}),output:quote?.output??(review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final};
    const step='model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
-   quote??=await analystQuote(messages,{final,writingOnly});
+   quote??=await analystQuote(messages,{final,writingOnly,review,hasDraft});
    const currency=await fx();
    const body={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),
     max_tokens:quote.output,cache_control:{type:'ephemeral'},
-    output_config:{effort:writingOnly?'medium':final?'high':'medium'},tool_choice:{type:'auto',...(final?{disable_parallel_tool_use:true}:{})},...(writingOnly?{thinking:{type:'between_tools'}}:{})};
+    output_config:{effort:writingOnly||review?'medium':final?'high':'medium'},tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
    return paid(step,identity,quote.reservation,async()=>{
-    const response=await json('https://api.anthropic.com/v1/messages',body,headers,final?165000:55000);
+    const response=await json('https://api.anthropic.com/v1/messages',body,headers,review?90000:final?165000:55000);
     const usage=response.usage||{},input=usage.input_tokens,output=usage.output_tokens,
      write=usage.cache_creation_input_tokens||0,read=usage.cache_read_input_tokens||0;
     if(response.model!==conversationModels.analyst||!integer(input)||!integer(output)||!integer(write)||!integer(read)||
@@ -91,7 +94,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
     const accountedKurus=Math.ceil(((input*2+write*2.5+read*.1+output*10)/1e6)*currency.usdTry*allowance*100);
     return {content:response.content,stopReason:response.stop_reason,model:response.model,usage,
      accountedKurus,fx:currency,reservedKurus:quote.reservation};
-   });
+   },{remainingReserve});
   },
   async search({query,maxResults=3,purpose},options={}){
    if(!tavilyKey)throw new BudgetError('not_configured','Tavily bağlantısı gerekli.');
@@ -148,7 +151,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
    return {actor,scope:'Sınırlı kamuya açık örneklem; genel pazar veya performans ölçümü değildir.',
     results:(result.pages||[]).map(page=>({...page,title:actor+' · '+url,method:'extracted'}))};
   },
-  async fallbackReport({brief,sources,previous}){
+  async fallbackReport({brief,sources,previous},options={}){
    if(!geminiKey)throw new BudgetError('not_configured','Yedek analist bağlantısı gerekli.');
    const model='gemini-3.8-flash';
    const observedSources=sources.map(source=>presentConversationSource(source,{purpose:brief.goals+' '+brief.needs}));
@@ -166,7 +169,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
     const text=(response.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought).map(p=>p.text||'').join('');
     let data;try{data=JSON.parse(text);}catch{/* Settle verified model usage even if its content cannot be used. */}
     return {data,usage,model,observedSources,accountedKurus:Math.ceil((input*1.5+output*7.5)/1e6*currency.usdTry*allowance*100),fx:currency};
-   });
+   },options);
   },
   async consult({question,sources},options={}){
    if(!geminiKey)throw new BudgetError('not_configured','Gemini bağlantısı gerekli.');
