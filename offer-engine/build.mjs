@@ -54,6 +54,8 @@ const {buildLanguageReview}=await import('./src/preview/language-build.mjs');
 await buildLanguageReview(path.join(here,'public'),{production});
 const {buildRecoveryReview}=await import('./src/preview/recovery-build.mjs');
 await buildRecoveryReview(path.join(here,'public'),{production});
+const {buildConversationReview}=await import('./src/preview/conversation-build.mjs');
+await buildConversationReview(path.join(here,'public'),{production});
 const {buildMonthlyReview}=await import('./src/preview/monthly-build.mjs');
 await buildMonthlyReview(path.join(here,'public'),{production});
 

@@ -13,6 +13,8 @@ import {focusedInventoryOutputTokens,inventoryOutputTokens,inventoryStages,scope
 import {minimumV8GeminiReservation} from './supervised-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
 import {brandDiscoveryNeedsWork} from './brand-review-state.mjs';
+import {conversationPolicy,runConversationJob} from './conversation-bridge.mjs';
+import {createConversationProviders} from './conversation-providers.mjs';
 
 export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,meter=meteredBhsStage}={}){
  const {providers}=options;
@@ -138,7 +140,7 @@ export async function runMeteredBhsPhase(job,options,{runStage=runBoundedStage,m
  return meter({job:scopedJob,ledger:options.ledger,run:()=>runStage(options)});
 }
 
-export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>process.env.BHS_WORKER_SECRET,getQueue=()=>createBhsJobStore(),getProviders=createSequentialProviders,run=runClaimedBhsStage,readiness=()=>createSupervisedReadiness({env:{...process.env,VERCEL_ENV:'preview'}}),logger=console}={}){
+export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>process.env.BHS_WORKER_SECRET,getQueue=()=>createBhsJobStore(),getProviders=createSequentialProviders,getConversationProviders=createConversationProviders,run=runClaimedBhsStage,readiness=()=>createSupervisedReadiness({env:{...process.env,VERCEL_ENV:'preview'}}),logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   const configured=secret(),provided=req.headers.authorization?.replace(/^Bearer /,'');
@@ -152,7 +154,10 @@ export function createBhsWorkerHandler({enabled=backgroundBhsEnabled,secret=()=>
   let job;
   try{
    const queue=await getQueue();job=await queue.claim();if(!job)return res.status(200).json({status:'idle'});
-   const result=await run({job,queue,getLedger:queue.getLedger,getProviders:opts=>getProviders({...opts,infrastructureOffsetKurus:workerInfraReservationKurus}),runStage:opts=>runMeteredBhsPhase(job,opts)});
+   const ledger=job.researchVersion==='v8'&&queue.getLedger?await queue.getLedger(job):null;
+   const conversational=ledger&&await conversationPolicy(ledger,job.queueBriefHash||job.briefHash);
+   const result=conversational?await runConversationJob({job,queue,ledger,getProviders:getConversationProviders}):
+    await run({job,queue,getLedger:queue.getLedger,getProviders:opts=>getProviders({...opts,infrastructureOffsetKurus:workerInfraReservationKurus}),runStage:opts=>runMeteredBhsPhase(job,opts)});
    logger.info?.(JSON.stringify({event:'bhs_background_stage',jobId:job.id,phase:job.phase,status:result.status}));
    return res.status(200).json(result);
   }catch(error){

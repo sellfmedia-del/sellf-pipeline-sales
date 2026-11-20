@@ -26,12 +26,14 @@ import {managedPhaseBudget} from './managed-budget.mjs';
 import {managedBrandContinuation} from './managed-report.mjs';
 import {recoverManagedSectionSynthesis} from './collection-first.mjs';
 import {resolveManagedGaps} from './managed-gaps.mjs';
+import {conversationEnabled,conversationKeys,conversationVersion} from './conversation-contract.mjs';
+import {handleConversationAudit} from './conversation-bridge.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
 const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
 const sequentialProduction=()=>productionOffers()&&process.env.OFFER_BHS_RESEARCH_VERSION==='v8'&&process.env.OFFER_BHS_SEQUENTIAL_PRODUCTION_ENABLED==='true'&&backgroundBhsEnabled();
-const researchVersion=()=>supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:sequentialProduction()?'v8':'v6';
-const researchModel=()=>supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
+const researchVersion=()=>conversationEnabled()?'v8':supervisedPreview()?process.env.OFFER_BHS_RESEARCH_VERSION:sequentialProduction()?'v8':'v6';
+const researchModel=()=>conversationEnabled()||supervisedPreview()||sequentialProduction()?supervisedModels.manager:process.env.OFFER_BHS_PRIMARY_MODEL||'gemini-2.5-pro';
 const researchProviders=options=>options.researchVersion==='v8'?createSequentialProviders(options):options.researchVersion==='v7'?createSupervisedProviders(options):createBoundedProviders(options);
 
 const backgroundDeadlineMs=10*60000;
@@ -50,12 +52,15 @@ function backgroundHandoffReason(job,now){
  return null;
 }
 
-export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validateResearchWebsite,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),now=Date.now,logger=console}={}){
+export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null,getProviders=researchProviders,getSecret=offerGeminiKey,getResearchModel=researchModel,getResearchVersion=researchVersion,getQueue=browserBhsJobStore,isBackgroundEnabled=backgroundBhsEnabled,validateWebsite=validateResearchWebsite,runStage=options=>auditEngine.runStage(options),getSourceOffer=(req,id)=>runtimeStore().detail(bearer(req),id),isConversationEnabled=conversationEnabled,getConversationProviders,now=Date.now,logger=console}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
   if(!offersEnabled())return res.status(503).json({error:'BHS yalnızca test önizlemesinde açık.'});
   if(req.method==='GET'){
    const version=getResearchVersion(),supervised=['v7','v8'].includes(version),pricing=version==='v8'?researchTariff:tariff;
+    if(version==='v8'&&isConversationEnabled())return res.status(200).json({configured:Boolean(process.env.ANTHROPIC_API_KEY&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&getSecret()&&process.env.OFFER_STORAGE_GATEWAY_KEY),
+     provider:'Claude + Tavily + optional Gemini and verified specialist readers',engineVersion:conversationVersion,execution:isBackgroundEnabled()?'background':'browser',
+     costCapTry:50,costLedger:'durable-per-lead',primaryModel:supervisedModels.manager,tariffVersion:pricing.version,tariffReadiness:tariffReadiness(now(),pricing),qualityBenchmark:'not_requested',contentReview:false});
    return res.status(200).json({configured:Boolean(getSecret()&&(!supervised||version==='v8'||process.env.ANTHROPIC_API_KEY)&&(process.env.OFFER_TAVILY_API_KEY||process.env.TAVILY_API_KEY)&&process.env.OFFER_STORAGE_GATEWAY_KEY),provider:supervised?'Claude Sonnet + Gemini Flash-Lite + Tavily':'Tavily + Gemini Pro',execution:version==='v8'&&isBackgroundEnabled()?'background':'browser',...(version==='v8'?{collectionFirst:collectionFirstEnabled(),modelHandoff:'claude-gemini'}:{}),costCapTry:50,costLedger:'durable-per-lead',primaryModel:getResearchModel(),modelTransport:process.env.OFFER_MODEL_TRANSPORT||'google',tariffVersion:pricing.version,tariffReadiness:tariffReadiness(now(),pricing),qualityBenchmark:'not_requested',contentReview:false});
   }
   if(req.method!=='POST')return res.status(405).json({error:'POST gerekli.'});
@@ -105,10 +110,15 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    const checkpointHash=job.queueBriefHash||hash;activeCheckpointHash=checkpointHash;
    const key=name=>stageKey(brief,name,researchVersion,checkpointHash);
    let ledger=await getLedger(req,res,job.leadId,...(job.researchRunId?[{researchRunId:job.researchRunId}]:[]));activeLedger=ledger;activeBrief=brief;
+   const conversationKey=conversationKeys.policy(checkpointHash);
+   const conversationCandidate=researchVersion==='v8'&&(isConversationEnabled()||job.conversationEngine===conversationVersion);
+   let savedConversation=conversationCandidate&&action!=='start'?await ledger.get(conversationKey):null;
+   let useConversation=savedConversation?.state==='complete'&&savedConversation.value?.engine===conversationVersion||
+    conversationCandidate&&action==='start'&&!job.backgroundJobId;
    let websiteUnavailable=false,checkedWebsite;
    if(action==='start'){
     phase='website_check';
-    if(!job.backgroundJobId){
+    if(!job.backgroundJobId&&!useConversation){
      let identity;
      try{identity=await validateWebsite(brief);}
      catch(error){
@@ -127,6 +137,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      if(identity?.website&&identity.website!==brief.website)checkedWebsite=identity.website;
     }
     phase='budget_init';await ledger.begin();
+    if(conversationCandidate){
+     savedConversation=await ledger.get(conversationKey);
+     useConversation=savedConversation?.state==='complete'&&savedConversation.value?.engine===conversationVersion||
+      !savedConversation&&!job.backgroundJobId&&!(await ledger.get('audit:managed-policy:'+hash))&&!(await ledger.get(key('brand_plan')));
+     if(useConversation&&!savedConversation)await ledger.once(conversationKey,{checkpointHash},0,async()=>({engine:conversationVersion,createdAt:now()}));
+    }
     if(body.websiteInput!==undefined){
      const entry={runId:job.researchRunId||body.requestId,requestId:body.requestId,submittedWebsite:body.websiteInput,acceptedWebsite:brief.website};
      try{
@@ -145,6 +161,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    else if(action==='start')res.setHeader('X-Offer-BHS-Run-Id',body.requestId);
    // Display baseline only: never reset the durable ledger or its reservations.
    if(action==='start')job.attemptStartKurus=(await ledger.status()).chargedKurus;
+   if(useConversation)job.conversationEngine=conversationVersion;
    const ticket=codec.encode(job,session,host),cost=async()=>{
     const total=await ledger.status();
     const breakdown=ledger.describe?.(total);
@@ -161,10 +178,12 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
    if(action==='complete_gaps'&&(!queue||!job.backgroundJobId))throw new BudgetError('completion_unavailable','Tamamlanmış BHS kaydı gerekli.');
    const finish=async (final,gapCompletion)=>{
     if(final.data?.scopePlan)final={...final,data:{...final.data,scopePlan:guardResearchScope(final.data.scopePlan,brief,final.data)}};
-    const result={...final,stage:'audit',engineVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
+    const result={...final,stage:'audit',engineVersion:final.data?.researchMethod==='claude-conversation'?conversationVersion:'direct-bhs-pro-'+researchVersion,inputHash:hash,runId:digest({leadId:job.leadId,hash:checkpointHash}),cost:await cost()};
     const pricingProof=result.status==='ready'?codec.encode({kind:'audit_ready',createdAt:now(),briefHash:hash,auditHash:digest(result),budgetLeadId:job.leadId,...(job.researchRunId?{budgetResearchRunId:job.researchRunId}:{}),...(job.sourceOfferId?{sourceOfferId:job.sourceOfferId,auditOrigin:{briefHash:hash,researchRunId:job.researchRunId}}:{})},session,host):null;
     log('bhs_response',{phase:'complete',status:result.status,cost:result.cost,continuity:result.data.researchContinuity?.status||null});return res.status(200).json({phase:'complete',result,pricingProof,cost:result.cost,...(gapCompletion?{gapCompletion,ticket:recoveryTicket}:{})});
    };
+   if(useConversation)return handleConversationAudit({action,brief,job,ledger,queue,id:checkpointHash,finish,res,codec,session,host,cost,
+    ...(getConversationProviders?{getProviders:getConversationProviders}:{}),now});
    if(websiteUnavailable){
     const partial=continuationAudit(brief,{reason:'website_network_busy',managed:true});
     return await finish(await restoreContinuation(brief,partial,ledger,now()));

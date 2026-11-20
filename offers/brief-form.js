@@ -202,8 +202,54 @@
           }
         }
       }
-      paragraph(data.summary);
+      const conversational=data.researchMethod==='claude-conversation';
       const progress=data.researchProgress;
+      // Show the new complete analysis before the service editor. Restore the
+      // established position when viewing a saved legacy report in this dialog.
+      if(conversational)dialog.querySelector('.ob-service-selection').before(box);
+      else dialog.querySelector('.ob-brief-details').before(box);
+      if(conversational){
+        const sourceMap=new Map(data.sources.map(source=>[source.id,source]));
+        function inline(text,parent){
+          for(const part of text.split(/(\*\*[^*]+\*\*|\[S[a-f0-9]{8}\])/g)){
+            const id=/^\[(S[a-f0-9]{8})\]$/.exec(part)?.[1],source=sourceMap.get(id);
+            if(source&&/^https?:\/\//i.test(source.url)){
+              const link=document.createElement('a');link.href=source.url;link.textContent='[Kaynak]';link.title=source.title;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);
+            }else if(part.startsWith('**')&&part.endsWith('**')){const strong=document.createElement('strong');strong.textContent=part.slice(2,-2);parent.append(strong);}
+            else parent.append(document.createTextNode(part));
+          }
+        }
+        const article=document.createElement('article');article.className='ob-conversation-report';box.append(article);
+        const lines=data.fullReport.split('\n');
+        for(let at=0;at<lines.length;at++){
+          const line=lines[at];if(!line.trim())continue;
+          const title=/^#{1,4}\s+(.+)/.exec(line);
+          if(title){const h=document.createElement('h4');inline(title[1],h);article.append(h);continue;}
+          if(line.trim().startsWith('|')&&/^\s*\|?[\s:|-]+\|\s*$/.test(lines[at+1]||'')){
+            const wrap=document.createElement('div');wrap.style.overflowX='auto';
+            const table=document.createElement('table');table.className='ob-product-comparison';wrap.append(table);article.append(wrap);
+            const cells=value=>value.trim().replace(/^\||\|$/g,'').split('|').map(value=>value.trim());
+            const head=table.createTHead().insertRow();for(const cell of cells(line)){const th=document.createElement('th');th.scope='col';inline(cell,th);head.append(th);}
+            const body=table.createTBody();at++;
+            while(at+1<lines.length&&lines[at+1].trim().startsWith('|')){const row=body.insertRow();for(const cell of cells(lines[++at]))inline(cell,row.insertCell());}
+            continue;
+          }
+          if(/^\s*(?:[-*]|\d+[.)])\s+/.test(line)){
+            const list=document.createElement('ul');
+            for(;;){const item=document.createElement('li');inline(lines[at].replace(/^\s*(?:[-*]|\d+[.)])\s+/,''),item);list.append(item);
+              if(at+1>=lines.length||!/^\s*(?:[-*]|\d+[.)])\s+/.test(lines[at+1]))break;at++;}
+            article.append(list);continue;
+          }
+          const p=document.createElement('p');inline(line,p);article.append(p);
+        }
+        if(data.conversation.limitations.length){heading('Araştırmanın sınırları');data.conversation.limitations.forEach(value=>paragraph(value));}
+        if(data.quality.issues.length){heading('Kontrol gereken noktalar');data.quality.issues.forEach(row=>paragraph(row.reason));}
+        if(data.researchDiagnostics.length){heading('Kaynak erişim durumu');data.researchDiagnostics.forEach(row=>paragraph(row.message));}
+        heading('Kaynaklar');for(const source of data.sources){
+          const p=document.createElement('p'),link=document.createElement('a');link.href=source.url;link.textContent=source.title||source.url;link.target='_blank';link.rel='noopener noreferrer';p.append(link);box.append(p);
+        }
+      }else{
+      paragraph(data.summary);
       if(progress){
         heading('Araştırma ve rapor durumu');
         paragraph(({complete:'Araştırma ve rapor tamamlandı.',partial:'Kaynaklı kısmi BHS; doğrulanacak veya rapora aktarılacak alanlar var.',unavailable:'Bu araştırmada kullanılabilir kaynaklı bulgu oluşmadı.'})[progress.state]);
@@ -339,9 +385,10 @@
           box.append(details);
         }
       }
+      }
       dialog.querySelector('#ob-review-title').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Kaynaklı ön araştırmada kontrol gereken alanlar var':result.status==='ready'?'Ön BHS araştırması hazır':'Ön BHS araştırmasında kontrol gereken alanlar var';
       dialog.querySelector('.ob-review-notice').textContent=result.status==='ready'&&data.quality.scope==='read-source-and-quote-filter'&&data.quality.contentComplete===false?'Doğrulanabilen kaynaklı bölüm hazır. Veri eksikleri ve çıkarımlar görüşmede kontrol edilmeli; rapor tam doğrulanmış analiz olarak sunulmaz. Fiyat alternatiflerini hazırlayabilirsin.':result.status==='ready'?'Ön BHS raporu hazır. Görüşme bağlamına uygun iki alternatifin aylık bedellerini hazırlayabilirsin. Bütçe bilgisi zorunlu değildir.':'Kaynak veya içerik doğrulaması tamamlanmadığı için bu sonuç henüz teklif aşamasına aktarılamaz.';
-      if(data.researchContinuity){
+      if(data.researchContinuity&&(!conversational||data.researchContinuity.status!=='complete')){
         dialog.querySelector('#ob-review-title').textContent=data.researchContinuity.status==='unavailable'?'Görüşme bilgileriyle teklif hazırlığı':'Kısmi BHS ile teklif hazırlığı';
         const stop=data.supervision?.researchStopReason;
         const reason=stop==='research_budget_exhausted'?'Kalan araştırma bütçesi yeni bir çağrıyı karşılamadı. ':
@@ -354,6 +401,10 @@
           .map(row=>stages[row.stage]+': '+row.message).join(' ');
         const progressNotice=progress?progress.confirmed+'/'+progress.planned+' ihtiyaç doğrulandı; '+progress.reported+' doğrulanmış ihtiyaç raporda, '+progress.findings+' kaynaklı bulgu korundu, '+progress.open+' ihtiyaç açık. ':'';
         dialog.querySelector('.ob-review-notice').textContent=progressNotice+(diagnosticNotice?diagnosticNotice+' ':reason)+data.researchContinuity.notice;
+      }
+      if(conversational&&data.quality.contentComplete){
+        dialog.querySelector('#ob-review-title').textContent='BHS analizi hazır';
+        dialog.querySelector('.ob-review-notice').textContent='Marka, pazar, rekabet ve öncelikli aksiyonlar tam raporda yer alıyor. Hizmetleri seçerek teklif hazırlığına geçebilirsin.';
       }
       dialog.querySelector('.ob-price').hidden=result.status!=='ready';
       dialog.querySelector('.ob-service-selection').hidden=result.status!=='ready';
@@ -612,7 +663,8 @@
           if(response.continuationAvailable&&current.ticket)showAuditContinuation(current,true);
           action='status';
           const stages={source_plan:'Birincil kaynaklar ve karşılaştırılabilir rakipler bulunuyor…',evidence:'Bulunan kaynaklar tek araştırma paketinde okunuyor…',scope:'BHS ve görüşme bağlamına uygun hizmet kapsamı hazırlanıyor…',synthesis:'Okunan kaynaklardan altı boyutlu BHS analizi hazırlanıyor…',revision:'Kanıtların kapsamı ve yorumların kesinliği gözden geçiriliyor…',semantic:'Bulguların şirket, dönem ve kaynak desteği ayrı bir denetimden geçiyor…'};
-          if(stages[response.phase])notice.textContent=stages[response.phase];
+          if(response.phase==='conversation')notice.textContent=response.message||'Marka, hedefler ve kaynaklar aynı analiz oturumunda değerlendiriliyor…';
+          else if(stages[response.phase])notice.textContent=stages[response.phase];
           await new Promise(resolve=>setTimeout(resolve,10000));
           if(current.stopped)return;
         }

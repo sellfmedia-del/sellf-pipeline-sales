@@ -2,6 +2,7 @@ import {hasGroundedResearch} from './bhs/research-content.mjs';
 import {assertQuote} from './pricing/currency.mjs';
 import {assertProjectPlans} from './pricing/project-contract.mjs';
 import {assertMonthlyPlan} from './pricing/monthly.mjs';
+import {validateConversationReport} from './bhs/conversation-report.mjs';
 export const originalLogoImage=value=>typeof value==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 export const stages=Object.freeze(['logo','audit','pricing','proposal']);
 export function assertResult(stage,result){
@@ -14,7 +15,13 @@ export function assertResult(stage,result){
   }
   if(stage==='audit'&&(!Array.isArray(result.data.findings)||!Array.isArray(result.data.services)))throw new Error('Audit bulguları ve hizmet kapsamı eksik.');
   if(stage==='audit'&&result.data.schemaVersion==='bhs-v1'&&result.status==='ready'&&(result.data.quality?.checksPassed!==true||result.data.quality?.semanticBenchmark!=='passed'))throw new Error('BHS kaynak ve içerik kontrolleri tamamlanmadı.');
-  if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only','read-source-and-quote-filter'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
+  if(stage==='audit'&&result.data.schemaVersion==='bhs-v2-direct'&&(!result.data.report||!result.data.briefHash||!['json-format-only','offer-transfer-only','read-source-and-quote-filter','conversation-format-and-source-provenance'].includes(result.data.quality?.scope)))throw new Error('BHS JSON aktarımı eksik.');
+  if(stage==='audit'&&result.data.quality?.scope==='conversation-format-and-source-provenance'){
+    const data=result.data;
+    if(data.fullReport!==data.report.conversation?.reportMarkdown||data.rawReport!==data.fullReport||
+      data.quality.contentComplete&&validateConversationReport(data.report.conversation,data.report.conversationSources||[]).length)
+      throw Error('BHS konuşma raporu veya kaynak aktarımı doğrulanamadı.');
+  }
   if(stage==='audit'&&result.data.quality?.scope==='read-source-and-quote-filter'){
     const sources=result.data.sources||[],ids=new Set(sources.map(s=>s.id));
     if(result.status==='ready'&&!hasGroundedResearch(result.data)&&result.data.researchContinuity?.status!=='unavailable')throw Error('Boş araştırma hazır BHS olarak kullanılamaz.');

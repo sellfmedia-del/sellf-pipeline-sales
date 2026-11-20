@@ -146,3 +146,6 @@
 #offer-brief-dialog .ob-service-selection{margin:18px 0}
 #offer-brief-dialog .ob-alternative-costs{padding:12px 0;border-bottom:1px solid var(--border,#e7e7e2)}
 #offer-brief-dialog .ob-alternative-costs h4{font-size:14px;margin:0 0 8px}
+.ob-conversation-report p,.ob-conversation-report li { overflow-wrap:anywhere; line-height:1.65; }
+.ob-conversation-report h4 { font-size:1.12rem; margin-top:1.5rem; }
+.ob-conversation-report table { margin:1rem 0; }
