@@ -20,7 +20,8 @@ test('whole BHS narrative, SWOT, tables and sources render safely on desktop and
   await page.goto('https://preview.vercel.app/offers/conversation-review.html');await page.waitForFunction(()=>typeof window.PipelineAuditRequest==='function');
   await page.locator('#review-conversation').click();await page.locator('.ob-price:not([hidden])').waitFor();
   const view=page.locator('.ob-conversation-report');assert.match(await view.innerText(),/SWOT/);assert.match(await view.innerText(),/Amazon partnerinin mevcut olması/);
-  assert.equal(await view.locator('table').count(),1);assert.equal(await view.locator('a').count(),1);
+  assert.equal(await view.locator('table').count(),1);assert.equal(await view.locator('a').count(),3);
+  assert.match(await view.innerText(),/Örnek Rakip/);assert.match(await view.innerText(),/Uzman mağaza ve pazaryerinde/);
   assert.equal(await page.locator('#ob-review-title').innerText(),'BHS analizi hazır');
   assert.equal(await page.evaluate(()=>window.unsafeReport),undefined);assert.equal(await view.locator('script').count(),0);
   assert.equal(await page.locator('#offer-brief-dialog').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);

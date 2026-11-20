@@ -7,7 +7,7 @@ import {runConversationJob} from '../src/bhs/conversation-bridge.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {createResearchSnapshot,readResearchSnapshot} from '../src/bhs/research-snapshot.mjs';
 import {directAuditResult} from '../src/bhs/direct-report.mjs';
-import {brief,source,report,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
+import {brief,source,report,marketSource,peerSource,researchSources,researchSummary,researchedReport,memoryLedger,assistantCall,scriptedProviders} from './fixtures/bhs-conversation.mjs';
 
 const id='a'.repeat(64),now=()=>Date.parse('2026-11-20T10:00:00Z');
 test('opaque provider thinking blocks are retained unchanged in the next tool-use turn',async()=>{
@@ -18,22 +18,23 @@ test('opaque provider thinking blocks are retained unchanged in the next tool-us
  const assistant=providers.calls[1].messages.find(row=>row.role==='assistant');assert.deepEqual(assistant.content[0],thinking);
 });
 test('an early report tool call requests full writing capacity before it can complete the BHS',async()=>{
- const {ledger}=memoryLedger();await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources:[source],readAttempts:[],results:[],toolIssues:[]}));
+ const {ledger}=memoryLedger();await ledger.once(conversationKeys.turn(id,0),{id},0,async()=>({sources:researchSources,researchSummary:researchSummary(),readAttempts:[],results:[],toolIssues:[]}));
  const providers=scriptedProviders(ledger,[assistantCall('finish_bhs',report()),assistantCall('finish_bhs',report())]);
  const early=await advanceConversation({brief,ledger,id,providers,now});assert.equal(early.closed,undefined);assert.equal(early.finishRequested,true);
  const final=await advanceConversation({brief,ledger,id,providers,now});assert.equal(final.closed,true);assert.equal(providers.calls[1].options.final,true);
 });
-test('the same conversation carries the full brief, tool observations and a whole report without the old need gates',async()=>{
+test('the same conversation carries brand, market and competitor research into the full report without legacy quotas',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı ve mevcut satın alma yolunu anla.'}),
-  assistantCall('begin_report',{reason:'Ürün ve kanal gözlemini sınırlı ama somut aksiyona dönüştür.'}),assistantCall('finish_bhs',report())]);
- for(let i=0;i<3;i++)await advanceConversation({brief,ledger,id,providers,now});
+  assistantCall('search_web',{query:'Türkiye pet bakım pazarı ve rakipler',purpose:'Pazar ve rakip araştırması',maxResults:3}),
+  assistantCall('read_pages',{urls:[marketSource.url,peerSource.url],purpose:'Pazar ve rakip sonuçlarını oku'}),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
+ for(let i=0;i<5;i++)await advanceConversation({brief,ledger,id,providers,now});
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
- assert.equal(audit.data.fullReport,report().reportMarkdown);
+ assert.equal(audit.data.fullReport,researchedReport().reportMarkdown);
  assert.equal(audit.data.findings[0].impact,report().highlights[0].analysis);
  assert.equal(audit.data.findings[0].recommendation.action,report().highlights[0].action);
  assert.equal(audit.data.quality.contentComplete,true);assert.equal(audit.data.researchContinuity.status,'complete');
- assert.match(JSON.stringify(providers.calls[2].messages),/Amazon tarafında mevcut bir partner var/);
- assert.match(JSON.stringify(providers.calls[2].messages),/Kıtık açıcı/);assert.equal(providers.calls[2].options.final,true);
+ assert.match(JSON.stringify(providers.calls[4].messages),/Amazon tarafında mevcut bir partner var/);
+ assert.match(JSON.stringify(providers.calls[4].messages),/Kıtık açıcı/);assert.equal(providers.calls[4].options.final,true);
  assertResult('audit',audit);
 });
 test('cached source reads do not call the source provider again and the full archive remains accessible',async()=>{
@@ -45,9 +46,9 @@ test('cached source reads do not call the source provider again and the full arc
 });
 test('web discovery becomes a read source and every previous request remains a stable prefix of the next conversation',async()=>{
  const {ledger}=memoryLedger(),providers=scriptedProviders(ledger,[assistantCall('search_web',{query:'Örnek Pet ürünleri',maxResults:1,purpose:'Doğru ürünü bul'}),
-  assistantCall('read_pages',{urls:[brief.website],purpose:'Kaynağı oku'}),assistantCall('begin_report',{reason:'Hazır'}),assistantCall('finish_bhs',report())]);
+  assistantCall('read_pages',{urls:researchSources.map(row=>row.url),purpose:'Kaynakları oku'}),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
  for(let at=0;at<4;at++)await advanceConversation({brief,ledger,id,providers,now});
- const state=await readConversation(ledger,id);assert.equal(state.sources[0].method,'extracted');assert.equal(state.final.conversationReport.reportMarkdown,report().reportMarkdown);
+ const state=await readConversation(ledger,id);assert.equal(state.sources[0].method,'extracted');assert.equal(state.final.conversationReport.reportMarkdown,researchedReport().reportMarkdown);
  for(let at=1;at<providers.calls.length;at++){
   const previous=providers.calls[at-1].messages,next=providers.calls[at].messages;
   assert.deepEqual(next.slice(0,previous.length),previous);

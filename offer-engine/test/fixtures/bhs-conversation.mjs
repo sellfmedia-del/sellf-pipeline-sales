@@ -6,6 +6,21 @@ export const brief={brandName:'Örnek Pet',segment:'kobi',website:'https://pet.e
  services:'Markalaşma ve perakende için iki alternatif değerlendirilecek.',meetingNotes:'Türkiye öncelikli; ABD ve UK sonraki aşamada değerlendirilecek.',budget:null};
 export const source={id:sourceId(brief.website),url:brief.website,title:'Örnek Pet',method:'extracted',
  text:'Kıtık açıcı tüy bakım spreyi ve kedi kumu spreyi. Sipariş için Shopier mağazamızı veya WhatsApp hattını kullanabilirsiniz.',retrievedAt:'2026-11-20T10:00:00.000Z',links:[]};
+export const marketSource={...source,id:sourceId('https://market.example.com/pet-care'),url:'https://market.example.com/pet-care',title:'Sentetik pazar kaynağı',
+ text:'Türkiye pet bakım alıcıları ürünü uzman mağazalarda ve çevrim içi pazaryerlerinde karşılaştırır. Bakım ihtiyacına uygun kullanım açıklaması ürün seçimini etkiler.'};
+export const peerSource={...source,id:sourceId('https://peer.example.com/coat-care'),url:'https://peer.example.com/coat-care',title:'Sentetik rakip ürün kaynağı',
+ text:'Örnek Rakip Türkiye içinde kedi ve köpekler için tüy açıcı bakım spreyi satıyor. Ürün sayfasında uygulama videosu ve doğrudan sipariş seçeneği var.'};
+export const researchSources=[source,marketSource,peerSource];
+export const researchSummary=()=>({reason:'Pazar ve karşılaştırma sonuçları hazır.',market:{
+ channels:{analysis:'Uzman mağaza ve pazaryerlerinde keşif; marka için kanal bazlı ürün anlatımı gerekli.',sourceIds:[marketSource.id]},
+ customerBehavior:{analysis:'Ürüne uygun kullanım açıklaması seçimi etkileyebilir; etkisi dönüşüm pilotuyla ölçülmeli.',sourceIds:[marketSource.id]},
+ competitionDynamics:{analysis:'Rakibin uygulama videosu, marka için anlatımı karşılaştırma fırsatı yaratır.',sourceIds:[peerSource.id]}},
+ competitors:[{name:'Örnek Rakip',url:peerSource.url,reason:'Aynı ülke ve tüy bakım ihtiyacında alternatif ürün.',comparison:'Rakip uygulama videosu ve doğrudan sipariş sunarken marka dış kanala yönlendiriyor.',implication:'Ürün açıklaması ve sipariş geçişi kontrollü pilotla karşılaştırılabilir.',sourceIds:[peerSource.id]}]});
+export function researchedReport(){const value=report();value.competitors=researchSummary().competitors.map(({name,url,reason,sourceIds})=>({name,url,reason,sourceIds}));
+ value.reportMarkdown=value.reportMarkdown.replace('Doğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.',
+  `Örnek Rakip aynı ülkede tüy bakım ürünü sunuyor; videosu ve doğrudan sipariş yolu, markanın harici yönlendirmesinden farklı. Ürün anlatımı ve sipariş geçişini pilotla karşılaştır. [${peerSource.id}]`);
+ value.reportMarkdown=value.reportMarkdown.replace('## Pazar ve müşteri\n',`## Pazar ve müşteri\nUzman mağaza ve pazaryerinde ürün karşılaştırması, ürün kullanım anlatımını kanal bazında uyarlamayı gerektirebilir. [${marketSource.id}]\n`);
+ value.sourceQuotes.push(...[marketSource,peerSource].map(row=>({sourceId:row.id,quote:row.text})));return value;}
 export function report(){return {
  summary:'Örnek Pet için büyüme önceliği, ürün keşfini ölçülebilir bir satın alma yoluna bağlamak.',
  reportMarkdown:`# Örnek Pet BHS\n## Marka ve hedef\nAna sayfa ürünleri ve üçüncü taraf sipariş yönlendirmesini birlikte sunuyor. [${source.id}]\n## Pazar ve müşteri\nTürkiye pet kozmetiği alt pazarının büyüklüğü bu kaynakta yok; toplam pet pazarı verisi bunun yerine konamaz. Marka ve ürün stratejisi bu sayıya bağlı olmadan değerlendirilebilir.\n## Rekabet\nDoğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.\n## SWOT\n### Güçlü yönler\nÜrün faydasının tanımlı olması listeleme çalışmasına başlangıç sağlar; bu ticari bir değerlendirmedir.\n### Zayıf yönler\nSiparişin harici kanallara yönlenmesi ölçümün parçalanması riskini taşıyabilir; düşük dönüşüm yaşandığı kanıtlanmış değildir.\n### Fırsatlar\nÜrün bazlı sayfa ve kanal ölçümü için kontrollü pilot yapılabilir.\n### Tehditler\nRakip fiyat baskısı bir hipotezdir; karşılaştırılabilir fiyat kaydı olmadan gerçekleşmiş sonuç sayılamaz.\n## Öncelikli aksiyonlar\nÖnce ürün sayfasından Shopier/WhatsApp yönlendirmesine kadar olay ölçümünü kur; aynı kanalda önceki dönemle karşılaştır. Amazon partnerinin mevcut olması yeni kapsamdan otomatik dışlama yaratmaz.`,
@@ -42,6 +57,6 @@ export function scriptedProviders(ledger,replies){
  const calls=[];let index=0;
  return {calls,analystQuote:async()=>({reservation:100,finalReservation:800,inputUpper:1000,output:10000}),
   analyst:async(messages,options)=>{calls.push({messages:structuredClone(messages),options});return ledger.once('model:test:'+index,{index},100,async()=>({...replies[index++],accountedKurus:20}),{settle:v=>v.accountedKurus});},
-  search:async()=>({results:[{...source,method:'search-snippet'}]}),extract:async()=>({results:[source],failures:[]}),
+  search:async()=>({results:researchSources.map(row=>({...row,method:'search-snippet'}))}),extract:async({urls})=>({results:researchSources.filter(row=>urls.includes(row.url)),failures:[]}),
   consult:async()=>({answer:'Kaynak, iki örnek ürünü ve sipariş yönlendirmesini gösterir; toplam SKU sayısını kanıtlamaz.'})};
 }

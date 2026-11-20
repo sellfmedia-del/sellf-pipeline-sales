@@ -5,6 +5,8 @@ import {guardResearchScope} from './scope-authority.mjs';
 import {offerCopy} from '../proposal/composition.mjs';
 import {conversationVersion,finalReportSchema,publicResearchUrl} from './conversation-contract.mjs';
 import {assertSchema} from './schema.mjs';
+import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
+import {researchReportIssues} from './conversation-research.mjs';
 
 export function validateConversationReport(report,sources){
  const issues=[];
@@ -15,7 +17,7 @@ export function validateConversationReport(report,sources){
   ['swot',/swot/u],['strength',/guclu/u],['weakness',/zayif/u],['opportunity',/firsat/u],['threat',/tehdit/u],['actions',/aksiyon|eylem|yol haritasi/u]])
   if(!pattern.test(prose))issues.push('missing_'+key);
  if(Buffer.byteLength(JSON.stringify(report))>350000)issues.push('report_size');
- const known=new Map(sources.map(s=>[s.id,s])),read=id=>known.has(id)&&known.get(id).method!=='search-snippet';
+ const known=new Map(sources.map(s=>[s.id,s])),read=id=>usableConversationSource(known.get(id));
  const citations=[...report.reportMarkdown.matchAll(/\[(S[a-f0-9]{8})\]/gu)].map(m=>m[1]);
  if(citations.some(id=>!known.has(id)))issues.push('unknown_citation');
  for(const finding of report.highlights){
@@ -43,6 +45,10 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const retained=stored.conversationSources||stored.sources||stored.report?.conversationSources||[];
  const sourceRows=new Map(retained.map(source=>[source.id,source]));
  const issues=raw?validateConversationReport(raw,retained):['report_unavailable'];
+ const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
+  researchSummary=stored.researchSummary||stored.report?.researchSummary;
+ if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief));
+ reason??=stored.reason;
  const report=raw||{summary:brief.brandName+' için araştırma kayıtları korundu; tamamlanmış analiz henüz oluşmadı.',
   reportMarkdown:brief.brandName+' için tamamlanmış BHS oluşmadı. '+(reason?'İşlem durumu: '+reason+'.':''),highlights:[],competitors:[],sourceQuotes:[],questions:[],limitations:[]};
  const findings=report.highlights.map((row,index)=>({id:'conversation_'+hash(row).slice(0,20),kind:row.kind,dimension:row.dimension,
@@ -59,7 +65,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   if(source&&source.text.replace(/\s+/gu,' ').includes(row.quote.replace(/\s+/gu,' ').trim())&&row.quote.length<=240)
    quoteMap.set(row.sourceId,[...(quoteMap.get(row.sourceId)||[]),row.quote]);
  }
- const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,text:quoteMap.get(source.id).join('\n'),links:[]}));
+ const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,text:quoteMap.get(source.id).join('\n'),links:[],readingStatus:sourceReadingStatus(source)}));
  const sources=captured.map(source=>({id:source.id,url:source.url,title:source.title||source.url,
   quote:source.text,scope:source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.',
   sourceType:'secondary',publishedAt:source.publishedAt||null,period:null,
@@ -69,6 +75,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const sections=[...new Set(findings.map(f=>f.bhsSection))].map(id=>({id,title:findings.find(f=>f.bhsSection===id).bhsSectionTitle,
   count:findings.filter(f=>f.bhsSection===id).length,findingIds:findings.filter(f=>f.bhsSection===id).map(f=>f.id),complete,missingQuadrants:[]}));
  const reportData={summary:report.summary,findings,sources,
+  ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
   competitors:report.competitors.map(peer=>({id:'peer_'+hash(peer.url).slice(0,18),name:peer.name,website:peer.url,
    scaleReason:peer.reason,audienceReason:'',geographyReason:'',sourceIds:peer.sourceIds})),
   dimensions:dimensions.map(d=>({id:d.id,score:null,rationale:'Nitel değerlendirme tam BHS raporunda yer alır.',dataStatus:'partial',findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonCompetitorIds:[],strengths:[],gaps:[],onboardingQuestions:[]})),

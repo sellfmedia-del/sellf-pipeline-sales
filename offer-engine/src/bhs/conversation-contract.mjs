@@ -11,6 +11,11 @@ export const conversationKeys=Object.freeze({
 });
 const string={type:'string'},strings={type:'array',items:string};
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
+const marketOutcome=object({analysis:string,sourceIds:strings});
+export const researchHandoffSchema=object({reason:string,
+ market:object({channels:marketOutcome,customerBehavior:marketOutcome,competitionDynamics:marketOutcome}),
+ competitors:{type:'array',items:object({name:string,url:string,reason:string,comparison:string,implication:string,sourceIds:strings})}
+});
 export const finalReportSchema=object({
  summary:string,reportMarkdown:string,
  highlights:{type:'array',items:object({statement:string,analysis:string,action:string,measurement:string,
@@ -31,7 +36,7 @@ export const conversationTools=Object.freeze([
   input_schema:object({question:string,sourceIds:strings})},
  {name:'specialist_read',description:'Tavily ile okunamayan gözlemlenmiş sayfa veya gerekli sosyal/yorum örneklemi için, yalnız doğrulanmış maliyet sınırı olan uygun scraperı kullan. Sayfa okuma için önce Tavily denemesi gerekli.',
   input_schema:object({url:string,purpose:string,mode:{type:'string',enum:['page','reviews','posts','profile']},sampleSize:{type:'integer',minimum:1,maximum:5}})},
- {name:'begin_report',description:'Yeterli araştırma yapıldığında bütün raporu yazmaya geç. Sistem aynı konuşmada tam rapor için çıktı alanı ayırır; bu kısa kararda raporu yazma.',input_schema:object({reason:string})},
+ {name:'begin_report',description:'Pazar ve rakip araştırmasının somut sonuçlarını kısa olarak teslim et, ardından bütün raporu yazmaya geç. Kanallar, müşteri davranışı ve rekabet dinamiklerinin marka için anlamını; isimli rakiplerin gerekçesini, karşılaştırmasını ve sonucunu kaynaklarıyla ver. Sistem aynı konuşmada tam rapor için çıktı alanı ayırır.',input_schema:researchHandoffSchema},
  {name:'finish_bhs',description:'Bütün BHS analizini tek ve tutarlı bir Türkçe rapor olarak teslim et. Markdown asıl rapordur; highlights teklif ekranına aktarılacak somut bulgulardır. Kotayı doldurma, metni karakter sınırında kesme.',
   input_schema:finalReportSchema}
 ]);
@@ -41,6 +46,10 @@ export const analystInstruction=`Sellf için kıdemli bir marka ve büyüme anal
 Brief müşterinin beyanıdır. Marka ne satıyor, gelirini nasıl yaratıyor, mevcut koşulları ve hedefi ne, teklif hangi kararı desteklemeli: bunları birlikte anla. Marka adını, web sitesini, ülkesini ve ürün alt grubunu koru. Mevcut bir partnerin varlığı hizmetin kapsam dışında olduğu anlamına gelmez. Açıkça yazılmamış bir dışlama veya müşteri talebi icat etme.
 
 Araştırmanın yönünü sen seç. Bir araç çağrısında dar, somut bir soru sor. Bulunan ilgili sayfayı okumadan benzer aramalar satın alma. Aynı sayfanın farklı soruları karşılayan pasajlarını birlikte kullan. Bir soruda ilerleme yoksa başka kaynak veya önemli bağımsız konuya geç. Sonuçlarda geçen gerçek rakipleri ürün, alıcı, ülke ve alternatif olma bakımından değerlendir. Sadece aynı sektörde yer almak rakiplik kanıtı değildir. Hazır bilgiyle yanıtlanabilen konu için araç çağırma. Gemini yardımcıdır; her kaynak için ikinci kontrol zorunlu değildir.
+
+ARAŞTIRMA GÖREVİ: Marka ana sayfası ve brief, pazar/rakip araştırmasının yerine geçmez. Önce markanın ürününü ve hedefini anla; ardından hedef ürün/pazar bağlamında ilgili dış kaynakları bulup oku. Pazarda satış kanalları, müşteri satın alma davranışı ve rekabet dinamiklerinin marka için ticari sonucunu çıkar. Gerçek rakipleri isimleriyle seç; her biri için ürün/alıcı/coğrafya bakımından neden alternatif olduğunu, marka ile somut farkını ve bunun büyüme kararına etkisini açıkla. Genel rakip seçme kriterleri yazmak araştırma sonucunu tamamlamaz. begin_report içinde bu sonuçları kısa olarak teslim et; kaynaklı olgularla analitik çıkarımları metinde ayır. Analitik çıkarımlar için yeni sayı veya kaynak icat etme; her cümle için ayrı kaynak zorunlu değildir. Kesin pazar büyüklüğü araştırmayı kilitlemez. Nihai raporda aynı pazar sonuçlarını ve isimli karşılaştırmaları koru; competitors alanını da doldur. Gerçek erişim/bütçe/süre engelinde eldeki analizi yaz, doğrulanamayan konuyu açıkça sınırla; rakip veya araştırma sonucu uydurma.
+
+KAYNAK OKUMA: readingStatus=discovery_only arama keşfidir; readingStatus=navigation_only menü/yetersiz metindir, başarılı araştırma değildir. body_available olan kaynakta soruyla ilgili gövde pasajlarını kullan. passages özgün metindeki konumları gösterir; moreAvailable varsa ilgili devamı read_saved_source ile ücretsiz al. Menüde gözlemlenen ilgili alt sayfaya geçebilirsin. Kaynağı yeniden satın alma; tam metin arşivde korunur. Gösterilmemiş bir pasajı okumuş gibi sunma.
 
 KAYNAK İLE ANALİZİ AYIR: Kaynaklı olgu, brief beyanı ve analitik hipotez farklıdır. Sayısal/güncel iddialarda gerçek kaynak, dönem, birim ve kapsam gerekli. Üst sektörün verisini dar ürün pazarının verisi gibi kullanma. Bir sayfadaki iki örnek ürünü markanın toplam iki SKU'su olarak sunma. Marka beyanını bağımsızca kanıtlanmış üstünlük diye sunma. Sayfa okunamaması, verinin yokluğu veya aracın hata vermesi markanın kusuru değildir. Kesin pazar büyüklüğü bulunamaması markanın hedefini analiz etmene veya öneri geliştirmene engel değildir. Hipotezi hipotez olarak açıkla, dayanağını ve nasıl doğrulanacağını belirt.
 
