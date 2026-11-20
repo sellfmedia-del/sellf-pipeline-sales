@@ -9,6 +9,8 @@ import {researchOutcomeVersion,researchReportIssues} from './conversation-resear
 import {researchClosureVersion,researchClosureIssues,collectSourceViews} from './conversation-progress.mjs';
 import {semanticReviewVersion,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 import {hash} from '../budget/ledger.mjs';
+import {objectiveValidationVersion} from './conversation-objective.mjs';
+import {ensureConversationContext} from './conversation-context.mjs';
 
 export const reportRepairKey=id=>conversationKeys.result(id)+':writing-repair-v1';
 export const repairableReport=value=>!value?.conversationReport&&['provider_error','report_review_required'].includes(value?.reason);
@@ -25,6 +27,7 @@ export function reportRepairLedger(ledger,runId,env=process.env){
 }
 
 export async function repairConversationReport({brief,job,ledger,id,getProviders=createConversationProviders,meter=meteredBhsStage,now=Date.now}){
+ const conversationContext=await ensureConversationContext({brief,ledger,id});
  const key=reportRepairKey(id),existing=await ledger.get(key);
  if(existing?.state==='complete')return existing.value;
  if(existing)throw new BudgetError('budget_pending','Kayıtlı rapor tamamlama isteği yeniden satın alınmadı.');
@@ -32,6 +35,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
  if(!sources.length)throw new BudgetError('recovery_unavailable','Rapor için korunmuş okunabilir kaynak yok.');
  const scoped=reportRepairLedger(ledger,job.researchRunId);
  const needsSemantic=state.turns.some(turn=>turn.semanticReviewVersion);
+ const needsObjective=state.turns.some(turn=>turn.objectiveValidationVersion);
  return ledger.once(key,{version:conversationVersion,id,mode:'retained-source-writing-v1'},0,async()=>{
   let report,reason,issues=[],closureIssues=[],semanticReview=needsSemantic?{version:semanticReviewVersion,status:'pending',attempts:0}:undefined;
   try{
@@ -54,10 +58,10 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
     });
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote,remainingReserve:needsSemantic?(request.quote.reviewReservation||0)+400:0});
     const candidate=answer.content?.find(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
-    issues=candidate?validateConversationReport(candidate,sources,{semantic:needsSemantic}):['report_unavailable'];
+    issues=candidate?validateConversationReport(candidate,sources,{semantic:needsSemantic,objective:needsObjective}):['report_unavailable'];
     if(!issues.includes('report_format')&&!issues.includes('report_size')&&typeof candidate?.reportMarkdown==='string'&&candidate.reportMarkdown.trim())report=candidate;
     if(needsSemantic&&report){
-     await ledger.once(key+':semantic-draft',{draftDigest:hash(report)},0,async()=>({conversationReport:report,conversationSources:sources,semanticReview,reason:'semantic_review_unavailable',
+     await ledger.once(key+':semantic-draft',{draftDigest:hash(report)},0,async()=>({conversationReport:report,conversationSources:sources,semanticReview,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),reason:'semantic_review_unavailable',
       researchOutcomeVersion,researchSummary:state.researchSummary,researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues},repair:{kind:'retained-source-writing',semanticDraft:true,newResearchCalls:0}}));
      const reviewRequest=await ledger.once(key+':semantic-request',{draftDigest:hash(report)},0,async()=>{
       const assistant={role:'assistant',content:(answer.content||[]).filter(block=>['text','tool_use','thinking','redacted_thinking'].includes(block.type))};
@@ -69,7 +73,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
      const decision=reviewed.content?.find(block=>block.type==='tool_use'&&block.name==='review_bhs')?.input;
      semanticReview={...semanticReview,attempts:1};
      const assessed=applySemanticDecision(report,decision,{sources,attempts:1});
-     const checked=validateConversationReport(assessed.report,sources,{semantic:true});
+     const checked=validateConversationReport(assessed.report,sources,{semantic:true,objective:needsObjective});
      if(checked.length)throw new BudgetError('semantic_review_invalid',checked.join(', '));
      const proofIssues=introducedReadIssues(report,assessed.report,{sources,progress:state.researchProgress,views:new Map(request.sourceViews||state.sourceViews)});
      if(proofIssues.length&&assessed.review.status!=='research_needed')throw new BudgetError('semantic_review_invalid',proofIssues.join(', '));
@@ -84,7 +88,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
     }
    }});
   }catch(error){reason=error.code||'provider_error';if(semanticReview)semanticReview={...semanticReview,status:'pending',lastError:reason};}
-  return {...(report?{conversationReport:report}:{}),conversationSources:sources,researchedAt:new Date(now()).toISOString(),reason,
+  return {...(report?{conversationReport:report}:{}),conversationSources:sources,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),researchedAt:new Date(now()).toISOString(),reason,
    ...(state.turns.some(turn=>turn.researchOutcomeVersion)?{researchOutcomeVersion,researchSummary:state.researchSummary}:{}),
    ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues}}:{}),
    ...(semanticReview?{semanticReview}:{}),

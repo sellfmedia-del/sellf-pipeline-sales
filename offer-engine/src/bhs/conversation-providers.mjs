@@ -151,13 +151,18 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
    return {actor,scope:'Sınırlı kamuya açık örneklem; genel pazar veya performans ölçümü değildir.',
     results:(result.pages||[]).map(page=>({...page,title:actor+' · '+url,method:'extracted'}))};
   },
-  async fallbackReport({brief,sources,previous},options={}){
+  async fallbackReport({brief,sources,previous,conversation,researchSummary,researchProgress},options={}){
    if(!geminiKey)throw new BudgetError('not_configured','Yedek analist bağlantısı gerekli.');
    const model='gemini-3.8-flash';
    const observedSources=sources.map(source=>presentConversationSource(source,{purpose:brief.goals+' '+brief.needs}));
-   const contents=[{role:'user',parts:[{text:JSON.stringify({brief,sources:observedSources,previous,outputContract:finalReportSchema})}]}];
+   const legacyContents=[{role:'user',parts:[{text:JSON.stringify({brief,sources:observedSources,previous,outputContract:finalReportSchema})}]}];
    const systemInstruction={parts:[{text:analystInstruction+' Claude erişilemedi. Aynı araştırma kaydından bütün raporu üret. Araç çağrısı yapma. Yanıt yalnız outputContract alanlarını içeren tamamlanmış JSON olsun.'}]};
-   const body={systemInstruction,contents,generationConfig:{maxOutputTokens:20000,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'LOW'}}};
+   const legacyBody={systemInstruction,contents:legacyContents,generationConfig:{maxOutputTokens:20000,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'LOW'}}};
+   // Retain ownership of an old fallback even after adding full context.
+   // Neither an uncertain receipt nor a completed one authorizes repurchase.
+   const legacy=await prior('model:conversation:gemini-final:'+hash({model,body:legacyBody}));if(legacy)return legacy;
+   const contents=conversation?[{role:'user',parts:[{text:JSON.stringify({brief,sources:observedSources,previous,conversation,researchSummary,researchProgress,outputContract:finalReportSchema})}]}]:legacyContents;
+   const body={...legacyBody,contents};
    const identity={model,body},key='model:conversation:gemini-final:'+hash(identity),saved=await prior(key);if(saved)return saved;
    const count=await json('https://generativelanguage.googleapis.com/v1beta/models/'+model+':countTokens',{generateContentRequest:{model:'models/'+model,...body}},{'x-goog-api-key':geminiKey,'content-type':'application/json'},10000);
    if(!integer(count.totalTokens,1)||count.totalTokens>120000)throw new BudgetError('token_count','Yedek analist girdisi doğrulanamadı.');

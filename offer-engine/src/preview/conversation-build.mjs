@@ -6,6 +6,9 @@ import {brief,researchSources,researchSummary,completeResearchProgress} from '..
 import {applySemanticDecision} from '../bhs/conversation-semantic.mjs';
 import {hash} from '../budget/ledger.mjs';
 import {strongNarrativeReport,weakClaim,correctedClaim} from '../../test/fixtures/bhs-strong-narrative.mjs';
+import {objectiveValidationVersion} from '../bhs/conversation-objective.mjs';
+import {conversationContextVersion} from '../bhs/conversation-context.mjs';
+import {inspectConversationAcceptance} from '../bhs/conversation-acceptance.mjs';
 
 export async function buildConversationReview(output,{production=false}={}){
  const names=['conversation-review.html','conversation-review.js','conversation-review-data.json'];
@@ -21,11 +24,13 @@ export async function buildConversationReview(output,{production=false}={}){
   issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'}],
   patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim}]},{sources:researchSources});
  const fixture=assessed.report;
- const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion,researchSummary:researchSummary(),
+ const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion,researchSummary:researchSummary(),objectiveValidationVersion,
+  conversationContext:{version:conversationContextVersion,conversationId:'synthetic-preview',briefDigest:hash(brief),budgetId:'synthetic-preview-account',capKurus:5000},
   researchClosure:{version:researchClosureVersion,progress:completeResearchProgress(),issues:[]},semanticReview:{...assessed.review,synthetic:true},researchedAt:'2026-11-20T10:00:00.000Z'};
  const limited=structuredClone(saved);limited.researchClosure.progress.questions.push({id:'remaining',question:'İlgili ürünün alternatif sipariş yolu nedir?',access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:''});
  limited.researchClosure.issues=['important_public_questions_open'];
  limited.semanticReview={...limited.semanticReview,status:'pending'};
  const audit=conversationAuditResult(brief,saved),partial=conversationAuditResult(brief,limited,{reason:'research_incomplete'});
- await writeFile(output+'/offers/conversation-review-data.json',JSON.stringify({brief,audit,partial}));
+ const acceptance=inspectConversationAcceptance({brief,stored:saved,cost:{id:'synthetic-preview-account',capKurus:5000,chargedKurus:500}});
+ await writeFile(output+'/offers/conversation-review-data.json',JSON.stringify({brief,audit,partial,acceptance:{...acceptance,synthetic:true}}));
 }

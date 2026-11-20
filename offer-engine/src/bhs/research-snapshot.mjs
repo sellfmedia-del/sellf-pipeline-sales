@@ -17,7 +17,7 @@ export function createResearchSnapshot(audit,brief){
  const sourceContext=audit.researchContext||{brandName:brief.brandName,website:brief.website,briefHash:audit.researchReuse?.originalBriefHash||audit.briefHash};
  const packet={version:'sellf-evidence-v1',briefHash:sourceContext.briefHash,asOf:researchedAt,provenance:'historical-verified-quotes-only',sources:report.sources.map(s=>({url:s.url,finalUrl:s.url,title:s.title,method:s.verification.method,excerpts:[{text:s.quote}],retrievedAt:researchedAt}))};
  if(report.conversation){
-  if(validateConversationReport(report.conversation,report.conversationSources||[],{semantic:Boolean(report.semanticReview)}).length)return null;
+  if(validateConversationReport(report.conversation,report.conversationSources||[],{semantic:Boolean(report.semanticReview),objective:Boolean(report.objectiveValidationVersion)}).length)return null;
   requireGroundedResearch(report);
  }else requireGroundedResearch(groundOfferReport(report,{packet,brief,preserveQualifiedImpacts:isExpertMethodology(audit.methodologyVersion)}));
  const claimContext=Object.fromEntries(['goals','needs','services','meetingNotes'].map(key=>[key,brief[key]||'']));
@@ -35,7 +35,7 @@ export function readResearchSnapshot(snapshot){
  const brief={...payload.claimContext,brandName:payload.sourceContext.brandName,website:payload.sourceContext.website};
  let report;
  if(payload.report.conversation){
-  if(validateConversationReport(payload.report.conversation,payload.report.conversationSources||[],{semantic:Boolean(payload.report.semanticReview)}).length)throw Error('Saklanan analiz kaynağı doğrulanamadı.');
+  if(validateConversationReport(payload.report.conversation,payload.report.conversationSources||[],{semantic:Boolean(payload.report.semanticReview),objective:Boolean(payload.report.objectiveValidationVersion)}).length)throw Error('Saklanan analiz kaynağı doğrulanamadı.');
   report=requireGroundedResearch(payload.report);
  }else report=requireGroundedResearch(groundOfferReport(payload.report,{packet:payload.analysisPacket,brief,preserveQualifiedImpacts:isExpertMethodology(payload.methodologyVersion)}));
  return {...payload,report:withoutOriginal(report)};

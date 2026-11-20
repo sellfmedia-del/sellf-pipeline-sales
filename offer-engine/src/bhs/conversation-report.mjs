@@ -9,8 +9,9 @@ import {usableConversationSource,sourceReadingStatus} from './conversation-sourc
 import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
 import {semanticReviewIssues} from './conversation-semantic.mjs';
+import {objectiveReportIssues,captureSourcePassages} from './conversation-objective.mjs';
 
-export function validateConversationReport(report,sources,{semantic=false}={}){
+export function validateConversationReport(report,sources,{semantic=false,objective=false}={}){
  const issues=[];
  try{assertSchema(report,finalReportSchema);}catch{return ['report_format'];}
  if(!report.reportMarkdown.trim()||!report.summary.trim())issues.push('empty_report');
@@ -37,6 +38,7 @@ export function validateConversationReport(report,sources,{semantic=false}={}){
  }
  const used=[...citations,...report.highlights.flatMap(row=>row.sourceIds),...report.competitors.flatMap(row=>row.sourceIds)];
  if(used.some(id=>!quotes.has(id)))issues.push('citation_quote_missing');
+ if(objective)issues.push(...objectiveReportIssues(report,sources));
  return [...new Set(issues)];
 }
 
@@ -47,7 +49,10 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const retained=stored.conversationSources||stored.sources||stored.report?.conversationSources||[];
  const sourceRows=new Map(retained.map(source=>[source.id,source]));
  const semanticReview=stored.semanticReview||stored.report?.semanticReview;
- const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview)}):['report_unavailable'];
+ const objectiveValidationVersion=stored.objectiveValidationVersion||stored.report?.objectiveValidationVersion;
+ const conversationContext=stored.conversationContext||stored.report?.conversationContext;
+ const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview),objective:Boolean(objectiveValidationVersion)}):['report_unavailable'];
+ if(conversationContext?.briefDigest&&conversationContext.briefDigest!==hash(brief))issues.push('conversation_brief_changed');
  if(raw&&semanticReview)issues.push(...semanticReviewIssues(semanticReview,raw));
  const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
   researchSummary=stored.researchSummary||stored.report?.researchSummary;
@@ -77,7 +82,10 @@ export function conversationAuditResult(brief,stored,{reason}={}){
    used.add(source.id);quoteMap.set(source.id,[...(quoteMap.get(source.id)||[]),proof.quote]);
   }
  }
- const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>({...source,...sourceReadIdentity(source),text:[...new Set(quoteMap.get(source.id))].join('\n'),links:[],readingStatus:sourceReadingStatus(source)}));
+ const captured=retained.filter(source=>used.has(source.id)&&quoteMap.has(source.id)).map(source=>{
+  const original={...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)},text=[...new Set(quoteMap.get(source.id))].join('\n');
+  return objectiveValidationVersion?captureSourcePassages(original,text):{...original,text,links:[]};
+ });
  const sources=captured.map(source=>({id:source.id,url:source.url,title:source.title||source.url,
   quote:source.text,scope:source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.',
   sourceType:'secondary',publishedAt:source.publishedAt||null,period:null,
@@ -90,6 +98,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
   ...(researchClosure?{researchClosure}:{}),
   ...(semanticReview?{semanticReview}:{}),
+  ...(objectiveValidationVersion?{objectiveValidationVersion}:{}),...(conversationContext?{conversationContext}:{}),
   competitors:report.competitors.map(peer=>({id:'peer_'+hash(peer.url).slice(0,18),name:peer.name,website:peer.url,
    scaleReason:peer.reason,audienceReason:'',geographyReason:'',sourceIds:peer.sourceIds})),
   dimensions:dimensions.map(d=>({id:d.id,score:null,rationale:'Nitel değerlendirme tam BHS raporunda yer alır.',dataStatus:'partial',findingIds:findings.filter(f=>f.dimension===d.id).map(f=>f.id),comparisonCompetitorIds:[],strengths:[],gaps:[],onboardingQuestions:[]})),
