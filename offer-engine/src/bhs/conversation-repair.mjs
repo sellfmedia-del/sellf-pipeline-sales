@@ -32,9 +32,11 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
    await meter({job:{id:job.backgroundJobId||id,phase:'conversation_report_repair',briefHash:id},ledger:scoped.ledger,shortResearch:true,run:async()=>{
     const providers=getProviders({ledger:scoped.ledger,executionDeadline:now()+90000});
     const request=await ledger.once(key+':request',{id},0,async()=>{
-     const messages=[{role:'user',content:JSON.stringify({brief,sources:sources.map(({id,url,title,text,method})=>({id,url,title,text,method})),
+     // Match the normal source presentation window; the complete originals
+     // remain in the original ledger and in the repaired result's archive.
+     const messages=[{role:'user',content:JSON.stringify({brief,sources:sources.map(({id,url,title,text,method})=>({id,url,title,text:text.slice(0,12000),method,characters:text.length,moreAvailable:text.length>12000})),
       priorDecisions:state.turns.flatMap(turn=>(turn.assistant?.content||[]).filter(block=>block.type==='text').map(block=>block.text))})+
-      '\nAraştırma tamamlandı. Yeni kaynak veya araç isteme. Bu korunmuş bağlamdan doğrudan bütün Türkçe BHS raporunu finish_bhs ile yaz. highlights yalnız en önemli dört bulgu olsun. Kaynak sınırlarını açıkla; bilinmeyenleri olgu gibi yazma.'}];
+      '\nAraştırma tamamlandı. Yeni kaynak veya araç isteme. Bu korunmuş bağlamdan doğrudan bütün Türkçe BHS raporunu finish_bhs ile yaz. highlights yalnız en önemli dört bulgu olsun. Kaynak sınırlarını açıkla; moreAvailable olan kaynağın yalnız sunulan bölümünü değerlendirdiğini belirt. Sunulmayan bölümde bir bilginin bulunmadığını iddia etme; bilinmeyenleri olgu gibi yazma.'}];
      return {messages,quote:await providers.analystQuote(messages,{final:true,writingOnly:true})};
     });
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote});
