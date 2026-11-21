@@ -97,7 +97,7 @@ for(const limit of ['budget','deadline','turns'])test('the '+limit+' ceiling pre
  const {ledger,total}=memoryLedger({charged:limit==='budget'?4100:500});await seed(ledger,{progress:withGap(),count:limit==='turns'?maximumConversationTurns-2:1});
  const providers=scriptedProviders(ledger,[assistantCall('finish_bhs',researchedReport())]);providers.search=()=>assert.fail('Araştırma penceresi kapalı');
  const draft=await advanceConversation({brief,ledger,id,providers,now,...(limit==='deadline'?{deadline:now()+10000}:{})});assert.equal(draft.closed,undefined);
- const turn=await advanceConversation({brief,ledger,id,providers,now});
+ const turn=await advanceConversation({brief,ledger,id,providers,now,...(limit==='deadline'?{deadline:now()+10000}:{})});
  assert.equal(turn.closed,true);assert.equal(turn.reason,'research_incomplete');assert.equal(providers.calls[0].options.final,true);assert.ok(total()<=5000);
  const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
  assert.equal(audit.status,'ready');assert.equal(audit.data.fullReport,researchedReport().reportMarkdown);assert.equal(audit.data.quality.contentComplete,false);

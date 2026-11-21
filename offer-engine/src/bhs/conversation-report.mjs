@@ -89,7 +89,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   return objectiveValidationVersion?captureSourcePassages(original,text):{...original,text,links:[]};
  });
  const sources=captured.map(source=>({id:source.id,url:source.url,title:source.title||source.url,
-  quote:source.text,scope:source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.',
+  quote:source.text,scope:source.evidenceBoundary?.note||(source.method==='search-snippet'?'Arama sonucu alıntısı; tam sayfa okunmadı.':'Tavily veya doğrulanmış uzman araç ile okunan kamuya açık kaynak.'),
   sourceType:'secondary',publishedAt:source.publishedAt||null,period:null,
   verification:{status:source.method==='search-snippet'?'search_only':'quote_matched',method:source.method,
    scope:'retained-source-provenance',retrievedAt:source.retrievedAt}}));
