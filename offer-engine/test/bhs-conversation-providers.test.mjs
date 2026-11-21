@@ -4,7 +4,8 @@ import {createConversationProviders,modelReservation} from '../src/bhs/conversat
 import {brief,source,report,memoryLedger,assistantCall} from './fixtures/bhs-conversation.mjs';
 
 const currency=async()=>({usdTry:50,publishedAt:'2026-11-19'}),reply=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
-const config=(ledger,fetchImpl)=>({ledger,fetchImpl,researchFx:currency,anthropicKey:'synthetic-claude',tavilyKey:'synthetic-tavily',geminiKey:'synthetic-gemini',apifyToken:null});
+const config=(ledger,fetchImpl)=>({ledger,fetchImpl,researchFx:currency,anthropicKey:'synthetic-claude',tavilyKey:'synthetic-tavily',geminiKey:'synthetic-gemini',apifyToken:null,
+ navigationReader:async()=>({status:'unavailable',links:[]})});
 test('native Claude tool use carries one conversation, caches its prefix and charges actual cache usage inside its uncached reservation',async()=>{
  const {ledger,rows,total}=memoryLedger();const requests=[];
  const providers=createConversationProviders(config(ledger,async(url,init)=>{
