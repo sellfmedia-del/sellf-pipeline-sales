@@ -47,7 +47,7 @@ function archiveSource(value,now){
  return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
 }
 
-export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0}={}){
+export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0,outputTokens}={}){
  const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
@@ -62,6 +62,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
  if(state.reportDraft&&!state.turns.some(turn=>turn.assistant?.content?.some(block=>block.type==='tool_use'&&block.name==='finish_bhs')))
   addBudget('Korunmuş taslak: '+JSON.stringify(state.reportDraft));
  const budget={committedKurus:cost?.chargedKurus,capKurus:5000,finalReportReserveKurus:finalReserve,
+  ...(outputTokens?{currentTurnOutputTokens:outputTokens}:{}),
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
   research:researchStatus(state.researchProgress,state.sources),
   instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0):state.reportDraft?
@@ -98,22 +99,23 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   else{
    if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)throw new BudgetError('semantic_review_limit','Anlam denetimi sınırına ulaşıldı; taslak korundu.');
    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
-   quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft)});
+   const availableKurus=Math.max(0,5000-cost.chargedKurus);
+   quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus});
   // Fund a complete answer before authorizing further discovery. Its quote
   // uses this actual conversation's token count, not a fixed 20 TRY partition.
-   if(!finalMode&&!reviewMode&&cost.chargedKurus+quote.reservation+(quote.completionReservation??quote.finalReservation)+400>5000){
+   if(!finalMode&&!reviewMode&&(quote.funded===false||cost.chargedKurus+quote.reservation+(quote.completionReservation??quote.finalReservation)+(quote.followingReserveKurus??400)+(quote.toolReserveKurus??0)>5000)){
     if(state.reportDraft)reviewMode=true;else finalMode=true;
     messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
-    quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft)});
+    quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus});
    }
    // Only the reserve's digits change after counting; the quote already has
    // 512 tokens of input headroom. Freeze the truthful reserve with the request.
-   messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost,finalReserve:quote.completionReservation??quote.finalReservation});
+   messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost,finalReserve:quote.completionReservation??quote.finalReservation,outputTokens:quote.output});
    providerReceiptKey='model:conversation:claude-request:'+id+':'+state.index;
    await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode,reviewMode,providerReceiptKey}));
   }
   answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,receiptKey:providerReceiptKey,
-   remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+400:(quote.completionReservation??quote.finalReservation??0)+400});
+   remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+(quote.followingReserveKurus??400):(quote.completionReservation??quote.finalReservation??0)+(quote.followingReserveKurus??400)});
  }catch(error){
   providerIssue=safeIssue(error,'claude');
   if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,reason:'semantic_review_unavailable',
@@ -160,7 +162,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   sourceMap.set(source.id,source);knownUrls.add(source.url);for(const url of source.links)knownUrls.add(url);
   newSources.push(source);return [presentConversationSource(source,{purpose})];
  });
- const finalReserve=(quote?.completionReservation??quote?.finalReservation??0)+400;
+ const finalReserve=(quote?.completionReservation??quote?.finalReservation??0)+(quote?.followingReserveKurus??400);
  const toolOptions={remainingReserve:finalReserve};
  for(let index=0;index<calls.length;index++){
   const call=calls[index];let value,error;
@@ -169,6 +171,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    if(reviewMode&&call.name!=='review_bhs')throw new BudgetError(call.name==='finish_bhs'?'draft_preserved':'semantic_review_invalid',
     'Denetimde yalnız review_bhs kullan. Taslağı yeniden yazma veya doğrudan ücretli araştırma açma; gereken dar kamu sorusunu research_needed ile belirt.');
    if(call.name==='review_bhs'){
+    if(answer.stopReason==='max_tokens')throw new BudgetError('semantic_review_invalid','Denetim çıktı sınırında kesildi; taslak korundu, kalite onayı verilmedi.');
     if(!reviewMode)throw new BudgetError('research_needed','Denetimin açtığı önemli kamu sorusu hâlâ açık; önce o araştırmayı tamamla.');
     if(!reportDraft||calls.length!==1)throw new BudgetError('semantic_review_invalid','Önce korunmuş tek taslağı ayrı bir denetim yanıtında değerlendir.');
     const attempts=reviewMode?semanticReview.attempts:(state.semanticReview?.attempts||0)+1;

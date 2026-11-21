@@ -5,6 +5,7 @@ import {createApifyAdapter} from './apify-adapter.mjs';
 import {analystInstruction,conversationTools,conversationVersion,publicResearchUrl,finalReportSchema} from './conversation-contract.mjs';
 import {presentConversationSource} from './conversation-source.mjs';
 import {semanticReviewOutputTokens} from './conversation-semantic.mjs';
+import {workerInfraReservationKurus} from './job-infrastructure.mjs';
 
 export const conversationModels=Object.freeze({analyst:'claude-sonnet-5-5',helper:'gemini-3.1-flash-lite'});
 // First-party standard tariffs reviewed 2026-11-20. Quote uncached creation at
@@ -15,6 +16,45 @@ const allowance=1.2*1.03;
 export const modelReservation=(role,input,output)=>Math.ceil((input*(rates[role].cacheWrite||rates[role].input)+output*rates[role].output)/1e6*60*allowance*100)+2;
 const upper=tokens=>Math.ceil(tokens*1.05)+512;
 const clipped=value=>String(value||'').replace(/[\u0000-\u0008]/gu,'').slice(0,180);
+
+// Keep the entire 20k-token narrative allowance. Short research decisions and
+// the later scoped review have flexible envelopes; a cut-off review never
+// certifies the draft. Every
+// selected ceiling is also sent as max_tokens, priced without assuming cache
+// hits, and frozen with the existing once-only request receipt.
+export function conversationQuote(inputUpper,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity}={}){
+ if(!integer(inputUpper,1)||inputUpper>127000||availableKurus!==Infinity&&(!integer(availableKurus)||availableKurus>5000))
+  throw new BudgetError('budget_context','Konuşma maliyet hesabı geçersiz.');
+ const followingReserveKurus=review?0:final||hasDraft?workerInfraReservationKurus:2*workerInfraReservationKurus;
+ const toolReserveKurus=final||review?0:62;
+ const make=(reviewOutput,researchOutput=1800)=>{
+  const output=review?reviewOutput:writingOnly?8000:final?20000:researchOutput;
+  const reservation=modelReservation('analyst',inputUpper,output),finalReservation=modelReservation('analyst',inputUpper,20000);
+  const reviewReservation=modelReservation('analyst',inputUpper+(hasDraft||review?512:(writingOnly?8000:20000)+512),reviewOutput);
+  const completionReservation=review?0:hasDraft?reviewReservation:finalReservation+reviewReservation;
+  const requiredKurus=reservation+(review?0:final?reviewReservation:completionReservation)+followingReserveKurus+toolReserveKurus;
+  return {inputUpper,output,reservation,finalReservation,reviewReservation,completionReservation,reviewOutput,
+   followingReserveKurus,toolReserveKurus,requiredKurus,funded:requiredKurus<=availableKurus,budgetPlanVersion:'narrative-preserving-reserve-v1'};
+ };
+ const maximum=make(semanticReviewOutputTokens);if(maximum.funded)return maximum;
+ let researchOutput=1800,low=1000,high=semanticReviewOutputTokens,best=make(low);
+ if(!best.funded&&!final&&!review){
+  let lower=1000,upper=1800;
+  while(lower<=upper){const mid=Math.floor((lower+upper)/2),quote=make(1000,mid);
+   if(quote.funded){best=quote;researchOutput=mid;lower=mid+1;}else upper=mid-1;
+  }
+ }
+ if(best.funded){
+  while(low<=high){const mid=Math.floor((low+high)/2),quote=make(mid,researchOutput);
+   if(quote.funded){best=quote;low=mid+1;}else high=mid-1;
+  }
+ }
+ // If even the minimum review cannot be funded, preserve an affordable whole
+ // draft. Its pending/unavailable review remains an explicit quality failure.
+ if(final&&!best.funded&&best.reservation<=availableKurus)return {...best,reviewReservation:0,completionReservation:best.reservation,
+  followingReserveKurus:0,requiredKurus:best.reservation,funded:true,reviewDeferred:true};
+ return best;
+}
 
 export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now,researchFx,
  anthropicKey=process.env.ANTHROPIC_API_KEY,geminiKey=offerGeminiKey(),
@@ -61,17 +101,13 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   if(reservation>4500||cost.chargedKurus+reservation>limit)throw new BudgetError('budget_limit','Çağrı ve rapor rezervi kalan bütçeye sığmıyor.');
   return ledger.once(key,input,reservation,run,{settle:v=>v.accountedKurus,limitKurus:limit});
  }
- async function analystQuote(messages,{final=false,writingOnly=false,review=false,hasDraft=false}={}){
+ async function analystQuote(messages,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity}={}){
   if(!anthropicKey)throw new BudgetError('not_configured','Claude bağlantısı gerekli.');
   const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(),tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  const inputUpper=upper(counted.input_tokens),output=review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800;
-  const finalReservation=modelReservation('analyst',inputUpper,20000);
-  const reviewReservation=modelReservation('analyst',inputUpper+(hasDraft||review?512:(writingOnly?8000:20000)+512),semanticReviewOutputTokens);
-  return {inputUpper,output,reservation:modelReservation('analyst',inputUpper,output),
-   finalReservation,reviewReservation,completionReservation:review?0:hasDraft?reviewReservation:finalReservation+reviewReservation};
+  return conversationQuote(upper(counted.input_tokens),{final,writingOnly,review,hasDraft,availableKurus});
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),

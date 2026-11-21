@@ -62,7 +62,10 @@ export function researchCoverage(progress,sources){
  return {minimum:4,count:ids.length,sourceIds:ids};
 }
 export function updateResearchProgress(previous,input,{sources,views,knownUrls,readAttempts,toolIssues=[]}){
- try{assertSchema(input,researchProgressSchema);}catch{fail('Araştırma durumunun veri biçimi geçersiz.');}
+ // Candidate bookkeeping cannot erase a valid objective/question/source
+ // update. Source/answer evidence remains strict; candidates are adjudicated
+ // individually and an unread selection becomes pending, never read proof.
+ try{assertSchema({...input,candidates:[]},researchProgressSchema);}catch{fail('Araştırma durumunun veri biçimi geçersiz.');}
  if(!nonempty(input.objective))fail('Araştırmanın marka ve hedefle ilişkili amacını yaz.');
  const progress=structuredClone(previous||emptyResearchProgress()),known=new Map(sources.map(row=>[row.id,row]));
  const questions=new Map(progress.questions.map(row=>[row.id,row]));
@@ -94,11 +97,19 @@ export function updateResearchProgress(previous,input,{sources,views,knownUrls,r
  const qualified=new Set(qualifiedResearchSources(progress,sources).map(proof=>proof.sourceId));
  for(const row of input.questions)if(row.access==='public'&&row.status==='answered'&&(!row.sourceIds.length||row.sourceIds.some(id=>!qualified.has(id))))fail('Kamu sorusunun cevabını okunmuş ve ilgili olarak değerlendirilmiş kaynaklara bağla.');
  const candidates=new Map(progress.candidates.map(row=>[canonicalSourceUrl(row.url),row]));
- for(const row of input.candidates){
-  const url=publicResearchUrl(row.url);if(!url||!knownUrls.has(url)||!questions.has(row.questionId)||!nonempty(row.reason))fail('Aday için gözlemlenen URL, soru ve seçim/eleme gerekçesi gerekli.');
-  if(row.status==='selected'&&!progress.proofs.some(proof=>qualified.has(proof.sourceId)&&canonicalSourceUrl(proof.url)===canonicalSourceUrl(url)))fail('Seçilen adayın ilgili içeriği gerçekten okunmalı.');
-  candidates.set(canonicalSourceUrl(url),{...row,url});
+ const candidateIssues=[];
+ if(!Array.isArray(input.candidates))candidateIssues.push({code:'candidate_format_invalid'});
+ for(const [index,row] of (Array.isArray(input.candidates)?input.candidates:[]).entries()){
+  try{assertSchema(row,researchProgressSchema.properties.candidates.items);}catch{candidateIssues.push({index,code:'candidate_format_invalid'});continue;}
+  const url=publicResearchUrl(row.url);
+  if(!url||!knownUrls.has(url)||!questions.has(row.questionId)||!nonempty(row.reason)){
+   candidateIssues.push({index,code:'candidate_context_invalid'});continue;
+  }
+  const unread=row.status==='selected'&&!progress.proofs.some(proof=>qualified.has(proof.sourceId)&&canonicalSourceUrl(proof.url)===canonicalSourceUrl(url));
+  if(unread)candidateIssues.push({index,code:'candidate_read_pending',url,questionId:row.questionId});
+  candidates.set(canonicalSourceUrl(url),{...row,url,...(unread?{status:'pending'}:{})});
  }
+ progress.candidateIssues=candidateIssues;
  progress.candidates=[...candidates.values()];return progress;
 }
 export function researchClosureIssues(progress,sources,{report,views,includeUnavailable=false}={}){
@@ -120,5 +131,6 @@ export function researchClosureIssues(progress,sources,{report,views,includeUnav
 export function researchStatus(progress,sources){
  return {coverage:researchCoverage(progress,sources),objective:progress?.objective||'',
   questions:(progress?.questions||[]).map(({id,question,access,important,status})=>({id,question,access,important,status})),
-  candidates:progress?.candidates||[],issues:researchClosureIssues(progress,sources)};
+  candidates:progress?.candidates||[],...(progress?.candidateIssues?.length?{candidateIssues:progress.candidateIssues,
+   candidateInstruction:'Geçerli sorular ve kaynak değerlendirmeleri kaydedildi. Bildirilen adayı düzelt; pending adayın ilgili gövdesini okuyup değerlendirmeden selected kullanma.'}:{}),issues:researchClosureIssues(progress,sources)};
 }
