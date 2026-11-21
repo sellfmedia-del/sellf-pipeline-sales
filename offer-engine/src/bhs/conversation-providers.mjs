@@ -7,6 +7,7 @@ import {presentConversationSource} from './conversation-source.mjs';
 import {semanticReviewOutputTokens} from './conversation-semantic.mjs';
 import {workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {createNavigationReader,sourceNavigation,navigationVersion} from './conversation-navigation.mjs';
+import {specialistSelection,sampledSources} from './conversation-sampling.mjs';
 
 export const conversationModels=Object.freeze({analyst:'claude-sonnet-5-5',helper:'gemini-3.1-flash-lite'});
 // First-party standard tariffs reviewed 2026-11-20. Quote uncached creation at
@@ -186,12 +187,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   },
   async specialist(request,context,{remainingReserve=0}={}){
    if(!apifyToken)throw new BudgetError('not_configured','Maliyeti doğrulanmış uzman kaynak okuyucusu yok.');
-   const url=publicResearchUrl(request.url),host=url&&new URL(url).hostname.replace(/^www\./u,'');
-   const mode=request.mode,limit=request.sampleSize;
-   if(!url||!integer(limit,1)||limit>5||!['page','reviews','posts','profile'].includes(mode))throw new BudgetError('invalid_query','Dar scraper görevi gerekli.');
-   const candidates=mode==='page'?['apify/rag-web-browser']:mode==='reviews'&&host==='trendyol.com'?['shahidirfan/trendyol-reviews-scraper']:
-    mode==='reviews'&&host==='sikayetvar.com'?['tamgadev/sikayetvar-scraper']:host==='instagram.com'?
-     [mode==='profile'?'apify/instagram-profile-scraper':mode==='posts'?'apify/instagram-scraper':'apify/instagram-comment-scraper']:[];
+   const {url,mode,limit,candidates}=specialistSelection(request,context.brief);
    const ceiling=5000-remainingReserve;
    const capped={...ledger,quoteReservation:amount=>amount?Math.ceil(amount*1.03)+2:0,
     status:async()=>({...await ledger.status(),capKurus:ceiling}),
@@ -201,11 +197,12 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
    if(!actor)throw new BudgetError('actor_limit_unverified','Bu hedef için uygun ve maliyeti doğrulanmış scraper yok.');
    const packet={sources:context.sources.map(source=>({url:source.url,finalUrl:source.url,
     technicalSignals:{navigation:(source.links||[]).map(url=>({url}))}}))};
-   const result=await adapter.enrich({actor,url,purpose:request.purpose,mode:mode==='page'?'default':mode,
-    maxResults:mode==='page'||mode==='profile'?1:limit,exactScope:true},{brief:context.brief,packet,searches:[],scrapes:[]});
+   const result=await adapter.enrich({actor,url,purpose:request.purpose,mode:['page','product','technical'].includes(mode)?'default':mode,
+    maxResults:limit,exactScope:true,...(request.since?{since:request.since}:{})},{brief:context.brief,packet,searches:[],scrapes:[]});
    if(result.status!=='complete')throw new BudgetError(result.reason||'actor_failed','Uzman kaynak okuması tamamlanmadı.');
+   const results=sampledSources(result.pages||[],request,actor,result.retrievedAt);
    return {actor,scope:'Sınırlı kamuya açık örneklem; genel pazar veya performans ölçümü değildir.',
-    results:(result.pages||[]).map(page=>({...page,title:actor+' · '+url,method:'extracted'}))};
+    sample:{mode,requestedRecords:limit,returnedRecords:results.reduce((n,row)=>n+row.sample.sourceRecords,0),...(request.since?{since:request.since}:{})},results};
   },
   async fallbackReport({brief,sources,previous,conversation,researchSummary,researchProgress},options={}){
    if(!geminiKey)throw new BudgetError('not_configured','Yedek analist bağlantısı gerekli.');

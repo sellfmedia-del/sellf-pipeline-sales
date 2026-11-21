@@ -1,8 +1,10 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
-import {conversationKeys,conversationVersion,publicResearchUrl,sourceId} from './conversation-contract.mjs';
+import {conversationKeys,conversationVersion,publicResearchUrl,sourceId,researchHandoffSchema} from './conversation-contract.mjs';
 import {validateConversationReport} from './conversation-report.mjs';
 import {presentConversationSource,usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
-import {researchOutcomeVersion,researchOutcomeIssues,researchReportIssues} from './conversation-research.mjs';
+import {researchOutcomeVersion,researchOutcomeIssues,researchReportIssues,researchOutcomeStatus,marketResearchGuidance} from './conversation-research.mjs';
+import {samplingGuidance} from './conversation-sampling.mjs';
+import {assertSchema} from './schema.mjs';
 import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateResearchProgress,researchClosureIssues,researchStatus,sourceReadIdentity} from './conversation-progress.mjs';
 import {semanticReviewVersion,maximumSemanticReviews,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 import {objectiveValidationVersion} from './conversation-objective.mjs';
@@ -47,12 +49,12 @@ function archiveSource(value,now){
  const source={id:sourceId(url),url,title:String(value.title||url),text:value.text,method:value.method,
   links:navigation.links.map(row=>row.url),navigation:navigation.links,navigationVersion,navigationTruncated:navigation.truncated,
   ...(value.navigationStatus?{navigationStatus:value.navigationStatus}:{}),...(value.navigationIssue?{navigationIssue:value.navigationIssue}:{}),
-  ...(value.navigationFinalUrl?{navigationFinalUrl:value.navigationFinalUrl}:{}),retrievedAt:new Date(now).toISOString()};
+  ...(value.navigationFinalUrl?{navigationFinalUrl:value.navigationFinalUrl}:{}),...(value.sample?{sample:value.sample}:{}),retrievedAt:new Date(now).toISOString()};
  return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
 }
 
 export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0,outputTokens}={}){
- const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance}];
+ const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
    const last=messages.at(-1);last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
@@ -69,6 +71,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
   ...(outputTokens?{currentTurnOutputTokens:outputTokens}:{}),
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
   research:researchStatus(state.researchProgress,state.sources),
+  outcomes:researchOutcomeStatus(state.researchSummary,state.sources,brief,state.researchProgress),
   instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0):state.reportDraft?
    'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
    forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor ve anlam denetimi rezervini koru.'};
@@ -86,7 +89,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  if(state.index>=maximumConversationTurns)throw new BudgetError('conversation_limit','Analiz tur sınırına ulaştı.');
  const cost=await ledger.status();
  const hardFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000;
- const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
+ const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress}).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
  let reviewMode=Boolean(state.reportDraft)&&(state.semanticReview?.status!=='research_needed'||closureReady||hardFinish);
  let messages,quote,answer,providerReceiptKey,finalMode=forceFinish&&!state.reportDraft,providerIssue;
@@ -194,7 +197,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      if(hardFinish||attempts>=maximumSemanticReviews){report=reportDraft;terminalReason='semantic_research_needed';}
      value={accepted:true,draftPreserved:true,semanticReview,instruction:'Taslağı koru; yalnız belirtilen kamu sorusunu araştır ve ardından hedefli denetime dön.'};
     }else{
-     researchIssues=researchReportIssues(reportDraft,researchSummary,[...sourceMap.values()],brief);
+     researchIssues=researchReportIssues(reportDraft,researchSummary,[...sourceMap.values()],brief,{progress:researchProgress});
      closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:reportDraft,views:state.sourceViews,includeUnavailable:true});
      report=reportDraft;if(researchIssues.length||closureIssues.length)terminalReason='research_incomplete';
      value={accepted:true,semanticReview};
@@ -205,14 +208,17 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      readAttempts:state.readAttempts,toolIssues:state.toolIssues});
     value={accepted:true,...researchStatus(researchProgress,[...sourceMap.values()])};
    }else if(call.name==='begin_report'){
-    const missing=[...researchOutcomeIssues(call.input,[...sourceMap.values()],brief),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    // A missing peer comparison cannot erase valid market results. Keep the
+    // typed handoff in the same context while completion remains blocked.
+    try{assertSchema(call.input,researchHandoffSchema);researchSummary=call.input;}catch{/* Malformed input remains visible in its original tool turn. */}
+    const missing=[...researchOutcomeIssues(call.input,[...sourceMap.values()],brief,{progress:researchProgress}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(typeof call.input.reason!=='string'||!call.input.reason.trim())missing.push('research_completion_reason_missing');
     if(calls.some(other=>!['begin_report','review_research'].includes(other.name)))missing.push('research_observations_pending');
     if(missing.length&&!finalMode)throw new BudgetError('research_needed',missing.join(', '));
     researchSummary=call.input;
     finishRequested=true;value={accepted:true,instruction:'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
    }else if(call.name==='finish_bhs'&&!finalMode&&!answer.fallback){
-    const missing=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    const missing=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(missing.length)throw new BudgetError('research_needed',missing.join(', '));
     finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){
@@ -221,7 +227,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     if(!unusable)reportCandidate=call.input;
     if(unusable)throw new BudgetError('report_validation',issues.join(', '));
     if(calls.length!==1)throw new BudgetError('report_validation','Araştırma sonuçlarını aldıktan sonra raporu ayrı bir yanıtta tamamla.');
-    researchIssues=researchReportIssues(call.input,researchSummary,[...sourceMap.values()],brief);
+    researchIssues=researchReportIssues(call.input,researchSummary,[...sourceMap.values()],brief,{progress:researchProgress});
     closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:call.input,views:answer.fallback?fallbackViews:state.sourceViews,includeUnavailable:true});
     reportDraft=call.input;semanticReview={version:semanticReviewVersion,status:'pending',draftDigest:hash(reportDraft),reportDigest:hash(reportDraft),attempts:0,mechanicalIssues:issues};
     value={accepted:true,draftSaved:true,reviewRequired:true,draftDigest:hash(reportDraft),issues,
@@ -254,14 +260,14 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    }else if(call.name==='specialist_read'){
     const url=publicResearchUrl(call.input.url);
     if(!url||!knownUrls.has(url))throw new BudgetError('unknown_source','Scraper için gözlemlenen kaynak gerekli.');
-    if(call.input.mode==='page'&&![...state.readAttempts,...readAttempts].includes(url))throw new BudgetError('source_not_tried','Sayfa için önce Tavily okumasını dene.');
+    if(['page','product'].includes(call.input.mode)&&![...state.readAttempts,...readAttempts].includes(url))throw new BudgetError('source_not_tried','Sayfa veya ürün için önce Tavily okumasını dene.');
     if(!providers.specialist)throw new BudgetError('not_configured','Uygun maliyeti doğrulanmış scraper bu ortamda yok.');
     const extracted=await providers.specialist(call.input,{brief,sources:[...sourceMap.values()]},toolOptions);
     const {results:extractedRows,...details}=extracted;
     value={...details,sources:add(extractedRows||[],call.input.purpose)};
    }else throw new BudgetError('unknown_tool','Bilinmeyen araştırma aracı.');
   }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed','research_progress_invalid','semantic_review_invalid','draft_preserved'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
-    ...(['research_needed','research_progress_invalid','budget_limit','input_budget'].includes(failure.code)?{research:researchStatus(researchProgress,[...sourceMap.values()]),instruction:'Önemli public soruyu veya ilgili kaynak okumasını tamamla; review_research ile gerçek ilerlemeyi kaydet. Bir aracın reddi tüm araştırmayı bitirmez; daha dar veya ücretsiz arşiv okumasını değerlendir. Müşteriden alınacak iç bilgiler araştırmayı kilitlemez. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
+    ...(['research_needed','research_progress_invalid','budget_limit','input_budget'].includes(failure.code)?{research:researchStatus(researchProgress,[...sourceMap.values()]),outcomes:researchOutcomeStatus(researchSummary,[...sourceMap.values()],brief,researchProgress),instruction:'Önemli public soruyu veya ilgili kaynak okumasını tamamla; review_research ile gerçek ilerlemeyi kaydet. Bir aracın reddi tüm araştırmayı bitirmez; daha dar veya ücretsiz arşiv okumasını değerlendir. Müşteriden alınacak iç bilgiler araştırmayı kilitlemez. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
    if(error.code==='report_validation'&&(answer.fallback||state.turns.some(turn=>turn.toolIssues?.some(issue=>issue.code==='report_validation'))))terminalReason='report_review_required';}
   results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(value),...(error?{is_error:true}:{})});
  }
@@ -303,14 +309,15 @@ export async function persistConversationResult({brief,ledger,id,reason,now=Date
  const conversationContext=await ensureConversationContext({brief,ledger,id});
  const existing=await readConversationResult(ledger,id);if(complete(existing))return existing.value;
  const state=await readConversation(ledger,id);
+ const outcomeVersion=state.turns.findLast(turn=>turn.researchOutcomeVersion)?.researchOutcomeVersion;
  const conversationReport=state.final?.conversationReport||state.reportDraft||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate;
  const result={conversationReport,conversationSources:state.sources,conversationContext,
   ...(state.turns.some(turn=>turn.objectiveValidationVersion)?{objectiveValidationVersion}:{}),
   ...(state.turns.some(turn=>turn.semanticReviewVersion)?{semanticReview:state.semanticReview||{version:semanticReviewVersion,status:'pending'}}:{}),
   ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,
    issues:state.final?.closureIssues||researchClosureIssues(state.researchProgress,state.sources,{report:conversationReport,views:state.sourceViews,includeUnavailable:true})}}:{}),
-  ...(state.turns.some(turn=>turn.researchOutcomeVersion)?{researchOutcomeVersion,researchSummary:state.researchSummary,
-   researchIssues:state.final?.researchIssues||researchOutcomeIssues(state.researchSummary,state.sources,brief)}:{}),
+  ...(outcomeVersion?{researchOutcomeVersion:outcomeVersion,researchSummary:state.researchSummary,
+   researchIssues:state.final?.researchIssues||researchOutcomeIssues(state.researchSummary,state.sources,brief,outcomeVersion===researchOutcomeVersion?{progress:state.researchProgress}:{})}:{}),
   toolIssues:state.toolIssues,reason:reason||state.final?.reason,researchedAt:new Date(now()).toISOString(),
   researchContext:{brief,briefHash:hash(brief)}};
  // Result transport is free and can be reconstructed without replaying a

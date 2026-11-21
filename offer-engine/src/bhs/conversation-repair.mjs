@@ -32,6 +32,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
  if(existing?.state==='complete')return existing.value;
  if(existing)throw new BudgetError('budget_pending','Kayıtlı rapor tamamlama isteği yeniden satın alınmadı.');
  const state=await readConversation(ledger,id),sources=state.sources.filter(usableConversationSource);
+ const outcomeVersion=state.turns.findLast(turn=>turn.researchOutcomeVersion)?.researchOutcomeVersion;
  if(!sources.length)throw new BudgetError('recovery_unavailable','Rapor için korunmuş okunabilir kaynak yok.');
  const scoped=reportRepairLedger(ledger,job.researchRunId);
  const needsSemantic=state.turns.some(turn=>turn.semanticReviewVersion);
@@ -62,7 +63,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
     if(!issues.includes('report_format')&&!issues.includes('report_size')&&typeof candidate?.reportMarkdown==='string'&&candidate.reportMarkdown.trim())report=candidate;
     if(needsSemantic&&report){
      await ledger.once(key+':semantic-draft',{draftDigest:hash(report)},0,async()=>({conversationReport:report,conversationSources:sources,semanticReview,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),reason:'semantic_review_unavailable',
-      researchOutcomeVersion,researchSummary:state.researchSummary,researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues},repair:{kind:'retained-source-writing',semanticDraft:true,newResearchCalls:0}}));
+      ...(outcomeVersion?{researchOutcomeVersion:outcomeVersion}:{}),researchSummary:state.researchSummary,researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues},repair:{kind:'retained-source-writing',semanticDraft:true,newResearchCalls:0}}));
      const reviewRequest=await ledger.once(key+':semantic-request',{draftDigest:hash(report)},0,async()=>{
       const assistant={role:'assistant',content:(answer.content||[]).filter(block=>['text','tool_use','thinking','redacted_thinking'].includes(block.type))};
       const results=(answer.content||[]).filter(block=>block.type==='tool_use').map(block=>({type:'tool_result',tool_use_id:block.id,content:JSON.stringify({draftSaved:true,issues})}));
@@ -81,7 +82,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
      if(semanticReview.status!=='approved')reason='semantic_research_needed';
     }
     if(issues.length)reason='report_review_required';
-    else if(state.turns.some(turn=>turn.researchOutcomeVersion)&&researchReportIssues(report,state.researchSummary,sources,brief).length)reason='research_incomplete';
+    else if(outcomeVersion&&researchReportIssues(report,state.researchSummary,sources,brief,outcomeVersion===researchOutcomeVersion?{progress:state.researchProgress}:{}).length)reason='research_incomplete';
     if(state.turns.some(turn=>turn.researchClosureVersion)){
      closureIssues=researchClosureIssues(state.researchProgress,sources,{report,views:new Map(request.sourceViews||state.sourceViews),includeUnavailable:true});
      if(closureIssues.length)reason||='research_incomplete';
@@ -89,7 +90,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
    }});
   }catch(error){reason=error.code||'provider_error';if(semanticReview)semanticReview={...semanticReview,status:'pending',lastError:reason};}
   return {...(report?{conversationReport:report}:{}),conversationSources:sources,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),researchedAt:new Date(now()).toISOString(),reason,
-   ...(state.turns.some(turn=>turn.researchOutcomeVersion)?{researchOutcomeVersion,researchSummary:state.researchSummary}:{}),
+   ...(outcomeVersion?{researchOutcomeVersion:outcomeVersion,researchSummary:state.researchSummary}:{}),
    ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues}}:{}),
    ...(semanticReview?{semanticReview}:{}),
    toolIssues:issues.map(code=>({tool:'report',code})),researchContext:{brief},
