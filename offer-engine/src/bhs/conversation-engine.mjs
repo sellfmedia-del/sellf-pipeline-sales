@@ -7,6 +7,7 @@ import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateRe
 import {semanticReviewVersion,maximumSemanticReviews,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
+import {sourceNavigation,navigationVersion,existingAssetGuidance,navigationGuidance} from './conversation-navigation.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -24,6 +25,7 @@ export async function readConversation(ledger,id){
  const sources=new Map(),knownUrls=new Set(),readAttempts=new Set(),toolIssues=[],sourceViews=new Map();
  for(const turn of turns){
   for(const source of turn.sources||[]){sources.set(source.id,{...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)});knownUrls.add(source.url);
+   if(publicResearchUrl(source.navigationFinalUrl))knownUrls.add(source.navigationFinalUrl);
    for(const url of source.links||[])knownUrls.add(url);}
   for(const url of turn.readAttempts||[])readAttempts.add(url);
   toolIssues.push(...(turn.toolIssues||[]));
@@ -41,14 +43,16 @@ export async function readConversation(ledger,id){
 function archiveSource(value,now){
  const url=publicResearchUrl(value.url);
  if(!url||typeof value.text!=='string')return null;
- const links=[...value.text.matchAll(/\]\((https?:\/\/[^\s)]+)\)/gu)].map(m=>publicResearchUrl(m[1])).filter(Boolean);
+ const navigation=sourceNavigation({...value,url});
  const source={id:sourceId(url),url,title:String(value.title||url),text:value.text,method:value.method,
-  links:[...new Set(links)],retrievedAt:new Date(now).toISOString()};
+  links:navigation.links.map(row=>row.url),navigation:navigation.links,navigationVersion,navigationTruncated:navigation.truncated,
+  ...(value.navigationStatus?{navigationStatus:value.navigationStatus}:{}),...(value.navigationIssue?{navigationIssue:value.navigationIssue}:{}),
+  ...(value.navigationFinalUrl?{navigationFinalUrl:value.navigationFinalUrl}:{}),retrievedAt:new Date(now).toISOString()};
  return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
 }
 
 export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0,outputTokens}={}){
- const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)}];
+ const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
    const last=messages.at(-1);last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
@@ -160,6 +164,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   const previous=sourceMap.get(source.id);
   if(previous&&previous.method!=='search-snippet'&&source.method==='search-snippet')return [presentConversationSource(previous,{purpose})];
   sourceMap.set(source.id,source);knownUrls.add(source.url);for(const url of source.links)knownUrls.add(url);
+  if(publicResearchUrl(source.navigationFinalUrl))knownUrls.add(source.navigationFinalUrl);
   newSources.push(source);return [presentConversationSource(source,{purpose})];
  });
  const finalReserve=(quote?.completionReservation??quote?.finalReservation??0)+(quote?.followingReserveKurus??400);
@@ -240,7 +245,9 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    }else if(call.name==='read_saved_source'){
     const source=sourceMap.get(call.input.sourceId),offset=call.input.offset;
     if(!source||!Number.isSafeInteger(offset)||offset<0)throw new BudgetError('unknown_source','Arşiv kaynağı veya metin aralığı geçersiz.');
-    value={...presentConversationSource(source,{offset}),offset};
+     const linkOffset=call.input.linkOffset??0;
+     if(!Number.isSafeInteger(linkOffset)||linkOffset<0)throw new BudgetError('unknown_source','Bağlantı aralığı geçersiz.');
+     value={...presentConversationSource(source,{offset,linkOffset}),offset};
    }else if(call.name==='consult_gemini'){
     if(!Array.isArray(call.input.sourceIds)||!call.input.sourceIds.length||call.input.sourceIds.some(id=>!sourceMap.has(id)))throw new BudgetError('unknown_source','Gemini için bilinen kaynakları seç.');
     value=await providers.consult({question:call.input.question,sources:call.input.sourceIds.map(id=>sourceMap.get(id))},toolOptions);

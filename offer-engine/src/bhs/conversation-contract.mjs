@@ -41,7 +41,7 @@ export const conversationTools=Object.freeze([
  {name:'read_pages',description:'Gözlemlenen veya briefte verilen herkese açık URLleri Tavily Extract ile oku. Aynı kaynağı yeniden satın alma; okunan kaynaklar başka sorular için de kullanılabilir.',
   input_schema:object({urls:{type:'array',items:string,minItems:1,maxItems:5},purpose:string})},
  {name:'read_saved_source',description:'Arşivdeki kaynağın başka bölümünü sıfır sağlayıcı maliyetiyle oku. Metin daha önce kesilerek sunulduysa kalanını al.',
-  input_schema:object({sourceId:string,offset:{type:'integer',minimum:0}})},
+  input_schema:{...object({sourceId:string,offset:{type:'integer',minimum:0}}),properties:{sourceId:string,offset:{type:'integer',minimum:0},linkOffset:{type:'integer',minimum:0}}}},
  {name:'consult_gemini',description:'Yalnız ihtiyaç olduğunda, bilinen kaynaklardan veri çıkarmak veya dar bir karşılaştırma için Gemini yardımını iste. Araştırma ve son rapor kararını kendin ver.',
   input_schema:object({question:string,sourceIds:strings})},
  {name:'specialist_read',description:'Tavily ile okunamayan gözlemlenmiş sayfa veya gerekli sosyal/yorum örneklemi için, yalnız doğrulanmış maliyet sınırı olan uygun scraperı kullan. Sayfa okuma için önce Tavily denemesi gerekli.',
