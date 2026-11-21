@@ -1,6 +1,7 @@
 // Presentation is free and deterministic. The original text remains in the
 // source receipt/archive; offsets always refer to that original, not this view.
 import {sourceNavigation,navigationWindowSize} from './conversation-navigation.mjs';
+import {sourceEvidenceBoundary} from './conversation-evidence.mjs';
 export const sourceWindowCharacters=12000;
 const fold=value=>String(value||'').toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replaceAll('ı','i');
 const navigation=/^(?:home|homepage|menu|products?|shop|cart|contact(?: us)?|about(?: us)?|login|sign in|privacy|cookies?|terms|anasayfa|ana sayfa|urunler|magaza|sepet|iletisim|hakkimizda|giris|gizlilik|cerezler)$/u;
@@ -35,7 +36,7 @@ export function sourceReadingStatus(source){
 export const usableConversationSource=source=>Boolean(source)&&sourceReadingStatus(source)==='body_available';
 export const conversationSourceBody=source=>passages(String(source.text||'')).map(row=>clean(source.text.slice(row.start,row.end))).join(' ');
 
-export function presentConversationSource(source,{purpose='',offset,linkOffset=0,legacy=false}={}){
+export function presentConversationSource(source,{purpose='',offset,linkOffset=0,legacy=false,boundaries=true}={}){
  const original=String(source.text||''),status=sourceReadingStatus(source);
  const body=passages(original);let ranges;
  if(Number.isSafeInteger(offset)&&offset>=0)ranges=offset<original.length?[{start:offset,end:Math.min(original.length,offset+sourceWindowCharacters)}]:[];
@@ -74,5 +75,6 @@ export function presentConversationSource(source,{purpose='',offset,linkOffset=0
   navigationCount:discovered.links.length,navigationMoreAvailable:nextLinkOffset<discovered.links.length,
   nextLinkOffset:nextLinkOffset<discovered.links.length?nextLinkOffset:null,navigationTruncated:discovered.truncated,
   ...(source.navigationStatus?{navigationStatus:source.navigationStatus}:{}),...(source.navigationIssue?{navigationIssue:source.navigationIssue}:{}),
-  ...(source.navigationFinalUrl?{navigationFinalUrl:source.navigationFinalUrl}:{}),...(source.sample?{sample:source.sample}:{})};
+  ...(source.navigationFinalUrl?{navigationFinalUrl:source.navigationFinalUrl}:{}),...(source.sample?{sample:source.sample}:{}),
+  ...(boundaries?{evidenceBoundary:sourceEvidenceBoundary(source,status)}:{})};
 }

@@ -6,10 +6,13 @@ import {researchOutcomeVersion,researchOutcomeIssues,researchReportIssues,resear
 import {samplingGuidance} from './conversation-sampling.mjs';
 import {assertSchema} from './schema.mjs';
 import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateResearchProgress,researchClosureIssues,researchStatus,sourceReadIdentity} from './conversation-progress.mjs';
-import {semanticReviewVersion,maximumSemanticReviews,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
+import {semanticReviewVersion,semanticReviewOutputTokens,maximumSemanticReviews,semanticReviewInstruction,semanticResearchReady,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
 import {sourceNavigation,navigationVersion,existingAssetGuidance,navigationGuidance} from './conversation-navigation.mjs';
+import {evidenceGuidance,sourceEvidenceBoundary,failedEvidenceBoundary} from './conversation-evidence.mjs';
+import {conversationQuote} from './conversation-providers.mjs';
+import {workerInfraReservationKurus} from './job-infrastructure.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -50,11 +53,12 @@ function archiveSource(value,now){
   links:navigation.links.map(row=>row.url),navigation:navigation.links,navigationVersion,navigationTruncated:navigation.truncated,
   ...(value.navigationStatus?{navigationStatus:value.navigationStatus}:{}),...(value.navigationIssue?{navigationIssue:value.navigationIssue}:{}),
   ...(value.navigationFinalUrl?{navigationFinalUrl:value.navigationFinalUrl}:{}),...(value.sample?{sample:value.sample}:{}),retrievedAt:new Date(now).toISOString()};
- return {...source,...sourceReadIdentity(source),readingStatus:sourceReadingStatus(source)};
+ const readingStatus=sourceReadingStatus(source);
+ return {...source,...sourceReadIdentity(source),readingStatus,evidenceBoundary:sourceEvidenceBoundary(source,readingStatus)};
 }
 
 export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0,outputTokens}={}){
- const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance}];
+ const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance+'\n'+evidenceGuidance}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
    const last=messages.at(-1);last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
@@ -72,8 +76,9 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
   research:researchStatus(state.researchProgress,state.sources),
   outcomes:researchOutcomeStatus(state.researchSummary,state.sources,brief,state.researchProgress),
-  instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0):state.reportDraft?
-   'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
+  instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0,{researchIssues:[...researchOutcomeIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress}),...researchClosureIssues(state.researchProgress,state.sources)],questions:state.researchProgress?.questions||[]}):state.reportDraft?
+   state.semanticReview?.researchHold?'Taslağı koru. Açık kamu sorusu/okunacak aday veya pazar-rakip sonucu hâlâ eksik. Gerçek dar soruyu sen seç; gerekirse review_research ile kaydet, ilgili mevcut gövdeyi ücretsiz kullan veya uygun kaynağı oku. Geçerli sonuçları silmeden begin_report ile eksik pazar/rakip sonucunu güncelle; sonra review_bhs ile yalnız etkilenen kısmı düzelt. Yeni finish_bhs yazma.':
+    'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
    forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor ve anlam denetimi rezervini koru.'};
  addBudget('Sistem bütçe bilgisi: '+JSON.stringify(budget));
  return messages;
@@ -91,7 +96,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  const hardFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000;
  const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress}).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
- let reviewMode=Boolean(state.reportDraft)&&(state.semanticReview?.status!=='research_needed'||closureReady||hardFinish);
+ let reviewMode=Boolean(state.reportDraft)&&(semanticResearchReady(state.semanticReview,state.researchProgress,closureReady)||hardFinish);
  let messages,quote,answer,providerReceiptKey,finalMode=forceFinish&&!state.reportDraft,providerIssue;
  const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews,fallbackObservations=[];
  try{
@@ -189,13 +194,26 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     if(mechanical.length&&assessed.review.status!=='research_needed')throw new BudgetError('semantic_review_invalid',mechanical.join(', '));
     const proofIssues=introducedReadIssues(reportDraft,assessed.report,{sources:[...sourceMap.values()],progress:researchProgress,views:state.sourceViews});
     if(proofIssues.length&&assessed.review.status!=='research_needed')throw new BudgetError('semantic_review_invalid',proofIssues.join(', '));
-    semanticReview=assessed.review;reportDraft=assessed.report;
+    semanticReview={...assessed.review,researchCycles:state.semanticReview?.researchCycles||0};reportDraft=assessed.report;
+    // A mechanically incomplete research handoff is not completed by an
+    // honest approval. One affordable reopening can preserve this draft and
+    // the remaining scoped review, without another full-report generation.
+    const gaps=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    if(semanticReview.status==='approved'&&gaps.length&&!hardFinish&&state.index<=maximumConversationTurns-6&&attempts<maximumSemanticReviews&&!semanticReview.researchCycles){
+     const balance=await ledger.status(),availableKurus=Math.max(0,5000-balance.chargedKurus-workerInfraReservationKurus);
+     let affordable=false;
+     try{affordable=conversationQuote(quote.inputUpper+(answer.usage?.output_tokens||quote.output||semanticReviewOutputTokens)+2048,
+      {hasDraft:true,availableKurus}).funded;}catch{/* Real admission still re-counts and checks the same ledger on the next turn. */}
+     if(affordable)semanticReview={...semanticReview,status:'research_needed',researchCycles:1,researchHold:{reason:'objective_research_gaps',issues:[...new Set(gaps)],approvalRationale:assessed.review.rationale}};
+    }
     if(semanticReview.status==='research_needed'){
      const questions=new Map(researchProgress.questions.map(row=>[row.id,row]));
-     for(const issue of semanticReview.issues)questions.set('semantic_'+issue.id,{id:'semantic_'+issue.id,question:issue.question,access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:issue.reason});
+     if(!semanticReview.researchHold){semanticReview.researchCycles++;for(const issue of semanticReview.issues)questions.set('semantic_'+issue.id,{id:'semantic_'+issue.id,question:issue.question,access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:issue.reason});}
      researchProgress={...researchProgress,questions:[...questions.values()]};finishRequested=false;
      if(hardFinish||attempts>=maximumSemanticReviews){report=reportDraft;terminalReason='semantic_research_needed';}
-     value={accepted:true,draftPreserved:true,semanticReview,instruction:'Taslağı koru; yalnız belirtilen kamu sorusunu araştır ve ardından hedefli denetime dön.'};
+     value={accepted:true,draftPreserved:true,semanticReview,instruction:semanticReview.researchHold?
+      'Taslağı ve geçerli sonuçları koru. İşaretli araştırma açığı için dar soruyu sen seç; mevcut gövdeyi ücretsiz kullan veya ilgili kaynağı oku. review_research/begin_report ile eksik sonucu tamamlayıp hedefli review_bhs denetimine dön.':
+      'Taslağı koru; yalnız belirtilen kamu sorusunu araştır ve ardından hedefli denetime dön.'};
     }else{
      researchIssues=researchReportIssues(reportDraft,researchSummary,[...sourceMap.values()],brief,{progress:researchProgress});
      closureIssues=researchClosureIssues(researchProgress,[...sourceMap.values()],{report:reportDraft,views:state.sourceViews,includeUnavailable:true});
@@ -216,7 +234,8 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     if(calls.some(other=>!['begin_report','review_research'].includes(other.name)))missing.push('research_observations_pending');
     if(missing.length&&!finalMode)throw new BudgetError('research_needed',missing.join(', '));
     researchSummary=call.input;
-    finishRequested=true;value={accepted:true,instruction:'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
+    finishRequested=true;value={accepted:true,instruction:reportDraft?'Araştırma sonucu kaydedildi. Korunmuş taslağı yeniden yazmadan review_bhs ile yalnız etkilenen kısmı denetle ve düzelt.':
+     'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
    }else if(call.name==='finish_bhs'&&!finalMode&&!answer.fallback){
     const missing=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(missing.length)throw new BudgetError('research_needed',missing.join(', '));
@@ -247,7 +266,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     }
     readAttempts.push(...fresh);
     const extracted=fresh.length?await providers.extract({...call.input,urls:fresh},toolOptions):{results:[],failures:[]};
-    value={sources:[...cached,...add(extracted.results,call.input.purpose)],failures:extracted.failures};
+    value={sources:[...cached,...add(extracted.results,call.input.purpose)],failures:(extracted.failures||[]).map(failure=>({...failure,evidenceBoundary:failedEvidenceBoundary}))};
    }else if(call.name==='read_saved_source'){
     const source=sourceMap.get(call.input.sourceId),offset=call.input.offset;
     if(!source||!Number.isSafeInteger(offset)||offset<0)throw new BudgetError('unknown_source','Arşiv kaynağı veya metin aralığı geçersiz.');
@@ -266,7 +285,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     const {results:extractedRows,...details}=extracted;
     value={...details,sources:add(extractedRows||[],call.input.purpose)};
    }else throw new BudgetError('unknown_tool','Bilinmeyen araştırma aracı.');
-  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,message:['report_validation','research_needed','research_progress_invalid','semantic_review_invalid','draft_preserved'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
+  }catch(failure){error=safeIssue(failure,call.name);toolIssues.push(error);value={...error,...(['search_web','read_pages','specialist_read','consult_gemini'].includes(call.name)?{evidenceBoundary:failedEvidenceBoundary}:{}),message:['report_validation','research_needed','research_progress_invalid','semantic_review_invalid','draft_preserved'].includes(failure.code)?failure.message:'Bu emir tamamlanmadı. Başka uygun kaynak veya mevcut bilgilerle devam et.',
     ...(['research_needed','research_progress_invalid','budget_limit','input_budget'].includes(failure.code)?{research:researchStatus(researchProgress,[...sourceMap.values()]),outcomes:researchOutcomeStatus(researchSummary,[...sourceMap.values()],brief,researchProgress),instruction:'Önemli public soruyu veya ilgili kaynak okumasını tamamla; review_research ile gerçek ilerlemeyi kaydet. Bir aracın reddi tüm araştırmayı bitirmez; daha dar veya ücretsiz arşiv okumasını değerlendir. Müşteriden alınacak iç bilgiler araştırmayı kilitlemez. Bütçe/süre sınırında eldeki rapor korunacak.'}:{})};
    if(error.code==='report_validation'&&(answer.fallback||state.turns.some(turn=>turn.toolIssues?.some(issue=>issue.code==='report_validation'))))terminalReason='report_review_required';}
   results.push({type:'tool_result',tool_use_id:call.id,content:JSON.stringify(value),...(error?{is_error:true}:{})});
