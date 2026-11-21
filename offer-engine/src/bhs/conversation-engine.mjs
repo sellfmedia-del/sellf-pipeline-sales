@@ -13,6 +13,7 @@ import {sourceNavigation,navigationVersion,existingAssetGuidance,navigationGuida
 import {evidenceGuidance,sourceEvidenceBoundary,failedEvidenceBoundary} from './conversation-evidence.mjs';
 import {conversationQuote} from './conversation-providers.mjs';
 import {workerInfraReservationKurus} from './job-infrastructure.mjs';
+import {projectModelBrief,protectConversationMessages,protectModelValue,ensureModelInputContext,crmContextGuidance} from './conversation-input.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -58,7 +59,9 @@ function archiveSource(value,now){
 }
 
 export function conversationMessages(brief,state,{forceFinish=false,review=false,cost,finalReserve=0,outputTokens}={}){
- const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance+'\n'+evidenceGuidance}];
+ const projection=projectModelBrief(brief);
+ const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(projection.brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance+'\n'+evidenceGuidance+'\n'+crmContextGuidance+
+  (projection.boundary.redactions||projection.boundary.crmExcluded?'\nModel girdi sınırı: '+JSON.stringify(projection.boundary):'')}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
    const last=messages.at(-1);last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
@@ -81,7 +84,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
     'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
    forceFinish?'Araştırma penceresi kapandı. Yeni araştırma yapmadan mevcut kanıt, brief ve açıkça işaretli analizle bütün raporu finish_bhs ile tamamla.':'Önemli eksik bilgi için sıradaki yararlı işi seç. İlgili bulunan sayfayı oku; rapor ve anlam denetimi rezervini koru.'};
  addBudget('Sistem bütçe bilgisi: '+JSON.stringify(budget));
- return messages;
+ return protectConversationMessages(messages,{privateValues:projection.privateValues});
 }
 
 // One durable assistant turn at a time. Provider receipts are committed before
@@ -109,6 +112,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    if(!providerReceiptKey)throw new BudgetError('stage_paused','Eski isteğin ücretli kimliği doğrulanamadı; tekrar başlatılmadı.');
   }
   else{
+   await ensureModelInputContext({brief,ledger,id});
    if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)throw new BudgetError('semantic_review_limit','Anlam denetimi sınırına ulaşıldı; taslak korundu.');
    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
    const availableKurus=Math.max(0,5000-cost.chargedKurus);
@@ -126,6 +130,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    providerReceiptKey='model:conversation:claude-request:'+id+':'+state.index;
    await ledger.once(requestKey,{id,index:state.index},0,async()=>({messages,quote,finalMode,reviewMode,providerReceiptKey}));
   }
+  messages=protectConversationMessages(messages,{privateValues:projectModelBrief(brief).privateValues});
   answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,receiptKey:providerReceiptKey,
    remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+(quote.followingReserveKurus??400):(quote.completionReservation??quote.finalReservation??0)+(quote.followingReserveKurus??400)});
  }catch(error){
@@ -133,6 +138,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,reason:'semantic_review_unavailable',
    semanticReview:{...state.semanticReview,version:semanticReviewVersion,status:'pending',lastError:providerIssue.code},toolIssues:[providerIssue],results:[]});
   if(error.code==='stage_paused')return save({closed:true,reason:'stage_paused',toolIssues:[providerIssue],results:[]});
+  if(error.code==='input_privacy')return save({closed:true,reason:'input_privacy',toolIssues:[providerIssue],results:[]});
   // A reserved/uncertain request remains charged. A separate provider may
   // complete the answer only inside the same remaining capped account.
   if(providers.fallbackReport){
@@ -144,9 +150,9 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      for(const row of seed.results||[]){const source=archiveSource(row,now());if(source)recoverySources.push(source);}
     }
     const fallbackKey='audit:conversation:request:'+id+':'+state.index+':fallback';
-    const fallbackInput=await ledger.once(fallbackKey,{id,index:state.index},0,async()=>({brief,sources:[...state.sources,...recoverySources],
+    const fallbackInput=await ledger.once(fallbackKey,{id,index:state.index},0,async()=>protectModelValue({brief,sources:[...state.sources,...recoverySources],
      previous:state.turns.map(t=>t.assistant?.content).filter(Boolean),conversation:messages||conversationMessages(brief,state,{forceFinish:true,cost}),
-     researchSummary:state.researchSummary,researchProgress:state.researchProgress}));
+     researchSummary:state.researchSummary,researchProgress:state.researchProgress},{privateValues:projectModelBrief(brief).privateValues}));
     const report=await providers.fallbackReport(fallbackInput,
      {remainingReserve:quote?.reviewReservation||0,receiptKey:'model:conversation:gemini-request:'+id+':'+state.index});
     if(report.observedSources){
