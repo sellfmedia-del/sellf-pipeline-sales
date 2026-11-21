@@ -69,13 +69,15 @@ function recordsForEvidence(actor,rows,target,context){
    const expected=new URL(target.url).pathname.split('/').filter(Boolean)[0];
    if(String(r.ownerUsername).toLowerCase()!==expected.toLowerCase()||!target.official||!url||researchHost(url)!=='instagram.com')continue;
    if(target.since&&!(Date.parse(r.timestamp)>=Date.parse(target.since)))continue;
-   data=pick(r,['caption','timestamp','likesCount','commentsCount','videoViewCount','type']);
+   data={...pick(r,['caption','timestamp','likesCount','commentsCount','videoViewCount','type']),videoPlayCount:scalar(r.videoPlayCount)};
   }else if(actor==='harvestapi/linkedin-company-search'){
    if(researchHost(r.website)!==researchHost(context.brief.website)||!sameUrl(r.linkedinUrl,target.url))continue;
    data={...pick(r,['name','description','industry','employeeCount','followerCount','website','foundedOn']),employeeCountRange:JSON.stringify(r.employeeCountRange||null)};url=target.url;
   }else if(actor==='harvestapi/linkedin-post-search'){
    if(!sameUrl(r.author?.linkedinUrl||r.author?.url,target.url)||!url||researchHost(url)!=='linkedin.com')continue;
-   data={...pick(r,['content','reactionsCount','commentsCount','likesCount']),publishedAt:scalar(r.postedAt?.date)||null};
+   data={...pick(r,['reactionsCount']),content:scalar(r.content)||scalar(r.commentary),
+    commentsCount:scalar(r.engagement?.comments)??scalar(r.commentsCount),likesCount:scalar(r.engagement?.likes)??scalar(r.likesCount),
+    publishedAt:scalar(r.postedAt?.date)||scalar(r.createdAt)||null};
   }else if(actor==='curious_coder/linkedin-jobs-scraper'){
    if(researchHost(r.companyWebsite)!==researchHost(context.brief.website)||!url||researchHost(url)!=='linkedin.com')continue;
    data=pick(r,['companyName','title','descriptionText','location','postedAt','employmentType','companyWebsite']);
@@ -97,13 +99,15 @@ function recordsForEvidence(actor,rows,target,context){
    if(r.type==='review'&&typeof r.comment==='string'&&r.comment.trim()){
     data={brand:trendyolProduct.brand.name,product:trendyolProduct.title,review:r.comment.slice(0,900),rating:scalar(r.rating),publishedAt:scalar(r.created_at)};
    }else if(r===trendyolProduct){
-    data={...pick(r,['title']),brand:r.brand.name,currentPrice:r.pricing?.current_price,rating:r.metrics?.rating?.average_rating,reviewCount:r.metrics?.rating?.comment_count,scrapedAt:r.source_context?.scraped_time};
+    data={...pick(r,['title']),brand:r.brand.name,currentPrice:scalar(r.pricing?.current_price)??scalar(r.pricing?.price?.current),
+     currency:scalar(r.pricing?.currency)||scalar(r.pricing?.price?.currency),rating:r.metrics?.rating?.average_rating,reviewCount:r.metrics?.rating?.comment_count,scrapedAt:r.source_context?.scraped_time};
    }
    url=target.url;
   }else if(actor==='junglee/free-amazon-product-scraper'){
    const asin=new URL(target.url).pathname.match(/(?:\/dp\/|\/gp\/product\/)([A-Z0-9]{10})/i)?.[1];
    if(!asin||r.asin!==asin||String(r.brand).toLowerCase()!==context.brief.brandName.toLowerCase()||context.geo&&r.loadedCountryCode!==context.geo.countryCode)continue;
-   data=pick(r,['title','brand','price','stars','reviewsCount','loadedCountryCode','locationText']);url=target.url;
+   data={...pick(r,['asin','title','brand','stars','reviewsCount','loadedCountryCode','locationText','inStock']),
+    price:scalar(r.price?.value)??scalar(r.price),currency:scalar(r.price?.currency)};url=target.url;
   }else if(actor==='jmlp/meta-ad-library-scraper'){
    if(!target.official||!r.ad_archive_id||!Array.isArray(r.targeted_or_reached_countries)||!r.targeted_or_reached_countries.includes(context.geo?.countryCode))continue;
    data={...pick(r,['ad_archive_id','page_id','page_name','is_active','start_date','end_date']),scope:'Observed ad activity only; no sales, profitability or market share measurement.'};url='https://www.facebook.com/ads/library/?id='+encodeURIComponent(r.ad_archive_id);

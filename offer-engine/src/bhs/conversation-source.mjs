@@ -74,5 +74,5 @@ export function presentConversationSource(source,{purpose='',offset,linkOffset=0
   navigationCount:discovered.links.length,navigationMoreAvailable:nextLinkOffset<discovered.links.length,
   nextLinkOffset:nextLinkOffset<discovered.links.length?nextLinkOffset:null,navigationTruncated:discovered.truncated,
   ...(source.navigationStatus?{navigationStatus:source.navigationStatus}:{}),...(source.navigationIssue?{navigationIssue:source.navigationIssue}:{}),
-  ...(source.navigationFinalUrl?{navigationFinalUrl:source.navigationFinalUrl}:{})};
+  ...(source.navigationFinalUrl?{navigationFinalUrl:source.navigationFinalUrl}:{}),...(source.sample?{sample:source.sample}:{})};
 }

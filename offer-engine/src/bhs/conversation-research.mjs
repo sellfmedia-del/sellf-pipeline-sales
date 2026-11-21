@@ -1,34 +1,47 @@
 import {publicResearchUrl,researchHandoffSchema} from './conversation-contract.mjs';
 import {usableConversationSource} from './conversation-source.mjs';
 import {assertSchema} from './schema.mjs';
+import {qualifiedResearchSources} from './conversation-progress.mjs';
 
-export const researchOutcomeVersion='market-competition-outcomes-v1';
+export const researchOutcomeVersion='adjudicated-market-competition-outcomes-v2';
+export const marketResearchGuidance='PAZAR VE RAKİP SONUCU: Marka ürününü, alıcıyı, ülkeyi ve müşteri hedefini birlikte kullanarak karar değiştiren dış kamu sorusunu seç. Bulunan ilgili dış sayfayı oku; kaynak gövdesinin hangi soruyu neden yanıtladığını review_research ile değerlendir. Bir kaynağı indirmek, onu ilgili kanıt yapmaz. Pazarın kanalları, alıcı davranışı ve rekabet koşulları için somut sonucu ve marka açısından anlamını; seçtiğin isimli rakip için gerçek alternatif olma nedenini, karşılaştırmayı ve aksiyona etkisini begin_report ile teslim et. Analitik çıkarım için her cümleye kaynak veya kesin pazar büyüklüğü arama. Eksik bir karşılaştırma diğer geçerli sonuçları silmez; yalnız açık soruya devam et. Kaynak sayısı doldurmak veya genel rakip kriterleri yazmak araştırmanın yerine geçmez.';
 const text=value=>typeof value==='string'&&Boolean(value.trim());
 const host=value=>{try{return new URL(value).hostname.replace(/^www\./u,'');}catch{return '';}};
 const sameSite=(a,b)=>{const left=host(a),right=host(b);return left&&right&&(left===right||left.endsWith('.'+right)||right.endsWith('.'+left));};
 
 // These are task outcomes, not a quota of headings, pages or metrics. Semantic
 // quality still belongs to the analyst; this checks that work was returned.
-export function researchOutcomeIssues(summary,sources,brief){
+export function researchOutcomeIssues(summary,sources,brief,{progress}={}){
  const issues=[],known=new Map(sources.map(source=>[source.id,source]));
+ const qualified=progress===undefined?null:new Set(qualifiedResearchSources(progress,sources).map(proof=>proof.sourceId));
  try{assertSchema(summary,researchHandoffSchema);}catch{issues.push('research_handoff_format');}
  const readIds=ids=>Array.isArray(ids)&&ids.length>0&&ids.every(id=>usableConversationSource(known.get(id)));
- const external=ids=>(ids||[]).some(id=>known.has(id)&&!sameSite(known.get(id).url,brief.website));
+ const external=ids=>Array.isArray(ids)&&ids.some(id=>known.has(id)&&!sameSite(known.get(id).url,brief.website));
  for(const key of ['channels','customerBehavior','competitionDynamics']){
   const row=summary?.market?.[key];
   if(!text(row?.analysis)||!Array.isArray(row?.sourceIds)||row.sourceIds.some(id=>!usableConversationSource(known.get(id))))issues.push('market_'+key+'_missing');
+  if(qualified&&Array.isArray(row?.sourceIds)&&row.sourceIds.some(id=>!qualified.has(id)))issues.push('market_'+key+'_source_unreviewed');
  }
  if(!Object.values(summary?.market||{}).some(row=>readIds(row?.sourceIds)&&external(row.sourceIds)))issues.push('market_research_missing');
  if(!Array.isArray(summary?.competitors)||!summary.competitors.length)issues.push('named_competitors_missing');
  else for(const peer of summary.competitors){
   if(!text(peer?.name)||!publicResearchUrl(peer.url)||sameSite(peer.url,brief.website)||
    !text(peer.reason)||!text(peer.comparison)||!text(peer.implication)||!readIds(peer.sourceIds)||!external(peer.sourceIds))issues.push('competitor_comparison_missing');
+  if(qualified&&Array.isArray(peer?.sourceIds)&&peer.sourceIds.some(id=>!qualified.has(id)))issues.push('competitor_source_unreviewed');
  }
  return [...new Set(issues)];
 }
-export function researchReportIssues(report,summary,sources,brief){
- const issues=researchOutcomeIssues(summary,sources,brief);
+export function researchReportIssues(report,summary,sources,brief,options){
+ const issues=researchOutcomeIssues(summary,sources,brief,options);
  if(!issues.length&&summary.competitors.some(peer=>!report.competitors?.some(row=>
   row.name?.trim()===peer.name.trim()&&publicResearchUrl(row.url)===publicResearchUrl(peer.url)&&text(row.reason)&&row.sourceIds?.some(id=>peer.sourceIds.includes(id)))))issues.push('researched_competitor_omitted');
  return issues;
+}
+
+export function researchOutcomeStatus(summary,sources,brief,progress){
+ const issues=researchOutcomeIssues(summary,sources,brief,{progress});
+ return {version:researchOutcomeVersion,issues,
+  retained:{market:Object.entries(summary?.market||{}).filter(([,row])=>text(row?.analysis)).map(([key])=>key),
+   competitors:(Array.isArray(summary?.competitors)?summary.competitors:[]).filter(row=>text(row?.name)).map(({name,url})=>({name,url}))},
+  ...(issues.length?{instruction:'Önceki somut sonuçları aynı konuşmada koru. missing açıklarında ilgili dar soruyu araştır; source_unreviewed için mevcut gövdeyi ücretsiz arşivden görüp review_research ile gerçek ilgisini ve dayanağını kaydet. İlgisiz kaynağı ele; yalnız ilgili dış kaynağı oku. Sonra eksik karşılaştırmayı tamamlayıp begin_report ile sonuçları güncelle. Analitik çıkarımın her cümlesi için kaynak veya kesin pazar hacmi gerekmez.'}:{})};
 }
