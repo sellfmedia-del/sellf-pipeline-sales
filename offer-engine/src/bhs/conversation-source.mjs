@@ -1,5 +1,6 @@
 // Presentation is free and deterministic. The original text remains in the
 // source receipt/archive; offsets always refer to that original, not this view.
+import {sourceNavigation,navigationWindowSize} from './conversation-navigation.mjs';
 export const sourceWindowCharacters=12000;
 const fold=value=>String(value||'').toLocaleLowerCase('tr').normalize('NFKD').replace(/\p{M}/gu,'').replaceAll('ı','i');
 const navigation=/^(?:home|homepage|menu|products?|shop|cart|contact(?: us)?|about(?: us)?|login|sign in|privacy|cookies?|terms|anasayfa|ana sayfa|urunler|magaza|sepet|iletisim|hakkimizda|giris|gizlilik|cerezler)$/u;
@@ -34,7 +35,7 @@ export function sourceReadingStatus(source){
 export const usableConversationSource=source=>Boolean(source)&&sourceReadingStatus(source)==='body_available';
 export const conversationSourceBody=source=>passages(String(source.text||'')).map(row=>clean(source.text.slice(row.start,row.end))).join(' ');
 
-export function presentConversationSource(source,{purpose='',offset}={}){
+export function presentConversationSource(source,{purpose='',offset,linkOffset=0,legacy=false}={}){
  const original=String(source.text||''),status=sourceReadingStatus(source);
  const body=passages(original);let ranges;
  if(Number.isSafeInteger(offset)&&offset>=0)ranges=offset<original.length?[{start:offset,end:Math.min(original.length,offset+sourceWindowCharacters)}]:[];
@@ -61,10 +62,17 @@ export function presentConversationSource(source,{purpose='',offset}={}){
  }
  const archiveMoreAvailable=offset!==undefined?last<original.length:covered<original.length;
  const moreAvailable=offset!==undefined||source.method==='search-snippet'?archiveMoreAvailable:nextBodyOffset!==null;
- return {id:source.id,url:source.url,title:source.title,method:source.method,
+ const base={id:source.id,url:source.url,title:source.title,method:source.method,
   text:ranges.map(row=>original.slice(row.start,row.end)).join('\n\n[…]\n\n'),characters:original.length,
   readingStatus:status,passages:ranges,moreAvailable,archiveMoreAvailable,nextOffset:offset!==undefined?last:nextBodyOffset,
   links:(source.links||[]).slice(0,40),retrievedAt:source.retrievedAt,
   ...(status==='navigation_only'?{instruction:'Yalnız menü veya yetersiz sayfa metni alındı; bu okuma araştırma başarısı değildir. Gözlemlenen ilgili alt sayfayı oku veya uygun alternatif kaynak seç.'}:
    moreAvailable?{instruction:'İlgili gövde pasajları gösterildi; atlanan özgün metin read_saved_source ile offset üzerinden ücretsiz okunabilir. Yeni okuma satın alma.'}:{})};
+ if(legacy)return base; // Exact pre-navigation field order for old paid fingerprints.
+ const discovered=sourceNavigation(source),navigation=discovered.links.slice(linkOffset,linkOffset+navigationWindowSize),nextLinkOffset=linkOffset+navigation.length;
+ return {...base,links:navigation.map(row=>row.url),linkLabels:navigation.map(row=>row.label),navigationScope:'discovery-only',
+  navigationCount:discovered.links.length,navigationMoreAvailable:nextLinkOffset<discovered.links.length,
+  nextLinkOffset:nextLinkOffset<discovered.links.length?nextLinkOffset:null,navigationTruncated:discovered.truncated,
+  ...(source.navigationStatus?{navigationStatus:source.navigationStatus}:{}),...(source.navigationIssue?{navigationIssue:source.navigationIssue}:{}),
+  ...(source.navigationFinalUrl?{navigationFinalUrl:source.navigationFinalUrl}:{})};
 }

@@ -12,7 +12,7 @@ import {brief,source,peerSource,researchSources,researchProgressInput,completeRe
 const id='b'.repeat(64),now=()=>Date.parse('2026-11-21T10:00:00Z');
 const reply=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
 const config=(ledger,fetchImpl)=>({ledger,fetchImpl,researchFx:async()=>({usdTry:50,publishedAt:'2026-11-21'}),
- anthropicKey:'synthetic-claude',tavilyKey:'synthetic-tavily',geminiKey:null,apifyToken:null});
+ anthropicKey:'synthetic-claude',tavilyKey:'synthetic-tavily',geminiKey:null,apifyToken:null,navigationReader:async()=>({status:'unavailable',links:[]})});
 const question=()=>({id:'brand',question:'Markanın ürünü ve mevcut satış kanalı nedir?',access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:''});
 const plan=()=>({objective:'Ürün ve kanal kararını anlayıp dış pazar ve rekabet araştırmasına devam et.',questions:[question()],sources:[],
  candidates:[{url:source.url,questionId:'brand',status:'selected',reason:'Markanın kendi sayfası incelenecek.'}]});
