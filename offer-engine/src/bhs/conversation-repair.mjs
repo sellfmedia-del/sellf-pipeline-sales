@@ -11,6 +11,7 @@ import {semanticReviewVersion,semanticReviewInstruction,applySemanticDecision,in
 import {hash} from '../budget/ledger.mjs';
 import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
+import {projectModelBrief,protectConversationMessages,ensureModelInputContext} from './conversation-input.mjs';
 
 export const reportRepairKey=id=>conversationKeys.result(id)+':writing-repair-v1';
 export const repairableReport=value=>!value?.conversationReport&&['provider_error','report_review_required'].includes(value?.reason);
@@ -43,11 +44,13 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
    await meter({job:{id:job.backgroundJobId||id,phase:'conversation_report_repair',briefHash:id},ledger:scoped.ledger,shortResearch:true,run:async()=>{
     const providers=getProviders({ledger:scoped.ledger,executionDeadline:now()+90000});
     const request=await ledger.once(key+':request',{id},0,async()=>{
+     await ensureModelInputContext({brief,ledger,id});
+     const projection=projectModelBrief(brief);
      // Match the normal source presentation window; the complete originals
      // remain in the original ledger and in the repaired result's archive.
      const presented=sources.map(source=>presentConversationSource(source,{purpose:brief.goals+' '+brief.needs}));
      const views=collectSourceViews({results:[{content:JSON.stringify({sources:presented})}]},new Map(sources.map(source=>[source.id,source])),new Map(state.sourceViews));
-     let messages=[{role:'user',content:JSON.stringify({brief,sources:presented,researchSummary:state.researchSummary,researchProgress:state.researchProgress,
+     let messages=[{role:'user',content:JSON.stringify({brief:projection.brief,sources:presented,researchSummary:state.researchSummary,researchProgress:state.researchProgress,
       priorDecisions:state.turns.flatMap(turn=>(turn.assistant?.content||[]).filter(block=>block.type==='text').map(block=>block.text))})+
       '\nAraştırma tamamlandı. Yeni kaynak veya araç isteme. Bu korunmuş bağlamdan doğrudan bütün Türkçe BHS raporunu finish_bhs ile yaz. highlights yalnız en önemli dört bulgu olsun. Kaynak sınırlarını açıkla; moreAvailable olan kaynağın yalnız sunulan bölümünü değerlendirdiğini belirt. Sunulmayan bölümde bir bilginin bulunmadığını iddia etme; bilinmeyenleri olgu gibi yazma.'}];
      if(needsSemantic){
@@ -55,6 +58,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
       const last=messages.at(-1),text='Yeni kaynak veya araç isteme. Açıkça istenen rapor kurtarmasında aynı konuşma ve korunmuş kaynaklarla finish_bhs taslağını tamamla. '+JSON.stringify({sources:presented});
       last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
      }
+     messages=protectConversationMessages(messages,{privateValues:projection.privateValues});
      return {messages,sourceViews:[...views],quote:await providers.analystQuote(messages,{final:true,writingOnly:true}),providerReceiptKey:key+':writing-provider'};
     });
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote,receiptKey:request.providerReceiptKey,remainingReserve:needsSemantic?(request.quote.reviewReservation||0)+400:0});
