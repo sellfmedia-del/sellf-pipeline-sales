@@ -3,6 +3,7 @@ import {researchHandoffSchema,conversationTools,publicResearchUrl} from './conve
 import {assertSchema} from './schema.mjs';
 import {canonicalSourceUrl,qualifiedResearchSources} from './conversation-progress.mjs';
 import {usableConversationSource} from './conversation-source.mjs';
+import {marketAnalysisVersion,marketOutcomeVersion,marketDecisionSchema} from './conversation-market.mjs';
 
 export const offeringAnalysisVersion='product-buyer-competition-v1';
 export const offeringOutcomeVersion='product-buyer-competition-outcomes-v3';
@@ -17,20 +18,24 @@ export const offeringHandoffSchema={...researchHandoffSchema,properties:{...rese
   properties:{...researchHandoffSchema.properties.competitors.items.properties,offeringId:string,alternativeName:string,alternativeUrl:string},
   required:[...researchHandoffSchema.properties.competitors.items.required,'offeringId','alternativeName','alternativeUrl']}}},
  required:[...researchHandoffSchema.required,'offeringScope','offerings']};
+export const marketHandoffSchema={...offeringHandoffSchema,properties:{...offeringHandoffSchema.properties,
+ marketScope:string,marketDecisions:{type:'array',items:marketDecisionSchema}},required:[...offeringHandoffSchema.required,'marketScope','marketDecisions']};
 
 // A new policy opts in before the first paid request. Historical policies,
 // frozen quotes and all their native tool schemas remain byte-for-byte legacy.
 export function checkedOfferingVersion(version){
- if(version!==undefined&&version!==offeringAnalysisVersion)throw new BudgetError('budget_context','Ürün ve rakip araştırma sözleşmesi doğrulanamadı.');
+ if(version!==undefined&&![offeringAnalysisVersion,marketAnalysisVersion].includes(version))throw new BudgetError('budget_context','Ürün ve rakip araştırma sözleşmesi doğrulanamadı.');
  return version;
 }
-export const offeringVersionForOutcome=version=>version===offeringOutcomeVersion?offeringAnalysisVersion:undefined;
-export const outcomeOptions=(version,progress)=>({...(version===offeringOutcomeVersion||version==='adjudicated-market-competition-outcomes-v2'?{progress}:{}),
- ...(offeringVersionForOutcome(version)?{analysisVersion:offeringAnalysisVersion}:{})});
-export const researchSchemaFor=version=>checkedOfferingVersion(version)?offeringHandoffSchema:researchHandoffSchema;
+export const offeringVersionForOutcome=version=>version===marketOutcomeVersion?marketAnalysisVersion:version===offeringOutcomeVersion?offeringAnalysisVersion:undefined;
+export const offeringOutcomeFor=version=>version===marketAnalysisVersion?marketOutcomeVersion:offeringOutcomeVersion;
+export const outcomeOptions=(version,progress)=>({...([marketOutcomeVersion,offeringOutcomeVersion,'adjudicated-market-competition-outcomes-v2'].includes(version)?{progress}:{}),
+ ...(offeringVersionForOutcome(version)?{analysisVersion:offeringVersionForOutcome(version)}:{})});
+export const researchSchemaFor=version=>checkedOfferingVersion(version)===marketAnalysisVersion?marketHandoffSchema:version?offeringHandoffSchema:researchHandoffSchema;
 export function conversationToolsFor(version){
- return checkedOfferingVersion(version)?conversationTools.map(tool=>tool.name==='begin_report'?{...tool,input_schema:offeringHandoffSchema,
-  description:tool.description+' Seçtiğin önemli ürün/hizmet gruplarını offeringScope/offerings ile teslim et. Her rakibi offeringId ve gerçekten okunan alternativeUrl ile ilgili gruba bağla.'}:tool):conversationTools;
+ return checkedOfferingVersion(version)?conversationTools.map(tool=>tool.name==='begin_report'?{...tool,input_schema:researchSchemaFor(version),
+  description:tool.description+' Seçtiğin önemli ürün/hizmet gruplarını offeringScope/offerings ile teslim et. Her rakibi offeringId ve gerçekten okunan alternativeUrl ile ilgili gruba bağla.'+
+   (version===marketAnalysisVersion?' marketScope/marketDecisions ile seçilen alıcı/pazar kararlarını gerçek soru ve dış kaynaklara bağla.':'')}:tool):conversationTools;
 }
 export const offeringAnalysisGuidance='ÜRÜN VE ALTERNATİF ANALİZİ: Markayı anladıktan sonra hedef açısından önemli ürün/hizmet gruplarını sen seç; her markaya sabit segment, SKU, rakip sayısı veya araç listesi uygulama. review_research içinde seçtiğin grupların ürününü ve gerçek alternatifini anlamaya yönelik dar public soruları kaydet. Menüdeki adları katalog incelemesi sayma; temsili ürün/hizmet sayfasının gövdesini oku ve hangi alıcı ihtiyacını, satış yolunu, ürün farkını ve ticari rolü gösterdiğini değerlendir. Fiyat, uygulama, kurulum, destek veya teknik özellik yalnız karar açısından önemliyse incelensin; görünmeyen fiyat, iç marj veya gerçekleşmiş satış icat edilmesin. Ana sayfa gerçekten tek ürün/hizmeti açıklıyorsa kullanılabilir. Önce mevcut kaynak ve ücretsiz arşivi kullan; gerekiyorsa ilgili sayfayı read_pages, uygun dar görevi mevcut specialist_read ile al. Bütün kataloğu veya sosyal kanalları otomatik tarama. begin_report.offeringScope seçilen grupların brief hedefini nasıl kapsadığını, offerings ise alıcı/ihtiyaç/pazar/kanal/ticari rolü ve okunan temsili ürünün analizini taşısın. productQuestionId ve competitionQuestionId mevcut araştırma sorularıdır. Her competitor, offeringId ile ilgili gruba bağlansın; alternativeName/alternativeUrl gerçek alternatif ürün veya hizmeti, comparison somut farkı, implication büyüme kararını anlatsın. Markanın adı, sektör benzerliği veya global ürün varlığı tek başına aynı alıcı/pazar için alternatif olduğunu kanıtlamaz; Türkiye/başka ülke, fiyat segmenti, sipariş yolu, servis/yazılım ve ülke kullanım koşullarını gerektiği kadar doğrula. Aynı rakip farklı gruplarda farklı alternatifle değerlendirilebilir; ilgisiz rakiple kota doldurma. Okunan sayfa gövdesini review_research ile ilgili soruya bağla; arama özeti ürün veya rakip kanıtı değildir. Gerçek erişim engelini mevcut unavailable sorusunda deneme ve gerekçeyle kaydet; eksikliği başka grubun karşılaştırmasıyla kapatma. Geçerli ürün/pazar/rakip sonuçlarını silme. Tam rapor ve SWOT seçilen ürünlerin satın alma gerekçesini ve karşılaştırmanın ticari sonucunu doğal anlatımda korusun; teknik tablo veya anahtar kelime sayısı kalite değildir.';
 export const offeringReviewGuidance='Seçilen ürün/hizmet gruplarının brief hedefini kapsayıp kapsamadığını, temsili ürünün gerçekten anlaşıldığını ve her rakibin o alıcı/ihtiyaç/pazarda somut alternatif olduğunu değerlendir. Ürün adını listelemek analiz değildir. Özellikten satın alma gerekçesine ve büyüme aksiyonuna geçişi, ülke/servis/yazılım kapsamını ve karşılaştırmanın tam raporda korunmasını anlam bakımından kontrol et. Eksik ürün veya rakip kanıtı için bütçe uygunsa dar research_needed sorusu belirt; iç fiyat/marj verisi veya sabit rakip kotası araştırmayı kilitlemesin.';
@@ -44,9 +49,9 @@ export function legacyResearchHandoff(summary){
 }
 // This checks delivery/provenance and chosen-scope coverage, not commercial
 // truth via headings/keywords. The same analyst still judges relevance/meaning.
-export function offeringOutcomeIssues(summary,sources,{progress}={}){
+export function offeringOutcomeIssues(summary,sources,{progress,analysisVersion=offeringAnalysisVersion}={}){
  const issues=[];
- try{assertSchema(summary,offeringHandoffSchema);}catch{issues.push('offering_handoff_format');}
+ try{assertSchema(summary,researchSchemaFor(analysisVersion));}catch{issues.push('offering_handoff_format');}
  const groups=Array.isArray(summary?.offerings)?summary.offerings:[],peers=Array.isArray(summary?.competitors)?summary.competitors:[];
  if(!nonempty(summary?.offeringScope)||!groups.length)issues.push('offering_scope_missing');
  const known=new Map(sources.map(row=>[row.id,row])),proofs=qualifiedResearchSources(progress,sources),ids=new Set();

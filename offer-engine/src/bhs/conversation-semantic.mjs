@@ -4,7 +4,8 @@ import {assertSchema} from './schema.mjs';
 import {qualifiedResearchSources,quoteWasSeen} from './conversation-progress.mjs';
 import {canonicalConversationHash} from './conversation-context.mjs';
 import {crmContextGuidance} from './conversation-input.mjs';
-import {offeringAnalysisVersion,offeringReviewGuidance} from './conversation-offerings.mjs';
+import {offeringReviewGuidance} from './conversation-offerings.mjs';
+import {marketAnalysisVersion,marketReviewGuidance} from './conversation-market.mjs';
 
 export const semanticReviewVersion='same-conversation-targeted-review-v1';
 export const semanticReviewOutputTokens=6000;
@@ -87,4 +88,4 @@ export const semanticReviewInstruction=(draft,attempts,{researchIssues=[],questi
  JSON.stringify({draftDigest:hash(draft),reviewAttempt:attempts+1,maximumReviews:maximumSemanticReviews,researchIssues,
   importantPublicQuestions:questions.filter(q=>q.access==='public'&&q.important&&q.status==='open').map(({id,question})=>({id,question})),
   instruction:'Güçlü anlatımı, dört SWOT kolunun gerekçesini, somut aksiyon/ölçümü ve geçerli alternatifleri koru. Başlık/kelime sayısı kalite kanıtı değildir. Önemli kamu bilgisi eksikse ve yararlı dar araştırma rezervle birlikte sığıyorsa research_needed ile gerçek soruyu belirt; eksikliği dürüstçe yazmak araştırmayı tamamlamaz. Araştırma gerekmeyen iddiayı yalnız hedefli yamayla düzelt. Kaynak/örneklem sınırını marka kusuruna, hesap erişimi yokluğunu altyapı veya performans eksikliğine dönüştürme. Müşteriden alınacak iç veri için kamu araştırması açma; kesin olmayan ticari etkiyi koşullu analiz ve somut doğrulama adımıyla koru. rationale içinde bu ayrımların sorunlu iddialara nasıl uygulandığını açıkla. '+crmContextGuidance+
-   (analysisVersion===offeringAnalysisVersion?' '+offeringReviewGuidance:'')});
+   (analysisVersion?' '+offeringReviewGuidance:'')+(analysisVersion===marketAnalysisVersion?' '+marketReviewGuidance:'')});

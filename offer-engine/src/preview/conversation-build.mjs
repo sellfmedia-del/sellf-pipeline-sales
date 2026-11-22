@@ -1,8 +1,8 @@
 import {readFile,writeFile,cp,rm} from 'node:fs/promises';
 import {conversationAuditResult} from '../bhs/conversation-report.mjs';
-import {offeringOutcomeVersion} from '../bhs/conversation-offerings.mjs';
+import {marketOutcomeVersion} from '../bhs/conversation-market.mjs';
 import {researchClosureVersion} from '../bhs/conversation-progress.mjs';
-import {brief,researchSources,offeringResearchSummary,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
+import {brief,researchSources,marketResearchSummary,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
 import {applySemanticDecision} from '../bhs/conversation-semantic.mjs';
 import {hash} from '../budget/ledger.mjs';
 import {strongNarrativeReport,weakClaim,correctedClaim} from '../../test/fixtures/bhs-strong-narrative.mjs';
@@ -21,11 +21,12 @@ export async function buildConversationReview(output,{production=false}={}){
  await cp(new URL('./conversation-review.js',import.meta.url),output+'/offers/conversation-review.js');
  const original=strongNarrativeReport({flawed:true});original.reportMarkdown+='\n## Kanal karşılaştırması\n| Kanal | Mevcut gözlem | Ölçülecek ilişki |\n|---|---|---|\n| Web sitesi | Ürün keşfi | Ürün ziyareti → yönlendirme |\n| Shopier / WhatsApp | Harici sipariş yönlendirmesi | Yönlendirme → sipariş |';
  original.reportMarkdown+='\n## Seçili ürün, alıcı ve gerçek alternatif\nTemsili kıtık açıcı sprey için alıcı ihtiyacı, kullanımın anlaşılması ve siparişe ulaşmaktır. Marka ürün tanıtımından harici Shopier/WhatsApp yoluna geçiş sunarken, okunan rakip ürün sayfasında uygulama videosu ve doğrudan sipariş bulunur. Bu fark, yeni bir kanalın zorunlu olduğunu göstermez; mevcut kanalda ürün kullanım açıklaması ve sipariş geçişi birlikte pilotlanabilir. Menüde görülen bütün ürünlerin veya başka pazardaki her markanın aynı alternatif grubuna ait olduğu varsayılmaz. İç marj ve gerçekleşen satış müşteriden alınacak bilgidir. ['+researchSources[0].id+'] ['+researchSources[2].id+']';
+ original.reportMarkdown+='\n## Seçili alıcının pazar kararı\nOkunan dış örnekler uzman mağaza/pazaryeri karşılaştırmasını ve ürüne uygun kullanım bilgisini gösteriyor. Bu, mevcut Shopier/WhatsApp geçişinin kaldırılması gerektiği veya fiyatın satın almadaki tek belirleyici olduğu anlamına gelmez. Kullanım anlatımı ile siparişe geçiş aynı kanalda ölçülebilir bir pilotla karşılaştırılabilir. Kesin alt pazar hacmi ve gerçekleşen fiyat duyarlılığı bu kaynaklarda doğrulanmadı; bunları varsayılan sonuç olarak kullanmıyoruz. ['+researchSources[1].id+'] ['+researchSources[3].id+']';
  const assessed=applySemanticDecision(original,{draftDigest:hash(original),verdict:'patch',rationale:'Sentetik örnekte yalnız kanıtsız performans iddiası düzeltilir; SWOT, aksiyon/ölçüm, alternatifler ve zaman planı aynen korunur.',
   issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'}],
   patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim}]},{sources:researchSources});
  const fixture=assessed.report;
- const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion:offeringOutcomeVersion,researchSummary:offeringResearchSummary(),objectiveValidationVersion,
+ const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion:marketOutcomeVersion,researchSummary:marketResearchSummary(),objectiveValidationVersion,
   conversationContext:{version:conversationContextVersion,conversationId:'synthetic-preview',briefDigest:canonicalConversationHash(brief),budgetId:'synthetic-preview-account',capKurus:5000},
   researchClosure:{version:researchClosureVersion,progress:completeResearchProgress(),issues:[]},semanticReview:{...assessed.review,synthetic:true},researchedAt:'2026-11-20T10:00:00.000Z'};
  const limited=structuredClone(saved);limited.researchClosure.progress.questions.push({id:'remaining',question:'İlgili ürünün alternatif sipariş yolu nedir?',access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:''});

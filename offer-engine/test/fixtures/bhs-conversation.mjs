@@ -35,6 +35,10 @@ export function offeringResearchSummary(){const value=researchSummary();return {
   channel:'Shopier ve WhatsApp siparişi',commercialRole:'Ürün açıklaması ve sipariş geçişi pilotunun temsili ürünü; ciro payı bilinmiyor.',productQuestionId:'brand',competitionQuestionId:'competition',
   products:[{name:'Kıtık açıcı tüy bakım spreyi',url:source.url,analysis:'Ana sayfa bu ürünü ve harici sipariş yolunu açıklar; kullanım ve sipariş geçişi birlikte değerlendirilmeli.',sourceIds:[source.id]}]}],
  competitors:value.competitors.map(row=>({...row,offeringId:'coat',alternativeName:'Rakip tüy bakım spreyi',alternativeUrl:peerSource.url}))};}
+export function marketResearchSummary(){return {...offeringResearchSummary(),
+ marketScope:'Türkiye tüy bakım alıcısının ürün karşılaştırması, kullanım beklentisi ve siparişe geçişi seçildi; genel pet pazarı hacmi kapsamı belirlemiyor.',
+ marketDecisions:[{offeringIds:['coat'],questionIds:['market'],analysis:'Okunan dış kaynakta uzman mağaza ve pazaryeri karşılaştırması, kullanım açıklaması ve ürüne uygunluk öne çıkıyor. Bu dar kaynaklar bütün pazarın tercih oranını veya fiyat esnekliğini ölçmüyor.',
+  implication:'Mevcut kanallarda kullanım bilgisini ve siparişe geçişi birlikte pilotla; fiyat duyarlılığını gerçekleşmiş bulgu gibi yazma. Gerçekleşen kanal marjını müşteriden al.',sourceIds:[marketSource.id,usageSource.id]}]};}
 export function researchedReport(){const value=report();value.competitors=researchSummary().competitors.map(({name,url,reason,sourceIds})=>({name,url,reason,sourceIds}));
  value.reportMarkdown=value.reportMarkdown.replace('Doğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.',
   `Örnek Rakip aynı ülkede tüy bakım ürünü sunuyor; videosu ve doğrudan sipariş yolu, markanın harici yönlendirmesinden farklı. Ürün anlatımı ve sipariş geçişini pilotla karşılaştır. [${peerSource.id}]`);

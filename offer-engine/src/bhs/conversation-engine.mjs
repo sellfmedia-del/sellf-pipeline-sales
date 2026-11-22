@@ -14,7 +14,9 @@ import {evidenceGuidance,sourceEvidenceBoundary,failedEvidenceBoundary} from './
 import {conversationQuote} from './conversation-providers.mjs';
 import {workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {projectModelBrief,protectConversationMessages,protectModelValue,ensureModelInputContext,crmContextGuidance} from './conversation-input.mjs';
-import {checkedOfferingVersion,offeringOutcomeVersion,researchSchemaFor,offeringAnalysisGuidance,outcomeOptions} from './conversation-offerings.mjs';
+import {checkedOfferingVersion,offeringOutcomeFor,researchSchemaFor,offeringAnalysisGuidance,outcomeOptions} from './conversation-offerings.mjs';
+import {marketAnalysisVersion,marketAnalysisGuidance} from './conversation-market.mjs';
+import {compactBudgetText,currentBudgetStatus} from './conversation-budget.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -66,6 +68,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
  const projection=projectModelBrief(brief);
  const messages=[{role:'user',content:'BHS hazırlaman gereken marka ve görüşme bağlamı aşağıdaki JSONdur. Marka ve hedefi bütün olarak değerlendir.\n'+JSON.stringify(projection.brief)+'\n'+existingAssetGuidance+'\n'+navigationGuidance+'\n'+marketResearchGuidance+'\n'+samplingGuidance+'\n'+evidenceGuidance+'\n'+crmContextGuidance+
   (state.analysisVersion?'\n'+offeringAnalysisGuidance:'')+
+  (state.analysisVersion===marketAnalysisVersion?'\n'+marketAnalysisGuidance:'')+
   (projection.boundary.redactions||projection.boundary.crmExcluded?'\nModel girdi sınırı: '+JSON.stringify(projection.boundary):'')}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
@@ -73,7 +76,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
   }else messages.push({role:'user',content:text});
  };
  for(const turn of state.turns){
-  if(turn.budgetText)addBudget(turn.budgetText);
+  if(turn.budgetText)addBudget(compactBudgetText(turn.budgetText,state.analysisVersion));
   if(turn.assistant?.content?.length)messages.push(turn.assistant);
   if(turn.results?.length)messages.push({role:'user',content:turn.results});
  }
@@ -82,8 +85,8 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
  const budget={committedKurus:cost?.chargedKurus,capKurus:5000,finalReportReserveKurus:finalReserve,
   ...(outputTokens?{currentTurnOutputTokens:outputTokens}:{}),
   searchMaximumKurus:62,extractUpToFivePagesMaximumKurus:62,
-  research:researchStatus(state.researchProgress,state.sources),
-  outcomes:researchOutcomeStatus(state.researchSummary,state.sources,brief,state.researchProgress,state.analysisVersion),
+  ...currentBudgetStatus(researchStatus(state.researchProgress,state.sources),
+   researchOutcomeStatus(state.researchSummary,state.sources,brief,state.researchProgress,state.analysisVersion),state.analysisVersion),
   instruction:review?semanticReviewInstruction(state.reportDraft,state.semanticReview?.attempts||0,{researchIssues:[...researchOutcomeIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(state.researchProgress,state.sources)],questions:state.researchProgress?.questions||[],analysisVersion:state.analysisVersion}):state.reportDraft?
    state.semanticReview?.researchHold?'Taslağı koru. Açık kamu sorusu/okunacak aday veya pazar-rakip sonucu hâlâ eksik. Gerçek dar soruyu sen seç; gerekirse review_research ile kaydet, ilgili mevcut gövdeyi ücretsiz kullan veya uygun kaynağı oku. Geçerli sonuçları silmeden begin_report ile eksik pazar/rakip sonucunu güncelle; sonra review_bhs ile yalnız etkilenen kısmı düzelt. Yeni finish_bhs yazma.':
     'Önceki taslak korunuyor. Yalnız denetimin işaretlediği kamu sorusunu tamamla; bütün raporu yeniden yazma. Yeni kanıtla review_bhs kullanarak etkilenen kısmı düzelt.':
@@ -97,7 +100,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
 export async function advanceConversation({brief,ledger,id,providers,now=Date.now,deadline=Infinity}){
  await ensureConversationContext({brief,ledger,id});
  const state=await readConversation(ledger,id);
- const researchOutcomeVersion=state.analysisVersion?offeringOutcomeVersion:legacyResearchOutcomeVersion;
+ const researchOutcomeVersion=state.analysisVersion?offeringOutcomeFor(state.analysisVersion):legacyResearchOutcomeVersion;
  if(state.final)return state.final;
  if(state.interrupted&&!state.recoverFreeTurn)throw new BudgetError('stage_paused','Önceki konuşma kaydı kesildi; ücretli çağrı tekrarlanmadı.');
  if(state.index>=maximumConversationTurns)throw new BudgetError('conversation_limit','Analiz tur sınırına ulaştı.');
@@ -215,7 +218,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
      const balance=await ledger.status(),availableKurus=Math.max(0,5000-balance.chargedKurus-workerInfraReservationKurus);
      let affordable=false;
      try{affordable=conversationQuote(quote.inputUpper+(answer.usage?.output_tokens||quote.output||semanticReviewOutputTokens)+2048,
-      {hasDraft:true,availableKurus}).funded;}catch{/* Real admission still re-counts and checks the same ledger on the next turn. */}
+      {hasDraft:true,availableKurus,analysisVersion:state.analysisVersion}).funded;}catch{/* Real admission still re-counts and checks the same ledger on the next turn. */}
      if(affordable)semanticReview={...semanticReview,status:'research_needed',researchCycles:1,researchHold:{reason:'objective_research_gaps',issues:[...new Set(gaps)],approvalRationale:assessed.review.rationale}};
     }
     if(semanticReview.status==='research_needed'){

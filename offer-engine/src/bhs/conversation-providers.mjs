@@ -10,6 +10,7 @@ import {createNavigationReader,sourceNavigation,navigationVersion} from './conve
 import {specialistSelection,sampledSources} from './conversation-sampling.mjs';
 import {projectModelBrief,protectConversationMessages,protectModelValue,redactInputText} from './conversation-input.mjs';
 import {checkedOfferingVersion,conversationToolsFor} from './conversation-offerings.mjs';
+import {marketAnalysisVersion} from './conversation-market.mjs';
 
 export const conversationModels=Object.freeze({analyst:'claude-sonnet-5-5',helper:'gemini-3.1-flash-lite'});
 // First-party standard tariffs reviewed 2026-11-20. Quote uncached creation at
@@ -26,7 +27,8 @@ const clipped=value=>String(value||'').replace(/[\u0000-\u0008]/gu,'').slice(0,1
 // certifies the draft. Every
 // selected ceiling is also sent as max_tokens, priced without assuming cache
 // hits, and frozen with the existing once-only request receipt.
-export function conversationQuote(inputUpper,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity}={}){
+export function conversationQuote(inputUpper,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity,analysisVersion}={}){
+ checkedOfferingVersion(analysisVersion);
  if(!integer(inputUpper,1)||inputUpper>127000||availableKurus!==Infinity&&(!integer(availableKurus)||availableKurus>5000))
   throw new BudgetError('budget_context','Konuşma maliyet hesabı geçersiz.');
  const followingReserveKurus=review?0:final||hasDraft?workerInfraReservationKurus:2*workerInfraReservationKurus;
@@ -38,12 +40,15 @@ export function conversationQuote(inputUpper,{final=false,writingOnly=false,revi
   const completionReservation=review?0:hasDraft?reviewReservation:finalReservation+reviewReservation;
   const requiredKurus=reservation+(review?0:final?reviewReservation:completionReservation)+followingReserveKurus+toolReserveKurus;
   return {inputUpper,output,reservation,finalReservation,reviewReservation,completionReservation,reviewOutput,
-   followingReserveKurus,toolReserveKurus,requiredKurus,funded:requiredKurus<=availableKurus,budgetPlanVersion:'narrative-preserving-reserve-v1'};
+   followingReserveKurus,toolReserveKurus,requiredKurus,funded:requiredKurus<=availableKurus,
+   budgetPlanVersion:analysisVersion===marketAnalysisVersion?'narrow-decision-full-narrative-v2':'narrative-preserving-reserve-v1'};
  };
  const maximum=make(semanticReviewOutputTokens);if(maximum.funded)return maximum;
+ const minimumDecision=analysisVersion===marketAnalysisVersion?512:1000;
  let researchOutput=1800,low=1000,high=semanticReviewOutputTokens,best=make(low);
  if(!best.funded&&!final&&!review){
-  let lower=1000,upper=1800;
+  if(analysisVersion===marketAnalysisVersion)best=make(1000,minimumDecision);
+  let lower=minimumDecision,upper=1800;
   while(lower<=upper){const mid=Math.floor((lower+upper)/2),quote=make(1000,mid);
    if(quote.funded){best=quote;researchOutput=mid;lower=mid+1;}else upper=mid-1;
   }
@@ -131,7 +136,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  return {...conversationQuote(upper(counted.input_tokens),{final,writingOnly,review,hasDraft,availableKurus}),...(analysisVersion?{analysisVersion}:{})};
+  return {...conversationQuote(upper(counted.input_tokens),{final,writingOnly,review,hasDraft,availableKurus,analysisVersion}),...(analysisVersion?{analysisVersion}:{})};
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
