@@ -28,6 +28,7 @@ test('whole BHS narrative, SWOT, tables and sources render safely on desktop and
   const linkedUrls=await view.locator('a').evaluateAll(nodes=>nodes.map(node=>node.href));
   assert.deepEqual([...new Set(linkedUrls)].sort(),sourceUrls);
   assert.match(narrative,/Seçili ürün, alıcı ve gerçek alternatif/);
+  assert.match(narrative,/Seçili alıcının pazar kararı/);
   assert.match(await view.innerText(),/Örnek Rakip/);assert.match(await view.innerText(),/Uzman mağaza ve pazaryerinde/);
   assert.equal(await page.locator('#ob-review-title').innerText(),'BHS analizi hazır');
   assert.equal(await page.evaluate(()=>window.unsafeReport),undefined);assert.equal(await view.locator('script').count(),0);
