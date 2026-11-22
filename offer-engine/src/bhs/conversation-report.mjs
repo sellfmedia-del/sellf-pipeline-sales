@@ -6,11 +6,12 @@ import {offerCopy} from '../proposal/composition.mjs';
 import {conversationVersion,finalReportSchema,publicResearchUrl} from './conversation-contract.mjs';
 import {assertSchema} from './schema.mjs';
 import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
-import {researchReportIssues,researchOutcomeVersion as currentOutcomeVersion} from './conversation-research.mjs';
+import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
 import {semanticReviewIssues} from './conversation-semantic.mjs';
 import {objectiveReportIssues,captureSourcePassages} from './conversation-objective.mjs';
 import {canonicalConversationHash} from './conversation-context.mjs';
+import {outcomeOptions} from './conversation-offerings.mjs';
 
 export function validateConversationReport(report,sources,{semantic=false,objective=false}={}){
  const issues=[];
@@ -59,7 +60,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
   researchSummary=stored.researchSummary||stored.report?.researchSummary;
  const researchClosure=stored.researchClosure||stored.report?.researchClosure;
  if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief,
-  researchOutcomeVersion===currentOutcomeVersion?{progress:researchClosure?.progress||{}}:{}));
+  outcomeOptions(researchOutcomeVersion,researchClosure?.progress||{})));
  if(raw&&researchClosure)issues.push(...(researchClosure.issues||[]),...researchClosureIssues(researchClosure.progress,retained,{report:raw,includeUnavailable:true}));
  reason??=stored.reason;
  const report=raw||{summary:brief.brandName+' için araştırma kayıtları korundu; tamamlanmış analiz henüz oluşmadı.',

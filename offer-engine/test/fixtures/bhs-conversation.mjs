@@ -29,6 +29,12 @@ export const researchSummary=()=>({reason:'Pazar ve karşılaştırma sonuçlar�
  customerBehavior:{analysis:'Ürüne uygun kullanım açıklaması seçimi etkileyebilir; etkisi dönüşüm pilotuyla ölçülmeli.',sourceIds:[marketSource.id]},
  competitionDynamics:{analysis:'Rakibin uygulama videosu, marka için anlatımı karşılaştırma fırsatı yaratır.',sourceIds:[peerSource.id]}},
  competitors:[{name:'Örnek Rakip',url:peerSource.url,reason:'Aynı ülke ve tüy bakım ihtiyacında alternatif ürün.',comparison:'Rakip uygulama videosu ve doğrudan sipariş sunarken marka dış kanala yönlendiriyor.',implication:'Ürün açıklaması ve sipariş geçişi kontrollü pilotla karşılaştırılabilir.',sourceIds:[peerSource.id]}]});
+export function offeringResearchSummary(){const value=researchSummary();return {...value,
+ offeringScope:'Türkiye büyüme hedefi için tüy bakım ürünü seçildi; menüdeki bütün ürünler aynı ihtiyaç veya rakip grubuna zorlanmadı.',
+ offerings:[{id:'coat',label:'Tüy bakım ürünü',audience:'Türkiye içindeki kedi/köpek sahipleri',need:'Tüy bakımında uygun kullanım ve sipariş',market:'Türkiye',
+  channel:'Shopier ve WhatsApp siparişi',commercialRole:'Ürün açıklaması ve sipariş geçişi pilotunun temsili ürünü; ciro payı bilinmiyor.',productQuestionId:'brand',competitionQuestionId:'competition',
+  products:[{name:'Kıtık açıcı tüy bakım spreyi',url:source.url,analysis:'Ana sayfa bu ürünü ve harici sipariş yolunu açıklar; kullanım ve sipariş geçişi birlikte değerlendirilmeli.',sourceIds:[source.id]}]}],
+ competitors:value.competitors.map(row=>({...row,offeringId:'coat',alternativeName:'Rakip tüy bakım spreyi',alternativeUrl:peerSource.url}))};}
 export function researchedReport(){const value=report();value.competitors=researchSummary().competitors.map(({name,url,reason,sourceIds})=>({name,url,reason,sourceIds}));
  value.reportMarkdown=value.reportMarkdown.replace('Doğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.',
   `Örnek Rakip aynı ülkede tüy bakım ürünü sunuyor; videosu ve doğrudan sipariş yolu, markanın harici yönlendirmesinden farklı. Ürün anlatımı ve sipariş geçişini pilotla karşılaştır. [${peerSource.id}]`);

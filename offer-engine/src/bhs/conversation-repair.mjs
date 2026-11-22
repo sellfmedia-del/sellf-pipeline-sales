@@ -5,13 +5,14 @@ import {validateConversationReport} from './conversation-report.mjs';
 import {createConversationProviders} from './conversation-providers.mjs';
 import {meteredBhsStage} from './job-infrastructure.mjs';
 import {presentConversationSource,usableConversationSource} from './conversation-source.mjs';
-import {researchOutcomeVersion,researchReportIssues} from './conversation-research.mjs';
+import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureVersion,researchClosureIssues,collectSourceViews} from './conversation-progress.mjs';
 import {semanticReviewVersion,semanticReviewInstruction,applySemanticDecision,introducedReadIssues} from './conversation-semantic.mjs';
 import {hash} from '../budget/ledger.mjs';
 import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
 import {projectModelBrief,protectConversationMessages,ensureModelInputContext} from './conversation-input.mjs';
+import {outcomeOptions} from './conversation-offerings.mjs';
 
 export const reportRepairKey=id=>conversationKeys.result(id)+':writing-repair-v1';
 export const repairableReport=value=>!value?.conversationReport&&['provider_error','report_review_required'].includes(value?.reason);
@@ -59,7 +60,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
       last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
      }
      messages=protectConversationMessages(messages,{privateValues:projection.privateValues});
-     return {messages,sourceViews:[...views],quote:await providers.analystQuote(messages,{final:true,writingOnly:true}),providerReceiptKey:key+':writing-provider'};
+     return {messages,sourceViews:[...views],quote:await providers.analystQuote(messages,{final:true,writingOnly:true,analysisVersion:state.analysisVersion}),providerReceiptKey:key+':writing-provider'};
     });
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote,receiptKey:request.providerReceiptKey,remainingReserve:needsSemantic?(request.quote.reviewReservation||0)+400:0});
     const candidate=answer.content?.find(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
@@ -71,8 +72,8 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
      const reviewRequest=await ledger.once(key+':semantic-request',{draftDigest:hash(report)},0,async()=>{
       const assistant={role:'assistant',content:(answer.content||[]).filter(block=>['text','tool_use','thinking','redacted_thinking'].includes(block.type))};
       const results=(answer.content||[]).filter(block=>block.type==='tool_use').map(block=>({type:'tool_result',tool_use_id:block.id,content:JSON.stringify({draftSaved:true,issues})}));
-      const messages=[...request.messages,assistant,{role:'user',content:[...results,{type:'text',text:semanticReviewInstruction(report,0)+' Bu kurtarma yalnız yazım/denetim içindir; yeni araştırma çağırma.'}]}];
-      return {messages,quote:await providers.analystQuote(messages,{review:true,hasDraft:true}),providerReceiptKey:key+':review-provider'};
+      const messages=[...request.messages,assistant,{role:'user',content:[...results,{type:'text',text:semanticReviewInstruction(report,0,{analysisVersion:state.analysisVersion})+' Bu kurtarma yalnız yazım/denetim içindir; yeni araştırma çağırma.'}]}];
+      return {messages,quote:await providers.analystQuote(messages,{review:true,hasDraft:true,analysisVersion:state.analysisVersion}),providerReceiptKey:key+':review-provider'};
      });
      const reviewed=await providers.analyst(reviewRequest.messages,{review:true,hasDraft:true,quote:reviewRequest.quote,receiptKey:reviewRequest.providerReceiptKey});
      const decision=reviewed.content?.find(block=>block.type==='tool_use'&&block.name==='review_bhs')?.input;
@@ -86,7 +87,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
      if(semanticReview.status!=='approved')reason='semantic_research_needed';
     }
     if(issues.length)reason='report_review_required';
-    else if(outcomeVersion&&researchReportIssues(report,state.researchSummary,sources,brief,outcomeVersion===researchOutcomeVersion?{progress:state.researchProgress}:{}).length)reason='research_incomplete';
+    else if(outcomeVersion&&researchReportIssues(report,state.researchSummary,sources,brief,outcomeOptions(outcomeVersion,state.researchProgress)).length)reason='research_incomplete';
     if(state.turns.some(turn=>turn.researchClosureVersion)){
      closureIssues=researchClosureIssues(state.researchProgress,sources,{report,views:new Map(request.sourceViews||state.sourceViews),includeUnavailable:true});
      if(closureIssues.length)reason||='research_incomplete';
