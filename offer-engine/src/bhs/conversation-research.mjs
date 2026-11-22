@@ -43,6 +43,17 @@ export function researchReportIssues(report,summary,sources,brief,options){
  return issues;
 }
 
+// An actual unavailable question is a quality limitation, not an instruction
+// to keep waiting for another product or peer. Never relax unread assertions.
+export function researchCompletionIssues(summary,sources,brief,options={}){
+ const issues=researchOutcomeIssues(summary,sources,brief,options);
+ if(options.analysisVersion!==offeringAnalysisVersion)return issues;
+ const groups=Array.isArray(summary?.offerings)?summary.offerings:[];
+ const allPeersUnavailable=groups.length>0&&groups.every(group=>options.progress?.questions?.some(q=>
+  q.id===group?.competitionQuestionId&&q.access==='public'&&q.status==='unavailable'&&text(q.rationale)));
+ return issues.filter(code=>!['offering_product_unavailable','offering_competition_unavailable'].includes(code)&&!(code==='named_competitors_missing'&&allPeersUnavailable));
+}
+
 export function researchOutcomeStatus(summary,sources,brief,progress,analysisVersion){
  const issues=researchOutcomeIssues(summary,sources,brief,{progress,analysisVersion});
  return {version:analysisVersion===offeringAnalysisVersion?offeringOutcomeVersion:researchOutcomeVersion,issues,

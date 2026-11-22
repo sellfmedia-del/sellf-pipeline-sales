@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {offeringAnalysisVersion,offeringOutcomeVersion,offeringHandoffSchema,conversationToolsFor,outcomeOptions} from '../src/bhs/conversation-offerings.mjs';
-import {researchOutcomeIssues,researchReportIssues,researchOutcomeVersion} from '../src/bhs/conversation-research.mjs';
+import {researchOutcomeIssues,researchCompletionIssues,researchReportIssues,researchOutcomeVersion} from '../src/bhs/conversation-research.mjs';
 import {conversationTools,conversationKeys,conversationVersion} from '../src/bhs/conversation-contract.mjs';
 import {advanceConversation,persistConversationResult,readConversation,conversationMessages} from '../src/bhs/conversation-engine.mjs';
 import {conversationAuditResult} from '../src/bhs/conversation-report.mjs';
@@ -44,6 +44,20 @@ test('an honestly unavailable alternative remains an explicit partial group, nev
  const value=summary();value.competitors=value.competitors.filter(row=>row.offeringId!=='home');
  const p=progress();Object.assign(p.questions.find(row=>row.id==='home_peer'),{status:'unavailable',rationale:'Sentetik denemede gövde erişimi yok.'});
  assert.ok(issues(value,sources,p).includes('offering_competition_unavailable'));
+ assert.deepEqual(researchCompletionIssues(value,sources,brief,{progress:p,...version}),[]);
+});
+test('an actually attempted unavailable group can finish a partial report without another peer search or wait cycle',async()=>{
+ const {ledger}=memoryLedger(),value=summary(),p=progress();
+ value.competitors=value.competitors.filter(row=>row.offeringId!=='home');
+ Object.assign(p.questions.find(row=>row.id==='home_peer'),{status:'unavailable',answer:'',sourceIds:[],attemptedUrls:[homePeer.url],rationale:'Denenen hedef bu gruptaki karşılaştırmayı yanıtlamadı.'});
+ await seed(ledger,{turnMetadata:{researchProgress:p,readAttempts:[homePeer.url]}});
+ const draft=report();draft.competitors=draft.competitors.slice(0,1);
+ const providers=scriptedProviders(ledger,[assistantCall('begin_report',value),assistantCall('finish_bhs',draft)]);
+ providers.search=()=>assert.fail('No repeated peer search');providers.extract=()=>assert.fail('No repeated peer read');
+ for(let at=0;at<3;at++)await advanceConversation({brief,ledger,id,providers,now});
+ const saved=await persistConversationResult({brief,ledger,id,now}),audit=conversationAuditResult(brief,saved);
+ assert.equal(providers.calls.length,3);assert.equal(audit.status,'ready');assert.equal(audit.data.fullReport,draft.reportMarkdown);
+ assert.equal(audit.data.quality.contentComplete,false);assert.ok(saved.researchIssues.includes('offering_competition_unavailable'));
 });
 test('one selected service/product group with one relevant peer is sufficient without a fixed buyer or competitor quota',()=>{
  const value=summary();value.offerings=value.offerings.slice(0,1);value.competitors=value.competitors.slice(0,1);

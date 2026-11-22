@@ -2,7 +2,7 @@ import {BudgetError,hash} from '../budget/ledger.mjs';
 import {conversationKeys,conversationVersion,publicResearchUrl,sourceId} from './conversation-contract.mjs';
 import {validateConversationReport} from './conversation-report.mjs';
 import {presentConversationSource,usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
-import {researchOutcomeVersion as legacyResearchOutcomeVersion,researchOutcomeIssues,researchReportIssues,researchOutcomeStatus,marketResearchGuidance} from './conversation-research.mjs';
+import {researchOutcomeVersion as legacyResearchOutcomeVersion,researchOutcomeIssues,researchCompletionIssues,researchReportIssues,researchOutcomeStatus,marketResearchGuidance} from './conversation-research.mjs';
 import {samplingGuidance} from './conversation-sampling.mjs';
 import {assertSchema} from './schema.mjs';
 import {researchClosureVersion,emptyResearchProgress,collectSourceViews,updateResearchProgress,researchClosureIssues,researchStatus,sourceReadIdentity} from './conversation-progress.mjs';
@@ -103,7 +103,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  if(state.index>=maximumConversationTurns)throw new BudgetError('conversation_limit','Analiz tur sınırına ulaştı.');
  const cost=await ledger.status();
  const hardFinish=state.index>=maximumConversationTurns-2||now()>=deadline-45000;
- const closureReady=!researchOutcomeIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress,analysisVersion:state.analysisVersion}).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
+ const closureReady=!researchCompletionIssues(state.researchSummary,state.sources,brief,{progress:state.researchProgress,analysisVersion:state.analysisVersion}).length&&!researchClosureIssues(state.researchProgress,state.sources).length;
  const forceFinish=hardFinish||closureReady&&state.turns.some(t=>t.finishRequested);
  let reviewMode=Boolean(state.reportDraft)&&(semanticResearchReady(state.semanticReview,state.researchProgress,closureReady)||hardFinish);
  let messages,quote,answer,providerReceiptKey,finalMode=forceFinish&&!state.reportDraft,providerIssue;
@@ -210,7 +210,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     // A mechanically incomplete research handoff is not completed by an
     // honest approval. One affordable reopening can preserve this draft and
     // the remaining scoped review, without another full-report generation.
-    const gaps=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    const gaps=[...researchCompletionIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(semanticReview.status==='approved'&&gaps.length&&!hardFinish&&state.index<=maximumConversationTurns-6&&attempts<maximumSemanticReviews&&!semanticReview.researchCycles){
      const balance=await ledger.status(),availableKurus=Math.max(0,5000-balance.chargedKurus-workerInfraReservationKurus);
      let affordable=false;
@@ -241,7 +241,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     // A missing peer comparison cannot erase valid market results. Keep the
     // typed handoff in the same context while completion remains blocked.
     try{assertSchema(call.input,researchSchemaFor(state.analysisVersion));researchSummary=call.input;}catch{/* Malformed input remains visible in its original tool turn. */}
-    const missing=[...researchOutcomeIssues(call.input,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    const missing=[...researchCompletionIssues(call.input,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(typeof call.input.reason!=='string'||!call.input.reason.trim())missing.push('research_completion_reason_missing');
     if(calls.some(other=>!['begin_report','review_research'].includes(other.name)))missing.push('research_observations_pending');
     if(missing.length&&!finalMode)throw new BudgetError('research_needed',missing.join(', '));
@@ -249,7 +249,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
     finishRequested=true;value={accepted:true,instruction:reportDraft?'Araştırma sonucu kaydedildi. Korunmuş taslağı yeniden yazmadan review_bhs ile yalnız etkilenen kısmı denetle ve düzelt.':
      'Aynı konuşmadaki bütün kaynaklar ve değerlendirmeyle şimdi finish_bhs kullan.'};
    }else if(call.name==='finish_bhs'&&!finalMode&&!answer.fallback){
-    const missing=[...researchOutcomeIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
+    const missing=[...researchCompletionIssues(researchSummary,[...sourceMap.values()],brief,{progress:researchProgress,analysisVersion:state.analysisVersion}),...researchClosureIssues(researchProgress,[...sourceMap.values()])];
     if(missing.length)throw new BudgetError('research_needed',missing.join(', '));
     finishRequested=true;value={accepted:false,instruction:'Tam rapor için çıktı alanı şimdi ayrılacak. Sonraki yanıtta bütün raporu finish_bhs ile tamamla.'};
    }else if(call.name==='finish_bhs'){

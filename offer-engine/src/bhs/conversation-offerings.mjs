@@ -58,8 +58,8 @@ export function offeringOutcomeIssues(summary,sources,{progress}={}){
   if(!group||!nonempty(group.id)||!/^[a-zA-Z0-9_-]{1,80}$/u.test(group.id)||ids.has(group.id)){issues.push('offering_identity_invalid');continue;}ids.add(group.id);
   if(['label','audience','need','market','channel','commercialRole'].some(key=>!nonempty(group[key])))issues.push('offering_context_missing');
   const own=question(group.productQuestionId),competition=question(group.competitionQuestionId);
-  if(own?.status!=='answered')issues.push('offering_product_question_open');
-  if(!Array.isArray(group.products)||!group.products.length)issues.push('offering_products_missing');
+  if(own?.status!=='answered')issues.push(own?.status==='unavailable'?'offering_product_unavailable':'offering_product_question_open');
+  if(!Array.isArray(group.products)||!group.products.length){if(own?.status!=='unavailable')issues.push('offering_products_missing');}
   else for(const row of group.products)if(!nonempty(row?.name)||!nonempty(row?.analysis)||!reviewed(row?.sourceIds,row?.url,group.productQuestionId))issues.push('offering_product_unread');
   const alternatives=peers.filter(peer=>peer?.offeringId===group.id);
   if(competition?.status!=='answered'||!alternatives.length)issues.push(competition?.status==='unavailable'?'offering_competition_unavailable':'offering_competition_missing');
