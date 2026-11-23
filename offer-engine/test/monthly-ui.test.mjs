@@ -22,6 +22,44 @@ const growth='.ob-standard-editor [data-alternative=growth_operations]',ops='.ob
 async function compose(page){await page.locator('.ob-price').click();await page.locator('.ob-compose').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();}
 async function save(page){await page.locator('.ob-logo-approved').check();await page.locator('.ob-scope-approved').check();await page.locator('.ob-save').click();await page.getByText('Teklif v3 kaydedildi. Önceki teklif ve kart değeri korundu.',{exact:true}).waitFor();}
 
+test('the calendar checkbox is optional in retainer and month-by-month proposals',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await launch();
+ try{for(const [width,monthly] of [[1280,false],[390,true]]){
+  const {page,errors}=await setup(browser,width);
+  const toggle=page.getByRole('checkbox',{name:'BHS aksiyon planını teklif takvimine ekle'});
+  assert.equal(await toggle.isVisible(),false);
+  if(monthly){
+   await page.locator('.ob-monthly-toggle').check();
+   await page.locator('[data-month="1"] .ob-service-trigger').first().waitFor();
+   await chooseCost(page,'[data-month="1"]','account');
+   await page.getByRole('button',{name:'Ay ekle',exact:true}).click();
+   await chooseCost(page,'[data-month="2"]','email_marketing');
+  }else{
+   await chooseCost(page,growth,'email_marketing');
+   await chooseCost(page,ops,'b2b');
+  }
+  await page.locator('.ob-price').click();
+  await toggle.waitFor();
+  assert.equal(await toggle.isChecked(),false);
+  await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();
+  const plainPrices=await page.locator('.so-options').textContent();
+  assert.equal(await page.locator('#so-track').getByText(/BHS önerisi/).count(),0);
+
+  await toggle.check();
+  await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();
+  assert.equal(await page.locator('.so-options').textContent(),plainPrices);
+  assert.match(await page.locator('#so-track').textContent(),/BHS önerisi.*üyelik yenileme/);
+  if(monthly)assert.match(await page.locator('#so-track .so-step').nth(1).textContent(),/2\. ay.*BHS önerisi/);
+  else{
+   await page.locator('.so-option').nth(1).click();
+   assert.match(await page.locator('#so-track').textContent(),/Kurumsal seyahat yöneticileri/);
+   assert.doesNotMatch(await page.locator('#so-track').textContent(),/üyelik yenileme/);
+  }
+  assert.deepEqual(await page.evaluate(()=>reviewCalls.filter(call=>call.proposalProof).map(call=>call.bhsCalendar??false)),[false,true]);
+  assert.deepEqual(errors,[]);await page.close();
+ }}finally{await browser.close();}
+});
+
 test('desktop/mobile: all sheet rows in compact searchable popups; independent costs, remove/recalculate without BHS, save/publish/reopen, old offers intact',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const browser=await launch();await mkdir(screenshotDir,{recursive:true});try{for(const width of [1440,390]){
   const {page,errors,before}=await setup(browser,width);assert.equal(await page.locator('.ob-monthly-toggle').isChecked(),false);
