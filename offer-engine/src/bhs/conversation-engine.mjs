@@ -11,7 +11,7 @@ import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
 import {sourceNavigation,navigationVersion,existingAssetGuidance,navigationGuidance} from './conversation-navigation.mjs';
 import {evidenceGuidance,sourceEvidenceBoundary,failedEvidenceBoundary} from './conversation-evidence.mjs';
-import {conversationQuote} from './conversation-providers.mjs';
+import {conversationQuote,conversationTransportVersion} from './conversation-providers.mjs';
 import {workerInfraReservationKurus} from './job-infrastructure.mjs';
 import {projectModelBrief,protectConversationMessages,protectModelValue,ensureModelInputContext,crmContextGuidance} from './conversation-input.mjs';
 import {checkedOfferingVersion,offeringOutcomeFor,researchSchemaFor,offeringAnalysisGuidance,outcomeOptions} from './conversation-offerings.mjs';
@@ -24,14 +24,20 @@ import {createConversationTransfer} from './conversation-transfer.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
+const safeName=value=>typeof value==='string'&&/^[a-zA-Z0-9_.-]{1,120}$/u.test(value);
 const safeIssue=(error,tool)=>({tool,code:/^[a-z0-9_]{1,80}$/u.test(error.code||'')?error.code:'provider_error',
  ...(error.code==='report_validation'?{validationIssues:error.message.split(', ').filter(value=>/^[a-z0-9_]{1,80}$/u.test(value))}:{}),
+ ...(safeName(error.providerReason)?{providerReason:error.providerReason}:{}),
+ ...(safeName(error.providerRequestId)?{providerRequestId:error.providerRequestId}:{}),
+ ...(safeName(error.providerOperation)?{providerOperation:error.providerOperation}:{}),
+ ...(Array.isArray(error.parameterHints)?{parameterHints:error.parameterHints.filter(safeName).slice(0,8)}:{}),
  ...(Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{})});
 
 export async function readConversation(ledger,id){
  const policy=await ledger.get(conversationKeys.policy(id));
  const analysisVersion=checkedOfferingVersion(complete(policy)?policy.value?.analysisVersion:undefined);
  const reviewPolicyVersion=checkedReviewPolicy(complete(policy)?policy.value?.reviewPolicyVersion:undefined);
+ const transportVersion=complete(policy)&&policy.value?.transportVersion===conversationTransportVersion?conversationTransportVersion:undefined;
  const pairs=await Promise.all(Array.from({length:maximumConversationTurns},async(_,index)=>{
   const key=conversationKeys.turn(id,index);return Promise.all([ledger.get(key),ledger.get(key+':recovered')]);
  }));
@@ -51,7 +57,7 @@ export async function readConversation(ledger,id){
  const pending=pairs[turns.length];
  if(turns.some(turn=>turn.analysisVersion&&turn.analysisVersion!==analysisVersion))throw new BudgetError('budget_context','Korunmuş ürün/rakip araştırma sürümü bu oturumla eşleşmiyor.');
  if(turns.some(turn=>turn.reviewPolicyVersion&&turn.reviewPolicyVersion!==reviewPolicyVersion))throw new BudgetError('budget_context','Korunmuş denetim sürümü bu oturumla eşleşmiyor.');
- return {turns,index:turns.length,sources:[...sources.values()],knownUrls,readAttempts,toolIssues,final,analysisVersion,reviewPolicyVersion,
+ return {turns,index:turns.length,sources:[...sources.values()],knownUrls,readAttempts,toolIssues,final,analysisVersion,reviewPolicyVersion,transportVersion,
   researchSummary:turns.findLast(turn=>turn.researchSummary)?.researchSummary,
   researchProgress:turns.findLast(turn=>turn.researchProgress)?.researchProgress||emptyResearchProgress(),sourceViews,
   reportDraft:turns.findLast(turn=>turn.reportDraft)?.reportDraft,semanticReview:turns.findLast(turn=>turn.semanticReview)?.semanticReview,
@@ -120,7 +126,12 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
  let reviewMode=Boolean(state.reportDraft)&&(semanticResearchReady(state.semanticReview,state.researchProgress,closureReady)||hardFinish);
  let messages,quote,answer,providerReceiptKey,finalMode=forceFinish&&!state.reportDraft,providerIssue;
  const recoverySources=[],recoveryReads=[],fallbackViews=new Map(state.sourceViews);let observedSourceViews,fallbackObservations=[];
+ const handoffKey='audit:conversation:handoff:'+id+':'+state.index;
+ const handoff=Boolean(state.transportVersion&&providers.fallbackDecision);
+ const savedHandoff=handoff?await ledger.get(handoffKey):null;
+ const usingGemini=handoff&&(complete(savedHandoff)||state.turns.some(turn=>turn.fallbackProvider==='gemini'));
  try{
+  if(usingGemini)throw new BudgetError('analyst_handoff','Yedek analist kayıtlı araştırmayı sürdürüyor.');
   let requestKey='audit:conversation:request:'+id+':'+state.index;
   let request=await ledger.get(requestKey);
   if(request&&!complete(request)&&request.charge_kurus===0){requestKey+=':recovered';request=await ledger.get(requestKey);}
@@ -134,13 +145,13 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)throw new BudgetError('semantic_review_limit','Anlam denetimi sınırına ulaşıldı; taslak korundu.');
    messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
    const availableKurus=Math.max(0,5000-cost.chargedKurus);
-   quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion});
+   quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,transportVersion:state.transportVersion});
   // Fund a complete answer before authorizing further discovery. Its quote
   // uses this actual conversation's token count, not a fixed 20 TRY partition.
    if(!finalMode&&!reviewMode&&(quote.funded===false||cost.chargedKurus+quote.reservation+(quote.completionReservation??quote.finalReservation)+(quote.followingReserveKurus??400)+(quote.toolReserveKurus??0)>5000)){
     if(state.reportDraft)reviewMode=true;else finalMode=true;
     messages=conversationMessages(brief,state,{forceFinish:finalMode,review:reviewMode,cost});
-    quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion});
+    quote=await providers.analystQuote(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),availableKurus,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,transportVersion:state.transportVersion});
    }
    // Only the reserve's digits change after counting; the quote already has
    // 512 tokens of input headroom. Freeze the truthful reserve with the request.
@@ -152,14 +163,58 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
   answer=await providers.analyst(messages,{final:finalMode,review:reviewMode,hasDraft:Boolean(state.reportDraft),quote,receiptKey:providerReceiptKey,
    analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,remainingReserve:reviewMode?0:finalMode?(quote.reviewReservation||0)+(quote.followingReserveKurus??400):(quote.completionReservation??quote.finalReservation??0)+(quote.followingReserveKurus??400)});
  }catch(error){
-  providerIssue=safeIssue(error,'claude');
+  if(!usingGemini)providerIssue=safeIssue(error,'claude');
+  const canHandOff=handoff&&(usingGemini||error.providerStatus>=500||
+   error.providerStatus===400&&error.providerReason==='invalid_request_error');
+  if(canHandOff){
+   const knownBody=state.sources.some(usableConversationSource);
+   if(hardFinish&&!reviewMode&&!knownBody)
+    return save({closed:true,reason:'research_incomplete',toolIssues:providerIssue?[providerIssue]:[],results:[]});
+   if(reviewMode&&(state.semanticReview?.attempts||0)>=maximumSemanticReviews)
+    return save({closed:true,conversationReport:state.reportDraft,reason:'semantic_review_limit',toolIssues:providerIssue?[providerIssue]:[],results:[]});
+   const frozen=complete(savedHandoff)?savedHandoff.value:await ledger.once(handoffKey,{id,index:state.index},0,async()=>{
+    // A Claude quote can close its own budget window while Gemini still has
+    // room to research. Only actual research/time closure authorizes writing.
+    const final=!state.reportDraft&&forceFinish;
+    const history=conversationMessages(brief,state,{forceFinish:final,review:reviewMode,cost});
+    return {messages:history,final,review:reviewMode};
+   });
+   ({messages,final:finalMode,review:reviewMode}=frozen);
+   try{
+    if(finalMode){
+     if(!knownBody||!providers.fallbackReport)throw new BudgetError('research_incomplete','Rapor için kullanılabilir kanıt yok.');
+     const input=projectModelBrief(brief);
+     const report=await providers.fallbackReport({brief:input.brief,sources:state.sources,previous:[],
+      conversation:messages,researchSummary:state.researchSummary,researchProgress:state.researchProgress},
+     {receiptKey:'model:conversation:gemini-request:'+id+':'+state.index});
+     if(!report.data)throw new BudgetError('report_validation','Yedek rapor ayrıştırılamadı.');
+     const sourceMap=new Map(state.sources.map(source=>[source.id,source]));
+     collectSourceViews({results:[{content:JSON.stringify({sources:report.observedSources||[]})}]},sourceMap,fallbackViews);
+     observedSourceViews=[...fallbackViews].map(([sourceId,view])=>({sourceId,...view}));
+     fallbackObservations=report.observedSources||[];
+     answer={content:[{type:'tool_use',id:'gemini_final_'+state.index,name:'finish_bhs',input:report.data}],stopReason:'tool_use',fallback:true};
+    }else{
+     const decision=await providers.fallbackDecision(messages,{review:reviewMode,hasDraft:Boolean(state.reportDraft),
+      analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,
+      receiptKey:'model:conversation:gemini-decision:'+id+':'+state.index});
+     quote={inputUpper:decision.inputUpper||quote?.inputUpper||12000,output:decision.output||2200,
+      completionReservation:decision.completionReservation,followingReserveKurus:decision.followingReserveKurus};
+     answer={...decision,fallback:true};
+    }
+   }catch(failure){
+    const toolIssues=[...(providerIssue?[providerIssue]:[]),safeIssue(failure,'gemini')];
+    if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,
+     reason:'semantic_review_unavailable',semanticReview:{...state.semanticReview,status:'pending',lastError:failure.code||'provider_error'},toolIssues,results:[]});
+    return save({closed:true,reason:failure.code||'research_incomplete',toolIssues,results:[]});
+   }
+  }else{
   if(state.reportDraft)return save({closed:true,conversationReport:state.reportDraft,reportDraft:state.reportDraft,reason:'semantic_review_unavailable',
    semanticReview:{...state.semanticReview,version:activeReviewVersion,status:'pending',lastError:providerIssue.code},toolIssues:[providerIssue],results:[]});
   if(error.code==='stage_paused')return save({closed:true,reason:'stage_paused',toolIssues:[providerIssue],results:[]});
   if(error.code==='input_privacy')return save({closed:true,reason:'input_privacy',toolIssues:[providerIssue],results:[]});
   // A reserved/uncertain request remains charged. A separate provider may
   // complete the answer only inside the same remaining capped account.
-  if(providers.fallbackReport){
+  if(!state.transportVersion&&providers.fallbackReport){
    try{
     if(!state.sources.some(usableConversationSource)&&providers.extract){
      recoveryReads.push(brief.website);
@@ -182,6 +237,7 @@ export async function advanceConversation({brief,ledger,id,providers,now=Date.no
    }catch{/* The free, explicitly partial handoff below preserves all receipts. */}
   }
   if(!answer)return save({closed:true,reason:providerIssue.code,toolIssues:[providerIssue],sources:recoverySources,readAttempts:recoveryReads,results:[]});
+  }
  }
  const calls=(answer.content||[]).filter(block=>block.type==='tool_use');
  const assistant={role:'assistant',content:(answer.content||[]).filter(b=>['text','tool_use','thinking','redacted_thinking'].includes(b.type))};

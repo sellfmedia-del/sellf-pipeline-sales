@@ -183,6 +183,10 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
    data.plans[id].steps.forEach((s,index)=>{
     const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);
     if(s.measurement)add('small',(english?'Measure · ':'Ölçüm · ')+s.measurement,item);
+    for(const action of s.bhsActions||[]){
+     add('small',(english?'BHS pilot · ':'BHS pilotu · ')+action.title,item);
+     add('small',(english?'Measure · ':'Ölçüm · ')+action.measurement,item);
+    }
     const basis=planEvidence.steps[index];
     if(basis.legacy&&basis.references.length){
      add('small',(english?'Saved source references':'Kayıtlı kaynak referansları')+' · '+basis.references.map(n=>'['+n+']').join(' '),item);
