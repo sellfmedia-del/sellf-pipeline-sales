@@ -50,6 +50,12 @@ export async function runConversationJob({job,queue,ledger,getProviders=createCo
    }
   }
  }
+ // The installed RPC advertises this operation on a claim. It verifies the
+ // saved result and current lease atomically before skipping transport phases.
+ if(job.conversationCompletion&&complete(await readConversationResult(ledger,id))){
+  const closed=await queue.advance(job,{nextPhase:'complete',checkpointKey:conversationKeys.result(id)});
+  return {status:closed.state,nextPhase:closed.phase,engine:conversationVersion};
+ }
  const nextPhase=job.phase==='sector_sources'&&job.compactQueue?'report_draft':sequentialPhases[sequentialPhases.indexOf(job.phase)+1];
  if(!nextPhase)throw new BudgetError('invalid_phase','Analiz kuyruk aşaması geçersiz.');
  await queue.advance(job,{nextPhase,checkpointKey:checkpoint});
