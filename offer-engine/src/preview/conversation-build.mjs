@@ -1,6 +1,7 @@
 import {readFile,writeFile,cp,rm} from 'node:fs/promises';
 import {conversationAuditResult} from '../bhs/conversation-report.mjs';
 import {marketOutcomeVersion} from '../bhs/conversation-market.mjs';
+import {reviewPolicyVersion} from '../bhs/conversation-review-contract.mjs';
 import {researchClosureVersion} from '../bhs/conversation-progress.mjs';
 import {brief,researchSources,marketResearchSummary,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
 import {applySemanticDecision} from '../bhs/conversation-semantic.mjs';
@@ -22,9 +23,18 @@ export async function buildConversationReview(output,{production=false}={}){
  const original=strongNarrativeReport({flawed:true});original.reportMarkdown+='\n## Kanal karşılaştırması\n| Kanal | Mevcut gözlem | Ölçülecek ilişki |\n|---|---|---|\n| Web sitesi | Ürün keşfi | Ürün ziyareti → yönlendirme |\n| Shopier / WhatsApp | Harici sipariş yönlendirmesi | Yönlendirme → sipariş |';
  original.reportMarkdown+='\n## Seçili ürün, alıcı ve gerçek alternatif\nTemsili kıtık açıcı sprey için alıcı ihtiyacı, kullanımın anlaşılması ve siparişe ulaşmaktır. Marka ürün tanıtımından harici Shopier/WhatsApp yoluna geçiş sunarken, okunan rakip ürün sayfasında uygulama videosu ve doğrudan sipariş bulunur. Bu fark, yeni bir kanalın zorunlu olduğunu göstermez; mevcut kanalda ürün kullanım açıklaması ve sipariş geçişi birlikte pilotlanabilir. Menüde görülen bütün ürünlerin veya başka pazardaki her markanın aynı alternatif grubuna ait olduğu varsayılmaz. İç marj ve gerçekleşen satış müşteriden alınacak bilgidir. ['+researchSources[0].id+'] ['+researchSources[2].id+']';
  original.reportMarkdown+='\n## Seçili alıcının pazar kararı\nOkunan dış örnekler uzman mağaza/pazaryeri karşılaştırmasını ve ürüne uygun kullanım bilgisini gösteriyor. Bu, mevcut Shopier/WhatsApp geçişinin kaldırılması gerektiği veya fiyatın satın almadaki tek belirleyici olduğu anlamına gelmez. Kullanım anlatımı ile siparişe geçiş aynı kanalda ölçülebilir bir pilotla karşılaştırılabilir. Kesin alt pazar hacmi ve gerçekleşen fiyat duyarlılığı bu kaynaklarda doğrulanmadı; bunları varsayılan sonuç olarak kullanmıyoruz. ['+researchSources[1].id+'] ['+researchSources[3].id+']';
+ const briefGap='Brifte satış sonrası deneyim belirtilmediği için süreç zayıftır.';
+ const correctedGap='Satış sonrası deneyim briefte değerlendirilmemiştir; bu zayıflık kanıtı değildir. Süreç akışı ve müşteri geri bildirimi görüşmede netleştirilmeli.';
+ original.reportMarkdown+='\n## Görüşme bilgisinin sınırı\n'+briefGap;
  const assessed=applySemanticDecision(original,{draftDigest:hash(original),verdict:'patch',rationale:'Sentetik örnekte yalnız kanıtsız performans iddiası düzeltilir; SWOT, aksiyon/ölçüm, alternatifler ve zaman planı aynen korunur.',
-  issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'}],
-  patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim}]},{sources:researchSources});
+  issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'},
+   {id:'brief_gap',reason:'Brifte açıklanmayan süreç marka zayıflığı değildir.',resolution:'Bilinmeyeni müşteri sorusu olarak tut.',sourceIds:[],question:'Satış sonrası süreç ve geri bildirim nasıl izleniyor?',access:'client'}],
+  patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim},
+   {issueId:'brief_gap',path:'reportMarkdown',operation:'replace_text',before:briefGap,after:correctedGap}],
+  claimScope:'Sentetik örnekte özet, tam rapor/SWOT ve aksiyonlardaki kesinlik birlikte değerlendirildi; yalnız iki sorunlu çıkarım düzeltildi. Gerçek analist kabulü değildir.',
+  claimChecks:[{path:'reportMarkdown',text:weakClaim,kind:'hypothesis',basis:'Kamu metnindeki erişim sınırı gerçekleşmiş reklam verimsizliği değildir.',sourceIds:[],briefQuote:'',verification:'Hesap ve olay testiyle doğrulanmalı.',issueId:'performance'},
+   {path:'reportMarkdown',text:briefGap,kind:'client_question',basis:'Briefte bilinmeyen süreç, kanıtlanmış zayıflık değildir.',sourceIds:[],briefQuote:'',verification:'Müşteriden süreç ve geri bildirim kayıtlarını al.',issueId:'brief_gap'}]},
+  {sources:researchSources,brief,progress:completeResearchProgress(),reviewPolicyVersion});
  const fixture=assessed.report;
  const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion:marketOutcomeVersion,researchSummary:marketResearchSummary(),objectiveValidationVersion,
   conversationContext:{version:conversationContextVersion,conversationId:'synthetic-preview',briefDigest:canonicalConversationHash(brief),budgetId:'synthetic-preview-account',capKurus:5000},
