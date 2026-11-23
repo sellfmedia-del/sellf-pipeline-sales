@@ -64,7 +64,8 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    if(!getProvider){
     if(!approval.budgetLeadId||approval.budgetLeadId!==context.leadId||body.action!=='start')throw Error();
     stage='composition';
-    let result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+    const planInput={planMode:plan.mode,manualSteps:plan.manualSteps,bhsCalendar:plan.bhsCalendar};
+    let result=await proposalEngine.run({brief,copy:body.audit.data.proposalCopy,...planInput,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
     assertResult('proposal',result);
     const basePlanStatus=Object.values(result.data.plans).some(p=>p.steps.some(s=>s.bhsActions?.length))?'bhs_retained':'standard';
     let implementation;
@@ -129,7 +130,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    const job=await provider.poll(interactionId(ticket.id));
    if(['queued','in_progress'].includes(job.status))return res.status(200).json({phase:'composition',ticket:body.ticket});
    if(job.status!=='completed')throw Error();
-   let result=await proposalEngine.run({brief,copy:JSON.parse(modelText(job)),planMode:plan.mode,manualSteps:plan.manualSteps,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
+   let result=await proposalEngine.run({brief,copy:JSON.parse(modelText(job)),planMode:plan.mode,manualSteps:plan.manualSteps,bhsCalendar:plan.bhsCalendar,logoBackground:body.logoBackground,now:now()},{audit:body.audit,pricing:body.pricing,logo});
    const envelope={...result,stage:'proposal',engineVersion:proposalEngine.version,inputHash,runId:randomUUID()};assertResult('proposal',envelope);
    return res.status(200).json({phase:'complete',result:envelope,saveProof:codec.encode({kind:'proposal_ready',createdAt:now(),...claims,proposalHash:digest(envelope)},session,host)});
   }catch{

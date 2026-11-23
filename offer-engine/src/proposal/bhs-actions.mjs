@@ -1,4 +1,5 @@
-import {normalizeServiceText} from '../pricing/service-interpretation.mjs';
+import {catalog,projects} from '../pricing/catalog.mjs';
+import {interpretOperations,normalizeServiceText} from '../pricing/service-interpretation.mjs';
 
 const clean=value=>typeof value==='string'?value.trim().replace(/\s+/gu,' '):'';
 const safe=value=>Boolean(value)&&value.length<=420&&!/[<>]|https?:\/\/|www\.|[₺$€£]|\b(?:garanti|taahhüt)\b/iu.test(value);
@@ -68,4 +69,81 @@ export function retainProposalActions(plans,brief,audit,pricing,mode){
   pricing.monthlyPlan.months.forEach((row,index)=>attach(plans.operations_bundle.steps[index],row.services,used));
  }else for(const alternative of pricing.alternatives)if(alternative.available!==false)
   attach(plans[alternative.id].steps[0],alternative.services,new Set());
+}
+
+const inlineMeasurement=/(?:\*\*)?(?:Ölçüm|KPI)(?:\*\*)?\s*:\s*(?:\*\*)?\s*/iu;
+const contextLabel=/(?:\*\*)?(?:Neden|Nasıl|Önkoşul|Not|Müşteri sorusu|Hedef)(?:\*\*)?\s*:/iu;
+const methodLabel=/(?:\*\*)?Nasıl(?:\*\*)?\s*:\s*(?:\*\*)?\s*/iu;
+const scopeLabels=[
+ ['b2b',/\b(?:b2b|kurumsal\s+(?:satis|seyahat|uyelik|paket|alici))\p{L}*/u],
+ ['email_marketing',/\b(?:crm|upsell|retention|yenileme|ust pakete|e\s*mail|e posta|mail pazarlama)\b/u],
+ ['project_app',/\b(?:portal|web app|mobil uygulama)\w*\b.{0,45}\b(?:kur|gelistir|insa|tasarla)\p{L}*/u],
+ ['project_brandbook',/\b(?:brandbook|brand book|kurumsal kimlik)\b/u]
+];
+const pricedNames=[...catalog,...projects].map(row=>({id:row.id,name:normalizeServiceText(row.name)}));
+
+function rankedReportActions(markdown){
+ const rows=[];let inPlan=false,codeBlock=false;
+ for(const line of markdown.split('\n')){
+  if(/^\s*(?:~~~|```)/u.test(line)){codeBlock=!codeBlock;continue;}
+  if(codeBlock)continue;
+  const section=/^\s*#{1,2}\s+(.+)$/u.exec(line);
+  if(section)inPlan=/\b(?:aksiyon|eylem|uygulama plani|yol haritasi)\b/u.test(normalizeServiceText(section[1]));
+  const row=/^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*\s+(.+)$/u.exec(line);
+  if(!row||(!inPlan&&!/^oncelik\b/u.test(normalizeServiceText(row[1]))))continue;
+  const match=inlineMeasurement.exec(row[2]);
+  if(!match)continue;
+  const body=row[2].slice(0,match.index),how=body.split(methodLabel,2)[1]?.split(contextLabel,1)[0];
+  const action=[body.split(contextLabel,1)[0],how].filter(Boolean).join(' ');
+  const measurement=row[2].slice(match.index+match[0].length).split(contextLabel,1)[0];
+  rows.push({scope:row[1],action:clean(action),measurement:clean(measurement)});
+ }
+ return rows;
+}
+
+// Calendar entries can receive recommendations within their priced services.
+export function addBhsCalendarRecommendations(steps,audit,groups){
+ const report=audit.report?.conversation;
+ if(!report||audit.researchReuse?.contextNeedsConfirmation)return;
+ const scopes=groups.map(group=>new Set([
+  ...group.services.map(row=>row.serviceId),...(group.projectPlan?.items||[]).map(row=>row.serviceId)
+ ]));
+ const seen=new Set(),lastPlacement=new Map(),replacedPilots=new Set();
+ const proposals=[...rankedReportActions(String(report.reportMarkdown||'')),...proposalActionCandidates(audit)];
+ for(const {scope='',action,measurement} of proposals){
+  if(seen.size>=12)break;
+  if(!safe(action)||!safe(measurement)||/[\p{Cc}\p{Cf}]/u.test(action+measurement))continue;
+  const folded=normalizeServiceText(action),scopeText=normalizeServiceText(scope+' '+action);
+  if(seen.has(folded)||/\b(?:soz ver\w*|kesin sonuc|oncelikli erisim hakki|satis garantisi)\b/u.test(folded))continue;
+  const ids=new Set(interpretOperations(scopeText).serviceIds);
+  for(const {id,name} of pricedNames)if((' '+scopeText+' ').includes(' '+name+' '))ids.add(id);
+  for(const [id,pattern] of scopeLabels)if(pattern.test(scopeText))ids.add(id);
+  if(!ids.size||/\b(?:sms|push|retargeting)\b/u.test(folded)&&![...ids].some(id=>['meta','google_ads','tiktok','programmatic'].includes(id)))continue;
+  const serviceIds=[...ids];
+  const eligible=scopes.flatMap((services,i)=>serviceIds.every(id=>services.has(id))?[i]:[]);
+  if(!eligible.length)continue;
+  const previous=Math.max(-1,...serviceIds.map(id=>lastPlacement.get(id)??-1));
+  const index=eligible.find(i=>i>previous)??eligible.at(-1);
+  const step=steps[index];
+  step.bhsActions=[...(step.bhsActions||[]),{title:action,measurement,recommendation:true,serviceIds}];
+  for(const id of serviceIds){lastPlacement.set(id,index);replacedPilots.add(id);}
+  seen.add(folded);
+ }
+ const redundant=new Set(themes.filter(theme=>replacedPilots.has(theme.service)).map(theme=>theme.title));
+ for(const step of steps)if(step.bhsActions?.length){
+  step.bhsActions=step.bhsActions.filter(action=>!redundant.has(action.title));
+  if(!step.bhsActions.length)delete step.bhsActions;
+ }
+}
+
+export function applyBhsCalendar(plans,audit,pricing){
+ if(pricing.pricingMode==='monthly'){
+  addBhsCalendarRecommendations(plans.operations_bundle.steps,audit,pricing.monthlyPlan.months);
+  return;
+ }
+ for(const alternative of pricing.alternatives.filter(row=>row.available!==false)){
+  const {steps}=plans[alternative.id];
+  const groups=steps.map((_,i)=>({services:alternative.services,...(i===steps.length-1?{projectPlan:pricing.projectPlan}:{})}));
+  addBhsCalendarRecommendations(steps,audit,groups);
+ }
 }

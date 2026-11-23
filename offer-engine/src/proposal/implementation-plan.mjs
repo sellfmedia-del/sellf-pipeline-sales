@@ -135,11 +135,16 @@ export function applyImplementation(document,context,generated,language,{onRevie
  }else for(const group of context.groups){
   const actions=accepted.get(group.id);
   if(actions&&!duplicates.has(group.id)){
-   const bhsActions=plans[group.id].steps.flatMap(s=>s.bhsActions||[]);
-   plans[group.id]={...plans[group.id],steps:actions.map((action,i)=>({
-    ...step(action,(language==='en'?'Step ':'Adım ')+(i+1)),
-    ...(!i&&bhsActions.length?{bhsActions}:{})
-   }))};
+   const original=plans[group.id].steps;
+   const steps=actions.map((action,i)=>step(action,(language==='en'?'Step ':'Adım ')+(i+1)));
+   original.forEach((prior,i)=>{
+    for(const bhsAction of prior.bhsActions||[]){
+     const match=bhsAction.recommendation?actions.findIndex(action=>bhsAction.serviceIds.every(id=>action.serviceIds.includes(id))):0;
+     const target=steps[match]??steps[Math.min(i,steps.length-1)];
+     (target.bhsActions??=[]).push(bhsAction);
+    }
+   });
+   plans[group.id]={...plans[group.id],steps};
   }
  }
  return {...document,plans};

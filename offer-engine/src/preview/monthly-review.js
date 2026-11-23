@@ -3,6 +3,12 @@
 import {monthlyPricing} from './monthly-pricing.mjs';
 import {selectedPricing,publicProjects} from './review-selection.mjs';
 import {addQuote} from './monthly-currency.mjs';
+import {applyBhsCalendar} from './review-bhs-actions.mjs';
+const sampleCalendarAudit={report:{conversation:{reportMarkdown:
+ '## Önerilen aksiyon planı\n'+
+ '**Öncelik 1 – Üye yenileme (CRM).** Kullanım özetini hazırlayıp üyelik yenileme e-postasını pilot gruba gönder. Ölçüm: Yenileme oranı.\n'+
+ '**Öncelik 2 – Kurumsal B2B satış.** Kurumsal seyahat yöneticileriyle teklif pilotu yap. Ölçüm: Görüşmeden teklife geçiş oranı.'
+}}};
 const waitForAdapter=()=>new Promise((resolve,reject)=>{
  const start=Date.now(),poll=()=>{
   if(window.PipelinePricingRequest&&window.reviewRows)return resolve();
@@ -35,6 +41,7 @@ try{
   if(!monthly){delete data.monthlyPlan;for(const [id,plan]of Object.entries(data.plans)){plan.focus=priced.alternatives.find(a=>a.id===id).services.map(s=>s.name).join(' · ');if(body.planMode==='manual'){plan.mode='manual';plan.steps=clone(body.manualSteps);}}if(!priced.scope.selected.length&&data.projectPlan&&body.planMode!=='manual')data.plans.operations_bundle.steps=[{time:'Başlangıç',title:'Proje kapsamı, erişimler ve teslimlerin netleştirilmesi'},{time:'Proje takvimine göre',title:'Proje uygulaması ve teslim onayı'}];}
   if(monthly)data.plans.operations_bundle={mode:'operations',focus:priced.scope.selected.map(s=>s.name).join(' · '),steps:data.monthlyPlan.months.map(row=>({time:row.month+'. ay',title:[...row.services,...(row.projectPlan?.items||[])].map(s=>s.name+(s.description!==s.name?' · '+s.description:'')).join(' / ')}))};
   if(!monthly&&data.projectPlan)for(const plan of Object.values(data.plans)){plan.focus=[plan.focus,...data.projectPlan.items.map(s=>s.name)].join(' · ');plan.steps.push({time:'Proje takvimine göre',title:data.projectPlan.items.map(s=>s.name).join(' / ')});}
+  if(body.bhsCalendar===true)applyBhsCalendar(data.plans,sampleCalendarAudit,priced);
   data.valueSync={performed:false,amount:data.alternatives.find(a=>a.id===data.recommendedAlternativeId).monthlyAmount};
   if(body.brief.language==='en')data.language='en';
   return {phase:'complete',result,saveProof:'synthetic-preview-only'};

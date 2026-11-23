@@ -5,7 +5,7 @@ import {snapshotBrief,briefHash} from '../bhs/brief.mjs';
 import {assertResult} from '../contracts.mjs';
 import {offerCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
 import {selectProposalAudit} from '../proposal/audit-selection.mjs';
-import {retainProposalActions} from '../proposal/bhs-actions.mjs';
+import {retainProposalActions,applyBhsCalendar} from '../proposal/bhs-actions.mjs';
 import {digest} from '../pricing/proof.mjs';
 export const proposalEngine=Object.freeze({id:'proposal',version:'0.9.1',async run(input,dependencies={}){
  const brief=snapshotBrief(input.brief),{audit,pricing,logo}=dependencies;
@@ -23,5 +23,6 @@ export const proposalEngine=Object.freeze({id:'proposal',version:'0.9.1',async r
  if(pricing.data.projectPlan){for(const p of Object.values(plans)){p.focus=[p.focus,...pricing.data.projectPlan.items.map(s=>s.name)].filter(Boolean).join(' · ');if(plan.mode!=='manual')p.steps.push({time:'Proje takvimine göre',title:pricing.data.projectPlan.items.map(s=>s.name).join(' / ')});}}
  if(monthly)plans.operations_bundle={mode:'operations',focus:[...pricing.data.scope.selected,...monthlyPlan.months.flatMap(row=>row.projectPlan?.items||[])].map(s=>s.name).join(' · '),steps:monthlyPlan.months.map(row=>({time:row.month+'. ay',title:[...row.services,...(row.projectPlan?.items||[])].map(s=>s.name+(s.description!==s.name?' · '+s.description:'')).join(' / ')}))};
  retainProposalActions(plans,brief,audit.data,pricing.data,plan.mode);
+ if(plan.bhsCalendar)applyBhsCalendar(plans,audit.data,pricing.data);
  return {status:pricing.status==='review'||logo.status==='review'?'review':'ready',data:{schemaVersion:'proposal-v1',brand:{name:brief.brandName,website:brief.website},copy,logo:{image:candidate.image,background,...(logo.data.processing==='original'?{processing:'original'}:{}),reviewed:logo.data.reviewed===true},currency:'TRY',...(pricing.data.quote?{quote:structuredClone(pricing.data.quote)}:{}),alternatives,...(pricing.data.projectPlan?{projectPlan:publicProjects(pricing.data.projectPlan)}:{}),recommendedAlternativeId:pricing.data.recommendedAlternativeId,...(monthly?{pricingMode:'monthly',monthlyPlan}:{}),plans,bhs:selectProposalAudit(audit.data,brief,pricing.data),exclusions:pricing.data.scope.exclusions,deferred:pricing.data.scope.deferred.map(s=>({name:s.name,reason:s.reason})),pending:pricing.data.scope.pending.map(s=>({name:s.name,reason:s.reason})),notices:pricing.data.notices,sections:['intro','bhs','alternatives','scope','plan','contract'],createdAt:new Date(input.now||Date.now()).toISOString(),provenance:{briefHash:briefHash(brief),auditHash:digest(audit),pricingHash:digest(pricing),logoHash:digest(logo),auditEngineVersion:audit.engineVersion||null,auditMethodologyVersion:audit.data.methodologyVersion||null,pricingEngineVersion:pricing.engineVersion||null,templateVersion:'sellf-offer-2026-10-21-v2',costVersion:pricing.data.costVersion,costSnapshotHash:pricing.data.costSnapshotHash},valueSync:{performed:false,amount:alternatives.find(a=>a.id===pricing.data.recommendedAlternativeId).monthlyAmount}}};
 }});

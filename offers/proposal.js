@@ -184,7 +184,8 @@ const template="<div class=\"so-shell\">\n<header class=\"so-header\"><div class
     const item=add('div','',track,'so-step');add('span',s.time,item);add('strong',s.title,item);
     if(s.measurement)add('small',(english?'Measure · ':'Ölçüm · ')+s.measurement,item);
     for(const action of s.bhsActions||[]){
-     add('small',(english?'BHS pilot · ':'BHS pilotu · ')+action.title,item);
+     const label=action.recommendation?(english?'BHS recommendation':'BHS önerisi'):(english?'BHS pilot':'BHS pilotu');
+     add('small',label+' · '+action.title,item);
      add('small',(english?'Measure · ':'Ölçüm · ')+action.measurement,item);
     }
     const basis=planEvidence.steps[index];

@@ -24,7 +24,7 @@ export function normalizePlan(input={}){
   if(!Array.isArray(input.manualSteps)||!input.manualSteps.length||input.manualSteps.length>8)throw Error('Manuel başlangıç planını gir.');
   manualSteps=input.manualSteps.map(s=>{if(typeof s.title!=='string'||!s.title.trim()||s.title.length>180||typeof s.time!=='string'||!s.time.trim()||s.time.length>100)throw Error('Manuel plan adımı geçersiz.');return {title:s.title,time:s.time};});
  }
- return {mode,manualSteps};
+ return {mode,manualSteps,...(input.bhsCalendar===true?{bhsCalendar:true}:{})};
 }
 export function buildPlans(plan,pricing){
  return Object.fromEntries(pricing.alternatives.map(a=>{
