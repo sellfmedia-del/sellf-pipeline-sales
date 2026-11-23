@@ -77,14 +77,16 @@ export function memoryLedger({charged=500}={}){
  return {ledger:createLedger(call,{reuseCompleted:true}),rows,total:()=>total};
 }
 export const assistantCall=(name,input,id='tool_1')=>({content:[{type:'tool_use',id,name,input}],stopReason:'tool_use'});
-export const semanticApproval=report=>({draftDigest:hash(report),verdict:'approve',rationale:'Sentetik değerlendirme: marka/hedef, pazar-rakip anlamı, dört SWOT kolu ve aksiyon-ölçüm bağı korunuyor; yeni olgu veya stil değişikliği gerekmiyor.',issues:[],patches:[]});
+export const semanticApproval=(report,{reviewPolicyVersion}={})=>({draftDigest:hash(report),verdict:'approve',rationale:'Sentetik değerlendirme: marka/hedef, pazar-rakip anlamı, dört SWOT kolu ve aksiyon-ölçüm bağı korunuyor; yeni olgu veya stil değişikliği gerekmiyor.',issues:[],patches:[],
+ ...(reviewPolicyVersion?{claimScope:'Sentetik özet, tam rapor/SWOT ve aksiyonların koşullu ticari yorumu birlikte değerlendirildi; gerçek analist kabulü değildir.',
+  claimChecks:[{path:'summary',text:report.summary,kind:'hypothesis',basis:'Sentetik brief hedefi ve kaynaklı kanal gözlemiyle geliştirilen stratejik öncelik; gerçekleşmiş sonuç değildir.',sourceIds:[],briefQuote:'',verification:'Mevcut kanalda karşılaştırmalı pilot ve müşterinin gerçekleşen satış verisiyle doğrula.',issueId:''}]}:{})});
 export function scriptedProviders(ledger,replies){
  const calls=[];let index=0;
- return {calls,analystQuote:async(_messages,options={})=>({reservation:100,finalReservation:800,reviewReservation:100,completionReservation:options.review?0:options.hasDraft?100:900,inputUpper:1000,output:options.review?6000:10000}),
+ return {calls,analystQuote:async(_messages,options={})=>({reservation:100,finalReservation:800,reviewReservation:100,completionReservation:options.review?0:options.hasDraft?100:900,inputUpper:1000,output:options.review?6000:10000,...(options.reviewPolicyVersion?{reviewPolicyVersion:options.reviewPolicyVersion}:{})}),
   analyst:async(messages,options)=>{calls.push({messages:structuredClone(messages),options});return ledger.once('model:test:'+index,{index},100,async()=>{
    let response=replies[index++];
    if(!response&&options.review){const draft=messages.flatMap(message=>Array.isArray(message.content)?message.content:[]).findLast(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
-    if(draft)response=assistantCall('review_bhs',semanticApproval(draft),'synthetic-review');}
+    if(draft)response=assistantCall('review_bhs',semanticApproval(draft,{reviewPolicyVersion:options.reviewPolicyVersion||options.quote?.reviewPolicyVersion}),'synthetic-review');}
    if(!response)throw Error('No synthetic response for this model turn');return {...response,accountedKurus:20};},{settle:v=>v.accountedKurus});},
   search:async()=>({results:researchSources.map(row=>({...row,method:'search-snippet'}))}),extract:async({urls})=>({results:researchSources.filter(row=>urls.includes(row.url)),failures:[]}),
   consult:async()=>({answer:'Kaynak, iki örnek ürünü ve sipariş yönlendirmesini gösterir; toplam SKU sayısını kanıtlamaz.'})};

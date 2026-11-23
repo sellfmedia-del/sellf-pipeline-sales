@@ -11,6 +11,7 @@ import {specialistSelection,sampledSources} from './conversation-sampling.mjs';
 import {projectModelBrief,protectConversationMessages,protectModelValue,redactInputText} from './conversation-input.mjs';
 import {checkedOfferingVersion,conversationToolsFor} from './conversation-offerings.mjs';
 import {marketAnalysisVersion} from './conversation-market.mjs';
+import {checkedReviewPolicy,reviewToolsFor} from './conversation-review-contract.mjs';
 
 export const conversationModels=Object.freeze({analyst:'claude-sonnet-5-5',helper:'gemini-3.1-flash-lite'});
 // First-party standard tariffs reviewed 2026-11-20. Quote uncached creation at
@@ -73,7 +74,7 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
  const headers={'content-type':'application/json','anthropic-version':'2023-06-01','x-api-key':anthropicKey};
  // Sonnet 5.5 rejects forced tool choice. Keep the tool prefix stable across
  // thinking turns and use a strict report schema with an explicit instruction.
- const toolsFor=analysisVersion=>conversationToolsFor(analysisVersion).map(tool=>['finish_bhs','review_bhs'].includes(tool.name)?{...tool,strict:true}:tool);
+ const toolsFor=(analysisVersion,reviewPolicyVersion)=>reviewToolsFor(conversationToolsFor(analysisVersion),reviewPolicyVersion).map(tool=>['finish_bhs','review_bhs'].includes(tool.name)?{...tool,strict:true}:tool);
  const safeError=(error)=>({code:error.code||'provider_error',...(error.providerStatus?{providerStatus:error.providerStatus}:{}),
   ...(error.providerReason?{providerReason:error.providerReason}:{}),...(error.providerRequestId?{requestId:error.providerRequestId}:{})});
  async function json(url,body,headers,timeout){
@@ -128,33 +129,36 @@ export function createConversationProviders({ledger,fetchImpl=fetch,now=Date.now
   return {...source,navigation:found.links,navigationStatus:captured.status,navigationVersion,
    ...(captured.reason?{navigationIssue:captured.reason}:{}),...(captured.finalUrl?{navigationFinalUrl:captured.finalUrl}:{}),navigationTruncated:found.truncated};
  }
- async function analystQuote(messages,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity,analysisVersion}={}){
+ async function analystQuote(messages,{final=false,writingOnly=false,review=false,hasDraft=false,availableKurus=Infinity,analysisVersion,reviewPolicyVersion}={}){
   if(!anthropicKey)throw new BudgetError('not_configured','Claude bağlantısı gerekli.');
   checkedOfferingVersion(analysisVersion);
+  checkedReviewPolicy(reviewPolicyVersion);
   messages=protectConversationMessages(messages);
-  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(analysisVersion),tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
+  const countBody={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(analysisVersion,reviewPolicyVersion),tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
   if(Buffer.byteLength(JSON.stringify(countBody))>600000)throw new BudgetError('input_budget','Analiz bağlamı aktarım sınırını aşıyor.');
   const counted=await json('https://api.anthropic.com/v1/messages/count_tokens',countBody,headers,10000);
   if(!integer(counted.input_tokens,1)||counted.input_tokens>120000)throw new BudgetError('token_count','Claude girdi hesabı doğrulanamadı.');
-  return {...conversationQuote(upper(counted.input_tokens),{final,writingOnly,review,hasDraft,availableKurus,analysisVersion}),...(analysisVersion?{analysisVersion}:{})};
+  return {...conversationQuote(upper(counted.input_tokens),{final,writingOnly,review,hasDraft,availableKurus,analysisVersion}),...(analysisVersion?{analysisVersion}:{}),...(reviewPolicyVersion?{reviewPolicyVersion}:{})};
  }
  return {
   now,ledger,safeError,configured:()=>({claude:Boolean(anthropicKey),tavily:Boolean(tavilyKey),gemini:Boolean(geminiKey)}),
   analystQuote,
-  async analyst(messages,{final=false,writingOnly=false,review=false,hasDraft=false,quote,remainingReserve=0,receiptKey,analysisVersion}={}){
+  async analyst(messages,{final=false,writingOnly=false,review=false,hasDraft=false,quote,remainingReserve=0,receiptKey,analysisVersion,reviewPolicyVersion}={}){
    const version=quote?quote.analysisVersion:analysisVersion;
-   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,...(review?{review:true}:{}),output:quote?.output??(review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final,...(version?{analysisVersion:version}:{})};
+   const reviewVersion=quote?quote.reviewPolicyVersion:reviewPolicyVersion;
+   const identity={version:conversationVersion,transport:'sonnet55-auto-v3',writingOnly,...(review?{review:true}:{}),output:quote?.output??(review?semanticReviewOutputTokens:writingOnly?8000:final?20000:1800),model:conversationModels.analyst,messages,final,...(version?{analysisVersion:version}:{}),...(reviewVersion?{reviewPolicyVersion:reviewVersion}:{})};
    const step=receiptKey||'model:conversation:claude:'+hash(identity),saved=await prior(step);if(saved)return saved;
    checkedOfferingVersion(version);
+   checkedReviewPolicy(reviewVersion);
    const safeMessages=protectConversationMessages(messages),protectedInput=JSON.stringify(safeMessages)!==JSON.stringify(messages);
    messages=safeMessages;
    if(quote&&protectedInput){
-    const counted=await analystQuote(messages,{final,writingOnly,review,hasDraft,analysisVersion:version});
+    const counted=await analystQuote(messages,{final,writingOnly,review,hasDraft,analysisVersion:version,reviewPolicyVersion:reviewVersion});
     quote={...quote,inputUpper:counted.inputUpper,reservation:modelReservation('analyst',counted.inputUpper,quote.output)};
    }
-   quote??=await analystQuote(messages,{final,writingOnly,review,hasDraft,analysisVersion:version});
+   quote??=await analystQuote(messages,{final,writingOnly,review,hasDraft,analysisVersion:version,reviewPolicyVersion:reviewVersion});
    const currency=await fx();
-   const body={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(version),
+   const body={model:conversationModels.analyst,system:analystInstruction,messages,tools:toolsFor(version,reviewVersion),
     max_tokens:quote.output,cache_control:{type:'ephemeral'},
     output_config:{effort:writingOnly||review?'medium':final?'high':'medium'},tool_choice:{type:'auto',...(final||review?{disable_parallel_tool_use:true}:{})},...(writingOnly||review?{thinking:{type:'between_tools'}}:{})};
    return paid(step,{...identity,messages},quote.reservation,async()=>{

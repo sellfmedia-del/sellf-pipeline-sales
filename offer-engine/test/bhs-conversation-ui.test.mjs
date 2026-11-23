@@ -29,6 +29,8 @@ test('whole BHS narrative, SWOT, tables and sources render safely on desktop and
   assert.deepEqual([...new Set(linkedUrls)].sort(),sourceUrls);
   assert.match(narrative,/Seçili ürün, alıcı ve gerçek alternatif/);
   assert.match(narrative,/Seçili alıcının pazar kararı/);
+  assert.match(narrative,/bu zayıflık kanıtı değildir/);
+  assert.ok(!narrative.includes('Brifte satış sonrası deneyim belirtilmediği için süreç zayıftır.'));
   assert.match(await view.innerText(),/Örnek Rakip/);assert.match(await view.innerText(),/Uzman mağaza ve pazaryerinde/);
   assert.equal(await page.locator('#ob-review-title').innerText(),'BHS analizi hazır');
   assert.equal(await page.evaluate(()=>window.unsafeReport),undefined);assert.equal(await view.locator('script').count(),0);
