@@ -2,6 +2,7 @@ import {createLedger,hash} from '../../src/budget/ledger.mjs';
 import {sourceId} from '../../src/bhs/conversation-contract.mjs';
 import {presentConversationSource} from '../../src/bhs/conversation-source.mjs';
 import {collectSourceViews,emptyResearchProgress,updateResearchProgress} from '../../src/bhs/conversation-progress.mjs';
+import {researchWorkPolicyVersion} from '../../src/bhs/conversation-work.mjs';
 
 export const brief={brandName:'Örnek Pet',segment:'kobi',website:'https://pet.example.com/',
  goals:'Türkiye pazarında büyümek ve ciro artışı.',needs:'Web sitesi ve online satış kanallarının yönetimi. Amazon tarafında mevcut bir partner var.',
@@ -79,7 +80,8 @@ export function memoryLedger({charged=500}={}){
 export const assistantCall=(name,input,id='tool_1')=>({content:[{type:'tool_use',id,name,input}],stopReason:'tool_use'});
 export const semanticApproval=(report,{reviewPolicyVersion}={})=>({draftDigest:hash(report),verdict:'approve',rationale:'Sentetik değerlendirme: marka/hedef, pazar-rakip anlamı, dört SWOT kolu ve aksiyon-ölçüm bağı korunuyor; yeni olgu veya stil değişikliği gerekmiyor.',issues:[],patches:[],
  ...(reviewPolicyVersion?{claimScope:'Sentetik özet, tam rapor/SWOT ve aksiyonların koşullu ticari yorumu birlikte değerlendirildi; gerçek analist kabulü değildir.',
-  claimChecks:[{path:'summary',text:report.summary,kind:'hypothesis',basis:'Sentetik brief hedefi ve kaynaklı kanal gözlemiyle geliştirilen stratejik öncelik; gerçekleşmiş sonuç değildir.',sourceIds:[],briefQuote:'',verification:'Mevcut kanalda karşılaştırmalı pilot ve müşterinin gerçekleşen satış verisiyle doğrula.',issueId:''}]}:{})});
+  claimChecks:[{path:'summary',text:report.summary,kind:'hypothesis',basis:'Sentetik brief hedefi ve kaynaklı kanal gözlemiyle geliştirilen stratejik öncelik; gerçekleşmiş sonuç değildir.',sourceIds:[],briefQuote:'',verification:'Mevcut kanalda karşılaştırmalı pilot ve müşterinin gerçekleşen satış verisiyle doğrula.',issueId:''}]}:{}),
+ ...(reviewPolicyVersion===researchWorkPolicyVersion?{workReview:{rationale:'Sentetik kapsam incelemesi: kalan pilot/uygulama ve iç veri soruları sonraki müşteri işidir; ertelenmiş önemli BHS kamu işi seçilmedi.',items:[]}}:{})});
 export function scriptedProviders(ledger,replies){
  const calls=[];let index=0;
  return {calls,analystQuote:async(_messages,options={})=>({reservation:100,finalReservation:800,reviewReservation:100,completionReservation:options.review?0:options.hasDraft?100:900,inputUpper:1000,output:options.review?6000:10000,...(options.reviewPolicyVersion?{reviewPolicyVersion:options.reviewPolicyVersion}:{})}),

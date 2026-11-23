@@ -8,6 +8,9 @@ import {chromium as playwright} from 'playwright-core';
 test('whole BHS narrative, SWOT, tables and sources render safely on desktop and mobile while explicit services stay available',
  {skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const fixture=JSON.parse(await readFile(path.join(process.cwd(),'public/offers/conversation-review-data.json')));
+ assert.equal(fixture.audit.data.semanticReview.version,'targeted-research-review-v3');
+ assert.equal(fixture.audit.data.conversationTransfer.version,'whole-report-summary-source-transfer-v1');
+ assert.ok(!fixture.audit.data.meetingQuestions.some(row=>row.question.includes('sipariş koşullarını daha sonra inceleyin')));
  const sourceUrls=[...new Set(fixture.audit.data.sources.map(source=>source.url))].sort();
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(arg=>!['--single-process','--disable-web-security'].includes(arg)),headless:true});
  try{for(const width of [1280,820,390]){

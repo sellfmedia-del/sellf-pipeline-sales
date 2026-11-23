@@ -1,6 +1,7 @@
 import {BudgetError,hash} from '../budget/ledger.mjs';
 import {assertSchema} from './schema.mjs';
-import {claimReviewSchema,reviewPolicyVersion} from './conversation-review-contract.mjs';
+import {claimReviewSchema,researchWorkReviewSchema,reviewPolicyVersion} from './conversation-review-contract.mjs';
+import {researchWorkPolicyVersion,validateWorkReview} from './conversation-work.mjs';
 import {canonicalConversationHash} from './conversation-context.mjs';
 import {usableConversationSource} from './conversation-source.mjs';
 import {projectModelBrief} from './conversation-input.mjs';
@@ -37,8 +38,8 @@ function oneBlock(markdown,start,end){
  const bounds=headings.length?[0,...headings,markdown.length]:[0,...[...markdown.matchAll(/\n\s*\n/gu)].map(row=>row.index+row[0].length),markdown.length];
  return bounds.some((left,index)=>index<bounds.length-1&&start>=left&&end<=bounds[index+1]);
 }
-export function applyClaimReview(draft,decision,{sources=[],attempts=1,brief,progress}={}){
- try{assertSchema(decision,claimReviewSchema);}catch{fail('Denetimin veri biçimini ve claimScope/claimChecks alanlarını tamamla.','format');}
+export function applyClaimReview(draft,decision,{sources=[],attempts=1,brief,progress,policy=reviewPolicyVersion}={}){
+ try{assertSchema(decision,policy===researchWorkPolicyVersion?researchWorkReviewSchema:claimReviewSchema);}catch{fail('Denetimin veri biçimini ve bu oturumun kapsam/iddia/iş alanlarını tamamla.','format');}
  if(decision.draftDigest!==hash(draft))fail('Yama başka bir taslağa ait; mevcut taslak kimliğini kullan.','format');
  if(!text(decision.rationale)||!text(decision.claimScope)||!decision.claimChecks.length)fail('Anlam denetiminin kapsamını ve seçilen gerçek iddia değerlendirmesini kaydet.','claim');
  const issues=new Map();
@@ -82,6 +83,7 @@ export function applyClaimReview(draft,decision,{sources=[],attempts=1,brief,pro
  if(decision.verdict==='patch'&&(!operations.length||pending.length))fail('Her işaretli sorun çözülmeli; önemli açık public soru varsa research_needed kullan.','patch');
  if(decision.verdict==='research_needed'&&(!pending.length||pending.some(row=>row.access!=='public'||!text(row.question))))
   fail('Araştırmaya yalnız yamayla çözülmemiş dar public soru döner; iç veri veya analitik iddia için müşteri sorusu/koşullu yama kullan.','research');
+ if(policy===researchWorkPolicyVersion)validateWorkReview(decision.workReview,{draft,issues,pending,patched,progress,sources,readTarget:atPath,fail});
  const known=new Map(sources.map(source=>[source.id,source])),qualified=new Set(qualifiedResearchSources(progress,sources).map(proof=>proof.sourceId)),
   safeBrief=brief?Object.values(projectModelBrief(brief).brief).filter(value=>typeof value==='string'):[];
  const findingChecks=[];
@@ -107,9 +109,10 @@ export function applyClaimReview(draft,decision,{sources=[],attempts=1,brief,pro
   const expected={source_fact:'observation',brief_statement:'brief',hypothesis:'inference',client_question:'inference'}[check.kind];
   if(row.kind!==expected)fail('Seçili bulgunun kind alanı iddia türüyle tutarlı değil; yalnız ilgili kaydı düzelt.','claim',{path:check.path});
  }
- return {report:result,review:{version:reviewPolicyVersion,status:pending.length?'research_needed':'approved',
+ return {report:result,review:{version:policy,status:pending.length?'research_needed':'approved',
   draftDigest:hash(draft),reportDigest:canonicalConversationHash(result),digestEncoding:'canonical-json-v1',rationale:decision.rationale,
-  issues:decision.issues,researchIssues:pending,patches:decision.patches,claimScope:decision.claimScope,claimChecks:decision.claimChecks,attempts}};
+  issues:decision.issues,researchIssues:pending,patches:decision.patches,claimScope:decision.claimScope,claimChecks:decision.claimChecks,
+  ...(policy===researchWorkPolicyVersion?{workReview:decision.workReview}:{}),attempts}};
 }
 export function reviewFailureFeedback(error){
  return error.reviewFeedback||{category:'validation',reason:error.message||'Denetim yanıtı uygulanamadı; mevcut taslak korundu.'};
