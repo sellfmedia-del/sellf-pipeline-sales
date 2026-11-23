@@ -7,7 +7,7 @@ test('bilingual website retains its pages and exposes only password-protected pr
  for(const source of ['/iletisim','/teklifinizi-arayin','/en','/en/contact','/en/find-your-proposal'])assert.ok(config.rewrites.some(r=>r.source===source));
  const external=config.rewrites.filter(r=>r.destination.startsWith('https:'));
  assert.equal(external.length,6);assert.ok(external.every(r=>r.destination.startsWith('https://sales.sellfmedia.com/offers/')));
- assert.deepEqual(await readdir(new URL('api',here)),['offer.js']);
+ assert.deepEqual(await readdir(new URL('api',here)),['offer.js','ratecard.js']);
 });
 function submit(value){let callback;const status={textContent:''},input={value,attrs:{},setAttribute(k,v){this.attrs[k]=v},focus(){}},form={elements:{extension:input},querySelector:()=>status,addEventListener:(_,fn)=>callback=fn};return {input,status,form,run:()=>callback({preventDefault(){}})};}
 test('extension form opens only valid local proposals and rejects executable/foreign/extra-path links in both languages',async()=>{

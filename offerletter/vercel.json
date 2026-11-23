@@ -51,6 +51,14 @@
       "destination": "/en/search.html"
     },
     {
+      "source": "/ratecard",
+      "destination": "/api/ratecard?lang=tr"
+    },
+    {
+      "source": "/en/ratecard",
+      "destination": "/api/ratecard?lang=en"
+    },
+    {
       "source": "/:slug([a-z0-9-]+-teklifi)",
       "destination": "https://sales.sellfmedia.com/offers/customer.html"
     },
