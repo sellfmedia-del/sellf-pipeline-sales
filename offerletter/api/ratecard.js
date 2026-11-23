@@ -69,7 +69,10 @@ export async function handleRatecard(request, {
   }
 
   const origin = request.headers.get('origin');
-  if (request.headers.get('sec-fetch-site') === 'cross-site' || (origin && origin !== url.origin)) {
+  const fetchSite = request.headers.get('sec-fetch-site');
+  // A native same-origin form can send Origin: null under no-referrer.
+  const sameOriginForm = origin === 'null' && fetchSite === 'same-origin';
+  if (fetchSite === 'cross-site' || (origin && origin !== url.origin && !sameOriginForm)) {
     return new Response(null, { status: 403, headers });
   }
 

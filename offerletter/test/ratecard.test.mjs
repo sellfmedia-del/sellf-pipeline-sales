@@ -14,6 +14,11 @@ const request = (path, init) => new Request(origin + path, init);
 const submit = (path, fields, site = origin) => request(path, {
   method: 'POST', headers: { Origin: site }, body: new URLSearchParams(fields),
 });
+const submitForm = (path, fields, fetchSite) => request(path, {
+  method: 'POST',
+  headers: { Origin: 'null', ...(fetchSite && { 'Sec-Fetch-Site': fetchSite }) },
+  body: new URLSearchParams(fields),
+});
 
 test('both Ratecard links keep prices behind the server-side password, including the direct function route', async () => {
   for (const [path, language, title] of [
@@ -67,6 +72,21 @@ test('a Ratecard session opens the complete table in both languages and can be c
   const invalid = await handleRatecard(request('/ratecard', { headers: { Cookie: session } }), { ...settings, rawPrices: '[{}]' });
   assert.equal(invalid.status, 503);
   assert.doesNotMatch(await invalid.text(), /<table>/);
+});
+
+test('native browser forms with a null origin still require a same-origin navigation', async () => {
+  const login = await handleRatecard(submitForm('/ratecard', { password }, 'same-origin'), settings);
+  assert.equal(login.status, 303);
+  assert.match(login.headers.get('set-cookie'), /^__Host-sellf-ratecard=/);
+  const logout = await handleRatecard(submitForm('/en/ratecard', { action: 'lock' }, 'same-origin'), settings);
+  assert.equal(logout.status, 303);
+  assert.equal(logout.headers.get('location'), '/en/ratecard');
+  assert.match(logout.headers.get('set-cookie'), /Max-Age=0$/);
+  for (const fetchSite of [undefined, 'cross-site', 'same-site']) {
+    const denied = await handleRatecard(submitForm('/ratecard', { password }, fetchSite), settings);
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get('set-cookie'), null);
+  }
 });
 
 test('Offerletter routes send both Ratecard pages to the standalone function', async () => {
