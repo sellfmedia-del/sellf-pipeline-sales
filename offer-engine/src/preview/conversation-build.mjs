@@ -1,7 +1,8 @@
 import {readFile,writeFile,cp,rm} from 'node:fs/promises';
 import {conversationAuditResult} from '../bhs/conversation-report.mjs';
 import {marketOutcomeVersion} from '../bhs/conversation-market.mjs';
-import {reviewPolicyVersion} from '../bhs/conversation-review-contract.mjs';
+import {researchWorkPolicyVersion} from '../bhs/conversation-work.mjs';
+import {createConversationTransfer} from '../bhs/conversation-transfer.mjs';
 import {researchClosureVersion} from '../bhs/conversation-progress.mjs';
 import {brief,researchSources,marketResearchSummary,completeResearchProgress} from '../../test/fixtures/bhs-conversation.mjs';
 import {applySemanticDecision} from '../bhs/conversation-semantic.mjs';
@@ -26,17 +27,23 @@ export async function buildConversationReview(output,{production=false}={}){
  const briefGap='Brifte satış sonrası deneyim belirtilmediği için süreç zayıftır.';
  const correctedGap='Satış sonrası deneyim briefte değerlendirilmemiştir; bu zayıflık kanıtı değildir. Süreç akışı ve müşteri geri bildirimi görüşmede netleştirilmeli.';
  original.reportMarkdown+='\n## Görüşme bilgisinin sınırı\n'+briefGap;
+ const deferredPeer='Rakibin ürün sayfasındaki sipariş koşullarını daha sonra inceleyin.',deferredIndex=original.questions.length;
+ original.questions.push(deferredPeer);
  const assessed=applySemanticDecision(original,{draftDigest:hash(original),verdict:'patch',rationale:'Sentetik örnekte yalnız kanıtsız performans iddiası düzeltilir; SWOT, aksiyon/ölçüm, alternatifler ve zaman planı aynen korunur.',
   issues:[{id:'performance',reason:'Ölçüm etiketinin görülmemesi reklam verimsizliğini kanıtlamaz.',resolution:'İddiayı doğrulama ihtiyacı olarak sınırla.',sourceIds:[],question:'',access:'analysis'},
-   {id:'brief_gap',reason:'Brifte açıklanmayan süreç marka zayıflığı değildir.',resolution:'Bilinmeyeni müşteri sorusu olarak tut.',sourceIds:[],question:'Satış sonrası süreç ve geri bildirim nasıl izleniyor?',access:'client'}],
+   {id:'brief_gap',reason:'Brifte açıklanmayan süreç marka zayıflığı değildir.',resolution:'Bilinmeyeni müşteri sorusu olarak tut.',sourceIds:[],question:'Satış sonrası süreç ve geri bildirim nasıl izleniyor?',access:'client'},
+   {id:'peer_work',reason:'Okunmuş rakip sipariş koşulu BHS içinde zaten değerlendirilebilir.',resolution:'Mevcut kaynak ve rapordaki somut karşılaştırmayı koru; kamu araştırmasını müşteriye devreden soruyu kaldır.',sourceIds:[researchSources[2].id],question:'Rakibin ürün sipariş yolu nedir?',access:'public'}],
   patches:[{issueId:'performance',path:'reportMarkdown',operation:'replace_text',before:weakClaim,after:correctedClaim},
-   {issueId:'brief_gap',path:'reportMarkdown',operation:'replace_text',before:briefGap,after:correctedGap}],
+   {issueId:'brief_gap',path:'reportMarkdown',operation:'replace_text',before:briefGap,after:correctedGap},
+   {issueId:'peer_work',path:'questions.'+deferredIndex,operation:'remove',before:JSON.stringify(deferredPeer),after:''}],
   claimScope:'Sentetik örnekte özet, tam rapor/SWOT ve aksiyonlardaki kesinlik birlikte değerlendirildi; yalnız iki sorunlu çıkarım düzeltildi. Gerçek analist kabulü değildir.',
   claimChecks:[{path:'reportMarkdown',text:weakClaim,kind:'hypothesis',basis:'Kamu metnindeki erişim sınırı gerçekleşmiş reklam verimsizliği değildir.',sourceIds:[],briefQuote:'',verification:'Hesap ve olay testiyle doğrulanmalı.',issueId:'performance'},
-   {path:'reportMarkdown',text:briefGap,kind:'client_question',basis:'Briefte bilinmeyen süreç, kanıtlanmış zayıflık değildir.',sourceIds:[],briefQuote:'',verification:'Müşteriden süreç ve geri bildirim kayıtlarını al.',issueId:'brief_gap'}]},
-  {sources:researchSources,brief,progress:completeResearchProgress(),reviewPolicyVersion});
+   {path:'reportMarkdown',text:briefGap,kind:'client_question',basis:'Briefte bilinmeyen süreç, kanıtlanmış zayıflık değildir.',sourceIds:[],briefQuote:'',verification:'Müşteriden süreç ve geri bildirim kayıtlarını al.',issueId:'brief_gap'}],
+  workReview:{rationale:'Sentetik örnekte ürün/rakip araştırması BHS içinde mevcut okunmuş kaynakla tamamlandı; kalan hesap verisi ve pilotlar müşteri işidir.',
+   items:[{path:'questions.'+deferredIndex,text:deferredPeer,access:'public',status:'answered',questionId:'competition',issueId:'peer_work',sourceIds:[researchSources[2].id],reason:'Rakip sipariş koşulu zaten okunmuş ve ilgili bulunmuş aynı kaynaktan rapordaki kıyasa taşınır.'}]}},
+  {sources:researchSources,brief,progress:completeResearchProgress(),reviewPolicyVersion:researchWorkPolicyVersion});
  const fixture=assessed.report;
- const saved={conversationReport:fixture,conversationSources:researchSources,researchOutcomeVersion:marketOutcomeVersion,researchSummary:marketResearchSummary(),objectiveValidationVersion,
+ const saved={conversationReport:fixture,conversationSources:researchSources,conversationTransfer:createConversationTransfer(fixture,researchSources,{progress:completeResearchProgress()}),researchOutcomeVersion:marketOutcomeVersion,researchSummary:marketResearchSummary(),objectiveValidationVersion,
   conversationContext:{version:conversationContextVersion,conversationId:'synthetic-preview',briefDigest:canonicalConversationHash(brief),budgetId:'synthetic-preview-account',capKurus:5000},
   researchClosure:{version:researchClosureVersion,progress:completeResearchProgress(),issues:[]},semanticReview:{...assessed.review,synthetic:true},researchedAt:'2026-11-20T10:00:00.000Z'};
  const limited=structuredClone(saved);limited.researchClosure.progress.questions.push({id:'remaining',question:'İlgili ürünün alternatif sipariş yolu nedir?',access:'public',important:true,status:'open',answer:'',sourceIds:[],attemptedUrls:[],rationale:''});

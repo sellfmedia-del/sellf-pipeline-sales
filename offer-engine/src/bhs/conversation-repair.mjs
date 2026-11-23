@@ -13,6 +13,8 @@ import {objectiveValidationVersion} from './conversation-objective.mjs';
 import {ensureConversationContext} from './conversation-context.mjs';
 import {projectModelBrief,protectConversationMessages,ensureModelInputContext} from './conversation-input.mjs';
 import {outcomeOptions} from './conversation-offerings.mjs';
+import {researchWorkPolicyVersion} from './conversation-work.mjs';
+import {createConversationTransfer} from './conversation-transfer.mjs';
 
 export const reportRepairKey=id=>conversationKeys.result(id)+':writing-repair-v1';
 export const repairableReport=value=>!value?.conversationReport&&['provider_error','report_review_required'].includes(value?.reason);
@@ -69,6 +71,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
     if(!issues.includes('report_format')&&!issues.includes('report_size')&&typeof candidate?.reportMarkdown==='string'&&candidate.reportMarkdown.trim())report=candidate;
     if(needsSemantic&&report){
      await ledger.once(key+':semantic-draft',{draftDigest:hash(report)},0,async()=>({conversationReport:report,conversationSources:sources,semanticReview,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),reason:'semantic_review_unavailable',
+      ...(state.reviewPolicyVersion===researchWorkPolicyVersion?{conversationTransfer:createConversationTransfer(report,sources,{progress:state.researchProgress})}:{}),
       ...(outcomeVersion?{researchOutcomeVersion:outcomeVersion}:{}),researchSummary:state.researchSummary,researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues},repair:{kind:'retained-source-writing',semanticDraft:true,newResearchCalls:0}}));
      const reviewRequest=await ledger.once(key+':semantic-request',{draftDigest:hash(report)},0,async()=>{
       const assistant={role:'assistant',content:(answer.content||[]).filter(block=>['text','tool_use','thinking','redacted_thinking'].includes(block.type))};
@@ -96,6 +99,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
    }});
   }catch(error){reason=error.code||'provider_error';if(semanticReview)semanticReview={...semanticReview,status:'pending',lastError:reason};}
   return {...(report?{conversationReport:report}:{}),conversationSources:sources,conversationContext,...(needsObjective?{objectiveValidationVersion}:{}),researchedAt:new Date(now()).toISOString(),reason,
+   ...(report&&state.reviewPolicyVersion===researchWorkPolicyVersion?{conversationTransfer:createConversationTransfer(report,sources,{progress:state.researchProgress})}:{}),
    ...(outcomeVersion?{researchOutcomeVersion:outcomeVersion,researchSummary:state.researchSummary}:{}),
    ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,issues:closureIssues}}:{}),
    ...(semanticReview?{semanticReview}:{}),

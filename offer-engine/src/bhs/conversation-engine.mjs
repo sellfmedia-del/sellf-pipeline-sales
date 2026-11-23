@@ -19,6 +19,8 @@ import {marketAnalysisVersion,marketAnalysisGuidance} from './conversation-marke
 import {compactBudgetText,currentBudgetStatus} from './conversation-budget.mjs';
 import {checkedReviewPolicy} from './conversation-review-contract.mjs';
 import {reviewFailureFeedback} from './conversation-review.mjs';
+import {researchWorkPolicyVersion} from './conversation-work.mjs';
+import {createConversationTransfer} from './conversation-transfer.mjs';
 
 export const maximumConversationTurns=16;
 const complete=row=>row?.state==='complete';
@@ -74,6 +76,7 @@ export function conversationMessages(brief,state,{forceFinish=false,review=false
   (state.analysisVersion?'\n'+offeringAnalysisGuidance:'')+
   (state.analysisVersion===marketAnalysisVersion?'\n'+marketAnalysisGuidance:'')+
   (state.reviewPolicyVersion?'\nOlgu, müşteri beyanı, hipotez ve iç bilgi sorusunu rapor boyunca ayır. Brifte belirtilmeyen süreç marka zayıflığı değildir; profesyonellere satış kuralı fiyat gücü, kanal kontrolü veya marj kanıtı değildir. Bu ticari sonuçları ancak destek varsa olgu; aksi halde koşullu hipotez ve doğrulama adımı olarak yaz.':'')+
+  (state.reviewPolicyVersion===researchWorkPolicyVersion?'\nBHS içinde yapılabilecek önemli kamu araştırmasını gelecekte müşteriye yapılacak aksiyon diye bırakma; gerekli soruyu aynı konuşmada araştır. Uygulama/pilot ile iç veri sorularını bu araştırmadan ayır. highlights yalnız kısa seçimdir; özetin dışında kalan tam anlatımı, SWOT gerekçelerini ve kaynak sınırlarını tam raporda koru.':'')+
   (projection.boundary.redactions||projection.boundary.crmExcluded?'\nModel girdi sınırı: '+JSON.stringify(projection.boundary):'')}];
  const addBudget=text=>{
   if(messages.at(-1).role==='user'){
@@ -364,6 +367,7 @@ export async function persistConversationResult({brief,ledger,id,reason,now=Date
  const outcomeVersion=state.turns.findLast(turn=>turn.researchOutcomeVersion)?.researchOutcomeVersion;
  const conversationReport=state.final?.conversationReport||state.reportDraft||state.turns.findLast(turn=>turn.reportCandidate)?.reportCandidate;
  const result={conversationReport,conversationSources:state.sources,conversationContext,
+  ...(state.reviewPolicyVersion===researchWorkPolicyVersion&&conversationReport?{conversationTransfer:createConversationTransfer(conversationReport,state.sources,{progress:state.researchProgress})}:{}),
   ...(state.turns.some(turn=>turn.objectiveValidationVersion)?{objectiveValidationVersion}:{}),
   ...(state.turns.some(turn=>turn.semanticReviewVersion)?{semanticReview:state.semanticReview||{version:state.reviewPolicyVersion||semanticReviewVersion,status:'pending'}}:{}),
   ...(state.turns.some(turn=>turn.researchClosureVersion)?{researchClosure:{version:researchClosureVersion,progress:state.researchProgress,

@@ -29,7 +29,7 @@ import {resolveManagedGaps} from './managed-gaps.mjs';
 import {conversationEnabled,conversationKeys,conversationVersion} from './conversation-contract.mjs';
 import {handleConversationAudit} from './conversation-bridge.mjs';
 import {marketAnalysisVersion} from './conversation-market.mjs';
-import {reviewPolicyVersion} from './conversation-review-contract.mjs';
+import {researchWorkPolicyVersion} from './conversation-work.mjs';
 
 // Preview opt-in only. Production activation remains a separate reviewed change.
 const supervisedPreview=()=>process.env.VERCEL_ENV==='preview'&&['v7','v8'].includes(process.env.OFFER_BHS_RESEARCH_VERSION);
@@ -143,7 +143,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      savedConversation=await ledger.get(conversationKey);
      useConversation=savedConversation?.state==='complete'&&savedConversation.value?.engine===conversationVersion||
       !savedConversation&&!job.backgroundJobId&&!(await ledger.get('audit:managed-policy:'+hash))&&!(await ledger.get(key('brand_plan')));
-     if(useConversation&&!savedConversation)await ledger.once(conversationKey,{checkpointHash},0,async()=>({engine:conversationVersion,createdAt:now(),analysisVersion:marketAnalysisVersion,reviewPolicyVersion}));
+     if(useConversation&&!savedConversation)await ledger.once(conversationKey,{checkpointHash},0,async()=>({engine:conversationVersion,createdAt:now(),analysisVersion:marketAnalysisVersion,reviewPolicyVersion:researchWorkPolicyVersion}));
     }
     if(body.websiteInput!==undefined){
      const entry={runId:job.researchRunId||body.requestId,requestId:body.requestId,submittedWebsite:body.websiteInput,acceptedWebsite:brief.website};
