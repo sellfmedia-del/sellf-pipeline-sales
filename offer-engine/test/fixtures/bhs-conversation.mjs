@@ -2,6 +2,7 @@ import {createLedger,hash} from '../../src/budget/ledger.mjs';
 import {sourceId} from '../../src/bhs/conversation-contract.mjs';
 import {presentConversationSource} from '../../src/bhs/conversation-source.mjs';
 import {collectSourceViews,emptyResearchProgress,updateResearchProgress} from '../../src/bhs/conversation-progress.mjs';
+import {researchWorkPolicyVersion} from '../../src/bhs/conversation-work.mjs';
 
 export const brief={brandName:'Örnek Pet',segment:'kobi',website:'https://pet.example.com/',
  goals:'Türkiye pazarında büyümek ve ciro artışı.',needs:'Web sitesi ve online satış kanallarının yönetimi. Amazon tarafında mevcut bir partner var.',
@@ -29,6 +30,16 @@ export const researchSummary=()=>({reason:'Pazar ve karşılaştırma sonuçlar�
  customerBehavior:{analysis:'Ürüne uygun kullanım açıklaması seçimi etkileyebilir; etkisi dönüşüm pilotuyla ölçülmeli.',sourceIds:[marketSource.id]},
  competitionDynamics:{analysis:'Rakibin uygulama videosu, marka için anlatımı karşılaştırma fırsatı yaratır.',sourceIds:[peerSource.id]}},
  competitors:[{name:'Örnek Rakip',url:peerSource.url,reason:'Aynı ülke ve tüy bakım ihtiyacında alternatif ürün.',comparison:'Rakip uygulama videosu ve doğrudan sipariş sunarken marka dış kanala yönlendiriyor.',implication:'Ürün açıklaması ve sipariş geçişi kontrollü pilotla karşılaştırılabilir.',sourceIds:[peerSource.id]}]});
+export function offeringResearchSummary(){const value=researchSummary();return {...value,
+ offeringScope:'Türkiye büyüme hedefi için tüy bakım ürünü seçildi; menüdeki bütün ürünler aynı ihtiyaç veya rakip grubuna zorlanmadı.',
+ offerings:[{id:'coat',label:'Tüy bakım ürünü',audience:'Türkiye içindeki kedi/köpek sahipleri',need:'Tüy bakımında uygun kullanım ve sipariş',market:'Türkiye',
+  channel:'Shopier ve WhatsApp siparişi',commercialRole:'Ürün açıklaması ve sipariş geçişi pilotunun temsili ürünü; ciro payı bilinmiyor.',productQuestionId:'brand',competitionQuestionId:'competition',
+  products:[{name:'Kıtık açıcı tüy bakım spreyi',url:source.url,analysis:'Ana sayfa bu ürünü ve harici sipariş yolunu açıklar; kullanım ve sipariş geçişi birlikte değerlendirilmeli.',sourceIds:[source.id]}]}],
+ competitors:value.competitors.map(row=>({...row,offeringId:'coat',alternativeName:'Rakip tüy bakım spreyi',alternativeUrl:peerSource.url}))};}
+export function marketResearchSummary(){return {...offeringResearchSummary(),
+ marketScope:'Türkiye tüy bakım alıcısının ürün karşılaştırması, kullanım beklentisi ve siparişe geçişi seçildi; genel pet pazarı hacmi kapsamı belirlemiyor.',
+ marketDecisions:[{offeringIds:['coat'],questionIds:['market'],analysis:'Okunan dış kaynakta uzman mağaza ve pazaryeri karşılaştırması, kullanım açıklaması ve ürüne uygunluk öne çıkıyor. Bu dar kaynaklar bütün pazarın tercih oranını veya fiyat esnekliğini ölçmüyor.',
+  implication:'Mevcut kanallarda kullanım bilgisini ve siparişe geçişi birlikte pilotla; fiyat duyarlılığını gerçekleşmiş bulgu gibi yazma. Gerçekleşen kanal marjını müşteriden al.',sourceIds:[marketSource.id,usageSource.id]}]};}
 export function researchedReport(){const value=report();value.competitors=researchSummary().competitors.map(({name,url,reason,sourceIds})=>({name,url,reason,sourceIds}));
  value.reportMarkdown=value.reportMarkdown.replace('Doğrudan rakip seçimi aynı ürün sınıfı, hedef alıcı ve Türkiye satış kanalı üzerinden yapılmalıdır; bu kaynaktan rakip adı doğrulanmadı.',
   `Örnek Rakip aynı ülkede tüy bakım ürünü sunuyor; videosu ve doğrudan sipariş yolu, markanın harici yönlendirmesinden farklı. Ürün anlatımı ve sipariş geçişini pilotla karşılaştır. [${peerSource.id}]`);
@@ -67,14 +78,17 @@ export function memoryLedger({charged=500}={}){
  return {ledger:createLedger(call,{reuseCompleted:true}),rows,total:()=>total};
 }
 export const assistantCall=(name,input,id='tool_1')=>({content:[{type:'tool_use',id,name,input}],stopReason:'tool_use'});
-export const semanticApproval=report=>({draftDigest:hash(report),verdict:'approve',rationale:'Sentetik değerlendirme: marka/hedef, pazar-rakip anlamı, dört SWOT kolu ve aksiyon-ölçüm bağı korunuyor; yeni olgu veya stil değişikliği gerekmiyor.',issues:[],patches:[]});
+export const semanticApproval=(report,{reviewPolicyVersion}={})=>({draftDigest:hash(report),verdict:'approve',rationale:'Sentetik değerlendirme: marka/hedef, pazar-rakip anlamı, dört SWOT kolu ve aksiyon-ölçüm bağı korunuyor; yeni olgu veya stil değişikliği gerekmiyor.',issues:[],patches:[],
+ ...(reviewPolicyVersion?{claimScope:'Sentetik özet, tam rapor/SWOT ve aksiyonların koşullu ticari yorumu birlikte değerlendirildi; gerçek analist kabulü değildir.',
+  claimChecks:[{path:'summary',text:report.summary,kind:'hypothesis',basis:'Sentetik brief hedefi ve kaynaklı kanal gözlemiyle geliştirilen stratejik öncelik; gerçekleşmiş sonuç değildir.',sourceIds:[],briefQuote:'',verification:'Mevcut kanalda karşılaştırmalı pilot ve müşterinin gerçekleşen satış verisiyle doğrula.',issueId:''}]}:{}),
+ ...(reviewPolicyVersion===researchWorkPolicyVersion?{workReview:{rationale:'Sentetik kapsam incelemesi: kalan pilot/uygulama ve iç veri soruları sonraki müşteri işidir; ertelenmiş önemli BHS kamu işi seçilmedi.',items:[]}}:{})});
 export function scriptedProviders(ledger,replies){
  const calls=[];let index=0;
- return {calls,analystQuote:async(_messages,options={})=>({reservation:100,finalReservation:800,reviewReservation:100,completionReservation:options.review?0:options.hasDraft?100:900,inputUpper:1000,output:options.review?6000:10000}),
+ return {calls,analystQuote:async(_messages,options={})=>({reservation:100,finalReservation:800,reviewReservation:100,completionReservation:options.review?0:options.hasDraft?100:900,inputUpper:1000,output:options.review?6000:10000,...(options.reviewPolicyVersion?{reviewPolicyVersion:options.reviewPolicyVersion}:{})}),
   analyst:async(messages,options)=>{calls.push({messages:structuredClone(messages),options});return ledger.once('model:test:'+index,{index},100,async()=>{
    let response=replies[index++];
    if(!response&&options.review){const draft=messages.flatMap(message=>Array.isArray(message.content)?message.content:[]).findLast(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
-    if(draft)response=assistantCall('review_bhs',semanticApproval(draft),'synthetic-review');}
+    if(draft)response=assistantCall('review_bhs',semanticApproval(draft,{reviewPolicyVersion:options.reviewPolicyVersion||options.quote?.reviewPolicyVersion}),'synthetic-review');}
    if(!response)throw Error('No synthetic response for this model turn');return {...response,accountedKurus:20};},{settle:v=>v.accountedKurus});},
   search:async()=>({results:researchSources.map(row=>({...row,method:'search-snippet'}))}),extract:async({urls})=>({results:researchSources.filter(row=>urls.includes(row.url)),failures:[]}),
   consult:async()=>({answer:'Kaynak, iki örnek ürünü ve sipariş yönlendirmesini gösterir; toplam SKU sayısını kanıtlamaz.'})};

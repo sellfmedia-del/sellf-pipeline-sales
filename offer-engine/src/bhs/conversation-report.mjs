@@ -6,11 +6,14 @@ import {offerCopy} from '../proposal/composition.mjs';
 import {conversationVersion,finalReportSchema,publicResearchUrl} from './conversation-contract.mjs';
 import {assertSchema} from './schema.mjs';
 import {usableConversationSource,sourceReadingStatus} from './conversation-source.mjs';
-import {researchReportIssues,researchOutcomeVersion as currentOutcomeVersion} from './conversation-research.mjs';
+import {researchReportIssues} from './conversation-research.mjs';
 import {researchClosureIssues,qualifiedResearchSources,sourceReadIdentity} from './conversation-progress.mjs';
 import {semanticReviewIssues} from './conversation-semantic.mjs';
 import {objectiveReportIssues,captureSourcePassages} from './conversation-objective.mjs';
 import {canonicalConversationHash} from './conversation-context.mjs';
+import {outcomeOptions} from './conversation-offerings.mjs';
+import {conversationTransferIssues} from './conversation-transfer.mjs';
+import {researchWorkPolicyVersion} from './conversation-work.mjs';
 
 export function validateConversationReport(report,sources,{semantic=false,objective=false}={}){
  const issues=[];
@@ -55,11 +58,13 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const issues=raw?validateConversationReport(raw,retained,{semantic:Boolean(semanticReview),objective:Boolean(objectiveValidationVersion)}):['report_unavailable'];
  if(conversationContext?.briefDigest&&conversationContext.briefDigest!==canonicalConversationHash(brief))issues.push('conversation_brief_changed');
  if(raw&&semanticReview)issues.push(...semanticReviewIssues(semanticReview,raw));
+ const conversationTransfer=stored.conversationTransfer||stored.report?.conversationTransfer;
+ if(raw&&(conversationTransfer||semanticReview?.version===researchWorkPolicyVersion))issues.push(...conversationTransferIssues(raw,retained,conversationTransfer,{projections:[stored,stored.report]}));
  const researchOutcomeVersion=stored.researchOutcomeVersion||stored.report?.researchOutcomeVersion,
   researchSummary=stored.researchSummary||stored.report?.researchSummary;
  const researchClosure=stored.researchClosure||stored.report?.researchClosure;
  if(raw&&researchOutcomeVersion)issues.push(...researchReportIssues(raw,researchSummary,retained,brief,
-  researchOutcomeVersion===currentOutcomeVersion?{progress:researchClosure?.progress||{}}:{}));
+  outcomeOptions(researchOutcomeVersion,researchClosure?.progress||{})));
  if(raw&&researchClosure)issues.push(...(researchClosure.issues||[]),...researchClosureIssues(researchClosure.progress,retained,{report:raw,includeUnavailable:true}));
  reason??=stored.reason;
  const report=raw||{summary:brief.brandName+' için araştırma kayıtları korundu; tamamlanmış analiz henüz oluşmadı.',
@@ -97,6 +102,7 @@ export function conversationAuditResult(brief,stored,{reason}={}){
  const sections=[...new Set(findings.map(f=>f.bhsSection))].map(id=>({id,title:findings.find(f=>f.bhsSection===id).bhsSectionTitle,
   count:findings.filter(f=>f.bhsSection===id).length,findingIds:findings.filter(f=>f.bhsSection===id).map(f=>f.id),complete,missingQuadrants:[]}));
  const reportData={summary:report.summary,findings,sources,
+  ...(conversationTransfer?{conversationTransfer}:{}),
   ...(researchOutcomeVersion?{researchOutcomeVersion,researchSummary}:{}),
   ...(researchClosure?{researchClosure}:{}),
   ...(semanticReview?{semanticReview}:{}),

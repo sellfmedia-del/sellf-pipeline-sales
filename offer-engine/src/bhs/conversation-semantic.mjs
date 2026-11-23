@@ -4,6 +4,11 @@ import {assertSchema} from './schema.mjs';
 import {qualifiedResearchSources,quoteWasSeen} from './conversation-progress.mjs';
 import {canonicalConversationHash} from './conversation-context.mjs';
 import {crmContextGuidance} from './conversation-input.mjs';
+import {offeringReviewGuidance} from './conversation-offerings.mjs';
+import {marketAnalysisVersion,marketReviewGuidance} from './conversation-market.mjs';
+import {checkedReviewPolicy,reviewPolicyVersion,claimReviewGuidance} from './conversation-review-contract.mjs';
+import {applyClaimReview} from './conversation-review.mjs';
+import {researchWorkPolicyVersion,researchWorkGuidance} from './conversation-work.mjs';
 
 export const semanticReviewVersion='same-conversation-targeted-review-v1';
 export const semanticReviewOutputTokens=6000;
@@ -22,7 +27,8 @@ function oneNarrativeBlock(markdown,start,end){
  const boundaries=headings.length?[0,...headings,markdown.length]:[0,...[...markdown.matchAll(/\n\s*\n/gu)].map(row=>row.index+row[0].length),markdown.length];
  return boundaries.some((left,index)=>index<boundaries.length-1&&start>=left&&end<=boundaries[index+1]);
 }
-export function applySemanticDecision(draft,decision,{sources=[],attempts=1}={}){
+export function applySemanticDecision(draft,decision,{sources=[],attempts=1,brief,progress,reviewPolicyVersion:policy}={}){
+ if(checkedReviewPolicy(policy))return applyClaimReview(draft,decision,{sources,attempts,brief,progress,policy});
  try{assertSchema(decision,semanticReviewSchema);}catch{fail('Anlam denetiminin veri biçimi geçersiz.');}
  if(decision.draftDigest!==hash(draft))fail('Yama başka bir taslağa ait; mevcut analiz korunuyor.');
  if(!text(decision.rationale))fail('Anlama dayalı değerlendirme gerekçesi gerekli.');
@@ -64,6 +70,12 @@ export function applySemanticDecision(draft,decision,{sources=[],attempts=1}={})
 export function semanticReviewIssues(review,report){
  if(!review)return ['semantic_review_pending'];
  if(review.status!=='approved')return [review.status==='research_needed'?'semantic_research_needed':'semantic_review_pending'];
+ if([reviewPolicyVersion,researchWorkPolicyVersion].includes(review.version)&&(!text(review.claimScope)||!Array.isArray(review.claimChecks)||!review.claimChecks.length))return ['claim_review_missing'];
+ if(review.version===researchWorkPolicyVersion){
+  if(!text(review.workReview?.rationale)||!Array.isArray(review.workReview?.items))return ['work_review_missing'];
+  if(review.workReview.items.some(row=>row?.access==='public'&&row.status==='open'))return ['deferred_public_research_open'];
+  if(review.workReview.items.some(row=>row?.access==='public'&&row.status==='unavailable'))return ['deferred_public_research_unavailable'];
+ }
  return review.reportDigest===(review.digestEncoding==='canonical-json-v1'?canonicalConversationHash(report):hash(report))?[]:['semantic_review_stale'];
 }
 export function introducedReadIssues(original,patched,{sources,progress,views}){
@@ -79,10 +91,12 @@ export function semanticResearchReady(review,progress,closureReady){
  if(review?.status!=='research_needed')return true;
  if(closureReady)return true;
  if(review.researchHold)return closureReady;
- const publicIssues=(review.issues||[]).filter(issue=>issue.access==='public'&&text(issue.question));
+ const publicIssues=(review.researchIssues||review.issues||[]).filter(issue=>issue.access==='public'&&text(issue.question));
  return publicIssues.length>0&&publicIssues.every(issue=>progress?.questions?.some(q=>q.id==='semantic_'+issue.id&&q.access==='public'&&['answered','unavailable'].includes(q.status)));
 }
-export const semanticReviewInstruction=(draft,attempts,{researchIssues=[],questions=[]}={})=>'Taslak korunmuştur; yeniden finish_bhs çağırma. Aynı konuşmanın bütün bağlamıyla anlam denetimi yap. review_bhs ile onay, hedefli yama veya research_needed kararı ver. '+
+export const semanticReviewInstruction=(draft,attempts,{researchIssues=[],questions=[],analysisVersion,reviewPolicyVersion:policy}={})=>'Taslak korunmuştur; yeniden finish_bhs çağırma. Aynı konuşmanın bütün bağlamıyla anlam denetimi yap. review_bhs ile onay, hedefli yama veya research_needed kararı ver. '+
  JSON.stringify({draftDigest:hash(draft),reviewAttempt:attempts+1,maximumReviews:maximumSemanticReviews,researchIssues,
   importantPublicQuestions:questions.filter(q=>q.access==='public'&&q.important&&q.status==='open').map(({id,question})=>({id,question})),
-  instruction:'Güçlü anlatımı, dört SWOT kolunun gerekçesini, somut aksiyon/ölçümü ve geçerli alternatifleri koru. Başlık/kelime sayısı kalite kanıtı değildir. Önemli kamu bilgisi eksikse ve yararlı dar araştırma rezervle birlikte sığıyorsa research_needed ile gerçek soruyu belirt; eksikliği dürüstçe yazmak araştırmayı tamamlamaz. Araştırma gerekmeyen iddiayı yalnız hedefli yamayla düzelt. Kaynak/örneklem sınırını marka kusuruna, hesap erişimi yokluğunu altyapı veya performans eksikliğine dönüştürme. Müşteriden alınacak iç veri için kamu araştırması açma; kesin olmayan ticari etkiyi koşullu analiz ve somut doğrulama adımıyla koru. rationale içinde bu ayrımların sorunlu iddialara nasıl uygulandığını açıkla. '+crmContextGuidance});
+  instruction:'Güçlü anlatımı, dört SWOT kolunun gerekçesini, somut aksiyon/ölçümü ve geçerli alternatifleri koru. Başlık/kelime sayısı kalite kanıtı değildir. Önemli kamu bilgisi eksikse ve yararlı dar araştırma rezervle birlikte sığıyorsa research_needed ile gerçek soruyu belirt; eksikliği dürüstçe yazmak araştırmayı tamamlamaz. Araştırma gerekmeyen iddiayı yalnız hedefli yamayla düzelt. Kaynak/örneklem sınırını marka kusuruna, hesap erişimi yokluğunu altyapı veya performans eksikliğine dönüştürme. Müşteriden alınacak iç veri için kamu araştırması açma; kesin olmayan ticari etkiyi koşullu analiz ve somut doğrulama adımıyla koru. rationale içinde bu ayrımların sorunlu iddialara nasıl uygulandığını açıkla. '+crmContextGuidance+
+   (analysisVersion?' '+offeringReviewGuidance:'')+(analysisVersion===marketAnalysisVersion?' '+marketReviewGuidance:'')+
+   (checkedReviewPolicy(policy)?' '+claimReviewGuidance:'')+(policy===researchWorkPolicyVersion?' '+researchWorkGuidance:'')});

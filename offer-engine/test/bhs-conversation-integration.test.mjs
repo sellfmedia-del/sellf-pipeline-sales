@@ -9,7 +9,7 @@ import {proposalEngine} from '../src/engines/proposal-engine.mjs';
 import {assertResult} from '../src/contracts.mjs';
 import {advanceConversation,readConversation,persistConversationResult} from '../src/bhs/conversation-engine.mjs';
 import {conversationAuditResult} from '../src/bhs/conversation-report.mjs';
-import {brief,source,report,marketSource,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSummary,researchedReport,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
+import {brief,source,report,marketSource,peerSource,usageSource,completeResearchProgress,fixtureSourceResults,researchProgressInput,researchSummary,marketResearchSummary,researchedReport,memoryLedger,assistantCall,scriptedProviders,semanticApproval} from './fixtures/bhs-conversation.mjs';
 import {offerFixture,response} from './fixtures/offer.mjs';
 
 const secret='A'.repeat(43),now=()=>Date.parse('2026-11-20T10:00:00Z'),id=briefHash(brief);
@@ -27,10 +27,12 @@ test('authenticated background start/reconnect/finalize keeps one new engine and
    body:{action:'start',requestId:'synthetic_conversation_start',brief,context:{leadId:'synthetic-conversation',spaceId:'synthetic-space'}}};
   let out=response();await handler(req,out);assert.equal(out.code,202,JSON.stringify(out.data));assert.equal(out.data.phase,'conversation');
   const ticket=out.data.ticket;out=response();await handler(req,out);assert.equal(out.code,202);assert.equal(enqueues,1);
-  const providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı anla'}),assistantCall('search_web',{query:'Pet bakım pazar ve rakipleri',purpose:'Pazar ve rekabet',maxResults:3}),assistantCall('read_pages',{urls:[marketSource.url,peerSource.url,usageSource.url],purpose:'Pazar/rakip gövdesini oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',researchSummary()),assistantCall('finish_bhs',researchedReport())]);
+  const providers=scriptedProviders(ledger,[assistantCall('read_pages',{urls:[brief.website],purpose:'Markayı anla'}),assistantCall('search_web',{query:'Pet bakım pazar ve rakipleri',purpose:'Pazar ve rekabet',maxResults:3}),assistantCall('read_pages',{urls:[marketSource.url,peerSource.url,usageSource.url],purpose:'Pazar/rakip gövdesini oku'}),assistantCall('review_research',researchProgressInput()),assistantCall('begin_report',marketResearchSummary()),assistantCall('finish_bhs',researchedReport())]);
   for(let at=0;at<7;at++)await runConversationJob({job,queue,ledger,getProviders:()=>providers,meter:({run})=>run(),now});
   out=response();await handler({...req,body:{action:'status',brief,ticket}},out);assert.equal(out.code,200,JSON.stringify(out.data));
   assert.equal(out.data.result.data.fullReport,researchedReport().reportMarkdown);assert.equal(providers.calls.length,7);
+  assert.equal(out.data.result.data.quality.contentComplete,true);
+  assert.equal(out.data.result.data.researchOutcomeVersion,'product-buyer-market-competition-outcomes-v4');
   const proof=createPricingProof(secret).decode(out.data.pricingProof,secret,'preview.vercel.app',now());assert.equal(proof.kind,'audit_ready');
   const audit=out.data.result,pricing={stage:'pricing',...await pricingEngine.run({brief,serviceSelection:{services:[{serviceId:'meta'}],projects:[]}},{audit})};
   assert.deepEqual(pricing.data.scope.selected.map(row=>row.serviceId),['meta']);assertResult('pricing',pricing);

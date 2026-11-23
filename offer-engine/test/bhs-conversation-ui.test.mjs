@@ -7,6 +7,11 @@ import {chromium as playwright} from 'playwright-core';
 
 test('whole BHS narrative, SWOT, tables and sources render safely on desktop and mobile while explicit services stay available',
  {skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const fixture=JSON.parse(await readFile(path.join(process.cwd(),'public/offers/conversation-review-data.json')));
+ assert.equal(fixture.audit.data.semanticReview.version,'targeted-research-review-v3');
+ assert.equal(fixture.audit.data.conversationTransfer.version,'whole-report-summary-source-transfer-v1');
+ assert.ok(!fixture.audit.data.meetingQuestions.some(row=>row.question.includes('sipariş koşullarını daha sonra inceleyin')));
+ const sourceUrls=[...new Set(fixture.audit.data.sources.map(source=>source.url))].sort();
  const browser=await playwright.launch({executablePath:process.env.LOGO_TEST_CHROMIUM,args:chromium.args.filter(arg=>!['--single-process','--disable-web-security'].includes(arg)),headless:true});
  try{for(const width of [1280,820,390]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -22,7 +27,13 @@ test('whole BHS narrative, SWOT, tables and sources render safely on desktop and
   const view=page.locator('.ob-conversation-report');assert.match(await view.innerText(),/SWOT/);assert.match(await view.innerText(),/Amazon partnerinin mevcut olması/);
   const narrative=await view.innerText();assert.match(narrative,/Büyütme, düzeltme ve durdurma/);assert.match(narrative,/90 günlük karar çerçevesi/);assert.match(narrative,/Alternatif B/);
   assert.ok(!narrative.includes('Ölçüm etiketi görülemediği için reklam harcamaları verimsizdir.'));
-  assert.equal(await view.locator('table').count(),1);assert.equal(await view.locator('a').count(),4);
+  assert.equal(await view.locator('table').count(),1);
+  const linkedUrls=await view.locator('a').evaluateAll(nodes=>nodes.map(node=>node.href));
+  assert.deepEqual([...new Set(linkedUrls)].sort(),sourceUrls);
+  assert.match(narrative,/Seçili ürün, alıcı ve gerçek alternatif/);
+  assert.match(narrative,/Seçili alıcının pazar kararı/);
+  assert.match(narrative,/bu zayıflık kanıtı değildir/);
+  assert.ok(!narrative.includes('Brifte satış sonrası deneyim belirtilmediği için süreç zayıftır.'));
   assert.match(await view.innerText(),/Örnek Rakip/);assert.match(await view.innerText(),/Uzman mağaza ve pazaryerinde/);
   assert.equal(await page.locator('#ob-review-title').innerText(),'BHS analizi hazır');
   assert.equal(await page.evaluate(()=>window.unsafeReport),undefined);assert.equal(await view.locator('script').count(),0);

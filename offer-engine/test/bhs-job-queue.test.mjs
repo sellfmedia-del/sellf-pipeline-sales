@@ -22,6 +22,9 @@ import {inventoryOutputTokens,inventoryStages,recoverManagedSectionSynthesis} fr
 import {managedInventoryCeilingKurus} from '../src/bhs/managed-budget.mjs';
 import {minimumV8GeminiReservation} from '../src/bhs/supervised-providers.mjs';
 import {researchTariff} from '../src/bhs/research-tariff.mjs';
+import {conversationKeys,conversationVersion} from '../src/bhs/conversation-contract.mjs';
+import {persistConversationResult} from '../src/bhs/conversation-engine.mjs';
+import {runConversationJob} from '../src/bhs/conversation-bridge.mjs';
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',token='33333333-3333-4333-8333-333333333333',secret='s'.repeat(43),hash=briefHash(brief);
 const res=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},getHeader(k){return this.headers[k];},status(n){this.code=n;return this;},json(body){this.body=body;return this;}});
 async function fixture(){
@@ -65,6 +68,85 @@ test('worker advances persisted BHS without browser/JWT state and never repeats 
   const retry=await f.queue.claim();await runClaimedBhsStage({job:retry,queue:f.queue,getLedger:f.queue.getLedger,getProviders:()=>assert.fail('no providers on replay'),runStage});assert.equal(paid,1);
   assert.ok(!JSON.stringify(f.calls.filter(c=>c.body.p_op==='enqueue')).includes('synthetic-jwt'));
  }finally{await f.close();}
+});
+
+test('a committed conversation closes under the current lease without claiming the legacy transport phases',async t=>{
+ for(const scenario of ['pre-installation','normal','lost-before-commit','lost-after-commit','cancelled']){
+  await t.test(scenario,async()=>{
+   const f=await fixture();
+   try{
+    await f.db.exec('reset role;');
+    const migrations=['bhs-compact-queue-advance.sql'];
+    if(scenario!=='pre-installation')migrations.push('bhs-conversation-completion.sql');
+    for(const file of migrations)await f.db.exec(await readFile(new URL('../schema/'+file,import.meta.url),'utf8'));
+    await f.db.exec('set role service_role;');
+    const job=await f.enqueue();
+    const claim=await f.queue.claim(),ledger=await f.queue.getLedger(claim),resultKey=conversationKeys.result(hash);
+    const advance={nextPhase:'complete',checkpointKey:resultKey};
+    assert.equal(claim.conversationCompletion,scenario!=='pre-installation');
+    const noModel=()=>assert.fail('Completing a saved result must not call or meter a provider.');
+    const run=async(current,queue=f.queue)=>runConversationJob({job:current,queue,ledger:await f.queue.getLedger(current),getProviders:noModel,meter:noModel});
+
+    const before=await f.ledger.status();
+    if(scenario!=='pre-installation'){
+     await assert.rejects(f.queue.advance(claim,advance),/checkpoint mismatch/);
+     await ledger.once(stageKey(brief,'brand_plan','v8'),{id:hash,phase:'brand_plan',engine:conversationVersion},0,async()=>({conversationTransport:true}));
+     await assert.rejects(f.queue.advance(claim,advance),/policy not committed/);
+    }
+    await ledger.once(conversationKeys.policy(hash),{},0,async()=>({engine:conversationVersion}));
+    if(scenario!=='pre-installation')await assert.rejects(f.queue.advance(claim,advance),/result not committed/);
+    // The expired first free result can be reconstructed without touching an
+    // uncertain paid request or allowing that request to run again.
+    if(scenario==='lost-before-commit'){
+     await assert.rejects(ledger.once(resultKey,{version:conversationVersion,id:hash},0,async()=>{throw Error('interrupted result write');}));
+     await assert.rejects(f.queue.advance(claim,advance),/result not committed/);
+    }
+    await assert.rejects(ledger.once('model:synthetic-uncertain',{},90,async()=>{throw Error('unconfirmed usage');}));
+    const saved=await persistConversationResult({brief,ledger,id:hash,reason:'synthetic_partial'});
+    if(scenario!=='pre-installation'){
+     await assert.rejects(f.queue.advance({...claim,leaseToken:token},advance),/lease mismatch/);
+     await assert.rejects(f.queue.advance(claim,{...advance,checkpointKey:conversationKeys.result('a'.repeat(64))}),/checkpoint mismatch/);
+    }
+    if(scenario.startsWith('lost-')){
+     const lost={...f.queue,advance:async(...args)=>{
+      if(scenario==='lost-after-commit')await f.queue.advance(...args);
+      throw Error('lost queue acknowledgement');
+     }};
+     await assert.rejects(run(claim,lost),/lost queue acknowledgement/);
+    }
+    if(scenario==='lost-before-commit'){
+     await f.db.query("update public.pipeline_bhs_jobs set lease_until=now()-interval '1 second' where id=$1",[job.id]);
+     await assert.rejects(f.queue.advance(claim,advance),/lease mismatch/);
+     const reclaimed=await f.queue.claim();
+     assert.equal(reclaimed.id,job.id);
+     assert.equal((await run(reclaimed)).status,'complete');
+     assert.deepEqual((await f.ledger.get(resultKey+':recovered')).value,JSON.parse(JSON.stringify(saved)));
+     assert.equal((await f.ledger.get(resultKey)).state,'uncertain');
+    }else if(scenario==='lost-after-commit'){
+     assert.equal(await f.queue.claim(),null);
+    }else{
+     const queue=scenario==='cancelled'?{...f.queue,advance:async(...args)=>{
+      await f.queue.cancel(job);
+      return f.queue.advance(...args);
+     }}:f.queue;
+     const outcome=await run(claim,queue);
+     assert.equal(outcome.status,scenario==='pre-installation'?'queued':scenario==='cancelled'?'cancelled':'complete');
+    }
+    if(scenario==='pre-installation'){
+     assert.equal((await f.queue.read(job)).phase,'brand_sources');
+     for(let index=0;index<10;index++)await run(await f.queue.claim());
+    }
+    const row=await f.queue.read(job);
+    assert.equal(row.phase,'complete');
+    assert.equal(row.budgetId,before.id);
+    assert.equal((await f.ledger.status()).chargedKurus,before.chargedKurus+90);
+    assert.equal((await f.ledger.get('model:synthetic-uncertain')).state,'uncertain');
+    const expectedClaims={ 'pre-installation':11, 'lost-before-commit':2 };
+    assert.equal((await f.db.query('select claims from public.pipeline_bhs_jobs where id=$1',[job.id])).rows[0].claims,expectedClaims[scenario]??1);
+    assert.equal(await f.queue.claim(),null);
+   }finally{await f.close();}
+  });
+ }
 });
 test('the existing private queue releases and reclaims a committed research phase on the same budget',async()=>{
  const f=await fixture();try{
