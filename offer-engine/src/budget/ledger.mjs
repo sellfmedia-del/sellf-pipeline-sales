@@ -56,7 +56,13 @@ export async function draftBudgetFor(req,res,leadId,{scope,store=runtimeStore(),
   throw new BudgetError('budget_context','Teklif taslağının bütçe bilgisi geçersiz.');
  const accessToken=productionOffers()?bearer(req):(await sessionFor(req,res,store,secret))?.accessToken;
  if(!accessToken)throw new BudgetError('budget_session','Pipeline oturumu gerekli.');
- return createLedger((op,args={})=>store.call('draft_budget',{jwt:accessToken,leadId,scope,op,...args}));
+ return createLedger((op,args={})=>{
+  // The installed draft ledger accepts one storage namespace. Keep the
+  // existing translation keys and isolate implementation receipts within it.
+  const step=/^model:proposal_implementation:[a-f0-9]{64}$/.test(args.step||'')?
+   'model:proposal_translation:'+hash(['implementation-receipt-v1',args.step]):args.step;
+  return store.call('draft_budget',{jwt:accessToken,leadId,scope,op,...args,...(step?{step}:{})});
+ });
 }
 export function createLedger(call,{reuseCompleted=false}={}){
  const observed=new Map();
@@ -113,7 +119,8 @@ export function createLedger(call,{reuseCompleted=false}={}){
     const value=checkpointValue(output);
     remember(key,await call('complete',{step:key,hash:inputHash,token,value,amount:actual}));return value;}
    catch(error){
-    if(amount>0&&error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation}});throw error;}catch(failure){if(failure===error)throw error;}}
+    if(amount>0&&error.definitelyNotBilled===true){try{await call('complete',{step:key,hash:inputHash,token,amount:0,value:{rejected:true,accountedKurus:0,code:error.code,providerStatus:error.providerStatus,providerReason:error.providerReason,parameterHints:error.parameterHints,providerOperation:error.providerOperation,
+     ...(/^req_[a-zA-Z0-9_-]{1,100}$/.test(error.providerRequestId||'')?{providerRequestId:error.providerRequestId}:{})}});throw error;}catch(failure){if(failure===error)throw error;}}
     const diagnostic={code:error.code||'stage_failed',...([0,1].includes(error.recoveryRound)?{recoveryRound:error.recoveryRound}:{}),...(key.startsWith('model:')&&Number.isInteger(error.providerStatus)?{providerStatus:error.providerStatus}:{}),...(['countTokens','generateContent'].includes(error.providerOperation)?{providerOperation:error.providerOperation}:{}),...(error.modelAttempts?{modelAttempts:error.modelAttempts}:{})};
     if(amount===0&&key.startsWith('audit:scoped-round:')&&/^[a-f0-9]{64}$/.test(error.scopedFailureFingerprint||''))
      diagnostic.scopedFailureFingerprint=error.scopedFailureFingerprint;

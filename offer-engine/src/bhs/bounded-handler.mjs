@@ -21,6 +21,7 @@ import {supervisedPhases} from './supervised-research.mjs';
 import {compactResearchPhases,sequentialPhases} from './sequential-contracts.mjs';
 import {collectionFirstEnabled,createSequentialProviders} from './sequential-providers.mjs';
 import {researchTariff} from './research-tariff.mjs';
+import {conversationTransportVersion} from './conversation-providers.mjs';
 import {backgroundBhsEnabled,browserBhsJobStore,queuedBhsBrief} from './job-store.mjs';
 import {managedPhaseBudget} from './managed-budget.mjs';
 import {managedBrandContinuation} from './managed-report.mjs';
@@ -143,7 +144,7 @@ export function createBoundedAuditHandler({getLedger=budgetFor,getGapLedger=null
      savedConversation=await ledger.get(conversationKey);
      useConversation=savedConversation?.state==='complete'&&savedConversation.value?.engine===conversationVersion||
       !savedConversation&&!job.backgroundJobId&&!(await ledger.get('audit:managed-policy:'+hash))&&!(await ledger.get(key('brand_plan')));
-     if(useConversation&&!savedConversation)await ledger.once(conversationKey,{checkpointHash},0,async()=>({engine:conversationVersion,createdAt:now(),analysisVersion:marketAnalysisVersion,reviewPolicyVersion:researchWorkPolicyVersion}));
+     if(useConversation&&!savedConversation)await ledger.once(conversationKey,{checkpointHash},0,async()=>({engine:conversationVersion,createdAt:now(),analysisVersion:marketAnalysisVersion,reviewPolicyVersion:researchWorkPolicyVersion,transportVersion:conversationTransportVersion}));
     }
     if(body.websiteInput!==undefined){
      const entry={runId:job.researchRunId||body.requestId,requestId:body.requestId,submittedWebsite:body.websiteInput,acceptedWebsite:brief.website};

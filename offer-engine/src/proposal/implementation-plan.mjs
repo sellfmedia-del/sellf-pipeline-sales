@@ -4,6 +4,7 @@ import {supportedNumbers} from '../bhs/numeric-evidence.mjs';
 import {catalog,projects} from '../pricing/catalog.mjs';
 import {normalizeServiceText} from '../pricing/service-interpretation.mjs';
 import {implementationAssessment,orderAssessmentFindings} from './assessment-handoff.mjs';
+import {proposalActionCandidates} from './bhs-actions.mjs';
 
 const text=maxLength=>({type:'string',minLength:1,maxLength});
 const list=(items,maxItems,minItems=0)=>({type:'array',items,maxItems,minItems});
@@ -50,9 +51,14 @@ export function implementationContext(document,brief,audit,pricing,mode){
  const fields=Object.fromEntries(scopes.map((key,i)=>[key,crop(brief[key],[2800,2800,1400,3500][i])]));
  const scope=audit.supervision?.researchPlan?.briefScope;
  const assessment=implementationAssessment(document,audit,candidates,{factualIds:allowedFindings});
+ const proposedActions=[];
+ for(const row of proposalActionCandidates(audit)){
+  if(JSON.stringify([...proposedActions,row]).length>2600)continue;
+  proposedActions.push(row);
+ }
  return {brand:brief.brandName,brief:fields,...(scope&&!audit.researchReuse?.contextNeedsConfirmation?
   {approvedScope:{market:scope.market,audience:scope.audience,objective:scope.objective,decisions:(scope.decisions||[]).map(({decision,field,quote})=>({decision,field,quote}))}}:{}),
-  findings,groups,...(assessment?{assessment}:{})};
+  findings,groups,...(assessment?{assessment}:{}),...(proposedActions.length?{proposedActions}:{})};
 }
 
 export function applyImplementation(document,context,generated,language,{onReview}={}){
@@ -124,18 +130,24 @@ export function applyImplementation(document,context,generated,language,{onRevie
   plans[key]={...plans[key],steps:plans[key].steps.map((original,i)=>{
    const group=context.groups[i];
    const actions=accepted.get(group.id);
-   return actions&&!duplicates.has(group.id)?step(actions[0],original.time):original;
+   return actions&&!duplicates.has(group.id)?{...step(actions[0],original.time),...(original.bhsActions?{bhsActions:original.bhsActions}:{})}:original;
   })};
  }else for(const group of context.groups){
   const actions=accepted.get(group.id);
-  if(actions&&!duplicates.has(group.id))plans[group.id]={...plans[group.id],steps:actions.map((action,i)=>
-   step(action,(language==='en'?'Step ':'Adım ')+(i+1)))};
+  if(actions&&!duplicates.has(group.id)){
+   const bhsActions=plans[group.id].steps.flatMap(s=>s.bhsActions||[]);
+   plans[group.id]={...plans[group.id],steps:actions.map((action,i)=>({
+    ...step(action,(language==='en'?'Step ':'Adım ')+(i+1)),
+    ...(!i&&bhsActions.length?{bhsActions}:{})
+   }))};
+  }
  }
  return {...document,plans};
 }
 
 export async function writeImplementation(document,context,providers,{onImplementationReview}={}){
- const result=await providers.generate('proposal_implementation',{instruction:implementationInstruction,language:'tr',implementation:context},
+ const guidance=context.proposedActions?.length?' proposedActions are BHS suggestions. Adapt their intent and measurement only within the priced group and brief. They cannot establish facts, promises or new scope.':'';
+ const result=await providers.generate('proposal_implementation',{instruction:implementationInstruction+guidance,language:'tr',implementation:context},
   object({plans:implementationPlansSchema}),{model:providers.preferredModel||'gemini-3.8-flash',
    maxOutputTokens:Math.min(6000,2200+context.groups.length*120),minOutputTokens:1000,thinkingLevel:'LOW',jsonMode:true});
  return applyImplementation(document,context,result.data?.plans,'tr',{onReview:onImplementationReview});

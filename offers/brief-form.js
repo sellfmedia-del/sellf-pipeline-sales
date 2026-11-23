@@ -517,6 +517,7 @@
             }
             dialog.querySelector('#ob-review-title').textContent='Teklif taslağı hazır';notice.textContent=(draft.audit?.data.researchContinuity?.notice||'')+
              (response.draftPlanStatus==='standard'?' Brief’e özgü uygulama planı doğrulanamadı. Seçili hizmetlerin başlangıç planı gösteriliyor.':'')+
+             (response.draftPlanStatus==='bhs_retained'?' Seçili kapsama uygun BHS pilotları ve ölçümleri planda yer alıyor.':'')+
              (response.draftPlanStatus==='partial'?' Brief’e özgü uygulama planının bir kısmı doğrulandı. Diğer adımları kontrol et.':'')+
              (planReviewNotice?' '+planReviewNotice:'')+
              ' Logo, kapsam ve planı bu teklif üzerinde kontrol et. '+(variant?'Yeni teklif ayrı kaydedilir; mevcut teklif ve kart değeri korunur.':'Kaydetme, kart değerini önerilen aylık bedele günceller.');

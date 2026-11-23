@@ -63,7 +63,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
       last.content=typeof last.content==='string'?last.content+'\n'+text:[...last.content,{type:'text',text}];
      }
      messages=protectConversationMessages(messages,{privateValues:projection.privateValues});
-     return {messages,sourceViews:[...views],quote:await providers.analystQuote(messages,{final:true,writingOnly:true,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion}),providerReceiptKey:key+':writing-provider'};
+     return {messages,sourceViews:[...views],quote:await providers.analystQuote(messages,{final:true,writingOnly:true,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,transportVersion:state.transportVersion}),providerReceiptKey:key+':writing-provider'};
     });
     const answer=await providers.analyst(request.messages,{final:true,writingOnly:true,quote:request.quote,receiptKey:request.providerReceiptKey,remainingReserve:needsSemantic?(request.quote.reviewReservation||0)+400:0});
     const candidate=answer.content?.find(block=>block.type==='tool_use'&&block.name==='finish_bhs')?.input;
@@ -77,7 +77,7 @@ export async function repairConversationReport({brief,job,ledger,id,getProviders
       const assistant={role:'assistant',content:(answer.content||[]).filter(block=>['text','tool_use','thinking','redacted_thinking'].includes(block.type))};
       const results=(answer.content||[]).filter(block=>block.type==='tool_use').map(block=>({type:'tool_result',tool_use_id:block.id,content:JSON.stringify({draftSaved:true,issues})}));
       const messages=[...request.messages,assistant,{role:'user',content:[...results,{type:'text',text:semanticReviewInstruction(report,0,{analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion})+' Bu kurtarma yalnız yazım/denetim içindir; yeni araştırma çağırma.'}]}];
-      return {messages,quote:await providers.analystQuote(messages,{review:true,hasDraft:true,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion}),providerReceiptKey:key+':review-provider'};
+      return {messages,quote:await providers.analystQuote(messages,{review:true,hasDraft:true,analysisVersion:state.analysisVersion,reviewPolicyVersion:state.reviewPolicyVersion,transportVersion:state.transportVersion}),providerReceiptKey:key+':review-provider'};
      });
      const reviewed=await providers.analyst(reviewRequest.messages,{review:true,hasDraft:true,quote:reviewRequest.quote,receiptKey:reviewRequest.providerReceiptKey});
      const decision=reviewed.content?.find(block=>block.type==='tool_use'&&block.name==='review_bhs')?.input;
