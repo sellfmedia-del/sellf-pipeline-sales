@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import {createBoundedAuditHandler} from '../src/bhs/bounded-handler.mjs';
 import {createPricingHandler} from '../api/pricing.js';
-import {createPricingProof} from '../src/pricing/proof.mjs';
+import {createProposalHandler} from '../api/proposal.js';
+import {createPricingProof,digest} from '../src/pricing/proof.mjs';
+import {logoProof} from '../src/proposal/logo-proof.mjs';
 import {runBoundedStage,stageKey} from '../src/bhs/direct-research.mjs';
 import {researchCacheKey} from '../src/bhs/reuse.mjs';
 import {prepareUploadedLogo} from '../src/upload.mjs';
@@ -55,6 +57,32 @@ test('a compact logo uses pixel checks without localisation; provider failure re
  assert.equal(located,0);assert.equal(backdrop,2);
  const q=result.candidates[0].quality;assert.equal(q.transparency,true);assert.equal(q.changedSolid,0);assert.equal(q.interiorReviewRequired,true);assert.equal(q.requiresReview,true);
  assert.notEqual(result.candidates[0].image,image);assert.equal(result.candidates[0].source,image);
+});
+
+test('proposal accepts the signed backdrop suggested by logo upload and rejects unverified custom colors',async()=>{
+ const originalEnv=process.env.VERCEL_ENV;process.env.VERCEL_ENV='preview';
+ try{
+  const background='#fafaf7';
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160"><rect width="400" height="160" fill="${background}"/><rect x="55" y="40" width="260" height="80" fill="#706551"/><rect x="85" y="60" width="25" height="40" fill="${background}"/></svg>`;
+  const image='data:image/png;base64,'+(await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64');
+  const logo=await prepareUploadedLogo(image,{localFirst:true,chooseBackdrop:async()=>{throw Object.assign(Error('Synthetic provider unavailable'),{code:'provider_error'});}});
+  assert.equal(logo.candidates[0].quality.interiorReviewRequired,true);
+  assert.equal(logo.candidates[0].placement.background,background);
+  const f=await offerFixture();
+  const proof=createPricingProof(secret).encode({kind:'pricing_ready',createdAt:Date.now(),briefHash:f.hash,auditHash:digest(f.audit),pricingHash:digest(f.pricing),budgetLeadId:'lead-1'},session,host);
+  const verifiedLogo={...logo,logoProof:logoProof(secret,host,logo)};
+  const handler=createProposalHandler({getSecret:()=>secret,getLedger:async()=>{throw Error('Synthetic draft provider disabled');},getProviders:()=>assert.fail('No provider calls'),logger:{warn(){}}});
+  const body={action:'start',context:{leadId:'lead-1',spaceId:'space-1'},brief:f.brief,audit:f.audit,pricing:f.pricing,proposalProof:proof,logo:verifiedLogo};
+  for(const [requested,rendered] of [[undefined,background],[background,background],['#ffffff','#ffffff'],['#aabbcc',null],['url(example)',null]]){
+   const res=response();await handler(req({...body,logoBackground:requested}),res);
+   assert.equal(res.code,rendered?200:422,JSON.stringify(res.data));
+   if(rendered)assert.equal(res.data.result.data.logo.background,rendered);
+   else assert.equal(res.data.code,'proposal_logo');
+  }
+  const forged=structuredClone(verifiedLogo);forged.candidates[0].placement.background='#aabbcc';
+  const rejected=response();await handler(req({...body,logo:forged,logoBackground:'#aabbcc'}),rejected);
+  assert.equal(rejected.code,422);assert.equal(rejected.data.code,'proposal_logo');
+ }finally{if(originalEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=originalEnv;}
 });
 
 test('desktop/mobile: a normal card shares one logo/BHS run; double submit reuses it and a new opening gets a fresh budget',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{

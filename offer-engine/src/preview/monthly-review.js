@@ -19,6 +19,23 @@ const waitForAdapter=()=>new Promise((resolve,reject)=>{
 try{
  await waitForAdapter();
  const sample=await(await fetch('/offers/variants-review-data.json')).json(),clone=value=>structuredClone(value);
+ const logoRecoveryDemo=new URLSearchParams(location.search).has('logo-recovery');
+ if(logoRecoveryDemo){
+  const reuse=window.PipelineOfferReuseRequest;
+  window.PipelineOfferReuseRequest=async body=>{
+   const result=await reuse(body);
+   if(body.action==='info')result.logo.candidates[0].placement.background='#fafaf7';
+   return result;
+  };
+  window.PipelineLogoRequest=async body=>{
+   if(body.processing!=='original')throw Error('Bu denemede Filtrelemeden koy seçeneğini kullan.');
+   window.reviewCalls.push({kind:'logo-update'});
+   return {generated:false,sourceType:'upload-original',processing:'original',logoProof:'review-logo-updated',candidates:[
+    {id:'example-original',image:body.image,placement:{background:'#ffffff',area:'logo-only'},quality:{method:'original',width:400,height:160}}
+   ]};
+  };
+  document.querySelector('.review-note').textContent='Örnek teklif açıp hizmetleri seç ve fiyatı hesapla. İlk taslak denemesi örnek bir logo doğrulama hatası gösterecek. Aynı ekranda logoyu yükleyip taslağı tekrar oluştur.';
+ }
  if(new URLSearchParams(location.search).has('saved-bhs')){
   const key='pipeline-synthetic-saved-bhs',audit=window.PipelineAuditRequest,reuse=window.PipelineOfferReuseRequest;
   const logo=window.PipelineLogoControl;
@@ -69,7 +86,10 @@ try{
  window.PipelineProposalRequest=async body=>{
   if(body.pricing.data.pricingMode!=='monthly'&&body.pricing.data.selectionMode!=='explicit')return proposal(body);
   window.reviewCalls.push(clone(body));
+  if(logoRecoveryDemo&&body.logo?.logoProof!=='review-logo-updated')
+   throw Object.assign(Error('Logo kaydı doğrulanamadı. Logoyu yeniden doğrula ve teklifi oluştur.'),{code:'proposal_logo'});
   const result=clone(sample.proposal[body.brief.currency||'TRY']),data=result.data,priced=body.pricing.data;
+  if(logoRecoveryDemo)data.logo={image:body.logo.candidates[0].image,background:body.logoBackground,processing:body.logo.processing,reviewed:false};
   data.brand={name:body.brief.brandName,website:body.brief.website};
   const monthly=priced.pricingMode==='monthly';if(monthly)data.pricingMode='monthly';else delete data.pricingMode;data.recommendedAlternativeId=priced.recommendedAlternativeId;
   if(priced.projectPlan)data.projectPlan=publicProjects(priced.projectPlan);else delete data.projectPlan;

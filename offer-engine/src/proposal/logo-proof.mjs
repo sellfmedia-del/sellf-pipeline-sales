@@ -1,5 +1,15 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {digest} from '../pricing/proof.mjs';
+const presetBackgrounds=['#ffffff','#171717','#626262'];
+
+export function resolveLogoBackground(requested,candidate){
+ const recommended=candidate?.placement?.background||'#ffffff';
+ const background=requested||recommended;
+ if(presetBackgrounds.includes(background)||
+    (typeof background==='string'&&background===recommended&&/^#[0-9a-f]{6}$/i.test(background)))return background;
+ throw Error('Logo zemini geçersiz.');
+}
+
 export function logoProof(secret,host,data,token){
  if(!secret)throw Error('Logo doğrulama bağlantısı gerekli.');
  const sign=t=>createHmac('sha256',secret).update('sellf-logo-v1\n'+host+'\n'+t).digest('base64url');

@@ -24,6 +24,38 @@ async function setup(browser,width,currency='TRY',{height=960,hasTouch=false,fal
  return {page,errors,before};
 }
 const growth='.ob-standard-editor [data-alternative=growth_operations]',ops='.ob-standard-editor [data-alternative=operations_bundle]';
+test('tablet updates a failed logo in the pricing step and retries with the exact same audit and pricing proof',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await launch();
+ try{
+  const {page,errors}=await setup(browser,1180,'TRY',{height:820,hasTouch:true,query:'?logo-recovery'});
+  await chooseCost(page,growth,'account');
+  await page.locator('.ob-price').tap();
+  await page.locator('.ob-compose').tap();
+  const editor=page.getByRole('region',{name:'Logoyu güncelle',exact:true});
+  await editor.waitFor();
+  assert.equal(await page.locator('#offer-brief-form').isVisible(),false);
+  assert.equal(await page.locator('.ob-pricing').isVisible(),true);
+  assert.equal(await page.locator('.ob-research-report').isVisible(),true);
+  assert.equal(await editor.locator('.ol-processing').inputValue(),'original');
+  await editor.locator('.ol-file').setInputFiles(path.resolve('public/examples/logo-white.png'));
+  await editor.getByText(/Orijinal görsel hazır/).waitFor();
+  await page.locator('.ob-compose').tap();
+  await page.locator('.ob-proposal:not([hidden])').waitFor();
+  assert.equal(await editor.isVisible(),false);
+  const calls=await page.evaluate(()=>reviewCalls);
+  const [failed,retried]=calls.filter(call=>call.proposalProof);
+  assert.equal(failed.logoBackground,'#fafaf7');
+  assert.equal(retried.logoBackground,'#ffffff');
+  assert.equal(retried.logo.processing,'original');
+  assert.deepEqual(retried.audit,failed.audit);
+  assert.deepEqual(retried.pricing,failed.pricing);
+  assert.equal(retried.proposalProof,failed.proposalProof);
+  assert.equal(calls.filter(call=>call.serviceSelection).length,1);
+  assert.equal(calls.filter(call=>call.kind==='audit').length,0);
+  assert.equal(calls.filter(call=>call.kind==='logo-update').length,1);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});
 test('a saved BHS survives a tablet reload before the first offer and restores service selection without research',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
  const browser=await launch();
  try{
