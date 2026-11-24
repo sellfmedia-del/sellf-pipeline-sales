@@ -19,6 +19,44 @@ const waitForAdapter=()=>new Promise((resolve,reject)=>{
 try{
  await waitForAdapter();
  const sample=await(await fetch('/offers/variants-review-data.json')).json(),clone=value=>structuredClone(value);
+ if(new URLSearchParams(location.search).has('saved-bhs')){
+  const key='pipeline-synthetic-saved-bhs',audit=window.PipelineAuditRequest,reuse=window.PipelineOfferReuseRequest;
+  const logo=window.PipelineLogoControl;
+  window.PipelineLogoControl={mount(container,options){
+   const control=logo.mount(container,options);
+   control.useSaved(clone(sample.logo));
+   return control;
+  }};
+  const read=()=>JSON.parse(sessionStorage.getItem(key)||'null');
+  const save=(brief,result)=>{
+   const row={id:'example-bhs',created_at:new Date().toISOString(),brand_name:brief.brandName,brief,result};
+   sessionStorage.setItem(key,JSON.stringify(row));
+   return {status:'saved',id:row.id};
+  };
+  window.PipelineAuditRequest=async body=>{
+   const response=await audit(body);
+   return {...response,savedBhs:save(body.brief,response.result)};
+  };
+  window.PipelineOfferReuseRequest=async body=>{
+   if(!body.action.startsWith('saved-'))return reuse(body);
+   if(body.context?.leadId!=='lead-1'||body.context?.spaceId!=='space-1')throw Error('BHS farklı karta ait.');
+   const row=read();
+   if(body.action==='saved-list')return {reports:row?[{id:row.id,brand_name:row.brand_name,created_at:row.created_at}]:[]};
+   if(body.action==='saved-save')return {savedBhs:save(body.brief,body.audit)};
+   if(row?.id!==body.savedReportId)throw Error('Kayıtlı BHS bulunamadı.');
+   if(body.action==='saved-info')return {brief:row.brief,logo:clone(sample.logo)};
+   if(body.action!=='saved-prepare')throw Error('Önizleme işlemi geçersiz.');
+   window.reviewCalls.push(clone(body));
+   const result=clone(row.result);
+   result.data.researchReuse={incrementalResearchCalls:0};
+   return {phase:'complete',result,pricingProof:'synthetic-proof',cost:{chargedKurus:0}};
+  };
+  window.PipelineOffers.mount(document.querySelector('#pipeline-offer-section'),{lead:window.reviewLead,spaceId:'space-1'});
+  const [instructions,limits]=document.querySelectorAll('.review-note');
+  instructions.textContent='Örnek briefi tamamla, BHS’yi al, sayfayı yenile ve Kayıtlı BHS’yi kullan ile hizmet seçimine dön.';
+  limits.textContent='Örnek analiz bu tarayıcı sekmesinde yenileme sonrasında da saklanır. Bu denemede araştırma veya teklif sağlayıcıları çalışmaz.';
+  document.querySelector('.review-reset').onclick=()=>{sessionStorage.removeItem(key);location.reload();};
+ }
  const price=window.PipelinePricingRequest,proposal=window.PipelineProposalRequest;
  window.PipelinePricingRequest=async body=>{
   if(body.pricingMode!=='monthly'&&!body.serviceSelection)return price(body);

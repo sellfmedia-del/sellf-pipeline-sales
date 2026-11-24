@@ -4,7 +4,8 @@
 (async function(){
  'use strict';
  const data=await(await fetch('/offers/variants-review-data.json')).json();
- const clone=value=>structuredClone(value),rows=clone(data.rows),history=new Map(),lead={id:'lead-1',company:'Örnek Marka',name:'Örnek Yetkili',value:'160000',notes:'Avrupa operasyonunun büyümesi ve reklam kanallarının yönetimi değerlendirildi.',timeline:[]};
+ const savedReview=location.pathname.endsWith('/monthly-review.html')&&new URLSearchParams(location.search).has('saved-bhs');
+ const clone=value=>structuredClone(value),rows=savedReview?[]:clone(data.rows),history=new Map(),lead={id:'lead-1',company:'Örnek Marka',name:'Örnek Yetkili',value:'160000',notes:'Avrupa operasyonunun büyümesi ve reklam kanallarının yönetimi değerlendirildi.',timeline:[]};
  const context={lead,spaceId:'space-1'};window.reviewCalls=[];window.reviewRows=rows;window.reviewLead=lead;
  document.querySelector('#review-value').textContent=Number(lead.value).toLocaleString('tr-TR')+' TL';
  const terms=row=>({currency:row.customer_document.quote?.currency||'TRY',documentHash:'synthetic-'+row.id,...(row.customer_document.quote?{exchangeRate:row.customer_document.quote.exchangeRate}:{}),alternatives:row.customer_document.alternatives.map((a,i)=>({id:a.id,name:a.name,current:row.customer_document.quote?.alternatives[i].monthlyAmount??a.monthlyAmount,recommended:row.originalPrices[i],minimum:row.minimumPrices[i]}))});
@@ -31,6 +32,7 @@
   throw Error('Önizleme işlemi tanımlı değil.');
  };
  window.PipelineOfferReuseRequest=async b=>{
+  if(b.action==='saved-list')return {reports:[]};
   window.reviewCalls.push(clone(b));const row=rows.find(r=>r.id===b.sourceOfferId);
   if(b.action==='info')return {brand:clone(row.customer_document.brand),segment:'corporate',currency:row.customer_document.quote?.currency||'TRY',logo:clone(data.logo)};
   const result=clone(data.audit);result.data.researchReuse={contextNeedsConfirmation:true,incrementalResearchCalls:0};return {phase:'complete',result,pricingProof:'synthetic-proof'};
@@ -40,5 +42,5 @@
  window.PipelineProposalRequest=async b=>{
   window.reviewCalls.push(clone(b));const result=clone(data.proposal[b.brief.currency||'TRY']);result.data.brand={name:b.brief.brandName,website:b.brief.website};return {phase:'complete',result,saveProof:'synthetic-proof'};
  };
- window.PipelineOffers.mount(document.querySelector('#pipeline-offer-section'),context);
+ if(!savedReview)window.PipelineOffers.mount(document.querySelector('#pipeline-offer-section'),context);
 })().catch(error=>document.querySelector('#review-error').textContent=error.message);

@@ -5,7 +5,7 @@ import {createProductionGateway} from '../../supabase/functions/pipeline-offer-s
 import {runtimeStore,offersEnabled,authorizeProduction} from '../src/runtime.mjs';
 import {createLedger,budgetFor} from '../src/budget/ledger.mjs';
 const owner='33565c0c-67ea-4435-9df8-6814035dfd11',other='c96b0083-7180-4c2d-bded-a4b1a83dd500',key='k'.repeat(43),jwt='real-pipeline-session-jwt';
-function setup({preview=false,owns=true,offers=[],userId=owner,anonymous=false}={}){
+function setup({preview=false,owns=true,offers=[],savedBhs=[],userId=owner,anonymous=false}={}){
  const calls=[];
  const gateway=createProductionGateway({env:n=>({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server-only',SUPABASE_ANON_KEY:'public'})[n],fetchImpl:async(url,init)=>{
   calls.push({url,init});let value;
@@ -15,6 +15,7 @@ function setup({preview=false,owns=true,offers=[],userId=owner,anonymous=false}=
   else if(url.includes('/rest/v1/spaces?')){assert.ok(!url.includes('user_id='));value=owns?[{id:'space-1'}]:[];}
   else if(url.includes('/rpc/'))value={id:'offer',version:1};
   else if(url.includes('customer_document->publication->>slug'))value=[];
+  else if(url.includes('/rest/v1/pipeline_saved_bhs'))value=savedBhs;
   else if(url.includes('pipeline_offer_versions?'))value=offers;
   else if(url.includes('pipeline_offer_price_history?'))value=[];
   else throw Error('Unexpected access '+url);
@@ -29,6 +30,29 @@ test('production gateway requires its own server key and an Auth-verified real P
  const {request,calls}=setup();assert.equal((await request({action:'authorize',jwt},'x'.repeat(43))).status,403);
  assert.equal(calls.length,1);
  const synthetic=setup({preview:true});assert.equal((await synthetic.request({action:'authorize',jwt})).status,422);
+});
+test('saved BHS uses the same team access as offers and scopes every archive operation to the card space',async()=>{
+ const id='a'.repeat(64),body={jwt,id,leadId:'lead-1',spaceId:'space-1'};
+ const {request,calls}=setup({userId:other,savedBhs:[{id}]});
+ for(const action of ['saved_bhs_list','saved_bhs_detail','saved_bhs_save']){
+  const fields=action==='saved_bhs_save'?{brief:{brandName:'Örnek',website:'https://brand.example'},audit:{status:'ready'}}:{};
+  const denied=await request({...body,...fields,action,spaceId:'another-space'});
+  assert.equal(denied.status,422);
+  const allowed=await request({...body,...fields,action});
+  assert.equal(allowed.status,200,JSON.stringify(await allowed.json()));
+ }
+ const archiveCalls=calls.filter(c=>c.url.includes('/rest/v1/pipeline_saved_bhs'));
+ assert.equal(archiveCalls.length,3);
+ assert.ok(archiveCalls.filter(c=>c.init.method==='GET').every(c=>c.url.includes('lead_id=eq.lead-1&space_id=eq.space-1')));
+ assert.ok(archiveCalls[0].url.includes('select=id,created_at,brand_name'));
+ const write=archiveCalls.find(c=>c.init.method==='POST');
+ assert.equal(write.init.headers.Prefer,'resolution=ignore-duplicates,return=minimal');
+ assert.equal(JSON.parse(write.init.body).owner_id,other);
+ for(const options of [{anonymous:true},{preview:true}]){
+  const blocked=setup(options);
+  assert.equal((await blocked.request({...body,action:'saved_bhs_list'})).status,422);
+  assert.ok(blocked.calls.every(c=>!c.url.includes('/rest/v1/pipeline_saved_bhs')));
+ }
 });
 test('missing space cannot read offers, allocate research, or save a quote',async()=>{
  for(const body of [{action:'list',leadId:'lead-1'},{action:'budget',leadId:'lead-1',op:'begin'},{action:'save',args:{p_lead_id:'lead-1',p_space_id:'space-1',p_request_id:'request-1234567890'}}]){
