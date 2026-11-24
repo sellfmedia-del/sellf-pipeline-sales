@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {snapshotBrief,briefHash} from '../src/bhs/brief.mjs';
 import {interactionId,modelText} from '../src/bhs/provider.mjs';
 import {createPricingProof,digest} from '../src/pricing/proof.mjs';
-import {logoProof} from '../src/proposal/logo-proof.mjs';
+import {logoProof,resolveLogoBackground} from '../src/proposal/logo-proof.mjs';
 import {normalizePlan,compositionHash} from '../src/proposal/composition.mjs';
 import {implementationContext,writeImplementation} from '../src/proposal/implementation-plan.mjs';
 import {proposalEngine} from '../src/engines/proposal-engine.mjs';
@@ -55,7 +55,7 @@ export function createProposalHandler({getProvider=null,getSecret=offerGeminiKey
    if(typeof receipt!=='string'||!receipt)throw Error();
    logoProof(secret,host,logoData,receipt);
    const logo={stage:'logo',status:'review',data:logoData};assertResult('logo',logo);
-   if(body.logoBackground&&!['#ffffff','#171717','#626262'].includes(body.logoBackground))throw Error();
+   resolveLogoBackground(body.logoBackground,logoData.candidates[0]);
    stage='scope';
    const context={leadId:body.context?.leadId,spaceId:body.context?.spaceId};
    if(Object.values(context).some(v=>typeof v!=='string'||!v||v.length>200))throw Error();

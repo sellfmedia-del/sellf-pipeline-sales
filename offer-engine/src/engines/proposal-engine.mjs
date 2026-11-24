@@ -7,14 +7,14 @@ import {offerCopy,normalizePlan,buildPlans} from '../proposal/composition.mjs';
 import {selectProposalAudit} from '../proposal/audit-selection.mjs';
 import {retainProposalActions,applyBhsCalendar} from '../proposal/bhs-actions.mjs';
 import {digest} from '../pricing/proof.mjs';
+import {resolveLogoBackground} from '../proposal/logo-proof.mjs';
 export const proposalEngine=Object.freeze({id:'proposal',version:'0.9.1',async run(input,dependencies={}){
  const brief=snapshotBrief(input.brief),{audit,pricing,logo}=dependencies;
  for(const [name,result]of Object.entries({audit,pricing,logo}))assertResult(name,result);
  if(audit.status!=='ready'||audit.data.briefHash!==briefHash(brief)||pricing.data.briefHash!==briefHash(brief))throw Error('Teklif girdileri aynı doğrulanmış brief için olmalı.');
  assertQuote(pricing.data,{requireReady:true});
  const plan=normalizePlan(input),copy=offerCopy(input.copy,audit.data),candidate=logo.data.candidates[0];
- const background=input.logoBackground||candidate.placement?.background||'#ffffff';
- if(!['#ffffff','#171717','#626262'].includes(background))throw Error('Logo zemini geçersiz.');
+ const background=resolveLogoBackground(input.logoBackground,candidate);
  const monthly=pricing.data.pricingMode==='monthly',manualCosts=pricing.data.selectionMode==='explicit'&&pricing.data.costSnapshot?.rules?.account==='selected_only';
  const alternatives=pricing.data.alternatives.map(a=>({id:a.id,name:a.name,billingPeriod:'monthly',monthlyAmount:a.monthlyAmount,...(a.available===false?{available:false}:{}),services:[...(a.id==='growth_operations'&&!monthly&&!manualCosts&&!a.services.some(s=>byId[s.serviceId]?.kind==='growth')?[{id:'growth',name:'Growth danışmanlığı ve strateji',description:'Tam BHS, onaylanan strateji ve uygulama planıyla Growth danışmanlığı.'}]:[]),...a.services.map(s=>({id:s.serviceId,name:s.name,description:s.deliverables||s.reason}))]}));
  const monthlyPlan=monthly?{months:pricing.data.monthlyPlan.months.map(row=>({month:row.month,monthlyAmount:row.monthlyAmount,...(row.projectPlan?{projectPlan:publicProjects(row.projectPlan)}:{}),services:row.services.map(s=>({id:s.serviceId,name:s.name,description:s.description}))}))}:null;

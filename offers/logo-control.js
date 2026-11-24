@@ -61,7 +61,9 @@
       const candidate=data?.candidates?.[0];if(!candidate||!data.logoProof)return;
       ++epoch;selected=candidate;verifiedData=data;saved=true;
       for(const selector of ['.ol-original img','.ol-checker img','.ol-placement img'])container.querySelector(selector).src=candidate.image;
-      background.value=candidate.placement?.background||'#ffffff';result.hidden=false;
+      background.value=candidate.placement?.background||'#ffffff';
+      if(!background.value)background.value='auto';
+      result.hidden=false;
       processing.value=data.processing==='original'?'original':'clean';
       container.querySelector('.ol-comparison figure:last-child figcaption').textContent=data.processing==='original'?'Teklifte kullanılacak orijinal görsel':'Şeffaf logo';
       container.querySelector('.ol-quality').textContent=data.processing==='original'?'Kaydedilen teklifin onaylı orijinal görseli.':'Kaydedilen teklifin onaylı şeffaf logosu.';

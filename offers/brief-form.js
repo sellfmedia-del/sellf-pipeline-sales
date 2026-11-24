@@ -63,6 +63,28 @@
     bhsSaveRetry.textContent='BHS’yi kaydet';
     bhsSaveRetry.hidden=true;
     dialog.querySelector('.ob-review-notice').after(bhsSaveStatus,bhsSaveRetry);
+    const logoMount=dialog.querySelector('.ob-auto-logo'),logoField=logoMount.parentElement,logoHome=logoField.parentElement;
+    const logoRecovery=document.createElement('section');
+    logoRecovery.className='ob-logo-recovery ob-sources';
+    logoRecovery.setAttribute('aria-labelledby','ob-logo-recovery-title');
+    logoRecovery.hidden=true;
+    logoRecovery.innerHTML='<h3 id="ob-logo-recovery-title" tabindex="-1">Logoyu güncelle</h3><p class="ob-hint">BHS ve fiyatlar hazır. Logoyu yükledikten sonra teklif taslağını tekrar oluştur.</p>';
+    bhsSaveRetry.after(logoRecovery);
+    function showLogoRecovery(){
+      if(logoRecovery.hidden){
+        logoRecovery.append(logoField);
+        logoRecovery.hidden=false;
+        const file=logoField.querySelector('.ol-file'),processing=logoField.querySelector('.ol-processing');
+        if(file)file.value='';
+        if(processing)processing.value='original';
+      }
+      logoRecovery.querySelector('h3').focus();
+    }
+    function hideLogoRecovery(){
+      if(logoRecovery.hidden)return;
+      logoHome.append(logoField);
+      logoRecovery.hidden=true;
+    }
     let unsavedBhs=null;
     let reviewing = false;
     let task = null;
@@ -89,6 +111,7 @@
     const monthlyToggle=dialog.querySelector('.ob-monthly-toggle'),monthlyBox=dialog.querySelector('.ob-monthly-editor'),standardBox=dialog.querySelector('.ob-standard-editor'),monthlyError=dialog.querySelector('.ob-monthly-error');
     function invalidatePricing(){
       if(task?.kind==='pricing'||task?.kind==='proposal')stopTask();
+      hideLogoRecovery();
       draft.pricing=null;draft.proposalProof=null;draft.proposal=null;draft.saveProof=null;draft.saved=null;
       for(const cls of ['ob-pricing','ob-proposal-controls','ob-bhs-calendar','ob-proposal','ob-approval','ob-compose','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;
       dialog.querySelector('.ob-price').hidden=draft.audit?.status!=='ready';dialog.querySelector('.ob-services-edit').hidden=true;monthlyError.textContent='';
@@ -127,7 +150,7 @@
     dialog.querySelector('.ob-back').addEventListener('click', close);
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
 
-    const logoControl = window.PipelineLogoControl?.mount(dialog.querySelector('.ob-auto-logo'), {
+    const logoControl = window.PipelineLogoControl?.mount(logoMount, {
       getWebsite: () => form.elements.website.value,
       getContext: () => ({leadId:source.leadId,spaceId:source.spaceId,researchRunId:variant&&form.elements.bhsMode.value==='reuse'?researchRuns.reuse:researchRuns.new}),
       getBrandName: () => form.elements.brandName.value,
@@ -149,6 +172,7 @@
     });
     function setReview(value) {
       reviewing = value;
+      hideLogoRecovery();
       unsavedBhs=null;bhsSaveStatus.hidden=true;bhsSaveRetry.hidden=true;
       form.hidden = value;
       dialog.querySelector('.ob-research-report').hidden=false;
@@ -504,8 +528,12 @@
     bhsCalendarToggle.addEventListener('change',invalidateProposal);
     function invalidateProposal(){if(task?.kind==='proposal')stopTask();draft.proposal=null;draft.saveProof=null;draft.saved=null;for(const cls of ['ob-proposal','ob-approval','ob-save','ob-publish'])dialog.querySelector('.'+cls).hidden=true;dialog.querySelector('.ob-compose').hidden=!draft.pricing||draft.pricing.data.quote?.status==='pending';}
     dialog.querySelector('.ob-compose').addEventListener('click',async()=>{
-      if(task||!draft.pricing||!draft.logo?.verifiedData)return;
+      if(task||!draft.pricing)return;
       const notice=dialog.querySelector('.ob-review-notice'),button=dialog.querySelector('.ob-compose');
+      if(!draft.logo?.verifiedData?.logoProof){
+        notice.textContent=draft.logo?.status==='loading'?'Logo hazırlanıyor. Yükleme tamamlanınca tekrar dene.':'Teklif taslağını oluşturmak için logoyu yükle.';
+        showLogoRecovery();return;
+      }
       if(typeof window.PipelineProposalRequest!=='function'){notice.textContent='Teklif servisi bu ortamda bağlı değil.';return;}
       const monthly=draft.pricing.data.pricingMode==='monthly';
       const planMode=monthly?'operations':dialog.querySelector('.ob-plan-mode').value;
@@ -523,6 +551,7 @@
           if(current.stopped){if(current.ticket)window.PipelineProposalRequest({...payload,action:'cancel',ticket:current.ticket}).catch(()=>{});return;}
           if(response.draftCost)showDraftCost(response.draftCost);
           if(response.phase==='complete'){
+            hideLogoRecovery();
             draft.proposal=response.result;draft.saveProof=response.saveProof;draft.saved=null;
             const box=dialog.querySelector('.ob-proposal');box.hidden=false;window.PipelineProposal.mount(box,response.result.data);
             dialog.querySelector('.ob-pricing').hidden=true;dialog.querySelector('.ob-research-report').hidden=true;
@@ -546,7 +575,13 @@
           }
           action='status';await new Promise(resolve=>setTimeout(resolve,2500));if(current.stopped)return;
         }
-      }catch(error){if(!current.stopped){if(error.draftCost)showDraftCost(error.draftCost);notice.textContent=error.message||'Teklif oluşturulamadı.';}}
+      }catch(error){
+        if(!current.stopped){
+          if(error.draftCost)showDraftCost(error.draftCost);
+          notice.textContent=error.message||'Teklif oluşturulamadı.';
+          if(error.code==='proposal_logo')showLogoRecovery();
+        }
+      }
       finally{if(task===current)task=null;button.disabled=false;}
     });
     async function saveOrPublish(action){
