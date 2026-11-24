@@ -1,0 +1,28 @@
+.ratecard-access h2 { margin-bottom: 26px; }
+.ratecard-access label { margin-bottom: 0; }
+.ratecard-access .button { margin-top: 22px; }
+.ratecard-error { color: #9c3028; font-size: 13px; line-height: 1.5; }
+.ratecard-access input[aria-invalid="true"] { border-color: #9c3028; }
+
+.ratecard-content { padding-block: clamp(42px, 7vw, 88px); }
+.ratecard-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 26px; }
+.ratecard-heading h1 { font-size: clamp(36px, 5.25vw, 68px); letter-spacing: -.045em; margin: 0; }
+.ratecard-signout { color: var(--blue); background: transparent; border: 1px solid var(--line); border-radius: 30px; font-size: 12px; font-weight: 600; padding: 10px 15px; }
+.ratecard-signout:hover { border-color: var(--blue); }
+.ratecard-table { border: 1px solid var(--line); border-radius: 16px; overflow-x: auto; background: #fff; }
+.ratecard-table table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ratecard-table caption { text-align: left; padding: 18px 20px; background: #fff; color: var(--muted); font-size: 12px; }
+.ratecard-table thead { background: #eef4fd; }
+.ratecard-table th, .ratecard-table td { padding: 14px 20px; border-top: 1px solid var(--line); text-align: right; }
+.ratecard-table th:first-child { text-align: left; }
+.ratecard-table tbody th { font-weight: 600; }
+.ratecard-table tbody td { font-variant-numeric: tabular-nums; }
+.ratecard-table tbody tr:nth-child(even) { background: #f8fafc; }
+.ratecard-conditional { color: var(--muted); font-size: 11px; }
+.ratecard-note { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .ratecard-table th, .ratecard-table td { padding: 10px 6px; font-size: 11px; overflow-wrap: anywhere; }
+  .ratecard-table caption { padding: 13px 9px; }
+  .ratecard-conditional { font-size: 10px; }
+}
