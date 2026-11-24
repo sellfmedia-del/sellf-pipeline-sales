@@ -11,6 +11,9 @@ export async function mountServicePicker(container,{getSegment,onChange=()=>{},i
   const project=key==='projects',title=project?'Tek seferlik projeler':'Aylık hizmetler · Retainer';
   const group=add('fieldset','',container,'ob-service-group');group.dataset.costGroup=key;add('legend',title,group);
   const trigger=button('',group,open,'ob-service-trigger');trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');
+  let pressType='';
+  trigger.addEventListener('pointerdown',event=>{pressType=event.pointerType;});
+  trigger.addEventListener('pointercancel',()=>{pressType='';});
   const selected=add('div','',group,'ob-service-selected');
   const menu=add('div','',group,'ob-service-menu');menu.setAttribute('popover','auto');menu.setAttribute('role','dialog');menu.setAttribute('aria-label',project?'Proje kalemlerini seç':'Aylık maliyet kalemlerini seç');menu.tabIndex=-1;
   const native=typeof menu.showPopover==='function';if(!native)menu.hidden=true;
@@ -43,20 +46,28 @@ export async function mountServicePicker(container,{getSegment,onChange=()=>{},i
    window.visualViewport?.removeEventListener('resize',position);
    window.visualViewport?.removeEventListener('scroll',position);
   }
-  function hide(focus=false){stopPosition();if(native){if(menu.matches(':popover-open'))menu.hidePopover();}else{menu.hidden=true;delete menu.dataset.fallbackOpen;}trigger.setAttribute('aria-expanded','false');if(focus&&trigger.isConnected)trigger.focus({preventScroll:true});}
+  function dismissOutside(event){if(!menu.contains(event.target)&&!trigger.contains(event.target))hide();}
+  function hide(focus=false){
+   stopPosition();
+   if(native){if(menu.matches(':popover-open'))menu.hidePopover();}
+   else{document.removeEventListener('pointerdown',dismissOutside,true);menu.hidden=true;delete menu.dataset.fallbackOpen;}
+   trigger.setAttribute('aria-expanded','false');if(focus&&trigger.isConnected)trigger.focus({preventScroll:true});
+  }
   function open(event){
+   const pointer=pressType||event.pointerType;pressType='';
    if(native&&menu.matches(':popover-open')||!native&&!menu.hidden){hide();return;}
-   position();if(native)menu.showPopover();else{menu.hidden=false;menu.dataset.fallbackOpen='true';}
+   position();
+   if(native)menu.showPopover();
+   else{menu.hidden=false;menu.dataset.fallbackOpen='true';document.addEventListener('pointerdown',dismissOutside,true);}
    trigger.setAttribute('aria-expanded','true');
    window.addEventListener('resize',position);
    window.visualViewport?.addEventListener('resize',position);
    window.visualViewport?.addEventListener('scroll',position);
-   const touch=event.pointerType==='touch'||event.pointerType==='pen'||(!event.pointerType&&window.matchMedia('(pointer: coarse)').matches);
+   const touch=pointer==='touch'||pointer==='pen'||event.sourceCapabilities?.firesTouchEvents||(!pointer&&window.matchMedia('(any-pointer: coarse)').matches);
    (touch?menu:search).focus({preventScroll:true});
   }
   menu.addEventListener('toggle',e=>{trigger.setAttribute('aria-expanded',String(e.newState==='open'));if(e.newState==='closed')stopPosition();});
   menu.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();hide(true);}});
-  if(!native)menu.addEventListener('focusout',()=>queueMicrotask(()=>{if(!menu.contains(document.activeElement)&&document.activeElement!==trigger)hide();}));
   function drawSelected(){
    const expanded=new Set([...selected.querySelectorAll('details[open]')].map(el=>el.dataset.serviceId));selected.replaceChildren();
    trigger.textContent=(project?'Proje kalemi seç':'Aylık maliyet kalemi seç')+' · '+state[key].length+' seçili ⌄';
