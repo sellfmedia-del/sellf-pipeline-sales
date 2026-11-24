@@ -7,8 +7,9 @@ import chromium from '@sparticuz/chromium';
 import {chooseCost} from './helpers/cost-picker.mjs';
 const launch=()=>playwright.launch({args:chromium.args.filter(a=>!['--disable-web-security','--single-process'].includes(a)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
 const screenshotDir=path.resolve('../qa/all-costs');
-async function setup(browser,width,currency='TRY',{height=960,hasTouch=false}={}){
+async function setup(browser,width,currency='TRY',{height=960,hasTouch=false,fallbackPicker=false}={}){
  const page=await browser.newPage({viewport:{width,height},hasTouch}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ if(fallbackPicker)await page.addInitScript(()=>Object.defineProperty(HTMLElement.prototype,'showPopover',{value:undefined}));
  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'),'no real API calls in synthetic preview');try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.json':'application/json','.png':'image/png'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:'Missing review file'});}});
  await page.goto('https://preview.vercel.app/offers/monthly-review.html');await page.waitForFunction(()=>window.monthlyReviewReady===true);
  page.setDefaultTimeout(10000);
@@ -92,6 +93,40 @@ test('desktop/mobile: monthly includes all 36 rows, only selected team/account/p
   const rows=await page.locator('.so-monthly-table tbody tr').allTextContents();assert.match(rows[0],/Growth/);assert.ok(!rows[1].includes('Growth'));assert.ok(!rows[1].includes('Account'));assert.equal(await page.locator('.so-monthly-table tbody tr').nth(1).locator('.so-project-amount').textContent(),'—');
   assert.equal(await page.locator('.ob-proposal').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await page.locator('.so-monthly-options').screenshot({path:path.join(screenshotDir,'monthly-'+width+'.png')});await save(page);await page.locator('.ob-close').click();await page.locator('.offer-view').click();await page.locator('.so-monthly-table tbody tr').nth(1).waitFor();assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
+});
+
+test('tablet touch keeps retainer choices open with or without native popovers',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await launch();
+ try{
+  for(const fallbackPicker of [false,true]){
+   const {page,errors}=await setup(browser,1180,'TRY',{height:780,hasTouch:true,fallbackPicker});
+   const group=page.locator(growth).locator('[data-cost-group=services]');
+   const trigger=group.locator('.ob-service-trigger'),menu=group.locator('.ob-service-menu');
+   await trigger.evaluate(el=>{
+    el.dispatchEvent(new PointerEvent('pointerdown',{pointerType:'touch',bubbles:true}));
+    el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+   });
+   assert.equal(await menu.evaluate(el=>el===document.activeElement),true);
+   assert.ok(await menu.locator('.ob-service-options').evaluate(el=>el.clientHeight>0));
+   for(const id of ['account','growth_initial']){
+    await menu.locator('label').filter({has:page.locator('input[value="'+id+'"]')}).tap({position:{x:45,y:12}});
+    assert.equal(await group.locator('.ob-service-row[data-service-id="'+id+'"]').count(),1);
+    assert.equal(await menu.isVisible(),true);
+   }
+   if(fallbackPicker){
+    await menu.locator('.ob-service-search').press('Escape');
+    assert.equal(await trigger.evaluate(el=>el===document.activeElement),true);
+    assert.equal(await menu.isVisible(),false);
+    await trigger.tap();
+    const body=await page.locator('.ob-body').boundingBox();
+    await page.touchscreen.tap(body.x+body.width-20,body.y+20);
+    assert.equal(await menu.isVisible(),false);
+   }else await menu.getByRole('button',{name:'Tamam',exact:true}).tap();
+   assert.equal(await group.locator('.ob-service-row').count(),2);
+   assert.equal(await page.locator('#offer-brief-dialog').isVisible(),true);
+   assert.deepEqual(errors,[]);await page.close();
+  }
+ }finally{await browser.close();}
 });
 
 test('tablet touch: monthly services and projects stay selectable with and without the software keyboard',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{

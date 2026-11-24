@@ -127,7 +127,7 @@
 #offer-brief-dialog .ob-service-menu[hidden]{display:none!important}
 #offer-brief-dialog .ob-service-menu-header{display:flex;justify-content:space-between;align-items:center;gap:10px}
 #offer-brief-dialog .ob-service-search{box-sizing:border-box;width:100%;min-height:40px;padding:9px 11px;border:1px solid #c9cdd2;border-radius:6px;font:inherit;margin:0;flex:none;background:#fff}
-#offer-brief-dialog .ob-service-options{overflow:auto;overscroll-behavior:contain;min-height:0;max-height:320px;flex:1}
+#offer-brief-dialog .ob-service-options{overflow:auto;overscroll-behavior:contain;min-height:0;max-height:320px;flex:0 1 auto}
 #offer-brief-dialog .ob-service-menu[data-compact-viewport]{overflow:auto;overscroll-behavior:contain}
 #offer-brief-dialog .ob-service-menu[data-compact-viewport] .ob-service-options{flex:none;max-height:none;overflow:visible}
 #offer-brief-dialog .ob-service-check{display:flex;align-items:flex-start;gap:10px;cursor:pointer;line-height:1.45;padding:10px 7px;border-radius:5px;margin:0;font-size:13px}
