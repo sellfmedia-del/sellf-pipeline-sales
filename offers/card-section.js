@@ -22,11 +22,53 @@
       <p class="offer-status" role="status" aria-live="polite"></p>
       <button type="button" class="btn btn-primary offer-create"
         aria-describedby="offer-availability">Teklif Oluştur</button>
+      <label class="offer-bhs-selection" hidden>Kayıtlı BHS analizleri
+        <select class="offer-bhs-select" aria-label="Kayıtlı BHS analizleri"></select>
+      </label>
+      <button type="button" class="btn offer-bhs-use" hidden>Kayıtlı BHS’yi kullan</button>
       <p class="offer-help" id="offer-availability">Marka bilgilerini ve ihtiyaçları kontrol ederek başla.</p>`;
     const rows=container.querySelectorAll('.offer-details dd');
     const status=container.querySelector('.offer-status'),publishButton=container.querySelector('.offer-publish');
     let latest=null,selectedId=null,loadEpoch=0,variantsReady=false;
     const selector=container.querySelector(".offer-select"),createButton=container.querySelector(".offer-create");
+    const bhsSelector=container.querySelector('.offer-bhs-select'),bhsButton=container.querySelector('.offer-bhs-use');
+    const bhsContext={leadId:context.lead.id,spaceId:context.spaceId};
+    let bhsLoad=0;
+    async function loadBhs(preferred){
+      const epoch=++bhsLoad;
+      try{
+        const result=await window.PipelineOfferReuseRequest?.({action:'saved-list',context:bhsContext});
+        if(!container.isConnected||epoch!==bhsLoad||!Array.isArray(result?.reports))return;
+        const selected=preferred||bhsSelector.value;
+        bhsSelector.replaceChildren();
+        for(const report of result.reports){
+          const option=document.createElement('option');
+          option.value=report.id;
+          const date=new Date(report.created_at);
+          option.textContent=report.brand_name+' · '+date.toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'});
+          bhsSelector.append(option);
+        }
+        if(result.reports.some(report=>report.id===selected))bhsSelector.value=selected;
+        bhsSelector.parentElement.hidden=!result.reports.length;
+        bhsButton.hidden=!result.reports.length;
+      }catch{/* Existing offer actions stay available if the BHS archive is unavailable. */}
+    }
+    bhsButton.addEventListener('click',async()=>{
+      const savedReportId=bhsSelector.value,sourceOfferId=latest?.id;
+      if(!savedReportId)return;
+      bhsButton.disabled=true;
+      try{
+        const info=await window.PipelineOfferReuseRequest({action:'saved-info',savedReportId,sourceOfferId,context:bhsContext});
+        if(container.isConnected)window.PipelineOfferBrief?.open(context,bhsButton,{savedReportId,sourceOfferId,info});
+      }catch(error){if(container.isConnected)status.textContent=error.message||'Kayıtlı BHS yüklenemedi.';}
+      finally{bhsButton.disabled=false;}
+    });
+    const receiveBhs=event=>{
+      if(!container.isConnected){window.removeEventListener('pipeline-bhs-saved',receiveBhs);return;}
+      if(event.detail.leadId===bhsContext.leadId&&event.detail.spaceId===bhsContext.spaceId)loadBhs(event.detail.id);
+    };
+    window.addEventListener('pipeline-bhs-saved',receiveBhs);
+    loadBhs();
     function show(offer){
       selectedId=offer.id;
       latest=latest?.id===offer.id?{...latest,...offer}:offer;offer=latest;

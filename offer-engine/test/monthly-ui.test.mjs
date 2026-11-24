@@ -7,19 +7,47 @@ import chromium from '@sparticuz/chromium';
 import {chooseCost} from './helpers/cost-picker.mjs';
 const launch=()=>playwright.launch({args:chromium.args.filter(a=>!['--disable-web-security','--single-process'].includes(a)),executablePath:process.env.LOGO_TEST_CHROMIUM,headless:true});
 const screenshotDir=path.resolve('../qa/all-costs');
-async function setup(browser,width,currency='TRY',{height=960,hasTouch=false,fallbackPicker=false}={}){
+async function setup(browser,width,currency='TRY',{height=960,hasTouch=false,fallbackPicker=false,query=''}={}){
  const page=await browser.newPage({viewport:{width,height},hasTouch}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  if(fallbackPicker)await page.addInitScript(()=>Object.defineProperty(HTMLElement.prototype,'showPopover',{value:undefined}));
  await page.route('**/*',async route=>{const u=new URL(route.request().url());assert.equal(u.origin,'https://preview.vercel.app');assert.ok(!u.pathname.startsWith('/api/'),'no real API calls in synthetic preview');try{await route.fulfill({contentType:{'.html':'text/html','.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.json':'application/json','.png':'image/png'}[path.extname(u.pathname)],body:await readFile(path.join(process.cwd(),'public',u.pathname))});}catch{await route.fulfill({status:404,body:'Missing review file'});}});
- await page.goto('https://preview.vercel.app/offers/monthly-review.html');await page.waitForFunction(()=>window.monthlyReviewReady===true);
+ await page.goto('https://preview.vercel.app/offers/monthly-review.html'+query);await page.waitForFunction(()=>window.monthlyReviewReady===true);
  page.setDefaultTimeout(10000);
  const before=await page.evaluate(()=>({rows:structuredClone(reviewRows),lead:structuredClone(reviewLead)}));
  await page.locator('.offer-create').click();assert.equal(await page.locator('.ob-service-selection').isVisible(),false);
+ if(query==='?saved-bhs'){
+  await page.locator('#ob-segment').selectOption('corporate');
+  await page.locator('#ob-website').fill('example.com');
+ }
  await page.locator('#ob-goals').fill('Ölçülebilir büyüme');await page.locator('#ob-needs').fill('Kapsam ve ekipleri ay ay seçmek');await page.locator('#ob-services').fill('Tüm hizmetleri otomatik ekle, Account ve Growth ekle');await page.locator('#ob-currency').selectOption(currency);
  await page.locator('.ob-next').click();await page.locator('.ob-standard-editor .ob-service-trigger').first().waitFor();
  return {page,errors,before};
 }
 const growth='.ob-standard-editor [data-alternative=growth_operations]',ops='.ob-standard-editor [data-alternative=operations_bundle]';
+test('a saved BHS survives a tablet reload before the first offer and restores service selection without research',{skip:!process.env.LOGO_TEST_CHROMIUM},async()=>{
+ const browser=await launch();
+ try{
+  const {page,errors}=await setup(browser,1180,'TRY',{height:820,hasTouch:true,query:'?saved-bhs'});
+  await page.getByText('BHS bu karta kaydedildi.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>reviewRows.length),0);
+  assert.equal(await page.evaluate(()=>reviewCalls.filter(call=>call.kind==='audit').length),1);
+  await page.reload();
+  await page.getByRole('button',{name:'Kayıtlı BHS’yi kullan',exact:true}).tap();
+  assert.equal(await page.locator('#ob-goals').inputValue(),'Ölçülebilir büyüme');
+  assert.equal(await page.locator('#ob-services').inputValue(),'Tüm hizmetleri otomatik ekle, Account ve Growth ekle');
+  await page.getByRole('button',{name:'Kayıtlı BHS ile Devam Et',exact:true}).tap();
+  await page.getByText('Kayıtlı BHS yüklendi. Ek BHS maliyeti 0 TL.',{exact:true}).waitFor();
+  const group=page.locator(growth).locator('[data-cost-group=services]');
+  await group.locator('.ob-service-trigger').tap();
+  await group.locator('input[value=account]').tap();
+  await group.getByRole('button',{name:'Tamam',exact:true}).tap();
+  await page.locator('.ob-price').tap();
+  await page.locator('.ob-pricing').waitFor();
+  assert.equal(await page.evaluate(()=>reviewCalls.filter(call=>call.kind==='audit').length),0);
+  assert.equal(await page.evaluate(()=>reviewCalls.filter(call=>call.action==='saved-prepare').length),1);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});
 async function compose(page){await page.locator('.ob-price').click();await page.locator('.ob-compose').waitFor();await page.locator('.ob-compose').click();await page.locator('.ob-proposal:not([hidden])').waitFor();}
 async function save(page){await page.locator('.ob-logo-approved').check();await page.locator('.ob-scope-approved').check();await page.locator('.ob-save').click();await page.getByText('Teklif v3 kaydedildi. Önceki teklif ve kart değeri korundu.',{exact:true}).waitFor();}
 

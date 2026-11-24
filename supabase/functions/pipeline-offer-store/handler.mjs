@@ -41,6 +41,26 @@ export function createProductionGateway({env,fetchImpl=fetch,cryptoImpl=crypto}=
    const body=JSON.parse(raw),{action}=body;
    if(typeof action==='string'&&action.startsWith('bhs_job_'))return reply(await createBhsGatewayActions({mode:'production',env,db,user,validateLead:teamLead,cryptoImpl})(body));
    if(action==='health')return reply({ready:true,mode:'pipeline-production'});
+   if(['saved_bhs_save','saved_bhs_list','saved_bhs_detail'].includes(action)){
+    const who=await user(body.jwt),lead=await teamLead(body.leadId);
+    if(lead.space_id!==body.spaceId)throw Error('BHS kaydının kart alanı doğrulanamadı.');
+    const path='/rest/v1/pipeline_saved_bhs';
+    const card='lead_id=eq.'+encodeURIComponent(lead.id)+'&space_id=eq.'+encodeURIComponent(lead.space_id);
+    if(action==='saved_bhs_list'){
+     return reply(await db(path+'?'+card+'&select=id,created_at,brand_name&order=created_at.desc,id.desc&limit=1000'));
+    }
+    if(!/^[a-f0-9]{64}$/.test(body.id||''))throw Error('BHS kaydı geçersiz.');
+    if(action==='saved_bhs_save'){
+     if(body.audit?.status!=='ready'||!text(body.brief?.brandName)||!text(body.brief?.website,2048))throw Error('Tamamlanan BHS kaydı geçersiz.');
+     await db(path+'?on_conflict=id',{method:'POST',prefer:'resolution=ignore-duplicates,return=minimal',body:{
+      id:body.id,owner_id:who.id,lead_id:lead.id,space_id:lead.space_id,brief:body.brief,audit:body.audit
+     }});
+     return reply({id:body.id});
+    }
+    const rows=await db(path+'?'+card+'&id=eq.'+body.id+'&select=id,brief,audit,created_at&limit=1');
+    if(rows?.length!==1)throw Error('Bu kartta kayıtlı BHS bulunamadı.');
+    return reply(rows[0]);
+   }
    if(action==='authorize'){
     const who=await user(body.jwt);if(body.leadId)await teamLead(body.leadId);
     return reply({ownerId:who.id});
